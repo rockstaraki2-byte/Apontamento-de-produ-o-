@@ -1,0 +1,60 @@
+--- src/PCPScreen.tsx
++++ src/PCPScreen.tsx
+@@ -884,9 +884,13 @@
+   const [sysConfigCompanyName, setSysConfigCompanyName] = useState("");
+   const [sysConfigLogoUrl, setSysConfigLogoUrl] = useState("");
++  const [sysConfigSystemName, setSysConfigSystemName] = useState("");
++  const [sysConfigPrimaryColor, setSysConfigPrimaryColor] = useState("");
+   
+   React.useEffect(() => {
+     if (db.systemSettings?.[0]) {
+       setSysConfigCompanyName(db.systemSettings[0].companyName || "IMPÉRIO JOMARCI - ACESSÓRIOS PARA MOVÉIS");
+       setSysConfigLogoUrl(db.systemSettings[0].companyLogoUrl || "/icon.png");
++      setSysConfigSystemName(db.systemSettings[0].systemName || "");
++      setSysConfigPrimaryColor(db.systemSettings[0].primaryColor || "#00b14f");
+     }
+   }, [db.systemSettings]);
+@@ -897,7 +901,9 @@
+       await db.saveSystemSettings({
+          id: "default",
+          companyName: sysConfigCompanyName,
+-         companyLogoUrl: sysConfigLogoUrl
++         companyLogoUrl: sysConfigLogoUrl,
++         systemName: sysConfigSystemName,
++         primaryColor: sysConfigPrimaryColor
+       });
+       alert("Configurações do sistema salvas com sucesso!");
+@@ -1994,6 +2000,34 @@
+                     </div>
+ 
+                     <div>
++                      <label className="text-sm font-semibold text-gray-700 block mb-1">
++                        Nome/Descrição do Sistema
++                      </label>
++                      <input
++                        type="text"
++                        placeholder="Ex: ACESSÓRIOS PARA MÓVEIS"
++                        value={sysConfigSystemName}
++                        onChange={(e) => setSysConfigSystemName(e.target.value)}
++                        className="w-full border p-2.5 rounded focus:ring-1 focus:ring-blue-500 outline-none text-sm font-medium bg-gray-50 text-gray-900"
++                      />
++                    </div>
++
++                    <div>
++                      <label className="text-sm font-semibold text-gray-700 block mb-1">
++                        Cor Principal do Sistema
++                      </label>
++                      <div className="flex items-center gap-3">
++                        <input
++                          type="color"
++                          value={sysConfigPrimaryColor}
++                          onChange={(e) => setSysConfigPrimaryColor(e.target.value)}
++                          className="w-12 h-10 border rounded cursor-pointer"
++                        />
++                        <span className="text-xs font-mono text-gray-500">{sysConfigPrimaryColor}</span>
++                      </div>
++                    </div>
++
++                    <div>
+                       <label className="text-sm font-semibold text-gray-700 block mb-1">
+                         Logotipo da Empresa (Nas Etiquetas)

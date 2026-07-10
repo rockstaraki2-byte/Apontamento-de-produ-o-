@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+/*
+  Global sizing adjustment to make blocks, boxes, and text sizes smaller and 
+  much more compact. This scales down all rem-based units (margins, paddings, 
+  fonts, gaps, heights, and borders) proportionally for better high-density 
+  viewing and dashboard navigation.
+*/
+
+:root {
+  font-size: 11.5px; /* Denser base font size for desktop to shrink all components proportionally */
+}
+
+/* Ocupa toda a área segura incluindo notch */
+html, body, #root {
+  height: 100%;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Padding seguro para notch/câmera/barra de status */
+@supports (padding-top: env(safe-area-inset-top)) {
+  #root {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Apenas em modo standalone — evita aplicar no browser */
+@media (display-mode: standalone) {
+  body {
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    font-size: 8.5px; /* Extremely compact, clean base font size on mobile screens */
+  }
+}
+
+/* Base custom scrollbar styles that are compact, neat and touch-friendly */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Safe Area Utility support for notch phones and Android devices */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Height helpers targeting real viewable viewport on all devices */
+.h-screen-safe {
+  height: 100dvh;
+}
+
+/* Decreasing common card padding and grid gaps for high-density, compact displays */
+.grid {
+  gap: 1rem !important;
+}
+
+@media (max-width: 640px) {
+  .p-8 {
+    padding: 1.25rem !important;
+  }
+  .p-6 {
+    padding: 1rem !important;
+  }
+  .p-5 {
+    padding: 0.8rem !important;
+  }
+  .p-4 {
+    padding: 0.6rem !important;
+  }
+  .p-3 {
+    padding: 0.45rem !important;
+  }
+  .p-2.5 {
+    padding: 0.35rem !important;
+  }
+  .p-2 {
+    padding: 0.25rem !important;
+  }
+  .p-1.5 {
+    padding: 0.2rem !important;
+  }
+  .p-1 {
+    padding: 0.15rem !important;
+  }
+  .gap-6 {
+    gap: 0.8rem !important;
+  }
+  .gap-4 {
+    gap: 0.6rem !important;
+  }
+  .gap-3 {
+    gap: 0.45rem !important;
+  }
+  .gap-2.5 {
+    gap: 0.35rem !important;
+  }
+  .gap-2 {
+    gap: 0.25rem !important;
+  }
+  .gap-1.5 {
+    gap: 0.2rem !important;
+  }
+  .gap-1 {
+    gap: 0.15rem !important;
+  }
+}
+
+/* Adjustments for compact mobile usage */
+.flex.flex-col.gap-2.5 {
+  margin-top: 0px !important;
+  margin-bottom: 0px !important;
+}
+
+.text-xs.text-gray-500.font-medium {
+  font-size: 0.68rem !important;
+  letter-spacing: -0.01em;
+}
+
+

@@ -1,0 +1,8 @@
+{
+  "name": "Apontador de Produção",
+  "description": "Progressive Web App para apontamento de produção e controle de PCP.",
+  "requestFramePermissions": ["clipboard-read", "clipboard-write"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

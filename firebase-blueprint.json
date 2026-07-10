@@ -1,0 +1,89 @@
+{
+  "collections": [
+    {
+      "name": "users",
+      "schema": {
+        "id": "number",
+        "name": "string",
+        "role": "string"
+      },
+      "description": "System users (Admin, PCP, Embalagem)"
+    },
+    {
+      "name": "items",
+      "schema": {
+        "id": "number",
+        "code": "string",
+        "name": "string",
+        "notes": "string"
+      },
+      "description": "Product catalog"
+    },
+    {
+      "name": "orders",
+      "schema": {
+        "id": "number",
+        "orderCode": "string",
+        "itemId": "number",
+        "color": "string",
+        "size": "string",
+        "variation": "string",
+        "customerName": "string",
+        "totalQuantity": "number",
+        "packedQuantity": "number",
+        "isActive": "boolean",
+        "createdAt": "number",
+        "deliveryDate": "string"
+      },
+      "description": "Production orders"
+    },
+    {
+      "name": "production_logs",
+      "schema": {
+        "id": "number",
+        "orderId": "number",
+        "operatorId": "number",
+        "quantityPacked": "number",
+        "timestamp": "number",
+        "durationMillis": "number"
+      },
+      "description": "Logs of packed quantities and duration"
+    },
+    {
+      "name": "active_packs",
+      "schema": {
+        "id": "number",
+        "itemId": "number",
+        "color": "string",
+        "size": "string",
+        "variation": "string",
+        "operatorId": "number",
+        "startTime": "number"
+      },
+      "description": "Currently active packing sessions"
+    },
+    {
+      "name": "uniforms",
+      "schema": {
+        "id": "string",
+        "name": "string",
+        "size": "string",
+        "stock": "number",
+        "minStock": "number"
+      },
+      "description": "Uniform inventory collection"
+    },
+    {
+      "name": "uniformDistributions",
+      "schema": {
+        "id": "string",
+        "employeeId": "string",
+        "uniformId": "string",
+        "quantity": "number",
+        "date": "number",
+        "notes": "string"
+      },
+      "description": "Registered distribution of uniforms to collaborators"
+    }
+  ]
+}
