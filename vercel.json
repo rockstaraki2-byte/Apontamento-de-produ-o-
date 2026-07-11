@@ -1,0 +1,12 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/manifest.json", "destination": "/manifest.json" },
+    { "source": "/sw.js", "destination": "/sw.js" },
+    { "source": "/workbox-(.*)", "destination": "/workbox-$1" },
+    { "source": "/icon.png", "destination": "/icon.png" },
+    { "source": "/icon-192.png", "destination": "/icon-192.png" },
+    { "source": "/assets/(.*)", "destination": "/assets/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
