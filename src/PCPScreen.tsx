@@ -1258,6 +1258,26 @@ export function PCPScreen({
     }
   }, [showNewBatchModal]);
 
+  // Pre-calculated sets to eliminate O(N^3) nested loops when rendering batch creation modals/lists
+  const batchLinkedSets = React.useMemo(() => {
+    const orderIds = new Set<number>();
+    const itemIds = new Set<number>();
+    
+    db.productionBatches.forEach((b) => {
+      b.orderIds.forEach((oid) => {
+        orderIds.add(oid);
+      });
+    });
+
+    db.orders.forEach((o) => {
+      if (orderIds.has(o.id)) {
+        itemIds.add(o.itemId);
+      }
+    });
+
+    return { orderIds, itemIds };
+  }, [db.productionBatches, db.orders]);
+
   const processedBatches = React.useMemo(() => {
     let list = [...db.productionBatches];
 
@@ -1274,12 +1294,15 @@ export function PCPScreen({
     // Filter by search term (name, order code, or product name)
     if (lotesSearchTerm.trim() !== "") {
       const term = lotesSearchTerm.trim().toLowerCase();
+      const ordersMap = new Map<number, any>(db.orders.map((o) => [o.id, o]));
+      const itemsMap = new Map<number, any>(db.items.map((i) => [i.id, i]));
+
       list = list.filter((b) => {
         const nameMatch = b.name.toLowerCase().includes(term);
         const orderMatch = b.orderIds.some((oid) => {
-          const o = db.orders.find((x) => x.id === oid);
+          const o = ordersMap.get(oid);
           if (!o) return false;
-          const item = db.items.find((i) => i.id === o.itemId);
+          const item = itemsMap.get(o.itemId);
           return (
             o.orderCode.toLowerCase().includes(term) ||
             o.customerName.toLowerCase().includes(term) ||
@@ -3682,10 +3705,8 @@ export function PCPScreen({
                               return false;
                             }
                             
-                            // Check if already in a batch natively for exclusions
-                            const isOrderLinked = db.productionBatches.some((b) =>
-                              b.orderIds.includes(o.id)
-                            );
+                            // Check if already in a batch natively for exclusions (using optimized Set)
+                            const isOrderLinked = batchLinkedSets.orderIds.has(o.id);
                             if (isOrderLinked) return false;
                           }
 
@@ -3740,15 +3761,8 @@ export function PCPScreen({
                           const productName =
                             db.items.find((i) => i.id === o.itemId)?.name ||
                             "Produto Desconhecido";
-                          const isOrderLinked = db.productionBatches.some((b) =>
-                            b.orderIds.includes(o.id)
-                          );
-                          const isItemLinked = db.productionBatches.some((b) =>
-                            b.orderIds.some((oid) => {
-                              const linkedOrder = db.orders.find((x) => x.id === oid);
-                              return linkedOrder?.itemId === o.itemId;
-                            })
-                          );
+                          const isOrderLinked = batchLinkedSets.orderIds.has(o.id);
+                          const isItemLinked = batchLinkedSets.itemIds.has(o.itemId);
                           const availableQty = Math.max(0, o.totalQuantity - (o.producedQuantity || 0));
 
                           return (
@@ -3987,15 +4001,8 @@ export function PCPScreen({
                           ) : (
                             <div className="max-h-24 overflow-y-auto space-y-1.5 pr-1">
                               {matchingOrdersForManualProduct.map((o) => {
-                                const isOrderLinked = db.productionBatches.some((b) =>
-                                  b.orderIds.includes(o.id)
-                                );
-                                const isItemLinked = db.productionBatches.some((b) =>
-                                  b.orderIds.some((oid) => {
-                                    const linkedOrder = db.orders.find((x) => x.id === oid);
-                                    return linkedOrder?.itemId === o.itemId;
-                                  })
-                                );
+                                const isOrderLinked = batchLinkedSets.orderIds.has(o.id);
+                                const isItemLinked = batchLinkedSets.itemIds.has(o.itemId);
                                 const availableQty = Math.max(0, o.totalQuantity - (o.producedQuantity || 0));
 
                                 return (

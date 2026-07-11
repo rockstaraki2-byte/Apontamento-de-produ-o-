@@ -10860,6 +10860,17 @@ function AdminScreen({
     | "GESTAO_PESSOAS"
   >("PAINEL");
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [dailyProductionGoal, setDailyProductionGoal] = useState<number>(() => {
+    const saved = localStorage.getItem("producao_daily_production_goal");
+    return saved ? parseInt(saved, 10) : 3000;
+  });
+  const [isEditingGoal, setIsEditingGoal] = useState(false);
+  const [tempGoalInput, setTempGoalInput] = useState(String(dailyProductionGoal));
+
+  // States to optimize the general panel order list rendering (eliminates UI freeze)
+  const [panelOrdersSearch, setPanelOrdersSearch] = useState("");
+  const [panelOrdersFilter, setPanelOrdersFilter] = useState<"ATIVOS" | "TODOS">("ATIVOS");
+  const [panelOrdersLimit, setPanelOrdersLimit] = useState(12);
 
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [invoiceModalData, setInvoiceModalData] = useState<{
@@ -11443,15 +11454,43 @@ function AdminScreen({
   }
 
   const groupedOrders = React.useMemo(() => {
-    const map = new Map<string, { total: number; packed: number }>();
+    const map = new Map<string, { total: number; packed: number; customerName: string; isActive: boolean }>();
     db.orders.forEach((o) => {
-      const g = map.get(o.orderCode) || { total: 0, packed: 0 };
+      const g = map.get(o.orderCode) || { total: 0, packed: 0, customerName: o.customerName || "", isActive: false };
       g.total += o.totalQuantity || 0;
       g.packed += o.packedQuantity || 0;
+      if (o.customerName && !g.customerName) {
+        g.customerName = o.customerName;
+      }
+      // If order is active and not fully packed
+      if (o.isActive && o.status !== "FATURADO" && (o.packedQuantity || 0) < o.totalQuantity) {
+        g.isActive = true;
+      }
       map.set(o.orderCode, g);
     });
     return Array.from(map.entries()).map(([code, data]) => ({ code, ...data }));
   }, [db.orders]);
+
+  const filteredGroupedOrders = React.useMemo(() => {
+    let result = groupedOrders;
+
+    // 1. Filter by Active status vs All
+    if (panelOrdersFilter === "ATIVOS") {
+      result = result.filter((g) => g.isActive && g.packed < g.total);
+    }
+
+    // 2. Filter by Search term
+    if (panelOrdersSearch.trim() !== "") {
+      const term = panelOrdersSearch.trim().toLowerCase();
+      result = result.filter(
+        (g) =>
+          g.code.toLowerCase().includes(term) ||
+          g.customerName.toLowerCase().includes(term),
+      );
+    }
+
+    return result;
+  }, [groupedOrders, panelOrdersFilter, panelOrdersSearch]);
 
   const statsTodaySector = React.useMemo(() => {
     let prod = 0;
@@ -11637,7 +11676,7 @@ function AdminScreen({
         <ScrollContainer paddingSize="dense" className="space-y-4">
           {activeTab === "PAINEL" ? (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
                 <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-center">
                   <div className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">
                     Faturamento Hoje
@@ -11664,6 +11703,95 @@ function AdminScreen({
                   <div className="text-2xl font-black text-orange-500">
                     {pendingOrdersDeliverToday} pendentes
                   </div>
+                </div>
+                {/* Meta Diária Card */}
+                <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <div className="text-gray-500 text-[10px] font-extrabold uppercase tracking-wider">
+                      Progresso Meta Diária
+                    </div>
+                    {isEditingGoal ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          value={tempGoalInput}
+                          onChange={(e) => setTempGoalInput(e.target.value)}
+                          className="w-16 border border-indigo-200 rounded px-1 py-0.5 text-xs text-indigo-900 font-bold focus:outline-none"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const val = Math.max(1, parseInt(tempGoalInput, 10) || 1);
+                              setDailyProductionGoal(val);
+                              localStorage.setItem("producao_daily_production_goal", String(val));
+                              setIsEditingGoal(false);
+                            } else if (e.key === "Escape") {
+                              setIsEditingGoal(false);
+                              setTempGoalInput(String(dailyProductionGoal));
+                            }
+                          }}
+                        />
+                        <button
+                          onClick={() => {
+                            const val = Math.max(1, parseInt(tempGoalInput, 10) || 1);
+                            setDailyProductionGoal(val);
+                            localStorage.setItem("producao_daily_production_goal", String(val));
+                            setIsEditingGoal(false);
+                          }}
+                          className="bg-emerald-500 text-white p-0.5 rounded text-xs hover:bg-emerald-600 cursor-pointer"
+                          title="Salvar"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsEditingGoal(false);
+                            setTempGoalInput(String(dailyProductionGoal));
+                          }}
+                          className="bg-gray-400 text-white p-0.5 rounded text-xs hover:bg-gray-500 cursor-pointer"
+                          title="Cancelar"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setTempGoalInput(String(dailyProductionGoal));
+                          setIsEditingGoal(true);
+                        }}
+                        className="text-[10px] text-indigo-600 hover:text-indigo-800 font-extrabold flex items-center gap-0.5 bg-indigo-50 px-1.5 py-0.5 rounded cursor-pointer"
+                        title="Ajustar Meta"
+                      >
+                        ✏️ Meta: {dailyProductionGoal}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="mt-1 flex items-baseline justify-between">
+                    <span className="text-xl font-black text-indigo-950">
+                      {todayProducedQuantity} <span className="text-xs font-semibold text-gray-400">/ {dailyProductionGoal}</span>
+                    </span>
+                    <span className="text-xs font-extrabold text-indigo-600">
+                      {Math.round((todayProducedQuantity / dailyProductionGoal) * 100) || 0}%
+                    </span>
+                  </div>
+
+                  <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden mt-1.5 border border-gray-200/50">
+                    <div
+                      className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(100, Math.round((todayProducedQuantity / dailyProductionGoal) * 100) || 0)}%`,
+                      }}
+                    />
+                  </div>
+
+                  <span className="text-[9px] text-gray-500 font-medium mt-1 truncate block">
+                    {todayProducedQuantity >= dailyProductionGoal ? (
+                      <span className="text-emerald-600 font-bold">🎉 Meta diária atingida! Parabéns!</span>
+                    ) : (
+                      <span>Falta(m) {dailyProductionGoal - todayProducedQuantity} peças para concluir a meta.</span>
+                    )}
+                  </span>
                 </div>
               </div>
               <div className="bg-white p-4 rounded-lg shadow-sm border flex flex-col gap-4">
@@ -11992,49 +12120,124 @@ function AdminScreen({
                     </span>
                   </div>
                 </div>
-                <h3 className="font-semibold text-gray-700 mb-3">
-                  Progresso dos Pedidos
-                </h3>
-                {groupedOrders.length === 0 ? (
-                  <p className="text-gray-500 text-center">
-                    Nenhum pedido cadastrado.
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-2 border-b border-gray-100">
+                  <h3 className="font-extrabold text-gray-800 text-sm uppercase tracking-wider">
+                    📋 Progresso dos Pedidos ({filteredGroupedOrders.length})
+                  </h3>
+                  
+                  <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                    {/* Search Input */}
+                    <input
+                      type="text"
+                      placeholder="Buscar por Código ou Cliente..."
+                      value={panelOrdersSearch}
+                      onChange={(e) => {
+                        setPanelOrdersSearch(e.target.value);
+                        setPanelOrdersLimit(12); // reset pagination when searching
+                      }}
+                      className="border border-gray-250 rounded-lg p-1.5 px-3 text-xs bg-white text-gray-800 focus:outline-none focus:border-indigo-500 font-medium w-full sm:w-56"
+                    />
+
+                    {/* Status Filter Toggle */}
+                    <div className="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+                      <button
+                        onClick={() => {
+                          setPanelOrdersFilter("ATIVOS");
+                          setPanelOrdersLimit(12);
+                        }}
+                        className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition whitespace-nowrap cursor-pointer ${
+                          panelOrdersFilter === "ATIVOS"
+                            ? "bg-white text-indigo-950 shadow-xs"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        Em Andamento
+                      </button>
+                      <button
+                        onClick={() => {
+                          setPanelOrdersFilter("TODOS");
+                          setPanelOrdersLimit(12);
+                        }}
+                        className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition whitespace-nowrap cursor-pointer ${
+                          panelOrdersFilter === "TODOS"
+                            ? "bg-white text-indigo-950 shadow-xs"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        Todos os Pedidos
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {filteredGroupedOrders.length === 0 ? (
+                  <p className="text-gray-450 text-center text-xs py-8 font-medium">
+                    {panelOrdersSearch
+                      ? "Nenhum pedido encontrado para a busca especificada."
+                      : "Nenhum pedido cadastrado ou em andamento."}
                   </p>
                 ) : (
-                  <div className="grid gap-4">
-                    {groupedOrders.map((go, idx) => {
-                      const percRaw =
-                        go.total > 0
-                          ? Math.min(
-                              100,
-                              Math.round((go.packed / go.total) * 100),
-                            )
-                          : 0;
-                      const perc = Number.isNaN(percRaw) ? 0 : percRaw;
-                      return (
-                        <div
-                          key={go.code || `order-${idx}`}
-                          className="bg-white p-4 rounded-lg shadow-sm border border-gray-100"
+                  <div className="flex flex-col gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {filteredGroupedOrders.slice(0, panelOrdersLimit).map((go, idx) => {
+                        const percRaw =
+                          go.total > 0
+                            ? Math.min(
+                                100,
+                                Math.round((go.packed / go.total) * 100),
+                              )
+                            : 0;
+                        const perc = Number.isNaN(percRaw) ? 0 : percRaw;
+                        return (
+                          <div
+                            key={go.code || `order-${idx}`}
+                            className="bg-white p-4 rounded-xl shadow-xs border border-gray-150 flex flex-col justify-between hover:border-indigo-200 transition-colors"
+                          >
+                            <div>
+                              <div className="flex justify-between items-start mb-1.5">
+                                <span className="font-extrabold text-sm text-slate-900 tracking-tight">
+                                  #{go.code}
+                                </span>
+                                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full">
+                                  {go.packed} / {go.total} pçs
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-gray-500 font-bold truncate uppercase tracking-tight mb-3">
+                                {go.customerName || "Cliente Geral"}
+                              </p>
+                            </div>
+
+                            <div>
+                              <div className="w-full bg-slate-100 rounded-full h-2 border border-slate-200/40">
+                                <div
+                                  className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 rounded-full transition-all duration-300"
+                                  style={{ width: `${perc}%` }}
+                                ></div>
+                              </div>
+                              <div className="flex justify-between items-center mt-1.5">
+                                <span className="text-[9px] font-bold text-gray-400 uppercase">
+                                  {go.total - go.packed > 0 ? `${go.total - go.packed} pendentes` : "Completo"}
+                                </span>
+                                <span className="text-[10px] font-extrabold text-slate-800">
+                                  {perc}%
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {filteredGroupedOrders.length > panelOrdersLimit && (
+                      <div className="flex justify-center mt-2">
+                        <button
+                          onClick={() => setPanelOrdersLimit((prev) => prev + 12)}
+                          className="bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs px-5 py-2 rounded-xl shadow-3xs cursor-pointer transition flex items-center gap-1"
                         >
-                          <div className="flex justify-between items-end mb-2">
-                            <span className="font-bold text-gray-800">
-                              {go.code}
-                            </span>
-                            <span className="text-sm font-semibold text-blue-600">
-                              {go.packed} / {go.total}
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-200 rounded-full h-3">
-                            <div
-                              className="bg-blue-600 h-3 rounded-full"
-                              style={{ width: `${perc}%` }}
-                            ></div>
-                          </div>
-                          <p className="text-xs text-gray-500 text-right mt-1">
-                            {perc}% Concluído
-                          </p>
-                        </div>
-                      );
-                    })}
+                          🔄 Mostrar Mais Pedidos (Exibindo {Math.min(panelOrdersLimit, filteredGroupedOrders.length)} de {filteredGroupedOrders.length})
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
