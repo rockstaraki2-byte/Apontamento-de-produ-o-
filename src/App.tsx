@@ -1293,17 +1293,25 @@ function LoginScreen({
   users,
   tenants,
   onLogin,
+  deferredPrompt,
+  setDeferredPrompt,
+  isStandalone,
+  isIOS,
+  isInIframe,
+  handleInstallClick,
 }: {
   users: User[];
   tenants?: import('./types').Tenant[];
   onLogin: (u: User) => void;
+  deferredPrompt: any;
+  setDeferredPrompt: React.Dispatch<React.SetStateAction<any>>;
+  isStandalone: boolean;
+  isIOS: boolean;
+  isInIframe: boolean;
+  handleInstallClick: () => Promise<void>;
 }) {
   const [usernameInput, setUsernameInput] = useState("");
   const [password, setPassword] = useState("");
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isStandalone, setIsStandalone] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
-  const [isInIframe, setIsInIframe] = useState(false);
 
   const [selectedLoginTenantId, setSelectedLoginTenantId] = useState(() => {
     return localStorage.getItem("login_tenant_id") || "imperio";
@@ -1320,35 +1328,6 @@ function LoginScreen({
     return tenants?.find((t) => t && t.id === selectedLoginTenantId) || tenants?.find((t) => t && t.id === "imperio") || { id: "imperio", name: "Império Jomarci", logoUrl: "/icon.png", primaryColor: "#00b14f", systemName: "Apontador de Produção" };
   }, [usernameInput, tenants, selectedLoginTenantId]);
 
-  useEffect(() => {
-    const checkStandalone = () => {
-      const isStandaloneMode =
-        window.matchMedia("(display-mode: standalone)").matches ||
-        (window.navigator as any).standalone ||
-        document.referrer.includes("android-app://");
-      setIsStandalone(!!isStandaloneMode);
-    };
-
-    checkStandalone();
-    setIsInIframe(window.self !== window.top);
-
-    const ua = navigator.userAgent.toLowerCase();
-    setIsIOS(/iphone|ipad|ipod/.test(ua));
-
-    const handleBeforeInstallPrompt = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-
-    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-    return () => {
-      window.removeEventListener(
-        "beforeinstallprompt",
-        handleBeforeInstallPrompt,
-      );
-    };
-  }, []);
-
   // Synchronize selected login tenant with typed suffix if detected
   useEffect(() => {
     const typed = (usernameInput || "").trim().toLowerCase();
@@ -1362,16 +1341,6 @@ function LoginScreen({
       }
     }
   }, [usernameInput, tenants, selectedLoginTenantId]);
-
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === "accepted") {
-      console.log("PWA installation accepted");
-    }
-    setDeferredPrompt(null);
-  };
 
   const handleLogin = () => {
     const typed = (usernameInput || "").trim().toLowerCase();
@@ -12933,6 +12902,51 @@ export default function App() {
   });
   const db = useDatabase(currentUser);
 
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isInIframe, setIsInIframe] = useState(false);
+  const [showPWAModal, setShowPWAModal] = useState(false);
+
+  useEffect(() => {
+    const checkStandalone = () => {
+      const isStandaloneMode =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        (window.navigator as any).standalone ||
+        document.referrer.includes("android-app://");
+      setIsStandalone(!!isStandaloneMode);
+    };
+
+    checkStandalone();
+    setIsInIframe(window.self !== window.top);
+
+    const ua = navigator.userAgent.toLowerCase();
+    setIsIOS(/iphone|ipad|ipod/.test(ua));
+
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener(
+        "beforeinstallprompt",
+        handleBeforeInstallPrompt,
+      );
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      console.log("PWA installation accepted");
+    }
+    setDeferredPrompt(null);
+  };
+
   const [orderToPrint, setOrderToPrint] = useState<any | null>(null);
   const [emailToCustomerPrint, setEmailToCustomerPrint] = useState("");
   const [isSendingOrderPrintEmail, setIsSendingOrderPrintEmail] =
@@ -13370,7 +13384,19 @@ export default function App() {
   }, [currentUser]);
 
   if (!currentUser) {
-    return <LoginScreen users={db.allUsers} tenants={db.tenants} onLogin={setCurrentUser} />;
+    return (
+      <LoginScreen
+        users={db.allUsers}
+        tenants={db.tenants}
+        onLogin={setCurrentUser}
+        deferredPrompt={deferredPrompt}
+        setDeferredPrompt={setDeferredPrompt}
+        isStandalone={isStandalone}
+        isIOS={isIOS}
+        isInIframe={isInIframe}
+        handleInstallClick={handleInstallClick}
+      />
+    );
   }
 
   const hasSector = (nameKeyword: string) => {
@@ -13446,6 +13472,16 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-4 text-sm sm:text-base text-gray-300">
+            {!isStandalone && (
+              <button
+                onClick={() => setShowPWAModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 hover:text-[#00b14f] transition cursor-pointer text-xs font-semibold animate-pulse shadow-md"
+                style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}
+              >
+                <span>📲</span>
+                <span className="hidden md:inline">Instalar App</span>
+              </button>
+            )}
             <span className="hidden sm:inline">
               {currentUser.name} ({currentUser.role})
             </span>
@@ -14464,6 +14500,104 @@ export default function App() {
             </div>
           );
         })()}
+
+      {/* PWA Installation Instruction Dialog / Modal */}
+      {showPWAModal && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div
+            className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-2xl max-w-sm w-full relative text-left"
+          >
+            <button
+              onClick={() => setShowPWAModal(false)}
+              className="absolute top-4 right-4 text-zinc-400 hover:text-white cursor-pointer p-1 rounded-full hover:bg-zinc-800 transition"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="flex items-center gap-2 border-b border-zinc-800 pb-3 mb-4" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}>
+              <span className="text-2xl">📲</span>
+              <h3 className="text-sm uppercase tracking-wider font-extrabold text-zinc-100">
+                Instalar Apontador
+              </h3>
+            </div>
+
+            <p className="text-xs text-zinc-400 leading-relaxed mb-4">
+              Instale o aplicativo de apontamento de produção para rodar em{" "}
+              <strong>tela cheia sem as barras do navegador</strong> e ter acesso rápido pelo ícone no seu dispositivo.
+            </p>
+
+            {isInIframe ? (
+              <div className="bg-amber-950/40 p-4 rounded-xl border border-amber-900/40 text-xs text-zinc-300 flex flex-col gap-2.5 leading-snug">
+                <span className="font-extrabold uppercase tracking-wider text-[10px] text-amber-400 block">
+                  ⚠️ Executando no Editor de Testes
+                </span>
+                <p>
+                  Por segurança, navegadores bloqueiam a instalação de PWAs quando exibidos dentro de um iframe.
+                </p>
+                <p>
+                  Para instalar, por favor abra o sistema em uma nova aba fora do editor de testes:
+                </p>
+                <button
+                  onClick={() => window.open(window.location.href, "_blank")}
+                  className="w-full flex items-center justify-center gap-1.5 hover:opacity-90 text-black text-xs font-bold py-2.5 px-4 rounded-lg transition-all cursor-pointer mt-1"
+                  style={{ backgroundColor: db.activeTenant?.primaryColor || '#00b14f' }}
+                >
+                  Abrir em Nova Aba ↗
+                </button>
+              </div>
+            ) : deferredPrompt ? (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs text-zinc-300 font-medium">
+                  Clique no botão abaixo para iniciar a instalação nativa do aplicativo:
+                </p>
+                <button
+                  onClick={async () => {
+                    await handleInstallClick();
+                    setShowPWAModal(false);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 hover:opacity-90 text-black text-xs font-bold py-2.5 px-4 rounded-lg transition-all cursor-pointer shadow-md shadow-emerald-950/30 animate-bounce"
+                  style={{ backgroundColor: db.activeTenant?.primaryColor || '#00b14f' }}
+                >
+                  <span>📥</span> Instalar Aplicativo
+                </button>
+              </div>
+            ) : isIOS ? (
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800/40 text-xs text-zinc-400 flex flex-col gap-2 leading-relaxed">
+                <span className="font-bold uppercase tracking-wide block text-zinc-200" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}>
+                  Instruções para iPhone / iPad:
+                </span>
+                <p>
+                  1. Toque no botão de <strong>Compartilhar</strong> (ícone{" "}
+                  <span className="text-zinc-200">📤</span> na barra inferior do Safari).
+                </p>
+                <p>
+                  2. Role para baixo e selecione{" "}
+                  <strong>"Adicionar à Tela de Início"</strong> (ícone{" "}
+                  <span className="text-zinc-200">➕</span>).
+                </p>
+                <p>
+                  3. Clique em <strong>"Adicionar"</strong> no canto superior direito para confirmar.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800/40 text-xs text-zinc-400 flex flex-col gap-2.5 leading-relaxed">
+                <span className="font-bold uppercase tracking-wide block text-zinc-300">
+                  Como Instalar Manualmente:
+                </span>
+                <p>
+                  1. Clique no menu de <strong className="text-zinc-200">três pontinhos</strong> no canto superior do seu navegador.
+                </p>
+                <p>
+                  2. Toque em <strong className="text-zinc-200">"Instalar aplicativo"</strong> ou <strong className="text-zinc-200">"Adicionar à tela inicial"</strong>.
+                </p>
+                <p className="text-[10px] block mt-1" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}>
+                  ✓ Um ícone direto será criado para acesso instantâneo em tela cheia!
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </BrowserRouter>
   );
 }

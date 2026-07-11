@@ -11,6 +11,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'prompt',
+        injectRegister: null,
         manifestFilename: 'manifest.json',
         includeAssets: ['icon.png', 'icon-192.png', 'icon.svg'],
         strategies: 'generateSW',
@@ -42,6 +43,7 @@ export default defineConfig(() => {
           type: 'module',
         },
         manifest: {
+          id: "/",
           name: "Apontador de Produção",
           short_name: "Apontador",
           description: "Sistema de apontamento e acompanhamento de produção e PCP",
