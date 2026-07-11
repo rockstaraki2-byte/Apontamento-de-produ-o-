@@ -47,8 +47,7 @@ function getGeminiClient() {
 }
 import { getApps } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
-import { getServerDb, initFirebaseAdmin } from "./server_firebase";
-import { collection, getDocs, writeBatch, query, where, doc, setDoc } from "firebase/firestore";
+import { getServerDb, initFirebaseAdmin, collection, getDocs, writeBatch, query, where, doc, setDoc } from "./server_firebase";
 import config from "./firebase-applet-config.json";
 
 async function cleanupInvalidFcmTokens(tokensToRemove: string[]) {

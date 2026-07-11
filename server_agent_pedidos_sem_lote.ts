@@ -1,7 +1,6 @@
-import { getServerDb } from "./server_firebase";
+import { getServerDb, collection, getDocs, doc, setDoc, getDoc, query, where } from "./server_firebase";
 import { GoogleGenAI, Type } from "@google/genai";
 import config from "./firebase-applet-config.json";
-import { collection, getDocs, doc, setDoc, getDoc, query, where } from "firebase/firestore";
 
 function handleDatabaseError(err: any, collectionName: string, projectId: string, databaseId: string) {
   const errMsg = err.message || String(err);

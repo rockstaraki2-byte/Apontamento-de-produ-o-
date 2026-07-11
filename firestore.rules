@@ -3,88 +3,99 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ==========================================
-    // UTILITY HELPERS & MULTI-TENANCY FUNCTIONS
+    // UTILITY HELPERS & SECURITY FUNCTIONS
     // ==========================================
 
+    // Checks if the request is authenticated
     function isSignedIn() {
       return request.auth != null;
     }
 
+    // Safely gets the user document from the database
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    // Checks if the authenticated user is a Global Admin
     function isGlobalAdmin() {
       return isSignedIn() && (
-        getUserData().get('tenantId', 'imperio') == "global" || 
-        request.auth.uid == "raul"
+        getUserData().get('tenantId', 'imperio') == 'global' || 
+        request.auth.uid == 'raul'
       );
     }
 
+    // Checks if a given tenant exists in the database
     function tenantExists(tenantId) {
       return exists(/databases/$(database)/documents/tenants/$(tenantId));
     }
 
-    // MULTI-TENANT ACCESS CHECKERS
-    // Checks if the document belongs to the active tenant of the user, or if they are a super-admin.
-    // Automatically falls back to full access if Firebase Authentication is not yet active (e.g., local mock auth).
+    // ==========================================
+    // SECURE MULTI-TENANCY CONTROL
+    // ==========================================
 
+    // Rules for business data to ensure isolated access per client (Tenant ID)
     function canReadTenantData(existingData) {
-      return !isSignedIn() || 
-             isGlobalAdmin() || 
-             (existingData != null && existingData.get('tenantId', 'imperio') == getUserData().get('tenantId', 'imperio'));
+      return isSignedIn() && (
+        isGlobalAdmin() || 
+        (existingData != null && existingData.get('tenantId', 'imperio') == getUserData().get('tenantId', 'imperio'))
+      );
     }
 
     function canCreateTenantData(incomingData) {
-      return incomingData != null && 
+      return isSignedIn() && 
+             incomingData != null && 
              incomingData.get('tenantId', null) != null && 
              tenantExists(incomingData.get('tenantId', 'imperio')) && 
-             (!isSignedIn() || isGlobalAdmin() || incomingData.get('tenantId', 'imperio') == getUserData().get('tenantId', 'imperio'));
+             (isGlobalAdmin() || incomingData.get('tenantId', 'imperio') == getUserData().get('tenantId', 'imperio'));
     }
 
     function canUpdateTenantData(incomingData, existingData) {
-      return incomingData != null && 
+      return isSignedIn() && 
+             incomingData != null && 
              existingData != null && 
+             // Enforce that tenantId CANNOT be modified during an update (prevents tenant hijacking)
              incomingData.get('tenantId', 'imperio') == existingData.get('tenantId', 'imperio') && 
-             (!isSignedIn() || isGlobalAdmin() || incomingData.get('tenantId', 'imperio') == getUserData().get('tenantId', 'imperio'));
+             (isGlobalAdmin() || incomingData.get('tenantId', 'imperio') == getUserData().get('tenantId', 'imperio'));
     }
 
     function canDeleteTenantData(existingData) {
-      return !isSignedIn() || 
-             isGlobalAdmin() || 
-             (existingData != null && existingData.get('tenantId', 'imperio') == getUserData().get('tenantId', 'imperio'));
+      return isSignedIn() && (
+        isGlobalAdmin() || 
+        (existingData != null && existingData.get('tenantId', 'imperio') == getUserData().get('tenantId', 'imperio'))
+      );
     }
 
     // ==========================================
     // SECURITY RULES BY PATH
     // ==========================================
 
-    // Catch-all default deny
+    // Catch-all default deny (Strictly reject everything not explicitly allowed)
     match /{document=**} {
       allow read, write: if false;
     }
 
     // 1. Attributes Collection (Static system-wide attributes, read-only)
     match /attributes/{document} {
-      allow read: if true;
-      allow write: if false;
+      allow read: if true; // Public or system-wide configuration
+      allow write: if isGlobalAdmin(); // Only global admin can edit
     }
 
     // 2. Tenants Collection (Licensing, system names, logos, primary color)
     match /tenants/{tenantId} {
-      allow read: if true;
-      allow write: if isGlobalAdmin() || !isSignedIn();
+      allow read: if true; // Needs to be readable before authentication for visual branding
+      allow write: if isGlobalAdmin(); // Only super admin can manage tenants
     }
 
     // 3. Users Collection
     match /users/{userId} {
-      allow read: if true;
-      allow write: if isGlobalAdmin() || !isSignedIn() || request.auth.uid == userId;
+      allow read: if isSignedIn() && (isGlobalAdmin() || getUserData().get('tenantId', 'imperio') == resource.data.get('tenantId', 'imperio'));
+      allow create: if isSignedIn() || !isSignedIn(); // Allow users to register their profile upon sign-up
+      allow update, delete: if isGlobalAdmin() || (isSignedIn() && request.auth.uid == userId);
     }
 
     // 4. Dynamic Multi-Tenant Rule for all other Business Collections
     // Matches: orders, items, logs, activePacks, nestTasks, notifications, stocks, stock_movements, 
-    // customers, sectors, productFlows, productionBatches, productionAgendas, etc.
+    // customers, sectors, productFlows, productionBatches, productionAgendas, coilCuttingPlans, etc.
     match /{collectionName}/{document} {
       // Exclude special system collections from this generic rule
       function isStandardCollection() {
