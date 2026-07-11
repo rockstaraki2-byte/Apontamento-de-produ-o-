@@ -46,10 +46,11 @@ export function usePushNotifications(
 
           let swRegistration = null;
           try {
-            swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-            console.log('Service Worker registrado/encontrado com escopo:', swRegistration.scope);
+            // Usa o service worker principal ativo (/sw.js) que importa as funcionalidades de mensagens
+            swRegistration = await navigator.serviceWorker.ready;
+            console.log('Utilizando Service Worker ativo para FCM com escopo:', swRegistration.scope);
           } catch(e) {
-            console.error('Falha ao registrar Service Worker:', e);
+            console.error('Falha ao obter Service Worker ativo para FCM:', e);
           }
 
           const currentToken = await getToken(messaging, { 
