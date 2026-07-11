@@ -15,17 +15,23 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 export const storage = getStorage(app);
+const isServer = typeof window === "undefined";
+
 export const db = initializeFirestore(
   app,
-  {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
-    experimentalForceLongPolling: true,
-  },
+  isServer
+    ? { experimentalForceLongPolling: true }
+    : {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager(),
+        }),
+        experimentalForceLongPolling: true,
+      },
   config.firestoreDatabaseId,
 );
 
-export const messagingPromise = isSupported().then((supported) =>
-  supported ? getMessaging(app) : null,
-);
+export const messagingPromise = isServer
+  ? Promise.resolve(null)
+  : isSupported().then((supported) =>
+      supported ? getMessaging(app) : null,
+    );

@@ -80,7 +80,7 @@ export async function runAgentPedidosSemLote(ai: GoogleGenAI) {
     const reportRef = doc(db, "agentReports", "monitor-pedidos-sem-lote");
     const reportSnap = await getDoc(reportRef);
     if (reportSnap.exists()) {
-      const data = reportSnap.data();
+      const data = reportSnap.data() as any;
       if (data.updatedAt) {
         const lastRun = new Date(data.updatedAt);
         const now = new Date();

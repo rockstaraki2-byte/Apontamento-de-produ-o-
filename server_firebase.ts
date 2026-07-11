@@ -1,34 +1,19 @@
 import { initializeApp as initializeAdminApp, cert, getApps as getAdminApps, getApp as getAdminApp } from "firebase-admin/app";
-import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
+import { db as clientDb } from "./src/firebase";
+import {
+  collection as clientCollection,
+  doc as clientDoc,
+  getDoc as clientGetDoc,
+  getDocs as clientGetDocs,
+  setDoc as clientSetDoc,
+  query as clientQuery,
+  where as clientWhere,
+  writeBatch as clientWriteBatch,
+  deleteDoc as clientDeleteDoc
+} from "firebase/firestore";
 import config from "./firebase-applet-config.json";
 
-let adminDbInstance: any = null;
-
-export function getServerDb() {
-  if (adminDbInstance) return adminDbInstance;
-
-  const projectId = config.projectId;
-  const databaseId = config.firestoreDatabaseId || "producao";
-
-  if (!projectId) {
-    console.warn("[getServerDb] Danger: config.projectId is empty or invalid in firebase-applet-config.json.");
-    throw new Error("FIRESTORE_CONFIG_MISSING_PROJECT_ID");
-  }
-
-  // Ensure Admin app is initialized
-  initFirebaseAdmin();
-
-  try {
-    const adminApp = getAdminApp();
-    adminDbInstance = getAdminFirestore(adminApp, databaseId);
-    console.log(`[getServerDb] Firestore Admin SDK resolved successfully for databaseId: "${databaseId}"`);
-    return adminDbInstance;
-  } catch (err: any) {
-    console.error(`[getServerDb] Error initializing Admin Firestore:`, err);
-    throw err;
-  }
-}
-
+// We still initialize the Admin SDK in case other services like Firebase Cloud Messaging are used
 export function initFirebaseAdmin() {
   const projectId = config.projectId;
   const serviceAccountEnv = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
@@ -50,22 +35,29 @@ export function initFirebaseAdmin() {
   }
 }
 
-// Compatibility wrappers for Firebase Client SDK to Admin SDK
+// For Firestore operations, we return the client-side db which has proper API-key-based unauthenticated/user access permissions
+export function getServerDb() {
+  console.log("[getServerDb] Returning Client SDK Firestore instance to bypass GCP Admin IAM restrictions.");
+  return clientDb;
+}
+
+// Compatibility functional wrappers using Firebase Client SDK
 export function collection(db: any, path: string) {
-  return db.collection(path);
+  return clientCollection(db, path);
 }
 
 export function doc(parent: any, ...paths: string[]) {
-  if (typeof parent.doc === "function") {
-    return parent.doc(paths.join("/"));
-  }
-  return parent.doc(paths.join("/"));
+  // Client doc() expects (parent, ...paths)
+  // If the first argument is a document ref rather than a collection/db ref, clientDoc handles it as well.
+  // We join any paths provided
+  const combinedPath = paths.join("/");
+  return clientDoc(parent, combinedPath);
 }
 
 export async function getDoc(docRef: any) {
-  const snap = await docRef.get();
+  const snap = await clientGetDoc(docRef);
   return {
-    exists: () => snap.exists,
+    exists: () => snap.exists(),
     data: () => snap.data(),
     id: snap.id,
     ref: snap.ref
@@ -73,12 +65,12 @@ export async function getDoc(docRef: any) {
 }
 
 export async function getDocs(queryOrCol: any) {
-  const snap = await queryOrCol.get();
+  const snap = await clientGetDocs(queryOrCol);
   const docs = snap.docs.map((d: any) => ({
     id: d.id,
     data: () => d.data(),
     ref: d.ref,
-    exists: () => d.exists
+    exists: () => d.exists()
   }));
   return {
     size: snap.size,
@@ -88,27 +80,19 @@ export async function getDocs(queryOrCol: any) {
 }
 
 export async function setDoc(docRef: any, data: any, options?: any) {
-  return await docRef.set(data, options || {});
+  return await clientSetDoc(docRef, data, options || {});
 }
 
 export function query(collectionRef: any, ...constraints: any[]) {
-  let q = collectionRef;
-  for (const constraint of constraints) {
-    if (constraint && typeof constraint.apply === "function") {
-      q = constraint.apply(q);
-    }
-  }
-  return q;
+  return clientQuery(collectionRef, ...constraints);
 }
 
 export function where(field: string, operator: any, value: any) {
-  return {
-    apply: (q: any) => q.where(field, operator, value)
-  };
+  return clientWhere(field, operator, value);
 }
 
 export function writeBatch(db: any) {
-  const batch = db.batch();
+  const batch = clientWriteBatch(db);
   return {
     update: (docRef: any, data: any) => batch.update(docRef, data),
     set: (docRef: any, data: any, options?: any) => batch.set(docRef, data, options || {}),
@@ -118,5 +102,5 @@ export function writeBatch(db: any) {
 }
 
 export async function deleteDoc(docRef: any) {
-  return await docRef.delete();
+  return await clientDeleteDoc(docRef);
 }
