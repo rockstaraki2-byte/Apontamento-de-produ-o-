@@ -13,27 +13,33 @@ export default defineConfig(() => {
         registerType: 'prompt',
         manifestFilename: 'manifest.json',
         includeAssets: ['icon.png', 'icon-192.png', 'icon.svg'],
+        strategies: 'generateSW',
         workbox: {
-          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10MB limit
+          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           navigateFallback: '/index.html',
-          importScripts: ['/firebase-messaging-sw.js'],
+          // Removido importScripts — risco de quebrar o registro do SW principal.
+          // O firebase-messaging-sw.js agora é registrado separadamente (ver main.tsx).
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',
-              options: { cacheName: 'google-fonts-cache' }
+              options: {
+                cacheName: 'google-fonts-cache',
+                expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+                cacheableResponse: { statuses: [0, 200] },
+              },
             },
             {
               urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
               handler: 'NetworkFirst',
-              options: { cacheName: 'firebase-cache' }
-            }
-          ]
+              options: { cacheName: 'firebase-cache' },
+            },
+          ],
         },
         devOptions: {
-          enabled: true,
-          type: 'module'
+          enabled: false, // Evita instabilidade testando fora do build de produção
+          type: 'module',
         },
         manifest: {
           name: "Apontador de Produção",
@@ -47,33 +53,13 @@ export default defineConfig(() => {
           background_color: "#ffffff",
           lang: "pt-BR",
           icons: [
-            {
-              src: "/icon-192.png",
-              sizes: "192x192",
-              type: "image/png",
-              purpose: "any"
-            },
-            {
-              src: "/icon-192.png",
-              sizes: "192x192",
-              type: "image/png",
-              purpose: "maskable"
-            },
-            {
-              src: "/icon.png",
-              sizes: "512x512",
-              type: "image/png",
-              purpose: "any"
-            },
-            {
-              src: "/icon.png",
-              sizes: "512x512",
-              type: "image/png",
-              purpose: "maskable"
-            }
-          ]
-        }
-      })
+            { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+            { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+            { src: "/icon.png", sizes: "512x512", type: "image/png", purpose: "any" },
+            { src: "/icon.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          ],
+        },
+      }),
     ],
     resolve: {
       alias: {
