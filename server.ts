@@ -74,6 +74,7 @@ async function cleanupInvalidFcmTokens(tokensToRemove: string[]) {
 import multer from "multer";
 // @ts-ignore
 import pdfParse from "pdf-parse-debugging-disabled";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -231,6 +232,68 @@ async function checkDeadlines() {
       console.error("Erro na verificação periódica de prazos:", e);
     }
   }
+}
+
+async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
+  try {
+    const data = new Uint8Array(buffer);
+    const loadingTask = pdfjsLib.getDocument({
+      data,
+      useSystemFonts: true,
+      disableFontFace: true
+    });
+    const pdf = await loadingTask.promise;
+    let fullText = "";
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const items = textContent.items as any[];
+
+      // Group items by vertical position (Y coordinate) to preserve structure
+      const linesMap: { [y: number]: any[] } = {};
+      for (const item of items) {
+        if (typeof item.str !== "string") continue;
+        const y = Math.round(item.transform[5]);
+        if (!linesMap[y]) {
+          linesMap[y] = [];
+        }
+        linesMap[y].push(item);
+      }
+
+      // Sort Y coordinate descending (top to bottom)
+      const sortedY = Object.keys(linesMap)
+        .map(Number)
+        .sort((a, b) => b - a);
+
+      let pageText = "";
+      for (const y of sortedY) {
+        // Sort horizontally left to right
+        const lineItems = linesMap[y].sort((a, b) => a.transform[4] - b.transform[4]);
+        const lineText = lineItems.map(item => item.str).join(" ");
+        pageText += lineText + "\n";
+      }
+
+      fullText += `\n--- Página ${pageNum} ---\n` + pageText;
+    }
+
+    return fullText;
+  } catch (err: any) {
+    console.warn("[PDFjs Extraction Failed, falling back to pdfParse]:", err.message || err);
+    // Graceful fallback to pdf-parse-debugging-disabled if PDFJS fails
+    const parseFunc = typeof pdfParse === "function" ? pdfParse : (pdfParse as any).default;
+    const pdfData = await parseFunc(buffer);
+    return pdfData.text || "";
+  }
+}
+
+function cleanJsonText(text: string): string {
+  let cleaned = text.trim();
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*/i, "");
+    cleaned = cleaned.replace(/\s*```$/, "");
+  }
+  return cleaned.trim();
 }
 
 function parsePdfTextFallback(text: string): any[] {
@@ -850,12 +913,10 @@ async function startServer() {
         
         console.log(`[PDF Extract Orders] Recebidos ${files.length} arquivos.`);
 
-        const parseFunc = typeof pdfParse === "function" ? pdfParse : (pdfParse as any).default;
-        
         for (const file of files) {
            try {
-             const pdfData = await parseFunc(file.buffer);
-             pdfText += `\n--- Arquivo: ${file.originalname} ---\n` + (pdfData.text || "") + "\n";
+             const text = await extractTextFromPdfBuffer(file.buffer);
+             pdfText += `\n--- Arquivo: ${file.originalname} ---\n` + text + "\n";
            } catch (parseErr: any) {
              console.error("Erro ao fazer parse do PDF:", parseErr);
              return res.status(400).json({ success: false, error: `O documento PDF '${file.originalname}' não pôde ser lido. Arquivo inválido ou corrompido: ${parseErr.message}` });
@@ -994,7 +1055,14 @@ Retorne obrigatoriamente um array de pedidos de acordo com o esquema JSON especi
           },
         });
 
-        const outputJSON = JSON.parse(response.text || "[]");
+        let outputJSON;
+        try {
+          const cleanedText = cleanJsonText(response.text || "[]");
+          outputJSON = JSON.parse(cleanedText);
+        } catch (jsonErr: any) {
+          console.warn("[PDF Extract AI JSON Parse Error] Resposta da IA não pôde ser lida como JSON:", jsonErr.message, "Texto original:", response.text);
+          throw new Error("Resposta da IA em formato JSON inválido. Ativando contingência local...");
+        }
         return res.json({ success: true, orders: outputJSON });
       } catch (e: any) {
         console.warn("[PDF Extract AI Error] Erro ao usar Gemini API, ativando fallback local determinístico de contingência:", e.message || e);
@@ -1036,12 +1104,10 @@ Retorne obrigatoriamente um array de pedidos de acordo com o esquema JSON especi
         
         console.log(`[PDF Extract Billing] Recebidos ${files.length} arquivos.`);
 
-        const parseFunc = typeof pdfParse === "function" ? pdfParse : (pdfParse as any).default;
-        
         for (const file of files) {
            try {
-             const pdfData = await parseFunc(file.buffer);
-             pdfText += `\n--- Arquivo: ${file.originalname} ---\n` + (pdfData.text || "") + "\n";
+             const text = await extractTextFromPdfBuffer(file.buffer);
+             pdfText += `\n--- Arquivo: ${file.originalname} ---\n` + text + "\n";
            } catch (parseErr: any) {
              console.error("Erro ao fazer parse do PDF:", parseErr);
              return res.status(400).json({ success: false, error: `O documento PDF '${file.originalname}' não pôde ser lido. Arquivo inválido ou corrompido: ${parseErr.message}` });
@@ -1102,8 +1168,14 @@ Retorne SOMENTE um OBJETO JSON estritamente dentro do request Schema abaixo. Nã
           }
         });
 
-        const text = response.text || "{}";
-        const result = JSON.parse(text);
+        let result;
+        try {
+          const cleanedText = cleanJsonText(response.text || "{}");
+          result = JSON.parse(cleanedText);
+        } catch (jsonErr: any) {
+          console.warn("[PDF Extract Billing JSON Parse Error] Resposta da IA não pôde ser lida como JSON:", jsonErr.message, "Texto original:", response.text);
+          throw new Error("Resposta da IA em formato JSON inválido. Verifique o limite de uso do serviço.");
+        }
         
         res.json({
           success: true,
