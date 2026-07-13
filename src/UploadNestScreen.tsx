@@ -293,10 +293,19 @@ export function UploadNestScreen({
         data = responseText ? JSON.parse(responseText) : {};
       } catch (jsonErr) {
         console.error("Erro ao decodificar JSON de nesting:", jsonErr);
-        if (response.status === 504 || response.status === 502 || (responseText && (responseText.toLowerCase().includes("timeout") || responseText.toLowerCase().includes("<html")))) {
+        if (
+          response.status === 504 ||
+          response.status === 502 ||
+          response.status === 503 ||
+          (responseText &&
+            (responseText.toLowerCase().includes("timeout") ||
+              responseText.toLowerCase().includes("<html") ||
+              responseText.toLowerCase().includes("service unavailable") ||
+              responseText.toLowerCase().includes("indisponível")))
+        ) {
           data = {
             success: false,
-            error: "Limite de tempo excedido (Timeout). A imagem ou PDF enviado é muito complexo ou pesado, ou o servidor levou mais de 10 segundos para responder. Por favor, tente reenviar uma imagem menor ou utilize a Adição Manual para cadastrar as peças sem bloqueio.",
+            error: "Limite de tempo excedido (Timeout) ou Servidor Temporariamente Indisponível. O arquivo PDF ou imagem é muito pesado ou o servidor levou mais de 10 segundos para responder. Por favor, tente novamente com uma imagem menor ou utilize a Adição Manual para cadastrar as peças sem bloqueio.",
           };
         } else {
           data = {
@@ -312,6 +321,9 @@ export function UploadNestScreen({
 
       const parsedTasks = data.tasks || [];
       if (parsedTasks.length > 0) {
+        if (data.warning) {
+          alert("⚠️ " + data.warning);
+        }
         const newTasks = parsedTasks.map((t: any, index: number) => ({
           partName: t.partName || "Sem nome",
           size: t.size || "-",
@@ -373,10 +385,19 @@ export function UploadNestScreen({
         data = responseText ? JSON.parse(responseText) : {};
       } catch (jsonErr) {
         console.error("Erro ao decodificar JSON de imagem colada:", jsonErr);
-        if (response.status === 504 || response.status === 502 || (responseText && (responseText.toLowerCase().includes("timeout") || responseText.toLowerCase().includes("<html")))) {
+        if (
+          response.status === 504 ||
+          response.status === 502 ||
+          response.status === 503 ||
+          (responseText &&
+            (responseText.toLowerCase().includes("timeout") ||
+              responseText.toLowerCase().includes("<html") ||
+              responseText.toLowerCase().includes("service unavailable") ||
+              responseText.toLowerCase().includes("indisponível")))
+        ) {
           data = {
             success: false,
-            error: "Limite de tempo excedido (Timeout). A imagem colada é muito pesada ou o servidor levou mais de 10 segundos para responder. Por favor, tente novamente com um print menor ou utilize a Adição Manual para cadastrar as peças sem bloqueio.",
+            error: "Limite de tempo excedido (Timeout) ou Servidor Temporariamente Indisponível. A imagem colada é muito pesada ou o servidor levou mais de 10 segundos para responder. Por favor, tente novamente com um print menor ou utilize a Adição Manual para cadastrar as peças sem bloqueio.",
           };
         } else {
           data = {
@@ -392,6 +413,9 @@ export function UploadNestScreen({
 
       const parsedTasks = data.tasks || [];
       if (parsedTasks.length > 0) {
+        if (data.warning) {
+          alert("⚠️ " + data.warning);
+        }
         const nestNameString = `Print Colado (${new Date().toLocaleDateString("pt-BR")} ${new Date().toLocaleTimeString("pt-BR")})`;
         const newTasks = parsedTasks.map((t: any, index: number) => ({
           partName: t.partName || "Sem nome",

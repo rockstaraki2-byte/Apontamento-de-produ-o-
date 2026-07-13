@@ -235,7 +235,22 @@ async function checkDeadlines() {
 }
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
+  // Tenta pdf-parse primeiro, pois é extremamente leve, rápido (<100ms) e seguro para rodar em Serverless (Vercel) sem estourar o limite de 10 segundos
   try {
+    console.log("[PDF Extração] Tentando pdf-parse para leitura rápida...");
+    const parseFunc = typeof pdfParse === "function" ? pdfParse : (pdfParse as any).default;
+    const pdfData = await parseFunc(buffer);
+    if (pdfData && pdfData.text && pdfData.text.trim()) {
+      console.log(`[PDF Extração] pdf-parse concluído com sucesso (${pdfData.text.length} caracteres).`);
+      return pdfData.text;
+    }
+  } catch (err: any) {
+    console.warn("[PDF Extração] pdf-parse falhou, tentando pdfjsLib como contingência:", err.message || err);
+  }
+
+  // Se pdf-parse falhar ou vier vazio, tenta a biblioteca alternativa pdfjsLib que preserva colunas
+  try {
+    console.log("[PDF Extração] Iniciando pdfjsLib...");
     const data = new Uint8Array(buffer);
     const loadingTask = pdfjsLib.getDocument({
       data,
@@ -279,11 +294,8 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
 
     return fullText;
   } catch (err: any) {
-    console.warn("[PDFjs Extraction Failed, falling back to pdfParse]:", err.message || err);
-    // Graceful fallback to pdf-parse-debugging-disabled if PDFJS fails
-    const parseFunc = typeof pdfParse === "function" ? pdfParse : (pdfParse as any).default;
-    const pdfData = await parseFunc(buffer);
-    return pdfData.text || "";
+    console.error("[PDF Extração] Ambos os extratores (pdf-parse e pdfjsLib) falharam:", err.message || err);
+    throw err;
   }
 }
 
@@ -1361,6 +1373,8 @@ Retorne SOMENTE um OBJETO JSON estritamente dentro do request Schema abaixo. Nã
     "/api/extract-nesting-ai",
     upload.single("file"),
     async (req, res) => {
+      let pdfText = "";
+      let isPdfText = false;
       try {
         let filePart: any = null;
 
@@ -1372,6 +1386,19 @@ Retorne SOMENTE um OBJETO JSON estritamente dentro do request Schema abaixo. Nã
             req.file.originalname.toLowerCase().endsWith(".pdf")
           ) {
             mime = "application/pdf";
+            try {
+              console.log("[Nesting Extração] PDF detectado. Tentando extrair texto nativo...");
+              const extracted = await extractTextFromPdfBuffer(req.file.buffer);
+              if (extracted && extracted.trim()) {
+                pdfText = extracted;
+                isPdfText = true;
+                console.log(`[Nesting Extração] Texto extraído com sucesso (${extracted.length} caracteres). Usando modo texto rápido.`);
+              } else {
+                console.log("[Nesting Extração] O PDF parece ser escaneado (sem texto nativo). Caindo de volta para análise visual.");
+              }
+            } catch (err: any) {
+              console.warn("[Nesting Extração] Erro ao extrair texto do PDF. Tentando análise visual de contingência...", err);
+            }
           } else if (
             req.file.originalname &&
             (req.file.originalname.toLowerCase().endsWith(".png") ||
@@ -1381,12 +1408,15 @@ Retorne SOMENTE um OBJETO JSON estritamente dentro do request Schema abaixo. Nã
           ) {
             mime = "image/png";
           }
-          filePart = {
-            inlineData: {
-              mimeType: mime,
-              data: req.file.buffer.toString("base64"),
-            },
-          };
+
+          if (!isPdfText) {
+            filePart = {
+              inlineData: {
+                mimeType: mime,
+                data: req.file.buffer.toString("base64"),
+              },
+            };
+          }
         } else if (req.body.pastedImage) {
           // Base64 pasted screenshot
           const pastedStr = req.body.pastedImage; // data:image/png;base64,iVBOR...
@@ -1405,7 +1435,7 @@ Retorne SOMENTE um OBJETO JSON estritamente dentro do request Schema abaixo. Nã
           }
         }
 
-        if (!filePart) {
+        if (!filePart && !isPdfText) {
           return res
             .status(400)
             .json({ error: "Nenhum arquivo enviado ou print colado." });
@@ -1436,10 +1466,18 @@ Retorne os resultados estritamente no formato de array JSON com os pares chave-v
 ]
 Atenção: Retorne APENAS o JSON puro. Não inclua texto adicional, formatações de markdown ou caracteres estranhos além do array JSON puro.`;
 
+        const parts: any[] = [];
+        if (isPdfText) {
+          parts.push({ text: `CONTEÚDO DO PLANO DE NESTING (PDF EXTRAÍDO):\n\n${pdfText}` });
+        } else {
+          parts.push(filePart);
+        }
+        parts.push({ text: promptText });
+
         const response = await ai.models.generateContent({
           model: "gemini-3.5-flash",
           contents: {
-            parts: [filePart, { text: promptText }],
+            parts: parts,
           },
           config: {
             responseMimeType: "application/json",
@@ -1490,6 +1528,90 @@ Atenção: Retorne APENAS o JSON puro. Não inclua texto adicional, formataçõe
         res.json({ success: true, tasks: parsedTasks });
       } catch (e: any) {
         console.error("[Gemini error] Error extracting nesting data:", e);
+
+        // Se tivermos o texto extraído do PDF do Nesting, podemos rodar o extrator heurístico de contingência!
+        if (isPdfText && pdfText.trim()) {
+          console.log("[Nesting Extração] Ativando contingência local devido a erro ou indisponibilidade da IA...");
+          try {
+            const results: any[] = [];
+            const dimRegex = /([0-9]+,[0-9]+)\s*x\s*([0-9]+,[0-9]+)(mm)?/g;
+            const lines = pdfText.split("\n");
+
+            for (let i = 0; i < lines.length; i++) {
+              let line = lines[i].trim();
+              if (line.match(dimRegex)) {
+                const sizes = line.match(dimRegex)?.[0] || "";
+                let partName = "Peça Desconhecida";
+                for (let j = 1; j <= 4; j++) {
+                  if (i - j >= 0) {
+                    const prevLine = lines[i - j].trim();
+                    if (
+                      prevLine &&
+                      isNaN(Number(prevLine)) &&
+                      prevLine.length > 3 &&
+                      !prevLine.match(dimRegex)
+                    ) {
+                      partName = prevLine.replace(/[\r\n]/g, " ");
+                      if (
+                        i - j - 1 >= 0 &&
+                        lines[i - j - 1].trim().length > 3 &&
+                        isNaN(Number(lines[i - j - 1].trim()))
+                      ) {
+                        partName = lines[i - j - 1].trim() + " " + partName;
+                      }
+                      break;
+                    }
+                  }
+                }
+                const afterDim = line
+                  .substring(line.indexOf(sizes) + sizes.length)
+                  .trim();
+                let qty = 1;
+                const qtyMatch = afterDim.match(/^(\d+)/);
+                if (qtyMatch) {
+                  qty = parseInt(qtyMatch[1], 10);
+                } else {
+                  if (i + 1 < lines.length && !isNaN(Number(lines[i + 1].trim()))) {
+                    qty = parseInt(lines[i + 1].trim(), 10);
+                  }
+                }
+
+                if (sizes.length > 5) {
+                  results.push({
+                    partName,
+                    size: sizes,
+                    totalQuantity: qty,
+                  });
+                }
+              }
+            }
+
+            const unique = Array.from(
+              new Set(results.map((r) => JSON.stringify(r))),
+            )
+              .map((s) => JSON.parse(s))
+              .filter(
+                (r: any) =>
+                  !r.partName.includes("Plate Info") &&
+                  !r.partName.includes("Thumbnail") &&
+                  !r.partName.toLowerCase().includes("chapa") &&
+                  !r.partName.toLowerCase().includes("plate"),
+              );
+
+            if (unique.length > 0) {
+              console.log(`[Nesting Extração Contingência] Sucesso local! Extraídas ${unique.length} tarefas de nesting.`);
+              return res.json({
+                success: true,
+                tasks: unique,
+                isFallback: true,
+                warning: "Nota: O limite da Inteligência Artificial foi atingido ou o servidor demorou para responder. O sistema ativou o extrator local alternativo e conseguiu recuperar as tarefas de nesting com sucesso!"
+              });
+            }
+          } catch (fallbackErr: any) {
+            console.error("[Nesting Extração Contingência] Falha crítica na contingência local:", fallbackErr);
+          }
+        }
+
         res
           .status(500)
           .json({ error: "Erro na IA ao decodificar Nesting: " + e.message });
