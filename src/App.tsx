@@ -27,6 +27,8 @@ import {
   ClipboardList,
   AlertCircle,
   Paintbrush,
+  Gauge,
+  Timer,
   Scissors,
   Bell,
   Pencil,
@@ -89,6 +91,7 @@ import { RepresentanteScreen } from "./RepresentanteScreen";
 import { UploadNestScreen } from "./UploadNestScreen";
 import { HistoricoProducaoScreen } from "./HistoricoProducaoScreen";
 import { PCPScreen } from "./PCPScreen";
+import { FilaRitmoScreen } from "./FilaRitmoScreen";
 import { PedidosSemLoteScreen } from "./PedidosSemLoteScreen";
 import { GestaoClientesScreen } from "./GestaoClientesScreen";
 import { LotesScreen } from "./LotesScreen";
@@ -13755,6 +13758,12 @@ export default function App() {
                 }
               />
             )}
+            <Route
+              path="/fila-ritmo"
+              element={
+                <FilaRitmoScreen db={db} currentUser={currentUser} />
+              }
+            />
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "GERENCIA") && (
               <Route
@@ -13818,6 +13827,21 @@ export default function App() {
               to="/fila-producao"
               icon={<List size={24} />}
               label="Fila Prod."
+            />
+          )}
+
+          {(currentUser.role === "ADMIN" ||
+            currentUser.role === "PCP" ||
+            currentUser.role === "GERENCIA" ||
+            currentUser.role === "ENCARREGADO" ||
+            currentUser.role === "PRODUCAO" ||
+            currentUser.role === "SOLDA" ||
+            currentUser.role === "PINTURA" ||
+            currentUser.role === "CORTE_LASER") && (
+            <NavLink
+              to="/fila-ritmo"
+              icon={<Gauge size={24} />}
+              label="Ritmo & Fila"
             />
           )}
 

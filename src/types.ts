@@ -302,6 +302,7 @@ export interface ProductFlow {
   id: number;
   itemId: number;
   sectorIds: number[]; // Ordered array of sector IDs
+  sectorTimes?: Record<string, number>; // sectorId (string) -> standard cycle time in seconds
 }
 
 export interface ProductionBatch {

@@ -130,37 +130,62 @@ export function printElementById(elementId: string, docTitle: string = "Document
         width: 210mm !important;
         max-width: 210mm !important;
         height: auto !important;
+        min-height: 100% !important;
         margin: 0 auto !important;
         padding: 0 !important;
         box-sizing: border-box !important;
         background: white !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+        overflow: visible !important;
+      }
+      #print-container-wrapper #batch-printable-sheet-container,
+      #print-container-wrapper #acompanhamento-printable-sheet-container {
+        padding: 0 !important;
+        margin: 0 !important;
+        background: white !important;
+        background-color: white !important;
+        height: auto !important;
+        min-height: 100% !important;
+        overflow: visible !important;
+        gap: 0 !important;
       }
       #print-container-wrapper .pdf-page {
         width: 210mm !important;
-        height: 297mm !important;
+        height: 290mm !important;
+        max-height: 290mm !important;
         margin: 0 !important;
         box-sizing: border-box !important;
         page-break-after: always !important;
         break-after: page !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
         background: white !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: space-between !important;
+        overflow: hidden !important;
       }
       #print-container-wrapper .acomp-page {
         width: 210mm !important;
-        height: 297mm !important;
+        height: 290mm !important;
+        max-height: 290mm !important;
         margin: 0 !important;
         padding: 6mm 10mm !important;
         box-sizing: border-box !important;
         page-break-after: always !important;
         break-after: page !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        background: white !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: space-between !important;
-        background: white !important;
+        overflow: hidden !important;
+      }
+      #print-container-wrapper tr {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
       }
       /* Fallback padding for other standard A4 documents that are not pre-paged */
       #print-container-wrapper > *:not(#batch-printable-sheet-container):not(#acompanhamento-printable-sheet-container) {
@@ -209,6 +234,15 @@ export function printElementById(elementId: string, docTitle: string = "Document
 
   style.innerHTML = `
     @media print {
+      html, body {
+        height: auto !important;
+        min-height: 100% !important;
+        overflow: visible !important;
+        max-height: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
+      }
       body > *:not(#print-container-wrapper) {
         display: none !important;
       }
@@ -217,11 +251,6 @@ export function printElementById(elementId: string, docTitle: string = "Document
         visibility: visible;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
-      }
-      body {
-        background: white !important;
-        margin: 0 !important;
-        padding: 0 !important;
       }
     }
     @media screen {

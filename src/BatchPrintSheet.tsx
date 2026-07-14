@@ -102,8 +102,8 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
   const dateStr = new Date().toLocaleDateString("pt-BR");
   const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
-  const ITEMS_PER_FIRST_PAGE = 12;
-  const ITEMS_PER_NEXT_PAGE = 16;
+  const ITEMS_PER_FIRST_PAGE = 7;
+  const ITEMS_PER_NEXT_PAGE = 10;
 
   const pages: Order[][] = [];
   const remainingOrders = [...ordersToPrint];

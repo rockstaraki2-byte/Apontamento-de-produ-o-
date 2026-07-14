@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useDatabase } from "./useDatabase";
 import { User, Sector, ProductFlow, Customer, Order } from "./types";
 import {
@@ -1168,6 +1168,7 @@ export function PCPScreen({
     useState(false);
   const [replicateSuccessMsg, setReplicateSuccessMsg] = useState("");
   const [flowSectors, setFlowSectors] = useState<number[]>([]);
+  const [sectorTimes, setSectorTimes] = useState<Record<string, number>>({});
   const [draggedSectorIdx, setDraggedSectorIdx] = useState<number | null>(null);
   const [sectorCapacity, setSectorCapacity] = useState("");
 
@@ -1860,16 +1861,93 @@ export function PCPScreen({
     setEditSectorCapacity("");
   };
 
-  const handleAddFlow = () => {
-    if (!flowItemId || flowSectors.length === 0) return;
-    db.addProductFlow({
-      itemId: Number(flowItemId),
-      sectorIds: flowSectors,
+  const averageTimesBySector = useMemo(() => {
+    if (!flowItemId) return {} as Record<number, number>;
+    
+    const logsForProduct = db.logs.filter((log) => {
+      if (log.itemId === flowItemId) return true;
+      if (log.orderId) {
+        const o = db.orders.find((x) => x.id === log.orderId);
+        if (o && o.itemId === flowItemId) return true;
+      }
+      return false;
     });
+
+    const sectorStats: Record<number, { totalMillis: number; totalQty: number }> = {};
+
+    logsForProduct.forEach((log) => {
+      const duration = log.durationMillis || 0;
+      const qty =
+        (log.quantityProcessed || 0) +
+        (log.quantityCut || 0) +
+        (log.quantityPainted || 0) +
+        (log.quantityPacked || 0);
+
+      if (duration > 0 && qty > 0) {
+        let sectorId: number | null = null;
+        const emp = db.employees.find((e) => e.id === log.operatorId);
+        if (emp) {
+          sectorId = emp.sectorId;
+        } else {
+          const sec = db.sectors.find((s) => {
+            const sName = s.name.toLowerCase();
+            const pName = log.processName?.toLowerCase() || "";
+            const logType = log.type?.toLowerCase() || "";
+            return (
+              sName === pName ||
+              sName.includes(pName) ||
+              pName.includes(sName) ||
+              sName === logType ||
+              sName.includes(logType) ||
+              logType.includes(sName)
+            );
+          });
+          if (sec) sectorId = sec.id;
+        }
+
+        if (sectorId !== null) {
+          if (!sectorStats[sectorId]) {
+            sectorStats[sectorId] = { totalMillis: 0, totalQty: 0 };
+          }
+          sectorStats[sectorId].totalMillis += duration;
+          sectorStats[sectorId].totalQty += qty;
+        }
+      }
+    });
+
+    const averages: Record<number, number> = {};
+    Object.keys(sectorStats).forEach((sidStr) => {
+      const sid = Number(sidStr);
+      const stat = sectorStats[sid];
+      if (stat.totalQty > 0) {
+        averages[sid] = Math.round((stat.totalMillis / 1000) / stat.totalQty);
+      }
+    });
+
+    return averages;
+  }, [flowItemId, db.logs, db.orders, db.employees, db.sectors]);
+
+  const handleAddFlow = async () => {
+    if (!flowItemId || flowSectors.length === 0) return;
+    const existing = db.productFlows.find((f) => f.itemId === Number(flowItemId));
+    if (existing) {
+      await db.updateProductFlow({
+        ...existing,
+        sectorIds: flowSectors,
+        sectorTimes: sectorTimes,
+      });
+    } else {
+      await db.addProductFlow({
+        itemId: Number(flowItemId),
+        sectorIds: flowSectors,
+        sectorTimes: sectorTimes,
+      });
+    }
     setFlowItemId("");
     setFlowItemSearchTerm("");
     setFlowItemSearchOpen(false);
     setFlowSectors([]);
+    setSectorTimes({});
   };
 
   const handleReplicateFlow = async () => {
@@ -3000,6 +3078,14 @@ export function PCPScreen({
                                       `${i.code} - ${i.name}`,
                                     );
                                     setFlowItemSearchOpen(false);
+                                    const existing = db.productFlows.find((f) => f.itemId === i.id);
+                                    if (existing) {
+                                      setFlowSectors(existing.sectorIds);
+                                      setSectorTimes(existing.sectorTimes || {});
+                                    } else {
+                                      setFlowSectors([]);
+                                      setSectorTimes({});
+                                    }
                                   }}
                                   className={`w-full text-left px-3.5 py-2.5 border-b border-gray-100 text-xs font-medium transition-all ${isSelected ? "bg-indigo-50 text-indigo-900 border-l-4 border-l-indigo-600 font-bold" : "hover:bg-slate-50 text-gray-700"}`}
                                 >
@@ -3036,12 +3122,13 @@ export function PCPScreen({
                         ))}
                       </div>
                       {flowSectors.length > 0 && (
-                        <div className="bg-gray-50 border rounded p-2 flex flex-col gap-2">
-                          <span className="text-xs font-bold text-gray-500 uppercase">
-                            Ordem Final do Fluxo:
+                        <div className="bg-slate-50 border rounded-lg p-3 flex flex-col gap-2.5">
+                          <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block">
+                            Ordem Final do Fluxo & Tempos Padrão:
                           </span>
                           {flowSectors.map((sid, idx) => {
                             const sector = db.sectors.find((s) => s.id === sid);
+                            const avgSec = averageTimesBySector[sid];
                             return (
                               <div
                                 key={sid}
@@ -3065,10 +3152,35 @@ export function PCPScreen({
                                   setFlowSectors(newFlow);
                                 }}
                                 onDragEnd={() => setDraggedSectorIdx(null)}
-                                className="bg-white p-2 border rounded shadow-sm cursor-grab flex items-center gap-2 text-sm font-semibold active:cursor-grabbing"
+                                className="bg-white p-3 border border-slate-200 rounded-lg shadow-xs cursor-grab flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-bold active:cursor-grabbing hover:border-indigo-200 transition-colors"
                               >
-                                <span className="text-gray-400">☰</span>
-                                {idx + 1}. {sector?.name}
+                                <div className="flex items-center gap-2">
+                                  <span className="text-gray-400 font-mono">☰ {idx + 1}.</span>
+                                  <span className="text-slate-700 font-bold">{sector?.name}</span>
+                                  {avgSec !== undefined && (
+                                    <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono" title="Média calculada a partir de apontamentos anteriores">
+                                      Média Histórica: {avgSec >= 60 ? `${Math.floor(avgSec / 60)}m ${avgSec % 60}s` : `${avgSec}s`}/unid
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                                  <span className="text-[11px] text-slate-500 font-medium">Tempo Padrão:</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    placeholder={avgSec ? String(avgSec) : "Ex: 30"}
+                                    value={sectorTimes[sid] ?? ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value === "" ? 0 : Number(e.target.value);
+                                      setSectorTimes({
+                                        ...sectorTimes,
+                                        [sid]: val,
+                                      });
+                                    }}
+                                    className="w-16 p-1 text-xs border rounded text-right focus:ring-1 focus:ring-indigo-500 focus:outline-none bg-slate-50 text-slate-800 font-black"
+                                  />
+                                  <span className="text-[10px] text-slate-400 font-mono font-bold">seg/unid</span>
+                                </div>
                               </div>
                             );
                           })}
@@ -3224,11 +3336,12 @@ export function PCPScreen({
                     {db.productFlows.map((f) => {
                       const item = db.items.find((i) => i.id === f.itemId);
                       const sectors = f.sectorIds
-                        .map(
-                          (sid) =>
-                            db.sectors.find((s) => s.id === sid)?.name ||
-                            `Setor ${sid}`,
-                        )
+                        .map((sid) => {
+                          const sec = db.sectors.find((s) => s.id === sid);
+                          const secName = sec?.name || `Setor ${sid}`;
+                          const time = f.sectorTimes?.[String(sid)] || f.sectorTimes?.[sid];
+                          return time ? `${secName} (${time}s)` : secName;
+                        })
                         .join(" ➔ ");
                       return (
                         <div
