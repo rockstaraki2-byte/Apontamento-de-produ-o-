@@ -15,7 +15,12 @@ import {
   Clock,
   ChevronRight,
   TrendingDown,
-  Info
+  Info,
+  Zap,
+  Calendar,
+  Trash2,
+  Plus,
+  Sliders
 } from "lucide-react";
 import { useDatabase } from "./useDatabase";
 import type { User, Order, ProductionBatch, ProductionLog, ActiveTask } from "./types";
@@ -63,7 +68,7 @@ export function FilaRitmoScreen({
   db: ReturnType<typeof useDatabase>;
   currentUser: User;
 }) {
-  const [activeTab, setActiveTab] = useState<"FILA" | "MONITOR">("FILA");
+  const [activeTab, setActiveTab] = useState<"FILA" | "MONITOR" | "PROGRAMAR">("FILA");
   
   // Selected Sector for the queue view
   const [selectedSectorId, setSelectedSectorId] = useState<number>(() => {
@@ -72,6 +77,13 @@ export function FilaRitmoScreen({
     if (emp && emp.sectorId) return emp.sectorId;
     return db.sectors[0]?.id || 0;
   });
+
+  // Programmed orders/batches list for daily scheduling simulator
+  const [programmedList, setProgrammedList] = useState<{ orderId: number; targetQty: number }[]>([]);
+  const [plannerOperators, setPlannerOperators] = useState<number>(1);
+  const [plannerShiftHours, setPlannerShiftHours] = useState<number>(8);
+  const [plannerEfficiency, setPlannerEfficiency] = useState<number>(85); // Expected rhythm/efficiency %
+  const [plannerStartTime, setPlannerStartTime] = useState<string>("08:00");
 
   // Local live timer tick state
   const [now, setNow] = useState(Date.now());
@@ -89,11 +101,54 @@ export function FilaRitmoScreen({
   } | null>(null);
   const [logQuantity, setLogQuantity] = useState<string>("");
   const [isSubmittingLog, setIsSubmittingLog] = useState(false);
+  const [manualMin, setManualMin] = useState<string>("");
+  const [manualSec, setManualSec] = useState<string>("");
+  const [isDirectLog, setIsDirectLog] = useState<boolean>(false);
 
   // Sector helper
   const selectedSector = useMemo(() => {
     return db.sectors.find((s) => s.id === selectedSectorId);
   }, [db.sectors, selectedSectorId]);
+
+  // Dynamic historical average calculation from previous logs
+  const historicalAverages = useMemo(() => {
+    if (!selectedSector) return {};
+    
+    // Determine possible process names or log types to match
+    const sectorFields = getSectorFields(selectedSector.name);
+    const sNameLower = selectedSector.name.toLowerCase();
+
+    const sectorLogs = db.logs.filter((l) => {
+      const pName = l.processName?.toLowerCase() || "";
+      const logType = l.type?.toLowerCase() || "";
+      return (
+        sNameLower === pName || 
+        sNameLower === logType || 
+        sNameLower.includes(pName) || 
+        pName.includes(sNameLower) ||
+        logType === sectorFields.logType.toLowerCase()
+      );
+    });
+
+    const sumsByItem: Record<number, { totalMillis: number; totalQty: number }> = {};
+    sectorLogs.forEach((l) => {
+      const qty = (l.quantityProcessed || 0) + (l.quantityCut || 0) + (l.quantityPainted || 0) + (l.quantityPacked || 0);
+      if (qty > 0 && l.durationMillis && l.itemId) {
+        if (!sumsByItem[l.itemId]) {
+          sumsByItem[l.itemId] = { totalMillis: 0, totalQty: 0 };
+        }
+        sumsByItem[l.itemId].totalMillis += l.durationMillis;
+        sumsByItem[l.itemId].totalQty += qty;
+      }
+    });
+
+    const averages: Record<number, number> = {};
+    Object.entries(sumsByItem).forEach(([itemIdStr, data]) => {
+      const itemId = Number(itemIdStr);
+      averages[itemId] = Math.round((data.totalMillis / 1000) / data.totalQty);
+    });
+    return averages;
+  }, [db.logs, selectedSector]);
 
   // Liberated orders for selected sector queue
   const queueOrders = useMemo(() => {
@@ -144,8 +199,10 @@ export function FilaRitmoScreen({
   };
 
   // Handles starting a timer for an order
-  const handleStartProduction = async (order: Order) => {
+  const handleStartProduction = async (order: Order, offsetMinutes = 0) => {
     if (!selectedSector) return;
+    
+    const startTime = Date.now() - (offsetMinutes * 60 * 1000);
     
     // Create an active pack
     const activePackData: Omit<ActiveTask, "id"> = {
@@ -154,7 +211,7 @@ export function FilaRitmoScreen({
       size: order.size || "",
       variation: order.variation || "",
       operatorId: currentUser.id,
-      startTime: Date.now(),
+      startTime: startTime,
       type: getSectorFields(selectedSector.name).logType,
       processName: selectedSector.name,
       // Custom tracking properties
@@ -182,8 +239,10 @@ export function FilaRitmoScreen({
   };
 
   // Prepares the log modal
-  const handleOpenCompleteModal = (order: Order, activePack: ActiveTask) => {
+  const handleOpenCompleteModal = (order: Order, activePack: ActiveTask, isDirect = false) => {
     if (!selectedSector) return;
+    
+    setIsDirectLog(isDirect);
     setCompletingTask({
       order,
       activePack,
@@ -196,6 +255,35 @@ export function FilaRitmoScreen({
     const completedQty = Number(order[sectorConfig.qtyField]) || 0;
     const remaining = Math.max(0, order.totalQuantity - completedQty);
     setLogQuantity(String(remaining));
+
+    if (isDirect) {
+      // Direct log: estimate duration based on standard cycle time
+      const stdTimeSec = getStandardTimeForProduct(order.itemId, selectedSectorId);
+      const estTotalSec = (stdTimeSec > 0 ? stdTimeSec : 30) * remaining;
+      const m = Math.floor(estTotalSec / 60);
+      const s = estTotalSec % 60;
+      setManualMin(String(m));
+      setManualSec(String(s));
+    } else {
+      // Normal log: calculate elapsed time from activePack
+      const elapsedSeconds = Math.max(1, Math.floor((Date.now() - activePack.startTime) / 1000));
+      const m = Math.floor(elapsedSeconds / 60);
+      const s = elapsedSeconds % 60;
+      setManualMin(String(m));
+      setManualSec(String(s));
+    }
+  };
+
+  // Helper to handle manual quantity changes and auto-update duration if direct log
+  const handleQuantityChange = (valStr: string) => {
+    setLogQuantity(valStr);
+    const qty = Number(valStr);
+    if (isDirectLog && !isNaN(qty) && qty > 0 && completingTask) {
+      const stdTimeSec = getStandardTimeForProduct(completingTask.order.itemId, selectedSectorId);
+      const estTotalSec = (stdTimeSec > 0 ? stdTimeSec : 30) * qty;
+      setManualMin(String(Math.floor(estTotalSec / 60)));
+      setManualSec(String(estTotalSec % 60));
+    }
   };
 
   // Submits the finished production log
@@ -207,15 +295,23 @@ export function FilaRitmoScreen({
       return;
     }
 
+    const minNum = Number(manualMin) || 0;
+    const secNum = Number(manualSec) || 0;
+    const totalSeconds = (minNum * 60) + secNum;
+    if (totalSeconds <= 0) {
+      alert("Por favor, insira um tempo de produção válido (maior que 0s).");
+      return;
+    }
+
     setIsSubmittingLog(true);
     try {
       const { order, activePack, sectorName } = completingTask;
-      const elapsedMillis = Date.now() - activePack.startTime;
+      const elapsedMillis = totalSeconds * 1000;
       const sectorConfig = getSectorFields(sectorName);
 
       // Create new Production Log
       const newLog: ProductionLog = {
-        id: Date.now(),
+        id: Date.now() + Math.floor(Math.random() * 1000),
         operatorId: currentUser.id,
         itemId: order.itemId,
         orderId: order.id,
@@ -246,16 +342,101 @@ export function FilaRitmoScreen({
 
       await db.updateOrders([updatedOrder]);
 
-      // Remove Active Timer Session
-      await db.removeActivePack(activePack.id);
+      // Remove Active Timer Session only if we are NOT in direct log mode and we had a valid active pack
+      if (!isDirectLog && activePack && activePack.id !== 0) {
+        await db.removeActivePack(activePack.id);
+      }
 
       setCompletingTask(null);
       setLogQuantity("");
+      setManualMin("");
+      setManualSec("");
+      setIsDirectLog(false);
       alert("Apontamento registrado com sucesso!");
     } catch (e: any) {
       alert("Erro ao salvar apontamento: " + e.message);
     } finally {
       setIsSubmittingLog(false);
+    }
+  };
+
+  // PROGRAMMING / PLANNING HELPERS
+  const handleAddToProgram = (orderId: number, targetQty: number) => {
+    setProgrammedList((prev) => {
+      if (prev.some((p) => p.orderId === orderId)) return prev;
+      return [...prev, { orderId, targetQty }];
+    });
+  };
+
+  const handleRemoveFromProgram = (orderId: number) => {
+    setProgrammedList((prev) => prev.filter((p) => p.orderId !== orderId));
+  };
+
+  const handleUpdateProgramQty = (orderId: number, qty: number) => {
+    setProgrammedList((prev) =>
+      prev.map((p) => (p.orderId === orderId ? { ...p, targetQty: qty } : p))
+    );
+  };
+
+  const handleAutoProgramAll = () => {
+    const sectorConfig = getSectorFields(selectedSector?.name || "");
+    const listToAdd = queueOrders.map((order) => {
+      const completedQty = Number(order[sectorConfig.qtyField]) || 0;
+      const remainingQty = Math.max(0, order.totalQuantity - completedQty);
+      return {
+        orderId: order.id,
+        targetQty: remainingQty,
+      };
+    }).filter((item) => item.targetQty > 0);
+
+    setProgrammedList(listToAdd);
+  };
+
+  const handleClearProgram = () => {
+    setProgrammedList([]);
+  };
+
+  const handleLaunchProgrammedProduction = async () => {
+    if (!selectedSector || programmedList.length === 0) return;
+    
+    let countStarted = 0;
+    for (const pItem of programmedList) {
+      const order = db.orders.find((o) => o.id === pItem.orderId);
+      if (!order) continue;
+      
+      // Check if already active
+      const isAlreadyActive = db.activePacks.some(
+        (p) => p.associatedBatchId === order.id && p.processName === selectedSector.name
+      );
+      if (isAlreadyActive) continue;
+      
+      const activePackData: Omit<ActiveTask, "id"> = {
+        itemId: order.itemId,
+        color: order.color || "",
+        size: order.size || "",
+        variation: order.variation || "",
+        operatorId: currentUser.id,
+        startTime: Date.now(),
+        type: getSectorFields(selectedSector.name).logType,
+        processName: selectedSector.name,
+        associatedBatchId: order.id,
+        associatedBatchName: order.customerName,
+        partialQuantity: order.totalQuantity,
+      };
+      
+      try {
+        await db.addActivePack(activePackData as any);
+        countStarted++;
+      } catch (e) {
+        console.error("Error launching programmed item", e);
+      }
+    }
+    
+    if (countStarted > 0) {
+      alert(`${countStarted} lote(s) de produção foram iniciados no cronômetro do setor ${selectedSector.name}!`);
+      setActiveTab("FILA");
+    } else {
+      alert("Todos os lotes da programação já estão com cronômetro ativo.");
     }
   };
 
@@ -349,6 +530,68 @@ export function FilaRitmoScreen({
     });
   }, [db.activePacks, db.employees, db.items, db.sectors, now]);
 
+  // Planner stats for the daily scheduling simulator
+  const plannerStats = useMemo(() => {
+    let totalStdSeconds = 0;
+    let totalHistSeconds = 0;
+    let hasHistoricalData = false;
+    let totalQty = 0;
+
+    const itemsCalculations = programmedList.map((p) => {
+      const order = db.orders.find((o) => o.id === p.orderId);
+      const item = order ? db.items.find((i) => i.id === order.itemId) : null;
+      
+      const stdSec = (order && selectedSectorId) ? getStandardTimeForProduct(order.itemId, selectedSectorId) : 30;
+      const actualStdSec = stdSec > 0 ? stdSec : 30; // 30s default fallback
+      const itemStdTotalSec = actualStdSec * p.targetQty;
+      totalStdSeconds += itemStdTotalSec;
+
+      const histSec = historicalAverages[order?.itemId || 0];
+      let itemHistTotalSec = 0;
+      if (histSec) {
+        itemHistTotalSec = histSec * p.targetQty;
+        totalHistSeconds += itemHistTotalSec;
+        hasHistoricalData = true;
+      } else {
+        itemHistTotalSec = actualStdSec * p.targetQty; // fallback to standard
+        totalHistSeconds += itemHistTotalSec;
+      }
+
+      totalQty += p.targetQty;
+
+      return {
+        ...p,
+        order,
+        item,
+        stdSec: actualStdSec,
+        histSec: histSec || null,
+        itemStdTotalSec,
+        itemHistTotalSec,
+      };
+    });
+
+    // Adjust by plannerEfficiency (100% means direct standard, 85% means divide by 0.85 to increase required hours)
+    const efficiencyFactor = (plannerEfficiency || 100) / 100;
+    const adjustedStdSeconds = efficiencyFactor > 0 ? (totalStdSeconds / efficiencyFactor) : totalStdSeconds;
+    const adjustedHistSeconds = efficiencyFactor > 0 ? (totalHistSeconds / efficiencyFactor) : totalHistSeconds;
+
+    // Time per operator (divide by number of operators)
+    const durationStdSecondsPerOperator = plannerOperators > 0 ? (adjustedStdSeconds / plannerOperators) : adjustedStdSeconds;
+    const durationHistSecondsPerOperator = plannerOperators > 0 ? (adjustedHistSeconds / plannerOperators) : adjustedHistSeconds;
+
+    return {
+      items: itemsCalculations,
+      totalQty,
+      totalStdSeconds,
+      totalHistSeconds,
+      adjustedStdSeconds,
+      adjustedHistSeconds,
+      hasHistoricalData,
+      durationStdSecondsPerOperator,
+      durationHistSecondsPerOperator,
+    };
+  }, [programmedList, db.orders, db.items, selectedSectorId, plannerOperators, plannerEfficiency, historicalAverages]);
+
   return (
     <ScreenLayout>
       <ScreenHeader
@@ -358,7 +601,7 @@ export function FilaRitmoScreen({
       />
 
       <div className="flex gap-2 p-4 bg-white border-b border-slate-100 sticky top-0 z-30 justify-between items-center">
-        <div className="flex gap-1.5">
+        <div className="flex gap-1.5 flex-wrap">
           <button
             onClick={() => setActiveTab("FILA")}
             className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
@@ -381,14 +624,28 @@ export function FilaRitmoScreen({
             <Gauge size={15} />
             Monitor de Ritmo
           </button>
+          <button
+            onClick={() => setActiveTab("PROGRAMAR")}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeTab === "PROGRAMAR"
+                ? "bg-indigo-650 text-white shadow-md shadow-indigo-100"
+                : "text-slate-600 hover:bg-slate-50 border border-slate-200"
+            }`}
+          >
+            <Calendar size={15} />
+            Planejar & Simular Dia
+          </button>
         </div>
 
-        {activeTab === "FILA" && (
+        {activeTab !== "MONITOR" && (
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-slate-500 font-bold hidden sm:inline">Setor:</span>
             <select
               value={selectedSectorId}
-              onChange={(e) => setSelectedSectorId(Number(e.target.value))}
+              onChange={(e) => {
+                setSelectedSectorId(Number(e.target.value));
+                setProgrammedList([]); // Clear planning when changing sector to avoid cross-sector order confusion
+              }}
               className="p-1.5 text-xs font-semibold border rounded-lg bg-slate-50 text-slate-700 outline-none focus:ring-1 focus:ring-indigo-500"
             >
               {db.sectors.map((s) => (
@@ -587,9 +844,9 @@ export function FilaRitmoScreen({
                       )}
 
                       {/* ACTIONS */}
-                      <div className="flex gap-2 border-t border-slate-100 pt-3">
+                      <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
                         {activePack ? (
-                          <>
+                          <div className="flex gap-2">
                             <button
                               onClick={() => handleCancelTimer(activePack.id)}
                               className="flex-1 py-2 text-xs font-bold border border-red-250 text-red-650 hover:bg-red-50 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
@@ -598,21 +855,62 @@ export function FilaRitmoScreen({
                               Descartar Tempo
                             </button>
                             <button
-                              onClick={() => handleOpenCompleteModal(order, activePack)}
+                              onClick={() => handleOpenCompleteModal(order, activePack, false)}
                               className="flex-1 py-2 text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg shadow-sm transition-colors flex items-center justify-center gap-1 cursor-pointer"
                             >
                               <Check size={14} />
                               Apontar Produção
                             </button>
-                          </>
+                          </div>
                         ) : (
-                          <button
-                            onClick={() => handleStartProduction(order)}
-                            className="w-full py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg shadow-md shadow-indigo-150 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer hover:shadow-lg"
-                          >
-                            <Play size={14} fill="white" />
-                            Iniciar Produção (Ativar Cronômetro)
-                          </button>
+                          <div className="flex flex-col gap-2 w-full">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleStartProduction(order, 0)}
+                                className="flex-1 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg shadow-md shadow-indigo-150 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer hover:shadow-lg"
+                              >
+                                <Play size={13} fill="white" />
+                                Iniciar Cronômetro
+                              </button>
+                              <button
+                                onClick={() => {
+                                  handleOpenCompleteModal(order, {
+                                    id: 0,
+                                    itemId: order.itemId,
+                                    color: order.color || "",
+                                    size: order.size || "",
+                                    variation: order.variation || "",
+                                    operatorId: currentUser.id,
+                                    startTime: Date.now(),
+                                    type: getSectorFields(selectedSector?.name || "").logType,
+                                    processName: selectedSector?.name || "",
+                                  }, true);
+                                }}
+                                className="flex-1 py-2 border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                              >
+                                <Zap size={13} className="text-indigo-600 fill-indigo-100" />
+                                Apontar Sem Cronômetro
+                              </button>
+                            </div>
+                            
+                            <button
+                              onClick={() => {
+                                const minStr = window.prompt("Há quantos minutos você iniciou este trabalho fisicamente? (Ex: 10, 15, 30, etc.)", "15");
+                                if (minStr !== null) {
+                                  const mins = parseInt(minStr, 10);
+                                  if (!isNaN(mins) && mins >= 0) {
+                                    handleStartProduction(order, mins);
+                                  } else {
+                                    alert("Por favor insira um número válido de minutos.");
+                                  }
+                                }
+                              }}
+                              className="w-full py-1 text-[10px] font-semibold text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-dashed border-slate-200 rounded-md transition-all flex items-center justify-center gap-1 cursor-pointer"
+                            >
+                              <Clock size={11} />
+                              Iniciar com Tempo Retroativo (Já em andamento)
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -621,7 +919,7 @@ export function FilaRitmoScreen({
               </div>
             )}
           </div>
-        ) : (
+        ) : activeTab === "MONITOR" ? (
           <div className="p-4 flex flex-col gap-6 max-w-5xl mx-auto">
             {/* SUPERVISOR STATS CARDS */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -812,6 +1110,450 @@ export function FilaRitmoScreen({
               )}
             </div>
           </div>
+        ) : (
+          /* ========================================================
+             PLANNER & DAILY PRODUCTION SIMULATOR TAB
+             ======================================================== */
+          <div className="p-4 flex flex-col gap-6 max-w-6xl mx-auto animate-in fade-in duration-200">
+            {/* Header info bar */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="flex gap-3">
+                <div className="h-9 w-9 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-650 shrink-0">
+                  <Calendar size={18} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-800">
+                    Simulador de Carga & Programação Diária: <span className="text-indigo-650">{selectedSector?.name || "Setor"}</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Monte a sua programação diária selecionando lotes da fila. Estime a duração e projete o horário de encerramento real da produção.
+                  </p>
+                </div>
+              </div>
+
+              {queueOrders.length > 0 && (
+                <button
+                  onClick={handleAutoProgramAll}
+                  className="px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus size={13} />
+                  Programar Toda a Fila
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {/* LEFT COLUMN: ACTIVE PLANE AND QUEUE SELECTOR */}
+              <div className="lg:col-span-2 flex flex-col gap-5">
+                
+                {/* 1. SECTOR QUEUE SELECTOR */}
+                <div id="planner_add_card" className="bg-white border rounded-xl p-4 shadow-xs">
+                  <h4 className="font-black text-xs text-slate-400 uppercase tracking-wider mb-3">
+                    1. Adicionar Lotes à Programação de Hoje
+                  </h4>
+
+                  {queueOrders.length === 0 ? (
+                    <div className="p-4 border border-dashed rounded-lg text-center text-xs text-slate-400 italic">
+                      Nenhum lote liberado e ativo na fila deste setor no momento. Vá na aba de Lotes de Produção para liberar novos lotes.
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-1">
+                      {queueOrders.map((order) => {
+                        const sectorConfig = getSectorFields(selectedSector?.name || "");
+                        const completedQty = Number(order[sectorConfig.qtyField]) || 0;
+                        const remainingQty = Math.max(0, order.totalQuantity - completedQty);
+                        const isAlreadyProgrammed = programmedList.some((p) => p.orderId === order.id);
+
+                        if (remainingQty <= 0) return null;
+
+                        return (
+                          <div 
+                            key={order.id} 
+                            className="flex items-center justify-between p-2.5 border rounded-lg hover:bg-slate-50/50 text-xs transition"
+                          >
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-bold text-slate-700 truncate">
+                                OP #{order.id} - {order.customerName}
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-medium truncate">
+                                {order.customProductName || "Item"} {order.color ? `| Cor: ${order.color}` : ""} {order.size ? `| Tam: ${order.size}` : ""}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="font-black text-slate-600">
+                                {remainingQty} pçs restantes
+                              </span>
+                              {isAlreadyProgrammed ? (
+                                <span className="bg-emerald-50 text-emerald-700 text-[10px] font-extrabold px-2 py-1 rounded-md border border-emerald-100 flex items-center gap-1">
+                                  <Check size={11} /> No Plano
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleAddToProgram(order.id, remainingQty)}
+                                  className="px-2.5 py-1 bg-indigo-600 text-white hover:bg-indigo-700 rounded-md font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
+                                >
+                                  <Plus size={11} /> Programar
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. PROGRAMMED ITEMS CONTAINER */}
+                <div id="planner_active_plan_card" className="bg-white border rounded-xl p-4 shadow-xs">
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="font-black text-xs text-slate-400 uppercase tracking-wider">
+                      2. Itens Programados para Produção
+                    </h4>
+                    {programmedList.length > 0 && (
+                      <button
+                        onClick={handleClearProgram}
+                        className="text-red-650 hover:text-red-800 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash2 size={12} />
+                        Limpar Plano
+                      </button>
+                    )}
+                  </div>
+
+                  {plannerStats.items.length === 0 ? (
+                    <div className="p-12 border border-dashed border-slate-200 rounded-xl text-center flex flex-col items-center justify-center gap-2">
+                      <div className="h-12 w-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400">
+                        <Calendar size={22} />
+                      </div>
+                      <span className="text-xs font-bold text-slate-600">
+                        Seu plano de hoje está vazio
+                      </span>
+                      <p className="text-[11px] text-slate-400 max-w-xs leading-relaxed">
+                        Selecione lotes da fila acima clicando em <strong>"+ Programar"</strong> ou em <strong>"Programar Toda a Fila"</strong> para iniciar a simulação e planejar o dia!
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-150 font-bold text-slate-500">
+                            <th className="p-2.5">OP / Cliente</th>
+                            <th className="p-2.5">Qtd Meta</th>
+                            <th className="p-2.5">Ciclo Padrão</th>
+                            <th className="p-2.5">Ciclo Histórico</th>
+                            <th className="p-2.5 text-right">Tempo Total</th>
+                            <th className="p-2.5 text-center">Ações</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-medium text-slate-600">
+                          {plannerStats.items.map((item) => {
+                            if (!item.order) return null;
+                            const sectorConfig = getSectorFields(selectedSector?.name || "");
+                            const completedQty = Number(item.order[sectorConfig.qtyField]) || 0;
+                            const maxRemaining = Math.max(0, item.order.totalQuantity - completedQty);
+
+                            return (
+                              <tr key={item.orderId} className="hover:bg-slate-50/30">
+                                <td className="p-2.5 max-w-44">
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="font-bold text-slate-800 truncate">
+                                      OP #{item.orderId} - {item.order.customerName}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 truncate">
+                                      {item.item?.name} {item.order.color ? `| ${item.order.color}` : ""}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="p-2.5">
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max={maxRemaining}
+                                      value={item.targetQty}
+                                      onChange={(e) => {
+                                        let val = parseInt(e.target.value, 10);
+                                        if (isNaN(val) || val < 1) val = 1;
+                                        if (val > maxRemaining) val = maxRemaining;
+                                        handleUpdateProgramQty(item.orderId, val);
+                                      }}
+                                      className="w-14 border rounded p-1 text-center font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                    <button
+                                      onClick={() => handleUpdateProgramQty(item.orderId, maxRemaining)}
+                                      title="Usar quantidade restante máxima"
+                                      className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-1 py-0.5 rounded transition"
+                                    >
+                                      MÁX
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="p-2.5 font-mono">
+                                  {item.stdSec}s
+                                </td>
+                                <td className="p-2.5">
+                                  {item.histSec ? (
+                                    <span className="font-mono text-indigo-700 bg-indigo-50 font-bold px-1.5 py-0.5 rounded text-[10px]" title="Calculado com base em seus apontamentos passados">
+                                      {item.histSec}s méd.
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 italic text-[10px]">Sem histórico</span>
+                                  )}
+                                </td>
+                                <td className="p-2.5 font-mono font-bold text-slate-800 text-right">
+                                  {formatSeconds(item.itemStdTotalSec)}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  <button
+                                    onClick={() => handleRemoveFromProgram(item.orderId)}
+                                    className="p-1 text-slate-400 hover:text-red-650 hover:bg-red-50 rounded transition cursor-pointer"
+                                    title="Remover do plano"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* RIGHT COLUMN: SIMULATOR PANEL */}
+              <div className="flex flex-col gap-5">
+                <div id="planner_sidebar_card" className="bg-white border rounded-xl p-4 shadow-xs flex flex-col gap-4">
+                  <h4 className="font-black text-xs text-slate-400 uppercase tracking-wider border-b pb-2 flex items-center gap-1.5">
+                    <Sliders size={14} className="text-slate-500" />
+                    Parâmetros da Produção
+                  </h4>
+
+                  {/* Operadores ativos */}
+                  <div id="planner_operators_input">
+                    <label className="text-xs font-bold text-slate-600 block mb-1">
+                      Operadores Ativos Hoje:
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setPlannerOperators((prev) => Math.max(1, prev - 1))}
+                        className="h-8 w-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm transition"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        value={plannerOperators}
+                        onChange={(e) => setPlannerOperators(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        className="flex-1 h-8 border rounded-lg text-center font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                      <button
+                        onClick={() => setPlannerOperators((prev) => prev + 1)}
+                        className="h-8 w-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm transition"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <span className="text-[10px] text-slate-400 block mt-1">
+                      Define em quantos operadores em paralelo a carga de trabalho será distribuída.
+                    </span>
+                  </div>
+
+                  {/* Eficiência esperada */}
+                  <div id="planner_efficiency_select">
+                    <label className="text-xs font-bold text-slate-600 block mb-1">
+                      Eficiência Estimada do Setor:
+                    </label>
+                    <select
+                      value={plannerEfficiency}
+                      onChange={(e) => setPlannerEfficiency(Number(e.target.value))}
+                      className="w-full h-8 border rounded-lg px-2 text-xs font-bold text-slate-700 bg-slate-50 outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="100">100% - Ritmo Teórico Padrão</option>
+                      <option value="90">90% - Ritmo Excelente</option>
+                      <option value="85">85% - Ritmo Prático Saudável (Recomendado)</option>
+                      <option value="70">70% - Ritmo Moderado (Com Setups e Paradas)</option>
+                      <option value="55">55% - Ritmo Lento / Gargalo</option>
+                    </select>
+                    <span className="text-[10px] text-slate-400 block mt-1">
+                      Ajusta o tempo de produção para contemplar paradas, fadiga ou setups.
+                    </span>
+                  </div>
+
+                  {/* Início de produção e jornada */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div id="planner_start_time_input">
+                      <label className="text-xs font-bold text-slate-600 block mb-1">
+                        Horário de Início:
+                      </label>
+                      <input
+                        type="time"
+                        value={plannerStartTime}
+                        onChange={(e) => setPlannerStartTime(e.target.value)}
+                        className="w-full h-8 border rounded-lg px-2 text-xs font-mono font-bold text-slate-700 outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div id="planner_shift_hours_input">
+                      <label className="text-xs font-bold text-slate-600 block mb-1">
+                        Jornada de Trabalho:
+                      </label>
+                      <select
+                        value={plannerShiftHours}
+                        onChange={(e) => setPlannerShiftHours(Number(e.target.value))}
+                        className="w-full h-8 border rounded-lg px-2 text-xs font-bold text-slate-700 bg-slate-50 outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="4">4 horas</option>
+                        <option value="6">6 horas</option>
+                        <option value="8">8 horas (Turno Normal)</option>
+                        <option value="9">9 horas</option>
+                        <option value="10">10 horas</option>
+                        <option value="12">12 horas</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* RESULTS SUMMARY CARD */}
+                <div id="planner_results_card" className="bg-gradient-to-br from-indigo-950 to-indigo-900 text-white rounded-xl p-4 shadow-md">
+                  <h4 className="font-extrabold text-xs text-indigo-200 uppercase tracking-wider mb-3 flex items-center gap-1.5 border-b border-indigo-800 pb-2">
+                    <TrendingUp size={14} />
+                    Resultado da Simulação
+                  </h4>
+
+                  <div className="flex flex-col gap-3.5 text-xs">
+                    <div className="flex justify-between border-b border-indigo-800/40 pb-2">
+                      <span className="text-indigo-200">Total de Peças Planejadas:</span>
+                      <span className="font-extrabold text-white text-sm">{plannerStats.totalQty} pçs</span>
+                    </div>
+
+                    <div className="flex justify-between border-b border-indigo-800/40 pb-2">
+                      <span className="text-indigo-200">Tempo Total Padrão (100%):</span>
+                      <span className="font-bold text-white font-mono">{formatSeconds(plannerStats.totalStdSeconds)}</span>
+                    </div>
+
+                    <div className="flex justify-between border-b border-indigo-800/40 pb-2">
+                      <span className="text-indigo-200">Tempo Ajustado Eficiência:</span>
+                      <span className="font-bold text-indigo-150 font-mono" title={`Considerando ${plannerEfficiency}% de eficiência`}>
+                        {formatSeconds(Math.round(plannerStats.adjustedStdSeconds))}
+                      </span>
+                    </div>
+
+                    <div className="bg-indigo-900/60 rounded-lg p-3 border border-indigo-700/30 flex flex-col gap-1.5">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider">Carga por Operador:</span>
+                        <span className="font-black text-indigo-400 text-sm font-mono">
+                          {formatSeconds(Math.round(plannerStats.durationStdSecondsPerOperator))}
+                        </span>
+                      </div>
+                      
+                      {/* Estimate completion date */}
+                      {programmedList.length > 0 && (
+                        <div className="text-[11px] border-t border-indigo-800/50 pt-1.5 mt-1 text-indigo-150">
+                          <div>
+                            ➔ Ritmo Padrão: Concluirá às <strong className="text-white font-mono">
+                              {(() => {
+                                const [hStr, mStr] = plannerStartTime.split(":");
+                                const h = parseInt(hStr, 10) || 8;
+                                const m = parseInt(mStr, 10) || 0;
+                                const startDate = new Date();
+                                startDate.setHours(h, m, 0, 0);
+                                const completionMs = startDate.getTime() + (plannerStats.durationStdSecondsPerOperator * 1000);
+                                const compDate = new Date(completionMs);
+                                return compDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+                              })()}
+                            </strong>
+                          </div>
+
+                          {plannerStats.hasHistoricalData && (
+                            <div className="mt-1 text-indigo-300">
+                              ➔ Ritmo Histórico Médio: Concluirá às <strong className="text-indigo-200 font-mono">
+                                {(() => {
+                                  const [hStr, mStr] = plannerStartTime.split(":");
+                                  const h = parseInt(hStr, 10) || 8;
+                                  const m = parseInt(mStr, 10) || 0;
+                                  const startDate = new Date();
+                                  startDate.setHours(h, m, 0, 0);
+                                  const completionMs = startDate.getTime() + (plannerStats.durationHistSecondsPerOperator * 1000);
+                                  const compDate = new Date(completionMs);
+                                  return compDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+                                })()}
+                              </strong>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Capacity indicators progress bar */}
+                    {programmedList.length > 0 && (
+                      <div className="mt-1">
+                        <div className="flex justify-between text-[10px] text-indigo-200 font-bold uppercase mb-1">
+                          <span>Ocupação da Jornada ({plannerShiftHours}h)</span>
+                          <span>
+                            {Math.min(150, Math.round((plannerStats.durationStdSecondsPerOperator / (plannerShiftHours * 3600)) * 100))}%
+                          </span>
+                        </div>
+                        
+                        {(() => {
+                          const shiftSeconds = plannerShiftHours * 3600;
+                          const ratio = shiftSeconds > 0 ? (plannerStats.durationStdSecondsPerOperator / shiftSeconds) * 100 : 0;
+                          const pct = Math.min(100, ratio);
+                          const isOverload = ratio > 100;
+
+                          return (
+                            <div className="flex flex-col gap-2">
+                              <div className="w-full bg-indigo-950 rounded-full h-2 overflow-hidden border border-indigo-800/40">
+                                <div 
+                                  className={`h-full transition-all duration-500 rounded-full ${
+                                    isOverload 
+                                      ? "bg-red-500" 
+                                      : ratio > 80 
+                                      ? "bg-amber-400" 
+                                      : "bg-emerald-400"
+                                  }`}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+
+                              {isOverload ? (
+                                <div className="bg-red-950/80 border border-red-800 text-red-200 text-[10px] font-bold p-2.5 rounded-lg">
+                                  ⚠️ SOBRECARGA! A carga excede {plannerShiftHours}h de jornada. Considere aumentar operadores ou dividir o lote.
+                                </div>
+                              ) : ratio > 80 ? (
+                                <div className="bg-amber-950/40 border border-amber-800/60 text-amber-200 text-[10px] font-bold p-2.5 rounded-lg">
+                                  ⚡ JORNADA QUASE COMPLETA! Ocupa quase todo o turno planejado de {plannerShiftHours}h.
+                                </div>
+                              ) : (
+                                <div className="bg-emerald-950/40 border border-emerald-800/60 text-emerald-200 text-[10px] font-bold p-2.5 rounded-lg">
+                                  ✓ CAPACIDADE ADEQUADA! A produção cabe perfeitamente na jornada de {plannerShiftHours}h.
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Launch button */}
+                    {programmedList.length > 0 && (
+                      <button
+                        id="planner_start_btn"
+                        onClick={handleLaunchProgrammedProduction}
+                        className="w-full py-3 mt-2 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-indigo-950 hover:text-indigo-950 font-black text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        <Play size={14} fill="currentColor" />
+                        Salvar e Iniciar Lotes no Cronômetro
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
         )}
       </ScrollContainer>
 
@@ -844,12 +1586,14 @@ export function FilaRitmoScreen({
                     {completingTask.order.customProductName || "Item"}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="font-bold">Tempo Decorrido:</span>
-                  <span className="font-mono font-black text-indigo-700">
-                    {formatSeconds(Math.floor((Date.now() - completingTask.activePack.startTime) / 1000))}
-                  </span>
-                </div>
+                {!isDirectLog && (
+                  <div className="flex justify-between">
+                    <span className="font-bold">Tempo do Cronômetro:</span>
+                    <span className="font-mono font-bold text-indigo-700">
+                      {formatSeconds(Math.floor((Date.now() - completingTask.activePack.startTime) / 1000))}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -861,11 +1605,52 @@ export function FilaRitmoScreen({
                   min="1"
                   placeholder="Ex: 10"
                   value={logQuantity}
-                  onChange={(e) => setLogQuantity(e.target.value)}
+                  onChange={(e) => handleQuantityChange(e.target.value)}
                   className="w-full border rounded-lg p-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                 />
                 <span className="text-[10px] text-slate-400 block mt-1">
-                  Insira a quantidade de peças processadas e finalizadas neste ciclo de tempo.
+                  Insira a quantidade de peças processadas e finalizadas neste ciclo.
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                  Tempo Efetivo de Operação (Gasto)
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={manualMin}
+                        onChange={(e) => setManualMin(e.target.value)}
+                        className="w-full border rounded-lg p-2.5 pr-8 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-center"
+                      />
+                      <span className="absolute right-2.5 top-3.5 text-[10px] font-bold text-slate-400">min</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="59"
+                        placeholder="0"
+                        value={manualSec}
+                        onChange={(e) => setManualSec(e.target.value)}
+                        className="w-full border rounded-lg p-2.5 pr-8 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-center"
+                      />
+                      <span className="absolute right-2.5 top-3.5 text-[10px] font-bold text-slate-400">seg</span>
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[10px] text-slate-400 block mt-1">
+                  {isDirectLog 
+                    ? "Estimativa pré-preenchida com base no ritmo padrão do setor para esta quantidade. Você pode corrigir livremente."
+                    : "Tempo capturado pelo cronômetro. Ajuste caso o cronômetro tenha ficado ligado por engano."
+                  }
                 </span>
               </div>
             </div>
