@@ -79,11 +79,20 @@ export function FilaRitmoScreen({
   });
 
   // Programmed orders/batches list for daily scheduling simulator
-  const [programmedList, setProgrammedList] = useState<{ orderId: number; targetQty: number; editedSec?: number }[]>([]);
-  const [plannerOperators, setPlannerOperators] = useState<number>(1);
+  const [programmedList, setProgrammedList] = useState<{ id: string; orderId?: number; itemId: number; operatorId: string; targetQty: number; editedSec?: number }[]>([]);
+  
+  // State for manual planner form
+  const [plannerSearchItem, setPlannerSearchItem] = useState("");
+  const [plannerSearchOperator, setPlannerSearchOperator] = useState("");
+  const [plannerSelectedItemId, setPlannerSelectedItemId] = useState<number | "">("");
+  const [plannerSelectedOperatorId, setPlannerSelectedOperatorId] = useState<string>("");
+  const [plannerItemQty, setPlannerItemQty] = useState<number | "">("");
+  const [plannerItemSec, setPlannerItemSec] = useState<number | "">("");
+
   const [plannerShiftHours, setPlannerShiftHours] = useState<number>(8);
   const [plannerEfficiency, setPlannerEfficiency] = useState<number>(85); // Expected rhythm/efficiency %
   const [plannerStartTime, setPlannerStartTime] = useState<string>("08:00");
+  const [plannerOperators, setPlannerOperators] = useState<number>(1);
 
   // Local live timer tick state
   const [now, setNow] = useState(Date.now());
@@ -389,27 +398,63 @@ export function FilaRitmoScreen({
     }
   };
 
-  // PROGRAMMING / PLANNING HELPERS
+  // PROGRAMMING / PLANNING 
   const handleAddToProgram = (orderId: number, targetQty: number) => {
+    const order = db.orders.find((o) => o.id === orderId);
+    if (!order) return;
     setProgrammedList((prev) => {
-      if (prev.some((p) => p.orderId === orderId)) return prev;
-      return [...prev, { orderId, targetQty }];
+      // Allow multiple entries for the same order if assigned to different operators? Yes.
+      return [...prev, {
+        id: Date.now().toString() + Math.random().toString(),
+        orderId,
+        itemId: order.itemId,
+        operatorId: "", // Unassigned by default when clicking from queue
+        targetQty
+      }];
     });
   };
 
-  const handleRemoveFromProgram = (orderId: number) => {
-    setProgrammedList((prev) => prev.filter((p) => p.orderId !== orderId));
+  const handleManualAddProgram = () => {
+    if (!plannerSelectedItemId || !plannerSelectedOperatorId || !plannerItemQty) {
+      alert("Preencha item, operador e quantidade!");
+      return;
+    }
+    setProgrammedList((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString() + Math.random().toString(),
+        itemId: Number(plannerSelectedItemId),
+        operatorId: plannerSelectedOperatorId,
+        targetQty: Number(plannerItemQty),
+        editedSec: plannerItemSec ? Number(plannerItemSec) : undefined,
+      }
+    ]);
+    // clear some fields
+    setPlannerSearchItem("");
+    setPlannerSelectedItemId("");
+    setPlannerItemQty("");
+    setPlannerItemSec("");
   };
 
-  const handleUpdateProgramQty = (orderId: number, qty: number) => {
+  const handleRemoveFromProgram = (id: string) => {
+    setProgrammedList((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const handleUpdateProgramQty = (id: string, qty: number) => {
     setProgrammedList((prev) =>
-      prev.map((p) => (p.orderId === orderId ? { ...p, targetQty: qty } : p))
+      prev.map((p) => (p.id === id ? { ...p, targetQty: qty } : p))
     );
   };
 
-  const handleUpdateProgramEditedSec = (orderId: number, sec: number | undefined) => {
+  const handleUpdateProgramEditedSec = (id: string, sec: number | undefined) => {
     setProgrammedList((prev) =>
-      prev.map((p) => (p.orderId === orderId ? { ...p, editedSec: sec } : p))
+      prev.map((p) => (p.id === id ? { ...p, editedSec: sec } : p))
+    );
+  };
+
+  const handleUpdateProgramOperator = (id: string, opId: string) => {
+    setProgrammedList((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, operatorId: opId } : p))
     );
   };
 
@@ -419,12 +464,14 @@ export function FilaRitmoScreen({
       const completedQty = Number(order[sectorConfig.qtyField]) || 0;
       const remainingQty = Math.max(0, order.totalQuantity - completedQty);
       return {
+        id: Date.now().toString() + Math.random().toString(),
         orderId: order.id,
+        itemId: order.itemId,
+        operatorId: "",
         targetQty: remainingQty,
       };
     }).filter((item) => item.targetQty > 0);
-
-    setProgrammedList(listToAdd);
+    setProgrammedList((prev) => [...prev, ...listToAdd]);
   };
 
   const handleClearProgram = () => {
@@ -573,16 +620,26 @@ export function FilaRitmoScreen({
     let hasHistoricalData = false;
     let totalQty = 0;
 
+    const operatorGroups: Record<string, {
+      operatorId: string;
+      operatorName: string;
+      items: any[];
+      totalStdSeconds: number;
+      totalHistSeconds: number;
+      totalEditedSeconds: number;
+      totalQty: number;
+    }> = {};
+
     const itemsCalculations = programmedList.map((p) => {
-      const order = db.orders.find((o) => o.id === p.orderId);
-      const item = order ? db.items.find((i) => i.id === order.itemId) : null;
+      const order = p.orderId ? db.orders.find((o) => o.id === p.orderId) : undefined;
+      const item = db.items.find((i) => i.id === p.itemId);
       
-      const stdSec = (order && selectedSectorId) ? getStandardTimeForProduct(order.itemId, selectedSectorId) : 30;
+      const stdSec = getStandardTimeForProduct(p.itemId, selectedSectorId) || 30;
       const actualStdSec = stdSec > 0 ? stdSec : 30; // 30s default fallback
       const itemStdTotalSec = actualStdSec * p.targetQty;
       totalStdSeconds += itemStdTotalSec;
 
-      const histSec = historicalAverages[order?.itemId || 0];
+      const histSec = historicalAverages[p.itemId] || null;
       let itemHistTotalSec = 0;
       if (histSec) {
         itemHistTotalSec = histSec * p.targetQty;
@@ -599,17 +656,38 @@ export function FilaRitmoScreen({
 
       totalQty += p.targetQty;
 
-      return {
+      const resultItem = {
         ...p,
         order,
         item,
         stdSec: actualStdSec,
-        histSec: histSec || null,
+        histSec: histSec,
         editedSec,
         itemStdTotalSec,
         itemHistTotalSec,
         itemEditedTotalSec,
       };
+
+      const opId = p.operatorId || "unassigned";
+      if (!operatorGroups[opId]) {
+         const emp = db.employees.find(e => e.id === opId);
+         operatorGroups[opId] = {
+            operatorId: opId,
+            operatorName: opId === "unassigned" ? "Não Atribuído" : (emp?.name || opId),
+            items: [],
+            totalStdSeconds: 0,
+            totalHistSeconds: 0,
+            totalEditedSeconds: 0,
+            totalQty: 0
+         };
+      }
+      operatorGroups[opId].items.push(resultItem);
+      operatorGroups[opId].totalStdSeconds += itemStdTotalSec;
+      operatorGroups[opId].totalHistSeconds += itemHistTotalSec;
+      operatorGroups[opId].totalEditedSeconds += itemEditedTotalSec;
+      operatorGroups[opId].totalQty += p.targetQty;
+
+      return resultItem;
     });
 
     // Adjust by plannerEfficiency (100% means direct standard, 85% means divide by 0.85 to increase required hours)
@@ -618,13 +696,40 @@ export function FilaRitmoScreen({
     const adjustedHistSeconds = efficiencyFactor > 0 ? (totalHistSeconds / efficiencyFactor) : totalHistSeconds;
     const adjustedEditedSeconds = efficiencyFactor > 0 ? (totalEditedSeconds / efficiencyFactor) : totalEditedSeconds;
 
-    // Time per operator (divide by number of operators)
-    const durationStdSecondsPerOperator = plannerOperators > 0 ? (adjustedStdSeconds / plannerOperators) : adjustedStdSeconds;
-    const durationHistSecondsPerOperator = plannerOperators > 0 ? (adjustedHistSeconds / plannerOperators) : adjustedHistSeconds;
-    const durationEditedSecondsPerOperator = plannerOperators > 0 ? (adjustedEditedSeconds / plannerOperators) : adjustedEditedSeconds;
+    Object.values(operatorGroups).forEach(g => {
+       g.totalStdSeconds = efficiencyFactor > 0 ? g.totalStdSeconds / efficiencyFactor : g.totalStdSeconds;
+       g.totalHistSeconds = efficiencyFactor > 0 ? g.totalHistSeconds / efficiencyFactor : g.totalHistSeconds;
+       g.totalEditedSeconds = efficiencyFactor > 0 ? g.totalEditedSeconds / efficiencyFactor : g.totalEditedSeconds;
+    });
+
+    // The load per operator is the MAX load of any single assigned operator (which determines when that operator is released and when the overall simulation finishes)
+    // If no operators are assigned, use total adjusted seconds as fallback
+    const assignedOperatorIds = Object.keys(operatorGroups).filter(opId => opId !== "unassigned");
+    
+    let maxStd = 0;
+    let maxHist = 0;
+    let maxEdited = 0;
+    
+    if (assignedOperatorIds.length > 0) {
+      assignedOperatorIds.forEach(opId => {
+        const group = operatorGroups[opId];
+        if (group.totalStdSeconds > maxStd) maxStd = group.totalStdSeconds;
+        if (group.totalHistSeconds > maxHist) maxHist = group.totalHistSeconds;
+        if (group.totalEditedSeconds > maxEdited) maxEdited = group.totalEditedSeconds;
+      });
+    } else {
+      maxStd = adjustedStdSeconds;
+      maxHist = adjustedHistSeconds;
+      maxEdited = adjustedEditedSeconds;
+    }
+
+    const durationStdSecondsPerOperator = maxStd;
+    const durationHistSecondsPerOperator = maxHist;
+    const durationEditedSecondsPerOperator = maxEdited;
 
     return {
       items: itemsCalculations,
+      operatorGroups: Object.values(operatorGroups).sort((a,b) => a.operatorName.localeCompare(b.operatorName)),
       totalQty,
       totalStdSeconds,
       totalHistSeconds,
@@ -632,12 +737,21 @@ export function FilaRitmoScreen({
       adjustedStdSeconds,
       adjustedHistSeconds,
       adjustedEditedSeconds,
-      hasHistoricalData,
       durationStdSecondsPerOperator,
       durationHistSecondsPerOperator,
       durationEditedSecondsPerOperator,
+      hasHistoricalData,
     };
-  }, [programmedList, db.orders, db.items, selectedSectorId, plannerOperators, plannerEfficiency, historicalAverages]);
+  }, [programmedList, db.orders, db.items, db.employees, selectedSectorId, plannerEfficiency, historicalAverages]);
+
+  const calculateEndTime = (startTimeStr: string, durationSeconds: number) => {
+    const [h, m] = startTimeStr.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return "--:--";
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    d.setSeconds(d.getSeconds() + durationSeconds);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
 
   return (
     <ScreenLayout>
@@ -1200,6 +1314,118 @@ export function FilaRitmoScreen({
                     1. Adicionar Lotes à Programação de Hoje
                   </h4>
 
+                  {/* Manual form */}
+                  <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-slate-50 border border-slate-150 rounded-lg">
+                    <div className="flex-1 min-w-[200px]">
+                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">🔍 Buscar & Selecionar Produto</label>
+                       <div className="flex flex-col gap-1">
+                         <input
+                           type="text"
+                           placeholder="Buscar por nome ou código..."
+                           value={plannerSearchItem}
+                           onChange={(e) => setPlannerSearchItem(e.target.value)}
+                           className="w-full text-xs p-1.5 border rounded focus:ring-1 focus:ring-indigo-500 bg-white"
+                         />
+                         <select 
+                            className="w-full text-xs p-1.5 border rounded"
+                            value={plannerSelectedItemId}
+                            onChange={(e) => {
+                              const val = e.target.value ? Number(e.target.value) : "";
+                              setPlannerSelectedItemId(val);
+                              if (val) {
+                                const std = getStandardTimeForProduct(val, selectedSectorId);
+                                const hist = historicalAverages[val];
+                                setPlannerItemSec(std || hist || "");
+                              } else {
+                                setPlannerItemSec("");
+                              }
+                            }}
+                         >
+                            <option value="">Selecione um Produto</option>
+                            {db.items
+                              .filter(item => 
+                                !plannerSearchItem ||
+                                item.name.toLowerCase().includes(plannerSearchItem.toLowerCase()) ||
+                                item.code.toLowerCase().includes(plannerSearchItem.toLowerCase())
+                              )
+                              .map(item => <option key={item.id} value={item.id}>{item.code} - {item.name}</option>)
+                            }
+                         </select>
+                         {plannerSelectedItemId && (
+                           <div className="text-[10px] text-slate-500 font-semibold mt-0.5">
+                             {(() => {
+                               const std = getStandardTimeForProduct(Number(plannerSelectedItemId), selectedSectorId);
+                               const hist = historicalAverages[Number(plannerSelectedItemId)];
+                               return (
+                                 <span>
+                                   Tempo Padrão: <strong className="text-slate-700">{std ? `${std}s` : "Não definido"}</strong>
+                                   {hist ? (
+                                     <> | Médio Histórico: <strong className="text-teal-600">{hist}s</strong></>
+                                   ) : " | s/ histórico"}
+                                 </span>
+                               );
+                             })()}
+                           </div>
+                         )}
+                       </div>
+                    </div>
+                    <div className="w-48">
+                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">👤 Buscar & Selecionar Operador</label>
+                       <div className="flex flex-col gap-1">
+                         <input
+                           type="text"
+                           placeholder="Buscar por nome..."
+                           value={plannerSearchOperator}
+                           onChange={(e) => setPlannerSearchOperator(e.target.value)}
+                           className="w-full text-xs p-1.5 border rounded focus:ring-1 focus:ring-indigo-500 bg-white"
+                         />
+                         <select 
+                            className="w-full text-xs p-1.5 border rounded"
+                            value={plannerSelectedOperatorId}
+                            onChange={(e) => setPlannerSelectedOperatorId(e.target.value)}
+                         >
+                            <option value="">Selecione...</option>
+                            {db.employees
+                              .filter(e => 
+                                !plannerSearchOperator ||
+                                e.name.toLowerCase().includes(plannerSearchOperator.toLowerCase())
+                              )
+                              .map(e => <option key={e.id} value={e.id}>{e.name}</option>)
+                            }
+                         </select>
+                       </div>
+                    </div>
+                    <div className="w-20">
+                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Qtd</label>
+                       <input 
+                         type="number" 
+                         min="1" 
+                         className="w-full text-xs p-1.5 border rounded h-[30px] bg-white"
+                         value={plannerItemQty}
+                         onChange={(e) => setPlannerItemQty(e.target.value ? Number(e.target.value) : "")}
+                       />
+                    </div>
+                    <div className="w-24">
+                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tempo (s)</label>
+                       <input 
+                         type="number" 
+                         min="1" 
+                         placeholder="Opcional"
+                         className="w-full text-xs p-1.5 border rounded h-[30px] bg-white"
+                         value={plannerItemSec}
+                         onChange={(e) => setPlannerItemSec(e.target.value ? Number(e.target.value) : "")}
+                       />
+                    </div>
+                    <button 
+                       onClick={handleManualAddProgram}
+                       className="px-3 py-1.5 bg-indigo-600 text-white rounded font-bold text-xs hover:bg-indigo-700 h-[30px] cursor-pointer"
+                    >
+                       Adicionar
+                    </button>
+                  </div>
+
+                  <h5 className="font-bold text-xs text-slate-500 mb-2">Ou selecione lotes da fila ativa:</h5>
+
                   {queueOrders.length === 0 ? (
                     <div className="p-4 border border-dashed rounded-lg text-center text-xs text-slate-400 italic">
                       Nenhum lote liberado e ativo na fila deste setor no momento. Vá na aba de Lotes de Produção para liberar novos lotes.
@@ -1267,7 +1493,6 @@ export function FilaRitmoScreen({
                       </button>
                     )}
                   </div>
-
                   {plannerStats.items.length === 0 ? (
                     <div className="p-12 border border-dashed border-slate-200 rounded-xl text-center flex flex-col items-center justify-center gap-2">
                       <div className="h-12 w-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400">
@@ -1281,107 +1506,171 @@ export function FilaRitmoScreen({
                       </p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-150 font-bold text-slate-500">
-                            <th className="p-2.5">OP / Cliente</th>
-                            <th className="p-2.5">Qtd Meta</th>
-                            <th className="p-2.5">Ciclo Padrão</th>
-                            <th className="p-2.5">Ciclo Histórico</th>
-                            <th className="p-2.5">Ciclo Editado</th>
-                            <th className="p-2.5 text-right">Tempo Total</th>
-                            <th className="p-2.5 text-center">Ações</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-medium text-slate-600">
-                          {plannerStats.items.map((item) => {
-                            if (!item.order) return null;
-                            const sectorConfig = getSectorFields(selectedSector?.name || "");
-                            const completedQty = Number(item.order[sectorConfig.qtyField]) || 0;
-                            const maxRemaining = Math.max(0, item.order.totalQuantity - completedQty);
-
-                            return (
-                              <tr key={item.orderId} className="hover:bg-slate-50/30">
-                                <td className="p-2.5 max-w-44">
-                                  <div className="flex flex-col min-w-0">
-                                    <span className="font-bold text-slate-800 truncate">
-                                      OP #{item.orderId} - {item.order.customerName}
-                                    </span>
-                                    <span className="text-[10px] text-slate-500 truncate">
-                                      {item.item?.name} {item.order.color ? `| ${item.order.color}` : ""}
-                                    </span>
-                                  </div>
-                                </td>
-                                <td className="p-2.5">
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      max={maxRemaining}
-                                      value={item.targetQty}
-                                      onChange={(e) => {
-                                        let val = parseInt(e.target.value, 10);
-                                        if (isNaN(val) || val < 1) val = 1;
-                                        if (val > maxRemaining) val = maxRemaining;
-                                        handleUpdateProgramQty(item.orderId, val);
-                                      }}
-                                      className="w-14 border rounded p-1 text-center font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
-                                    />
-                                    <button
-                                      onClick={() => handleUpdateProgramQty(item.orderId, maxRemaining)}
-                                      title="Usar quantidade restante máxima"
-                                      className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-1 py-0.5 rounded transition"
-                                    >
-                                      MÁX
-                                    </button>
-                                  </div>
-                                </td>
-                                <td className="p-2.5 font-mono">
-                                  {item.stdSec}s
-                                </td>
-                                <td className="p-2.5">
-                                  {item.histSec ? (
-                                    <span className="font-mono text-indigo-700 bg-indigo-50 font-bold px-1.5 py-0.5 rounded text-[10px]" title="Calculado com base em seus apontamentos passados">
-                                      {item.histSec}s méd.
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-400 italic text-[10px]">Sem histórico</span>
+                    <div className="flex flex-col gap-6">
+                      {plannerStats.operatorGroups.map((group) => (
+                        <div key={group.operatorId} className="border border-slate-200 rounded-lg overflow-hidden">
+                          <div className="bg-slate-100 p-2.5 border-b font-bold text-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                            <span className="text-sm">👤 Operador: <strong className="text-indigo-950">{group.operatorName}</strong></span>
+                            <div className="flex flex-wrap gap-3 items-center">
+                               <div className="text-[11px] text-slate-600 flex flex-wrap gap-x-3 gap-y-1">
+                                  <span>Liberado (Editado): <strong className="text-indigo-700">{calculateEndTime(plannerStartTime, group.totalEditedSeconds)}</strong></span>
+                                  <span>(Padrão): <strong className="text-slate-700">{calculateEndTime(plannerStartTime, group.totalStdSeconds)}</strong></span>
+                                  {group.totalHistSeconds > 0 && (
+                                    <span>(Médio): <strong className="text-teal-600">{calculateEndTime(plannerStartTime, group.totalHistSeconds)}</strong></span>
                                   )}
-                                </td>
-                                <td className="p-2.5">
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      value={item.editedSec}
-                                      onChange={(e) => {
-                                        const val = parseInt(e.target.value, 10);
-                                        handleUpdateProgramEditedSec(item.orderId, isNaN(val) ? undefined : val);
-                                      }}
-                                      placeholder={String(item.stdSec)}
-                                      className="w-14 border rounded p-1 text-center font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
-                                    />
-                                    <span className="text-[10px] text-slate-400">s</span>
-                                  </div>
-                                </td>
-                                <td className="p-2.5 font-mono font-bold text-slate-800 text-right">
-                                  {formatSeconds(item.itemEditedTotalSec)}
-                                </td>
-                                <td className="p-2.5 text-center">
-                                  <button
-                                    onClick={() => handleRemoveFromProgram(item.orderId)}
-                                    className="p-1 text-slate-400 hover:text-red-650 hover:bg-red-50 rounded transition cursor-pointer"
-                                    title="Remover do plano"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                               </div>
+                               <span className="text-[10px] font-bold text-slate-500 bg-white px-1.5 py-0.5 rounded border">Total: {group.totalQty} pçs</span>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse bg-white">
+                              <thead>
+                                <tr className="bg-slate-50/50 border-b border-slate-150 font-bold text-slate-500">
+                                  <th className="p-2.5">Item</th>
+                                  <th className="p-2.5">Atribuído a</th>
+                                  <th className="p-2.5">Qtd Meta</th>
+                                  <th className="p-2.5">Ciclo Padrão</th>
+                                  <th className="p-2.5">Ciclo Histórico</th>
+                                  <th className="p-2.5">Ciclo Editado</th>
+                                  <th className="p-2.5 text-right">Duração / Fim</th>
+                                  <th className="p-2.5 text-center">Ações</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 font-medium text-slate-600">
+                                {(() => {
+                                  const efficiencyFactor = (plannerEfficiency || 100) / 100;
+                                  let cumulativeSec = 0;
+                                  let cumulativeStdSec = 0;
+                                  let cumulativeHistSec = 0;
+                                  return group.items.map((item) => {
+                                    const sectorConfig = getSectorFields(selectedSector?.name || "");
+                                    const completedQty = item.order ? (Number(item.order[sectorConfig.qtyField]) || 0) : 0;
+                                    const maxRemaining = item.order ? Math.max(0, item.order.totalQuantity - completedQty) : 99999;
+                                    
+                                    const adjustedEditedTotal = efficiencyFactor > 0 ? item.itemEditedTotalSec / efficiencyFactor : item.itemEditedTotalSec;
+                                    cumulativeSec += adjustedEditedTotal;
+                                    const itemEndTime = calculateEndTime(plannerStartTime, cumulativeSec);
+
+                                    const adjustedStdTotal = efficiencyFactor > 0 ? item.itemStdTotalSec / efficiencyFactor : item.itemStdTotalSec;
+                                    cumulativeStdSec += adjustedStdTotal;
+                                    const itemStdEndTime = calculateEndTime(plannerStartTime, cumulativeStdSec);
+
+                                    const adjustedHistTotal = efficiencyFactor > 0 ? item.itemHistTotalSec / efficiencyFactor : item.itemHistTotalSec;
+                                    cumulativeHistSec += adjustedHistTotal;
+                                    const itemHistEndTime = calculateEndTime(plannerStartTime, cumulativeHistSec);
+
+                                    return (
+                                      <tr key={item.id} className="hover:bg-slate-50/30">
+                                        <td className="p-2.5 max-w-44">
+                                          <div className="flex flex-col min-w-0">
+                                            <span className="font-bold text-slate-800 truncate">
+                                              {item.order ? `OP #${item.orderId} - ${item.order.customerName}` : (item.item?.name || "Item Avulso")}
+                                            </span>
+                                            {item.order && (
+                                               <span className="text-[10px] text-slate-500 truncate">
+                                                 {item.item?.name} {item.order.color ? `| ${item.order.color}` : ""}
+                                               </span>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="p-2.5">
+                                          <select
+                                            value={item.operatorId || ""}
+                                            onChange={(e) => handleUpdateProgramOperator(item.id, e.target.value)}
+                                            className="text-[11px] p-1 border rounded bg-white font-medium text-slate-700 focus:ring-1 focus:ring-indigo-500 outline-none max-w-[120px]"
+                                          >
+                                            <option value="">Não Atribuído</option>
+                                            {db.employees.map((e) => (
+                                              <option key={e.id} value={e.id}>
+                                                {e.name}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </td>
+                                        <td className="p-2.5">
+                                          <div className="flex items-center gap-1">
+                                            <input
+                                              type="number"
+                                              min="1"
+                                              max={maxRemaining}
+                                              value={item.targetQty}
+                                              onChange={(e) => {
+                                                let val = parseInt(e.target.value, 10);
+                                                if (isNaN(val) || val < 1) val = 1;
+                                                if (val > maxRemaining) val = maxRemaining;
+                                                handleUpdateProgramQty(item.id, val);
+                                              }}
+                                              className="w-14 border rounded p-1 text-center font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                                            />
+                                            {item.order && (
+                                              <button
+                                                onClick={() => handleUpdateProgramQty(item.id, maxRemaining)}
+                                                title="Usar quantidade restante máxima"
+                                                className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-1 py-0.5 rounded transition cursor-pointer"
+                                              >
+                                                MÁX
+                                              </button>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="p-2.5 font-mono">
+                                          {item.stdSec}s
+                                        </td>
+                                        <td className="p-2.5">
+                                          {item.histSec ? (
+                                            <span className="font-mono text-indigo-700 bg-indigo-50 font-bold px-1.5 py-0.5 rounded text-[10px]" title="Calculado com base em seus apontamentos passados">
+                                              {item.histSec}s méd.
+                                            </span>
+                                          ) : (
+                                            <span className="text-slate-400 italic text-[10px]">Sem histórico</span>
+                                          )}
+                                        </td>
+                                        <td className="p-2.5">
+                                          <div className="flex items-center gap-1">
+                                            <input
+                                              type="number"
+                                              min="1"
+                                              value={item.editedSec || ""}
+                                              onChange={(e) => {
+                                                const val = parseInt(e.target.value, 10);
+                                                handleUpdateProgramEditedSec(item.id, isNaN(val) ? undefined : val);
+                                              }}
+                                              placeholder={String(item.stdSec)}
+                                              className="w-14 border rounded p-1 text-center font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                                            />
+                                            <span className="text-[10px] text-slate-400">s</span>
+                                          </div>
+                                        </td>
+                                        <td className="p-2.5 font-mono font-bold text-slate-800 text-right">
+                                          <div className="flex flex-col items-end gap-0.5">
+                                            <span className="text-xs text-slate-800" title="Tempo total editado para a quantidade">{formatSeconds(Math.round(adjustedEditedTotal))}</span>
+                                            <div className="text-[9px] text-slate-500 font-medium flex flex-col items-end leading-normal">
+                                               <span>Fim (Editado): <strong className="text-indigo-650">{itemEndTime}</strong></span>
+                                               <span className="text-slate-400">Fim (Padrão): {itemStdEndTime}</span>
+                                               {item.histSec ? (
+                                                 <span className="text-teal-600">Fim (Médio): {itemHistEndTime}</span>
+                                               ) : null}
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td className="p-2.5 text-center">
+                                          <button
+                                            onClick={() => handleRemoveFromProgram(item.id)}
+                                            className="p-1 text-slate-400 hover:text-red-650 hover:bg-red-50 rounded transition cursor-pointer"
+                                            title="Remover do plano"
+                                          >
+                                            <Trash2 size={14} />
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  });
+                                })()}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
