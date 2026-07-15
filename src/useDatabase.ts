@@ -1216,11 +1216,11 @@ export function useDatabase(currentUser?: User | null) {
     runSync();
   };
 
-  const removeActivePack = async (id: number) => {
+  const removeActivePack = async (id: number, skipAutoConcludeBatch?: boolean) => {
     const pack = activePacks.find((p) => p.id === id);
     const isEmbalagem = pack?.type === "EMBALAGEM";
 
-    if (pack) {
+    if (pack && !skipAutoConcludeBatch) {
       if (pack.associatedBatchId) {
         await completeProductionInBatch(
           pack.associatedBatchId,

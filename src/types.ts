@@ -102,6 +102,7 @@ export interface Item {
   type?: "PRODUTO" | "PECA" | "EPI";
   components?: { itemId: number; quantity: number }[];
   imageUrl?: string;
+  standardCycles?: Record<number, number>; // sectorId -> time in minutes
 }
 
 export interface Employee {

@@ -79,7 +79,7 @@ export function FilaRitmoScreen({
   });
 
   // Programmed orders/batches list for daily scheduling simulator
-  const [programmedList, setProgrammedList] = useState<{ orderId: number; targetQty: number }[]>([]);
+  const [programmedList, setProgrammedList] = useState<{ orderId: number; targetQty: number; editedSec?: number }[]>([]);
   const [plannerOperators, setPlannerOperators] = useState<number>(1);
   const [plannerShiftHours, setPlannerShiftHours] = useState<number>(8);
   const [plannerEfficiency, setPlannerEfficiency] = useState<number>(85); // Expected rhythm/efficiency %
@@ -159,17 +159,17 @@ export function FilaRitmoScreen({
       (b) => b.sectorId === selectedSectorId && b.status !== "CONCLUIDO"
     );
 
-    // Collect all order IDs that are liberated in these batches
-    const liberatedIds = new Set<number>();
+    // Collect all order IDs that are in these batches
+    const activeIds = new Set<number>();
     sectorBatches.forEach((b) => {
-      if (Array.isArray(b.liberatedOrderIds)) {
-        b.liberatedOrderIds.forEach((id) => liberatedIds.add(id));
+      if (Array.isArray(b.orderIds)) {
+        b.orderIds.forEach((id) => activeIds.add(id));
       }
     });
 
     // Find the actual orders
     return db.orders.filter(
-      (o) => o.isActive && liberatedIds.has(o.id) && o.status !== "FATURADO" && o.status !== "CANCELADO"
+      (o) => o.isActive && activeIds.has(o.id) && o.status !== "FATURADO" && o.status !== "CANCELADO"
     ).sort((a, b) => {
       // Prioritize urgent orders, then date
       if (a.isUrgent && !b.isUrgent) return -1;
@@ -180,6 +180,12 @@ export function FilaRitmoScreen({
 
   // Map to get standard cycle time for each product/sector
   const getStandardTimeForProduct = (itemId: number, sectorId: number) => {
+    const item = db.items.find(i => i.id === itemId);
+    if (item?.standardCycles && item.standardCycles[sectorId]) {
+      return item.standardCycles[sectorId] * 60; // Convert minutes to seconds
+    }
+    
+    // Fallback to flow if item doesn't have it defined
     const flow = db.productFlows.find((f) => f.itemId === itemId);
     if (flow && flow.sectorTimes) {
       return flow.sectorTimes[String(sectorId)] || flow.sectorTimes[sectorId] || 0;
@@ -344,7 +350,30 @@ export function FilaRitmoScreen({
 
       // Remove Active Timer Session only if we are NOT in direct log mode and we had a valid active pack
       if (!isDirectLog && activePack && activePack.id !== 0) {
-        await db.removeActivePack(activePack.id);
+        await db.removeActivePack(activePack.id, true);
+      }
+
+      // Handle batch auto-conclude correctly
+      if (isFinished) {
+        // Find which batch this order belongs to for this sector
+        const batch = db.productionBatches.find(
+          b => b.sectorId === selectedSectorId && b.orderIds?.includes(order.id) && b.status !== "CONCLUIDO"
+        );
+        
+        if (batch) {
+          const updatedChecked = [...(batch.checkedOrderIds || [])];
+          if (!updatedChecked.includes(order.id)) {
+            updatedChecked.push(order.id);
+            const allChecked = batch.orderIds.every((oid) => updatedChecked.includes(oid));
+            const updatedStatus = allChecked ? "CONCLUIDO" : batch.status;
+            
+            await db.updateProductionBatch({
+              ...batch,
+              checkedOrderIds: updatedChecked,
+              status: updatedStatus
+            });
+          }
+        }
       }
 
       setCompletingTask(null);
@@ -375,6 +404,12 @@ export function FilaRitmoScreen({
   const handleUpdateProgramQty = (orderId: number, qty: number) => {
     setProgrammedList((prev) =>
       prev.map((p) => (p.orderId === orderId ? { ...p, targetQty: qty } : p))
+    );
+  };
+
+  const handleUpdateProgramEditedSec = (orderId: number, sec: number | undefined) => {
+    setProgrammedList((prev) =>
+      prev.map((p) => (p.orderId === orderId ? { ...p, editedSec: sec } : p))
     );
   };
 
@@ -534,6 +569,7 @@ export function FilaRitmoScreen({
   const plannerStats = useMemo(() => {
     let totalStdSeconds = 0;
     let totalHistSeconds = 0;
+    let totalEditedSeconds = 0;
     let hasHistoricalData = false;
     let totalQty = 0;
 
@@ -557,6 +593,10 @@ export function FilaRitmoScreen({
         totalHistSeconds += itemHistTotalSec;
       }
 
+      const editedSec = p.editedSec ?? actualStdSec;
+      const itemEditedTotalSec = editedSec * p.targetQty;
+      totalEditedSeconds += itemEditedTotalSec;
+
       totalQty += p.targetQty;
 
       return {
@@ -565,8 +605,10 @@ export function FilaRitmoScreen({
         item,
         stdSec: actualStdSec,
         histSec: histSec || null,
+        editedSec,
         itemStdTotalSec,
         itemHistTotalSec,
+        itemEditedTotalSec,
       };
     });
 
@@ -574,21 +616,26 @@ export function FilaRitmoScreen({
     const efficiencyFactor = (plannerEfficiency || 100) / 100;
     const adjustedStdSeconds = efficiencyFactor > 0 ? (totalStdSeconds / efficiencyFactor) : totalStdSeconds;
     const adjustedHistSeconds = efficiencyFactor > 0 ? (totalHistSeconds / efficiencyFactor) : totalHistSeconds;
+    const adjustedEditedSeconds = efficiencyFactor > 0 ? (totalEditedSeconds / efficiencyFactor) : totalEditedSeconds;
 
     // Time per operator (divide by number of operators)
     const durationStdSecondsPerOperator = plannerOperators > 0 ? (adjustedStdSeconds / plannerOperators) : adjustedStdSeconds;
     const durationHistSecondsPerOperator = plannerOperators > 0 ? (adjustedHistSeconds / plannerOperators) : adjustedHistSeconds;
+    const durationEditedSecondsPerOperator = plannerOperators > 0 ? (adjustedEditedSeconds / plannerOperators) : adjustedEditedSeconds;
 
     return {
       items: itemsCalculations,
       totalQty,
       totalStdSeconds,
       totalHistSeconds,
+      totalEditedSeconds,
       adjustedStdSeconds,
       adjustedHistSeconds,
+      adjustedEditedSeconds,
       hasHistoricalData,
       durationStdSecondsPerOperator,
       durationHistSecondsPerOperator,
+      durationEditedSecondsPerOperator,
     };
   }, [programmedList, db.orders, db.items, selectedSectorId, plannerOperators, plannerEfficiency, historicalAverages]);
 
@@ -1242,6 +1289,7 @@ export function FilaRitmoScreen({
                             <th className="p-2.5">Qtd Meta</th>
                             <th className="p-2.5">Ciclo Padrão</th>
                             <th className="p-2.5">Ciclo Histórico</th>
+                            <th className="p-2.5">Ciclo Editado</th>
                             <th className="p-2.5 text-right">Tempo Total</th>
                             <th className="p-2.5 text-center">Ações</th>
                           </tr>
@@ -1301,8 +1349,24 @@ export function FilaRitmoScreen({
                                     <span className="text-slate-400 italic text-[10px]">Sem histórico</span>
                                   )}
                                 </td>
+                                <td className="p-2.5">
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={item.editedSec}
+                                      onChange={(e) => {
+                                        const val = parseInt(e.target.value, 10);
+                                        handleUpdateProgramEditedSec(item.orderId, isNaN(val) ? undefined : val);
+                                      }}
+                                      placeholder={String(item.stdSec)}
+                                      className="w-14 border rounded p-1 text-center font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                    <span className="text-[10px] text-slate-400">s</span>
+                                  </div>
+                                </td>
                                 <td className="p-2.5 font-mono font-bold text-slate-800 text-right">
-                                  {formatSeconds(item.itemStdTotalSec)}
+                                  {formatSeconds(item.itemEditedTotalSec)}
                                 </td>
                                 <td className="p-2.5 text-center">
                                   <button
@@ -1453,7 +1517,21 @@ export function FilaRitmoScreen({
                       {programmedList.length > 0 && (
                         <div className="text-[11px] border-t border-indigo-800/50 pt-1.5 mt-1 text-indigo-150">
                           <div>
-                            ➔ Ritmo Padrão: Concluirá às <strong className="text-white font-mono">
+                            ➔ Ritmo Editado: <strong className="text-white font-mono">
+                              {(() => {
+                                const [hStr, mStr] = plannerStartTime.split(":");
+                                const h = parseInt(hStr, 10) || 8;
+                                const m = parseInt(mStr, 10) || 0;
+                                const startDate = new Date();
+                                startDate.setHours(h, m, 0, 0);
+                                const completionMs = startDate.getTime() + (plannerStats.durationEditedSecondsPerOperator * 1000);
+                                const compDate = new Date(completionMs);
+                                return compDate.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+                              })()}
+                            </strong>
+                          </div>
+                          <div>
+                            ➔ Ritmo Padrão: <strong className="text-white font-mono opacity-80">
                               {(() => {
                                 const [hStr, mStr] = plannerStartTime.split(":");
                                 const h = parseInt(hStr, 10) || 8;
@@ -1462,14 +1540,13 @@ export function FilaRitmoScreen({
                                 startDate.setHours(h, m, 0, 0);
                                 const completionMs = startDate.getTime() + (plannerStats.durationStdSecondsPerOperator * 1000);
                                 const compDate = new Date(completionMs);
-                                return compDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+                                return compDate.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
                               })()}
                             </strong>
                           </div>
-
                           {plannerStats.hasHistoricalData && (
                             <div className="mt-1 text-indigo-300">
-                              ➔ Ritmo Histórico Médio: Concluirá às <strong className="text-indigo-200 font-mono">
+                              ➔ Ritmo Histórico Médio: <strong className="text-indigo-200 font-mono">
                                 {(() => {
                                   const [hStr, mStr] = plannerStartTime.split(":");
                                   const h = parseInt(hStr, 10) || 8;
@@ -1478,7 +1555,7 @@ export function FilaRitmoScreen({
                                   startDate.setHours(h, m, 0, 0);
                                   const completionMs = startDate.getTime() + (plannerStats.durationHistSecondsPerOperator * 1000);
                                   const compDate = new Date(completionMs);
-                                  return compDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+                                  return compDate.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
                                 })()}
                               </strong>
                             </div>

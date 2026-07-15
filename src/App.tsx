@@ -1550,6 +1550,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [productionPoints, setProductionPoints] = useState<number | "">("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [imageUrl, setImageUrl] = useState<string>("");
+  const [standardCycles, setStandardCycles] = useState<Record<number, number>>({});
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageUploadProgress, setImageUploadProgress] = useState(0);
   const [fullSizeImage, setFullSizeImage] = useState<string | null>(null);
@@ -2398,6 +2399,38 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                   placeholder="Pontuação (Opcional)"
                   className="border border-gray-300 p-2 pl-10 rounded w-full text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
+              </div>
+            </div>
+
+            <div className="mt-2 bg-gray-50 p-3 rounded border border-gray-100 flex flex-col gap-2">
+              <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                <span className="bg-indigo-100 text-indigo-700 p-1 rounded">⏱️</span>
+                Tempo Padrão de Produção (em minutos)
+              </label>
+              <p className="text-[10px] text-gray-500 mb-1">
+                Defina o tempo estimado para concluir 1 unidade deste item em cada setor. Usado para previsão de ritmo de fila.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {db.sectors.map((sector) => (
+                  <div key={sector.id} className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold text-gray-600 truncate">{sector.name}</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={standardCycles[sector.id] || ""}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setStandardCycles(prev => ({
+                          ...prev,
+                          [sector.id]: isNaN(val) ? 0 : val
+                        }));
+                      }}
+                      placeholder="Minutos"
+                      className="border border-gray-300 p-1.5 rounded text-xs w-full focus:ring-1 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -11482,6 +11515,77 @@ function AdminScreen({
     return { prod, corte, pint, emb };
   }, [db.logs, todayStart]);
 
+  const cargaHorariaStats = React.useMemo(() => {
+    const stats: Record<number, { sectorName: string, estimatedSec: number, actualTimeSec: number, stdTimeProducedSec: number }> = {};
+    
+    db.sectors.forEach(s => {
+      stats[s.id] = { sectorName: s.name, estimatedSec: 0, actualTimeSec: 0, stdTimeProducedSec: 0 };
+    });
+
+    // 1. Calculate estimated remaining time (Carga Horária Estimada) based on pending items
+    const activeBatches = db.productionBatches.filter(b => b.status !== "CONCLUIDO");
+    activeBatches.forEach(b => {
+      if (!stats[b.sectorId]) return;
+      
+      const orders = db.orders.filter(o => o.isActive && o.status !== "FATURADO" && o.status !== "CANCELADO" && b.orderIds?.includes(o.id));
+      orders.forEach(o => {
+        const item = db.items.find(i => i.id === o.itemId);
+        let stdSec = 30; // fallback
+        if (item?.standardCycles && item.standardCycles[b.sectorId]) {
+           stdSec = item.standardCycles[b.sectorId] * 60;
+        } else {
+           const flow = db.productFlows.find(f => f.itemId === o.itemId);
+           if (flow && flow.sectorTimes) {
+             stdSec = flow.sectorTimes[String(b.sectorId)] || flow.sectorTimes[b.sectorId] || 30;
+           }
+        }
+        const sectorConfig = db.sectors.find(s => s.id === b.sectorId);
+        let completed = 0;
+        if (sectorConfig?.name === "Corte Laser") completed = o.cutQuantity || 0;
+        else if (sectorConfig?.name === "Produção") completed = o.producedQuantity || 0;
+        else if (sectorConfig?.name === "Pintura") completed = o.paintedQuantity || 0;
+        else if (sectorConfig?.name === "Embalagem") completed = o.packedQuantity || 0;
+        
+        const remaining = Math.max(0, o.totalQuantity - completed);
+        stats[b.sectorId].estimatedSec += (remaining * stdSec);
+      });
+    });
+
+    // 2. Pace / Previsão (Compare Actual Time vs Standard Time value produced)
+    const now = Date.now();
+    // Add current active tasks time
+    db.activePacks.forEach(pack => {
+       const sector = db.sectors.find(s => s.name === pack.processName);
+       if (sector && stats[sector.id]) {
+          stats[sector.id].actualTimeSec += Math.floor((now - pack.startTime) / 1000);
+       }
+    });
+
+    // Add completed logs from today
+    db.logs.filter(l => l.timestamp >= todayStart).forEach(l => {
+       const sector = db.sectors.find(s => s.name === l.processName);
+       if (sector && stats[sector.id]) {
+          const lDurationSec = Math.floor(l.durationMillis / 1000);
+          stats[sector.id].actualTimeSec += lDurationSec;
+          
+          let stdSec = 30;
+          const item = db.items.find(i => i.id === l.itemId);
+          if (item?.standardCycles && item.standardCycles[sector.id]) {
+             stdSec = item.standardCycles[sector.id] * 60;
+          } else {
+             const flow = db.productFlows.find(f => f.itemId === l.itemId);
+             if (flow && flow.sectorTimes) {
+               stdSec = flow.sectorTimes[String(sector.id)] || flow.sectorTimes[sector.id] || 30;
+             }
+          }
+          let qty = l.quantityProcessed || l.quantityCut || l.quantityPainted || l.quantityPacked || 0;
+          stats[sector.id].stdTimeProducedSec += (qty * stdSec);
+       }
+    });
+
+    return Object.values(stats).filter(s => s.estimatedSec > 0 || s.actualTimeSec > 0);
+  }, [db.sectors, db.productionBatches, db.orders, db.items, db.productFlows, db.activePacks, db.logs, todayStart]);
+
   const producaoActive = db.activePacks.filter(
     (p) => !["PINTURA", "EMBALAGEM", "CORTE_LASER"].includes(p.type),
   );
@@ -11766,6 +11870,66 @@ function AdminScreen({
                   </span>
                 </div>
               </div>
+
+              {/* Novo Widget: Carga Horária e Previsão de Conclusão */}
+              {cargaHorariaStats.length > 0 && (
+                <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4">
+                  <h3 className="text-gray-800 font-extrabold text-sm mb-3 border-b pb-2 flex items-center gap-2">
+                    ⏱️ Estimativa de Carga e Ritmo de Produção (Setores Ativos)
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {cargaHorariaStats.map(stat => {
+                      // format seconds as hh:mm
+                      const formatSecs = (secs: number) => {
+                        const h = Math.floor(secs / 3600);
+                        const m = Math.floor((secs % 3600) / 60);
+                        return `${h}h ${m}m`;
+                      };
+                      
+                      // ritmo = Tempo Produzido Equivalente Padrão / Tempo Real Gasto
+                      // Ex: Trabalhou 1 hora, mas produziu o equivalente a 1h30 (ritmo > 1) = Adiantado
+                      // Trabalhou 1 hora, mas produziu o equivalente a 30m (ritmo < 1) = Atrasado
+                      let pacePct = 0;
+                      if (stat.actualTimeSec > 0) {
+                        pacePct = (stat.stdTimeProducedSec / stat.actualTimeSec) * 100;
+                      }
+
+                      return (
+                        <div key={stat.sectorName} className="bg-slate-50 border border-slate-200 rounded p-3">
+                          <div className="font-bold text-slate-800 text-xs mb-1 uppercase tracking-wider">{stat.sectorName}</div>
+                          
+                          <div className="flex flex-col gap-2 mt-2">
+                            <div className="bg-white p-2 border border-slate-100 rounded shadow-sm">
+                              <span className="text-[10px] text-slate-500 font-semibold block uppercase">Carga Fila (Padrão)</span>
+                              <span className="text-sm font-black text-slate-700">{formatSecs(stat.estimatedSec)}</span>
+                            </div>
+
+                            {stat.actualTimeSec > 0 && (
+                              <div className={`p-2 border rounded shadow-sm ${pacePct >= 100 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+                                <span className="text-[10px] font-semibold block uppercase" style={{ color: pacePct >= 100 ? '#059669' : '#dc2626' }}>
+                                  Ritmo Atual (Real x Padrão)
+                                </span>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold" style={{ color: pacePct >= 100 ? '#065f46' : '#991b1b' }}>
+                                    {pacePct >= 100 ? 'No ritmo/Adiantado' : 'Atrasado'}
+                                  </span>
+                                  <span className="text-sm font-black" style={{ color: pacePct >= 100 ? '#047857' : '#b91c1c' }}>
+                                    {Math.round(pacePct)}%
+                                  </span>
+                                </div>
+                                <div className="text-[9px] mt-1 text-slate-600 opacity-80 leading-tight">
+                                  Produziu equivale a {formatSecs(stat.stdTimeProducedSec)} em {formatSecs(stat.actualTimeSec)} operados.
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="bg-white p-4 rounded-lg shadow-sm border flex flex-col gap-4">
                 <div className="flex flex-col gap-3 border-b border-gray-100 pb-3 mt-2">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
