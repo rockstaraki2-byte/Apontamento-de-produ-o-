@@ -1149,8 +1149,12 @@ export function useDatabase(currentUser?: User | null) {
     }
   };
 
-  const addActivePack = async (pack: ActiveTask) => {
+  const addActivePack = async (packInput: ActiveTask) => {
+    const pack = { ...packInput };
     pack.tenantId = activeTenantId;
+    if (!pack.id) {
+      pack.id = Date.now() + Math.floor(Math.random() * 1000);
+    }
     try {
       const matchBatch = productionBatches.find((b) => {
         if (b.status === "CONCLUIDO") return false;

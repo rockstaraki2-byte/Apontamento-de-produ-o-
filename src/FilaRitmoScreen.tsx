@@ -442,17 +442,52 @@ export function FilaRitmoScreen({
                   // Estimated total time
                   const totalEstSeconds = (stdTimeSec > 0 ? stdTimeSec : 30) * remainingQty;
 
-                  // Find if there is an active timer for this order
-                  const activePack = db.activePacks.find(
-                    (p) => p.associatedBatchId === order.id && p.processName === selectedSector?.name
-                  );
+                  // Find if there is an active timer for this order matching current operator, or any operator
+                  let activePack = db.activePacks.find((p) => {
+                    const processMatch = p.processName === selectedSector?.name || p.type === sectorConfig.logType;
+                    const isMyPack = p.operatorId === currentUser.id;
+                    if (!processMatch) return false;
+                    
+                    // Directly linked
+                    if (p.associatedBatchId === order.id) return isMyPack;
+                    
+                    // Match by item and specs
+                    const itemMatch = p.itemId === order.itemId &&
+                                      (!p.color || p.color === "N/A" || p.color === "-" || p.color === order.color) &&
+                                      (!p.size || p.size === "N/A" || p.size === "-" || p.size === order.size) &&
+                                      (!p.variation || p.variation === "N/A" || p.variation === "-" || p.variation === order.variation);
+                    return itemMatch && isMyPack;
+                  });
+
+                  if (!activePack) {
+                    activePack = db.activePacks.find((p) => {
+                      const processMatch = p.processName === selectedSector?.name || p.type === sectorConfig.logType;
+                      if (!processMatch) return false;
+                      
+                      if (p.associatedBatchId === order.id) return true;
+                      
+                      const itemMatch = p.itemId === order.itemId &&
+                                        (!p.color || p.color === "N/A" || p.color === "-" || p.color === order.color) &&
+                                        (!p.size || p.size === "N/A" || p.size === "-" || p.size === order.size) &&
+                                        (!p.variation || p.variation === "N/A" || p.variation === "-" || p.variation === order.variation);
+                      return itemMatch;
+                    });
+                  }
+
+                  const activeOperator = activePack 
+                    ? (db.employees.find((e) => e.id === activePack.operatorId) || db.users?.find((u) => u.id === activePack.operatorId))
+                    : null;
+                  const activeOperatorName = activeOperator ? activeOperator.name : activePack ? `Operador ID: ${activePack.operatorId}` : "";
+                  const isMyTimer = activePack ? activePack.operatorId === currentUser.id : false;
 
                   return (
                     <div
                       key={order.id}
                       className={`bg-white border rounded-xl p-4 shadow-xs flex flex-col gap-3 relative overflow-hidden transition-all duration-300 ${
                         activePack
-                          ? "border-emerald-500 ring-2 ring-emerald-50 bg-emerald-50/10"
+                          ? isMyTimer
+                            ? "border-emerald-500 ring-2 ring-emerald-50 bg-emerald-50/10"
+                            : "border-amber-400 ring-2 ring-amber-50 bg-amber-50/10"
                           : order.isUrgent
                           ? "border-red-200 bg-red-50/5"
                           : "border-slate-200 hover:border-indigo-300"
@@ -527,16 +562,27 @@ export function FilaRitmoScreen({
 
                       {/* Live Timer if Active */}
                       {activePack && (
-                        <div className="bg-emerald-50 border border-emerald-150 rounded-lg p-2.5 flex items-center justify-between animate-pulse">
-                          <div className="flex items-center gap-2">
-                            <span className="h-2 w-2 bg-emerald-500 rounded-full" />
-                            <span className="text-[11px] font-bold text-emerald-800">
-                              Produzindo...
+                        <div className={`border rounded-lg p-2.5 flex flex-col gap-1.5 ${
+                          isMyTimer 
+                            ? "bg-emerald-50 border-emerald-150 text-emerald-800" 
+                            : "bg-amber-50 border-amber-150 text-amber-800"
+                        } animate-pulse`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`h-2 w-2 rounded-full ${isMyTimer ? "bg-emerald-500" : "bg-amber-500"}`} />
+                              <span className="text-[11px] font-bold">
+                                {isMyTimer ? "Seu Cronômetro Ativo" : `Produzindo por: ${activeOperatorName}`}
+                              </span>
+                            </div>
+                            <span className="text-xs font-mono font-black">
+                              {formatSeconds(Math.floor((now - activePack.startTime) / 1000))}
                             </span>
                           </div>
-                          <span className="text-xs font-mono font-black text-emerald-800">
-                            {formatSeconds(Math.floor((now - activePack.startTime) / 1000))}
-                          </span>
+                          {!isMyTimer && (
+                            <span className="text-[10px] text-amber-700/80 font-semibold">
+                              Iniciado em outra tela. Você pode acompanhar ou concluir o apontamento aqui.
+                            </span>
+                          )}
                         </div>
                       )}
 

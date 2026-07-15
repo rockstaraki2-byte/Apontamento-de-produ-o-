@@ -118,57 +118,85 @@ export async function processQueueItem(item: QueueItem): Promise<void> {
   switch (type) {
     case "ADD_LOGS": {
       const batch = writeBatch(db);
-      payload.logs.forEach((l: any) => {
-        batch.set(doc(db, "logs", l.id.toString()), cleanUndefined(l), { merge: true });
-      });
+      if (payload?.logs && Array.isArray(payload.logs)) {
+        payload.logs.forEach((l: any) => {
+          if (l && l.id) {
+            batch.set(doc(db, "logs", l.id.toString()), cleanUndefined(l), { merge: true });
+          }
+        });
+      }
       await batch.commit();
       break;
     }
     case "UPDATE_ORDERS": {
       const batch = writeBatch(db);
-      payload.orders.forEach((o: any) => {
-        batch.set(doc(db, "orders", o.id.toString()), cleanUndefined(o), { merge: true });
-      });
+      if (payload?.orders && Array.isArray(payload.orders)) {
+        payload.orders.forEach((o: any) => {
+          if (o && o.id) {
+            batch.set(doc(db, "orders", o.id.toString()), cleanUndefined(o), { merge: true });
+          }
+        });
+      }
       await batch.commit();
       break;
     }
     case "UPDATE_STOCKS": {
       const batch = writeBatch(db);
-      payload.stocks.forEach((s: any) => {
-        batch.set(doc(db, "stocks", s.id), cleanUndefined(s), { merge: true });
-      });
+      if (payload?.stocks && Array.isArray(payload.stocks)) {
+        payload.stocks.forEach((s: any) => {
+          if (s && s.id) {
+            batch.set(doc(db, "stocks", s.id), cleanUndefined(s), { merge: true });
+          }
+        });
+      }
       await batch.commit();
       break;
     }
     case "ADD_STOCK_MOVEMENT": {
-      const m = payload.movement;
-      await setDoc(doc(db, "stock_movements", m.id), cleanUndefined(m), { merge: true });
+      const m = payload?.movement;
+      if (m && m.id) {
+        await setDoc(doc(db, "stock_movements", m.id), cleanUndefined(m), { merge: true });
+      }
       break;
     }
     case "UPDATE_NEST_TASKS": {
       const batch = writeBatch(db);
-      payload.tasks.forEach((t: any) => {
-        batch.set(doc(db, "nestTasks", t.id.toString()), cleanUndefined(t), { merge: true });
-      });
+      if (payload?.tasks && Array.isArray(payload.tasks)) {
+        payload.tasks.forEach((t: any) => {
+          if (t && t.id) {
+            batch.set(doc(db, "nestTasks", t.id.toString()), cleanUndefined(t), { merge: true });
+          }
+        });
+      }
       await batch.commit();
       break;
     }
     case "ADD_ACTIVE_PACK": {
-      const p = payload.pack;
-      await setDoc(doc(db, "activePacks", p.id.toString()), cleanUndefined(p), { merge: true });
+      const p = payload?.pack;
+      if (p && p.id) {
+        await setDoc(doc(db, "activePacks", p.id.toString()), cleanUndefined(p), { merge: true });
+      } else {
+        console.warn("ADD_ACTIVE_PACK skipped in processQueueItem: payload or pack.id is missing", payload);
+      }
       break;
     }
     case "REMOVE_ACTIVE_PACK": {
-      await deleteDoc(doc(db, "activePacks", payload.id.toString()));
+      if (payload && payload.id) {
+        await deleteDoc(doc(db, "activePacks", payload.id.toString()));
+      }
       break;
     }
     case "UPDATE_LOG": {
-      const l = payload.log;
-      await setDoc(doc(db, "logs", l.id.toString()), cleanUndefined(l), { merge: true });
+      const l = payload?.log;
+      if (l && l.id) {
+        await setDoc(doc(db, "logs", l.id.toString()), cleanUndefined(l), { merge: true });
+      }
       break;
     }
     case "DELETE_LOG": {
-      await deleteDoc(doc(db, "logs", payload.id.toString()));
+      if (payload && payload.id) {
+        await deleteDoc(doc(db, "logs", payload.id.toString()));
+      }
       break;
     }
     default:
