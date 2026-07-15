@@ -744,13 +744,55 @@ export function FilaRitmoScreen({
     };
   }, [programmedList, db.orders, db.items, db.employees, selectedSectorId, plannerEfficiency, historicalAverages]);
 
+  const getShiftAdjustedDate = (startTimeStr: string, shiftHours: number, durationSeconds: number): Date => {
+    const [startH, startM] = startTimeStr.split(':').map(Number);
+    const baseDate = new Date();
+    baseDate.setHours(startH, startM, 0, 0);
+    
+    if (durationSeconds <= 0) {
+      return baseDate;
+    }
+
+    const shiftSeconds = shiftHours * 3600;
+    const days = Math.floor(durationSeconds / shiftSeconds);
+    const remainingSeconds = durationSeconds % shiftSeconds;
+    
+    const targetDate = new Date(baseDate);
+    targetDate.setDate(targetDate.getDate() + days);
+    targetDate.setSeconds(targetDate.getSeconds() + remainingSeconds);
+    
+    if (remainingSeconds === 0 && days > 0) {
+      const adjustedDate = new Date(baseDate);
+      adjustedDate.setDate(adjustedDate.getDate() + days - 1);
+      adjustedDate.setSeconds(adjustedDate.getSeconds() + shiftSeconds);
+      return adjustedDate;
+    }
+    
+    return targetDate;
+  };
+
   const calculateEndTime = (startTimeStr: string, durationSeconds: number) => {
     const [h, m] = startTimeStr.split(':').map(Number);
     if (isNaN(h) || isNaN(m)) return "--:--";
-    const d = new Date();
-    d.setHours(h, m, 0, 0);
-    d.setSeconds(d.getSeconds() + durationSeconds);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    const date = getShiftAdjustedDate(startTimeStr, plannerShiftHours, durationSeconds);
+    
+    const baseDate = new Date();
+    baseDate.setHours(h, m, 0, 0);
+    
+    const isSameDay = date.getDate() === baseDate.getDate() && 
+                      date.getMonth() === baseDate.getMonth() && 
+                      date.getFullYear() === baseDate.getFullYear();
+                      
+    if (isSameDay) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else {
+      const weekday = date.toLocaleString("pt-BR", { weekday: "short" });
+      const day = String(date.getDate()).padStart(2, "0");
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return `${weekday} ${day}/${month} ${time}`;
+    }
   };
 
   return (
@@ -1808,13 +1850,7 @@ export function FilaRitmoScreen({
                           <div>
                             ➔ Ritmo Editado: <strong className="text-white font-mono">
                               {(() => {
-                                const [hStr, mStr] = plannerStartTime.split(":");
-                                const h = parseInt(hStr, 10) || 8;
-                                const m = parseInt(mStr, 10) || 0;
-                                const startDate = new Date();
-                                startDate.setHours(h, m, 0, 0);
-                                const completionMs = startDate.getTime() + (plannerStats.durationEditedSecondsPerOperator * 1000);
-                                const compDate = new Date(completionMs);
+                                const compDate = getShiftAdjustedDate(plannerStartTime, plannerShiftHours, plannerStats.durationEditedSecondsPerOperator);
                                 return compDate.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
                               })()}
                             </strong>
@@ -1822,13 +1858,7 @@ export function FilaRitmoScreen({
                           <div>
                             ➔ Ritmo Padrão: <strong className="text-white font-mono opacity-80">
                               {(() => {
-                                const [hStr, mStr] = plannerStartTime.split(":");
-                                const h = parseInt(hStr, 10) || 8;
-                                const m = parseInt(mStr, 10) || 0;
-                                const startDate = new Date();
-                                startDate.setHours(h, m, 0, 0);
-                                const completionMs = startDate.getTime() + (plannerStats.durationStdSecondsPerOperator * 1000);
-                                const compDate = new Date(completionMs);
+                                const compDate = getShiftAdjustedDate(plannerStartTime, plannerShiftHours, plannerStats.durationStdSecondsPerOperator);
                                 return compDate.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
                               })()}
                             </strong>
@@ -1837,13 +1867,7 @@ export function FilaRitmoScreen({
                             <div className="mt-1 text-indigo-300">
                               ➔ Ritmo Histórico Médio: <strong className="text-indigo-200 font-mono">
                                 {(() => {
-                                  const [hStr, mStr] = plannerStartTime.split(":");
-                                  const h = parseInt(hStr, 10) || 8;
-                                  const m = parseInt(mStr, 10) || 0;
-                                  const startDate = new Date();
-                                  startDate.setHours(h, m, 0, 0);
-                                  const completionMs = startDate.getTime() + (plannerStats.durationHistSecondsPerOperator * 1000);
-                                  const compDate = new Date(completionMs);
+                                  const compDate = getShiftAdjustedDate(plannerStartTime, plannerShiftHours, plannerStats.durationHistSecondsPerOperator);
                                   return compDate.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
                                 })()}
                               </strong>
