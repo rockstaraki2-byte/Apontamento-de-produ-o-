@@ -13997,11 +13997,7 @@ export default function App() {
           {(currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
-            currentUser.role === "ENCARREGADO" ||
-            currentUser.role === "PRODUCAO" ||
-            currentUser.role === "SOLDA" ||
-            currentUser.role === "PINTURA" ||
-            currentUser.role === "CORTE_LASER") && (
+            currentUser.role === "ENCARREGADO") && (
             <NavLink
               to="/fila-ritmo"
               icon={<Gauge size={24} />}
