@@ -84,6 +84,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [onlyUnprinted, setOnlyUnprinted] = useState<boolean>(false);
   const [isFilterExpanded, setIsFilterExpanded] = useState<boolean>(true);
 
   // Selection state
@@ -353,6 +354,11 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         }
       }
 
+      // Filter by unprinted labels
+      if (onlyUnprinted && log.labelsPrintedCount && log.labelsPrintedCount > 0) {
+        return false;
+      }
+
       // Filter by start date
       if (startDate) {
         const filterStart = new Date(`${startDate}T00:00:00`).getTime();
@@ -392,7 +398,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
       return true;
     }).sort((a, b) => b.timestamp - a.timestamp);
-  }, [db.logs, db.orders, db.items, selectedSector, searchTerm, startDate, endDate]);
+  }, [db.logs, db.orders, db.items, selectedSector, searchTerm, startDate, endDate, onlyUnprinted]);
 
   // Handle master checkbox toggle
   const handleSelectAll = () => {
@@ -1175,6 +1181,25 @@ ${barcodeBlock}
                 onChange={(e) => setEndDate(e.target.value)}
                 className="w-full border border-gray-300 p-2 text-xs rounded focus:ring-1 focus:ring-blue-500 bg-white text-black"
               />
+            </div>
+
+            {/* Only Unprinted Toggle */}
+            <div className="w-full md:w-[150px] flex flex-col justify-end">
+              <label className="text-[10px] font-black text-black uppercase tracking-wide block mb-1">
+                🏷️ Filtro de Emissão
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none bg-white border border-gray-300 rounded p-2 text-xs font-semibold text-black hover:bg-slate-50 transition h-[34px] w-full">
+                <input
+                  type="checkbox"
+                  checked={onlyUnprinted}
+                  onChange={(e) => {
+                    setOnlyUnprinted(e.target.checked);
+                    setSelectedLogIds([]);
+                  }}
+                  className="w-4 h-4 text-black rounded cursor-pointer"
+                />
+                <span className="whitespace-nowrap font-black">Não Emitidas</span>
+              </label>
             </div>
           </div>
         )}
