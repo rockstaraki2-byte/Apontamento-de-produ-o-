@@ -29,11 +29,18 @@ export function RelatoriosScreen({
   currentUser: User;
 }) {
   const [reportType, setReportType] = useState<
-    "PRODUTIVIDADE" | "RASTREAMENTO" | "ESTOQUE" | "EPIS" | "CORTE_LASER" | "METAS"
+    "PRODUTIVIDADE" | "RASTREAMENTO" | "ESTOQUE" | "EPIS" | "CORTE_LASER" | "METAS" | "MEDIAS"
   >("PRODUTIVIDADE");
   const [selectedOrderCode, setSelectedOrderCode] = useState<string>("TODAS");
   const [visibleLogsCount, setVisibleLogsCount] = useState(30);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+
+  // Filters for Médias tab
+  const [mediasOperatorId, setMediasOperatorId] = useState<string>("ALL");
+  const [mediasItemId, setMediasItemId] = useState<string>("ALL");
+  const [mediasSectorId, setMediasSectorId] = useState<string>("ALL");
+  const [mediasStartDate, setMediasStartDate] = useState<string>("");
+  const [mediasEndDate, setMediasEndDate] = useState<string>("");
 
   // Advanced sector-wise productivity logic that compares the latest collection with the prior average
   const sectorProductivityMetrics = useMemo(() => {
@@ -971,6 +978,214 @@ export function RelatoriosScreen({
     setTimeout(() => setSimulatorSuccessMsg(null), 5050);
   };
 
+  // Lists for Médias tab filters
+  const uniqueOperators = useMemo(() => {
+    const map = new Map<string, string>();
+    db.users.forEach((u) => {
+      map.set(u.id, u.name);
+    });
+    db.logs.forEach((l) => {
+      if (l.operatorId && !map.has(l.operatorId)) {
+        const name = l.operatorId.includes(" - ") ? l.operatorId.split(" - ")[1] : l.operatorId;
+        map.set(l.operatorId, name.charAt(0).toUpperCase() + name.slice(1));
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [db.users, db.logs]);
+
+  const uniqueProducts = useMemo(() => {
+    return db.items
+      .map((it) => ({
+        id: it.id,
+        code: it.code,
+        name: it.name,
+        displayName: `${it.code} - ${it.name}`,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [db.items]);
+
+  const mediasAnalytics = useMemo(() => {
+    const processedLogs = db.logs.map((l) => {
+      const order = db.orders.find((o) => o.id === l.orderId);
+      const itemId = l.itemId || order?.itemId;
+      
+      const baseOperatorId = (l.operatorId || "").split(" - ")[0];
+      const u = db.users.find((usr) => usr.id === baseOperatorId);
+      const role = u?.role || "";
+      let sectorId = l.type || "PRODUCAO";
+      if (
+        l.operatorId === "solda" ||
+        l.operatorId.startsWith("solda - ") ||
+        (l.type === "PRODUCAO" && role === "SOLDA")
+      ) {
+        sectorId = "SOLDA";
+      }
+
+      const quantity =
+        l.quantityProcessed ||
+        l.quantityCut ||
+        l.quantityPainted ||
+        l.quantityPacked ||
+        l.quantityInvoiced ||
+        0;
+
+      const durationHours = (l.durationMillis || 10 * 60 * 1000) / (1000 * 60 * 60);
+      const dateString = new Date(l.timestamp).toISOString().split("T")[0];
+
+      return {
+        ...l,
+        itemId,
+        sectorId,
+        quantity,
+        durationHours,
+        dateString,
+      };
+    });
+
+    const filtered = processedLogs.filter((l) => {
+      if (mediasStartDate) {
+        const filterStart = new Date(`${mediasStartDate}T00:00:00`).getTime();
+        if (l.timestamp < filterStart) return false;
+      }
+      if (mediasEndDate) {
+        const filterEnd = new Date(`${mediasEndDate}T23:59:59`).getTime();
+        if (l.timestamp > filterEnd) return false;
+      }
+      if (mediasOperatorId !== "ALL" && l.operatorId !== mediasOperatorId) {
+        return false;
+      }
+      if (mediasItemId !== "ALL" && String(l.itemId) !== mediasItemId) {
+        return false;
+      }
+      if (mediasSectorId !== "ALL" && l.sectorId !== mediasSectorId) {
+        return false;
+      }
+      return true;
+    });
+
+    const totalQty = filtered.reduce((sum, l) => sum + l.quantity, 0);
+    const totalHours = filtered.reduce((sum, l) => sum + l.durationHours, 0);
+    const uniqueDays = new Set(filtered.map((l) => l.dateString));
+    const totalDaysCount = uniqueDays.size || 1;
+
+    const avgPerHour = totalHours > 0 ? totalQty / totalHours : 0;
+    const avgPerDay = totalQty / totalDaysCount;
+
+    // Group by Operator
+    const operatorGroups: Record<string, { id: string; name: string; qty: number; hours: number; days: Set<string> }> = {};
+    filtered.forEach((l) => {
+      const opId = l.operatorId || "Desconhecido";
+      if (!operatorGroups[opId]) {
+        const user = db.users.find((u) => u.id === opId);
+        let opName = user?.name || opId;
+        if (opId.startsWith("solda - ")) {
+          opName = opId.split(" - ")[1];
+        }
+        operatorGroups[opId] = {
+          id: opId,
+          name: opName.charAt(0).toUpperCase() + opName.slice(1),
+          qty: 0,
+          hours: 0,
+          days: new Set(),
+        };
+      }
+      operatorGroups[opId].qty += l.quantity;
+      operatorGroups[opId].hours += l.durationHours;
+      operatorGroups[opId].days.add(l.dateString);
+    });
+
+    const operatorSummary = Object.values(operatorGroups).map((g) => {
+      const daysCount = g.days.size || 1;
+      return {
+        ...g,
+        avgPerHour: g.hours > 0 ? g.qty / g.hours : 0,
+        avgPerDay: g.qty / daysCount,
+      };
+    }).sort((a, b) => b.avgPerHour - a.avgPerHour);
+
+    // Group by Product (Item)
+    const productGroups: Record<number, { id: number; code: string; name: string; qty: number; hours: number; days: Set<string> }> = {};
+    filtered.forEach((l) => {
+      if (!l.itemId) return;
+      const prodId = l.itemId;
+      if (!productGroups[prodId]) {
+        const item = db.items.find((i) => i.id === prodId);
+        productGroups[prodId] = {
+          id: prodId,
+          code: item?.code || "S/C",
+          name: item?.name || "Produto Desconhecido",
+          qty: 0,
+          hours: 0,
+          days: new Set(),
+        };
+      }
+      productGroups[prodId].qty += l.quantity;
+      productGroups[prodId].hours += l.durationHours;
+      productGroups[prodId].days.add(l.dateString);
+    });
+
+    const productSummary = Object.values(productGroups).map((g) => {
+      const daysCount = g.days.size || 1;
+      return {
+        ...g,
+        avgPerHour: g.hours > 0 ? g.qty / g.hours : 0,
+        avgPerDay: g.qty / daysCount,
+      };
+    }).sort((a, b) => b.avgPerHour - a.avgPerHour);
+
+    // Group by Sector
+    const sectorGroups: Record<string, { id: string; name: string; qty: number; hours: number; days: Set<string> }> = {};
+    filtered.forEach((l) => {
+      const sId = l.sectorId;
+      if (!sectorGroups[sId]) {
+        const sectConfig = sectorProductivityMetrics.find((s) => s.id === sId);
+        const name = sectConfig ? sectConfig.name : sId.replace("_", " ");
+        sectorGroups[sId] = {
+          id: sId,
+          name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(),
+          qty: 0,
+          hours: 0,
+          days: new Set(),
+        };
+      }
+      sectorGroups[sId].qty += l.quantity;
+      sectorGroups[sId].hours += l.durationHours;
+      sectorGroups[sId].days.add(l.dateString);
+    });
+
+    const sectorSummary = Object.values(sectorGroups).map((g) => {
+      const daysCount = g.days.size || 1;
+      return {
+        ...g,
+        avgPerHour: g.hours > 0 ? g.qty / g.hours : 0,
+        avgPerDay: g.qty / daysCount,
+      };
+    }).sort((a, b) => b.avgPerHour - a.avgPerHour);
+
+    return {
+      filteredLogs: filtered,
+      totalQty,
+      totalHours,
+      totalDaysCount,
+      avgPerHour,
+      avgPerDay,
+      operatorSummary,
+      productSummary,
+      sectorSummary,
+    };
+  }, [
+    db.logs,
+    db.users,
+    db.orders,
+    db.items,
+    mediasOperatorId,
+    mediasItemId,
+    mediasSectorId,
+    mediasStartDate,
+    mediasEndDate,
+    sectorProductivityMetrics,
+  ]);
+
   // Export functions
   const exportPDF = () => {
     const doc = new jsPDF();
@@ -980,6 +1195,8 @@ export function RelatoriosScreen({
       titleStr = "Relatorio Comparativo de Produtividade por Setor";
     } else if (reportType === "RASTREAMENTO") {
       titleStr = "Relatorio de Rastreabilidade de Pecas";
+    } else if (reportType === "MEDIAS") {
+      titleStr = "Relatorio de Medias de Producao (Acompanhamento)";
     } else {
       titleStr = "Historico de Movimentacoes de Estoque";
     }
@@ -1027,6 +1244,35 @@ export function RelatoriosScreen({
         body: tableData,
         startY: 25,
       });
+    } else if (reportType === "MEDIAS") {
+      doc.text("Medias por Operador", 14, 25);
+      const tableData = mediasAnalytics.operatorSummary.map((o) => [
+        o.name,
+        o.qty.toString(),
+        o.hours.toFixed(1) + "h",
+        o.avgPerHour.toFixed(1) + "/h",
+        o.avgPerDay.toFixed(1) + "/dia"
+      ]);
+      autoTable(doc, {
+        head: [["Operador", "Qtd Total", "Horas Trab.", "Media/Hora", "Media/Dia"]],
+        body: tableData,
+        startY: 28,
+      });
+
+      const finalY = (doc as any).lastAutoTable?.finalY || 120;
+      doc.text("Medias por Produto", 14, finalY + 15);
+      const prodData = mediasAnalytics.productSummary.map((p) => [
+        `${p.code} - ${p.name}`,
+        p.qty.toString(),
+        p.hours.toFixed(1) + "h",
+        p.avgPerHour.toFixed(1) + "/h",
+        p.avgPerDay.toFixed(1) + "/dia"
+      ]);
+      autoTable(doc, {
+        head: [["Produto", "Qtd Total", "Horas Trab.", "Media/Hora", "Media/Dia"]],
+        body: prodData,
+        startY: finalY + 18,
+      });
     } else {
       const tableData = stockMovementsFormatted.map((m) => [
         m.date,
@@ -1068,6 +1314,17 @@ export function RelatoriosScreen({
       csvContent += "Data,Pedido,Produto,Setor,Quantidade,Operador\n";
       traceLogs.forEach((row) => {
         csvContent += `"${row.date}","${row.orderCode}","${row.item}","${row.sector}",${row.quantity},"${row.operator}"\n`;
+      });
+    } else if (reportType === "MEDIAS") {
+      csvContent += "=== MEDIAS POR OPERADOR ===\n";
+      csvContent += "Operador,Quantidade Total,Horas Trabalhadas,Media por Hora,Media por Dia\n";
+      mediasAnalytics.operatorSummary.forEach((o) => {
+        csvContent += `"${o.name}",${o.qty},${o.hours.toFixed(2)},${o.avgPerHour.toFixed(2)},${o.avgPerDay.toFixed(2)}\n`;
+      });
+      csvContent += "\n=== MEDIAS POR PRODUTO ===\n";
+      csvContent += "Produto,Quantidade Total,Horas Trabalhadas,Media por Hora,Media por Dia\n";
+      mediasAnalytics.productSummary.forEach((p) => {
+        csvContent += `"${p.code} - ${p.name}",${p.qty},${p.hours.toFixed(2)},${p.avgPerHour.toFixed(2)},${p.avgPerDay.toFixed(2)}\n`;
       });
     } else {
       csvContent +=
@@ -1130,6 +1387,12 @@ export function RelatoriosScreen({
               onClick={() => setReportType("METAS")}
             >
               🎯 Metas de Produção
+            </button>
+            <button
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition cursor-pointer ${reportType === "MEDIAS" ? "bg-blue-600 text-white shadow-xs" : "bg-transparent text-gray-600 hover:bg-gray-100"}`}
+              onClick={() => setReportType("MEDIAS")}
+            >
+              📊 Médias de Produção
             </button>
           </div>
         </div>
@@ -2022,6 +2285,494 @@ export function RelatoriosScreen({
 
         {reportType === "METAS" && (
           <MetasProducaoTab db={db} currentUser={currentUser} />
+        )}
+
+        {reportType === "MEDIAS" && (
+          <div className="flex-1 flex flex-col gap-6 animate-in fade-in duration-200">
+            {/* Information Notice Alert */}
+            <div className="bg-slate-50 border-l-4 border-blue-600 p-4 rounded text-xs text-gray-600 space-y-1 shadow-xs">
+              <h4 className="font-bold text-slate-800 flex items-center gap-1.5">
+                <Sparkles size={14} className="text-blue-600" />
+                Módulo de Médias de Produção
+              </h4>
+              <p>
+                Analise detalhadamente a performance de produção calculando a **média por hora** e a **média por dia** dos operadores, produtos e setores. 
+                Utilize os filtros abaixo para cruzar dados de operadores específicos com produtos específicos no período desejado.
+              </p>
+            </div>
+
+            {/* Filters Section */}
+            <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-5 space-y-4">
+              <div className="flex items-center gap-1.5 border-b border-gray-100 pb-2.5">
+                <span className="text-base">🔍</span>
+                <h3 className="font-bold text-gray-800 text-xs uppercase tracking-wider">
+                  Filtros de Pesquisa e Análise
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+                {/* Operator Filter */}
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold block mb-1 uppercase tracking-wider">
+                    👤 Operador
+                  </label>
+                  <select
+                    value={mediasOperatorId}
+                    onChange={(e) => setMediasOperatorId(e.target.value)}
+                    className="w-full text-xs p-2 border border-gray-300 rounded bg-white text-gray-700 font-semibold cursor-pointer"
+                  >
+                    <option value="ALL">Todos os Operadores</option>
+                    {uniqueOperators.map((op) => (
+                      <option key={op.id} value={op.id}>
+                        {op.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Product Filter */}
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold block mb-1 uppercase tracking-wider">
+                    📦 Produto
+                  </label>
+                  <select
+                    value={mediasItemId}
+                    onChange={(e) => setMediasItemId(e.target.value)}
+                    className="w-full text-xs p-2 border border-gray-300 rounded bg-white text-gray-700 font-semibold cursor-pointer"
+                  >
+                    <option value="ALL">Todos os Produtos</option>
+                    {uniqueProducts.map((p) => (
+                      <option key={p.id} value={String(p.id)}>
+                        {p.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Sector Filter */}
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold block mb-1 uppercase tracking-wider">
+                    ⚙️ Setor
+                  </label>
+                  <select
+                    value={mediasSectorId}
+                    onChange={(e) => setMediasSectorId(e.target.value)}
+                    className="w-full text-xs p-2 border border-gray-300 rounded bg-white text-gray-700 font-semibold cursor-pointer"
+                  >
+                    <option value="ALL">Todos os Setores</option>
+                    <option value="CORTE_LASER">Corte a Laser</option>
+                    <option value="PINTURA">Pintura</option>
+                    <option value="EMBALAGEM">Embalagem</option>
+                    <option value="PRODUCAO">Produção / Montagem</option>
+                    <option value="BANHO_QUIMICO">Banho Químico</option>
+                    <option value="PRENSA_EDUARDO">Prensa Eduardo</option>
+                    <option value="PRENSA_RAFAEL">Prensa Rafael</option>
+                    <option value="INJETORA">Injetora</option>
+                    <option value="TORNO_CNC_WILLIAN">Torno CNC Willian</option>
+                    <option value="TORNO_CNC_HENRIQUE">Torno CNC Henrique</option>
+                    <option value="SOLDA">Solda</option>
+                  </select>
+                </div>
+
+                {/* Start Date */}
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold block mb-1 uppercase tracking-wider">
+                    🗓️ Data Inicial
+                  </label>
+                  <input
+                    type="date"
+                    value={mediasStartDate}
+                    onChange={(e) => setMediasStartDate(e.target.value)}
+                    className="w-full text-xs p-1.5 border border-gray-300 rounded text-gray-700 cursor-pointer"
+                  />
+                </div>
+
+                {/* End Date */}
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold block mb-1 uppercase tracking-wider">
+                    🗓️ Data Final
+                  </label>
+                  <input
+                    type="date"
+                    value={mediasEndDate}
+                    onChange={(e) => setMediasEndDate(e.target.value)}
+                    className="w-full text-xs p-1.5 border border-gray-300 rounded text-gray-700 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Reset Filters button */}
+              {(mediasOperatorId !== "ALL" || mediasItemId !== "ALL" || mediasSectorId !== "ALL" || mediasStartDate || mediasEndDate) && (
+                <div className="flex justify-end pt-1">
+                  <button
+                    onClick={() => {
+                      setMediasOperatorId("ALL");
+                      setMediasItemId("ALL");
+                      setMediasSectorId("ALL");
+                      setMediasStartDate("");
+                      setMediasEndDate("");
+                    }}
+                    className="text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold px-3 py-1.5 rounded-lg transition cursor-pointer"
+                  >
+                    🧹 Limpar Filtros
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* KPI Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 space-y-1.5">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">
+                  📦 TOTAL PRODUZIDO
+                </span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-2xl font-black text-gray-800">
+                    {mediasAnalytics.totalQty.toLocaleString("pt-BR")}
+                  </span>
+                  <span className="text-xs text-gray-500 font-bold">unidades</span>
+                </div>
+                <p className="text-[10px] text-gray-400 italic">No período e filtros selecionados</p>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 space-y-1.5">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">
+                  ⏱️ TEMPO ACUMULADO
+                </span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-2xl font-black text-gray-800">
+                    {mediasAnalytics.totalHours.toFixed(1)}
+                  </span>
+                  <span className="text-xs text-gray-500 font-bold">horas</span>
+                </div>
+                <p className="text-[10px] text-gray-400 italic">Tempo total de trabalho apurado</p>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 space-y-1.5 border-l-4 border-l-emerald-500">
+                <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">
+                  ⚡ MÉDIA POR HORA (PPH)
+                </span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-2xl font-black text-emerald-700">
+                    {mediasAnalytics.avgPerHour.toFixed(1)}
+                  </span>
+                  <span className="text-xs text-emerald-600 font-bold">peças / h</span>
+                </div>
+                <p className="text-[10px] text-gray-400 italic">Velocidade média geral</p>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 space-y-1.5 border-l-4 border-l-blue-500">
+                <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wider block">
+                  📅 MÉDIA POR DIA
+                </span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-2xl font-black text-blue-700">
+                    {mediasAnalytics.avgPerDay.toFixed(1)}
+                  </span>
+                  <span className="text-xs text-blue-600 font-bold">peças / dia</span>
+                </div>
+                <p className="text-[10px] text-gray-400 italic">Média em {mediasAnalytics.totalDaysCount} dias de atividade</p>
+              </div>
+            </div>
+
+            {/* Interactive Insights Cards */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Product Insight */}
+              <div className="bg-gradient-to-br from-indigo-50 to-white border border-indigo-100 rounded-xl p-5 space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-lg">🎯</span>
+                  <h4 className="font-extrabold text-indigo-950 text-sm">
+                    Análise e Comparativos por Produto
+                  </h4>
+                </div>
+                {mediasItemId !== "ALL" ? (
+                  (() => {
+                    const selectedItem = db.items.find((i) => String(i.id) === mediasItemId);
+                    const prodLogs = mediasAnalytics.filteredLogs;
+                    const prodHours = prodLogs.reduce((sum, l) => sum + l.durationHours, 0);
+                    const prodQty = prodLogs.reduce((sum, l) => sum + l.quantity, 0);
+                    const prodPPH = prodHours > 0 ? prodQty / prodHours : 0;
+
+                    const matchingProductSummary = mediasAnalytics.operatorSummary.filter((o) => o.qty > 0);
+                    const bestOp = matchingProductSummary[0];
+
+                    return (
+                      <div className="text-xs space-y-2 text-indigo-900">
+                        <p>
+                          Análise para o produto: <strong className="text-indigo-950">{selectedItem?.code} - {selectedItem?.name}</strong>.
+                        </p>
+                        <div className="grid grid-cols-2 gap-3 pt-1">
+                          <div className="bg-white/85 p-2.5 rounded border border-indigo-100">
+                            <span className="text-[9px] text-indigo-500 uppercase font-bold tracking-wider block">Média Geral do Produto</span>
+                            <span className="text-sm font-black text-indigo-950">{prodPPH.toFixed(1)} pçs/h</span>
+                          </div>
+                          {bestOp && (
+                            <div className="bg-white/85 p-2.5 rounded border border-indigo-100">
+                              <span className="text-[9px] text-indigo-500 uppercase font-bold tracking-wider block">Mais Rápido</span>
+                              <span className="text-xs font-bold text-indigo-950 block truncate">{bestOp.name}</span>
+                              <span className="text-[10px] font-medium text-emerald-600">{bestOp.avgPerHour.toFixed(1)} pçs/h</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <p className="text-xs text-gray-500 italic">
+                    Selecione um produto específico nos filtros acima para habilitar comparativos detalhados de velocidade por operador e por setor.
+                  </p>
+                )}
+              </div>
+
+              {/* Operator Insight */}
+              <div className="bg-gradient-to-br from-purple-50 to-white border border-purple-100 rounded-xl p-5 space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-lg">👤</span>
+                  <h4 className="font-extrabold text-purple-950 text-sm">
+                    Análise e Comparativos por Operador
+                  </h4>
+                </div>
+                {mediasOperatorId !== "ALL" ? (
+                  (() => {
+                    const selectedUser = db.users.find((u) => u.id === mediasOperatorId);
+                    const opName = selectedUser?.name || mediasOperatorId;
+                    const opLogs = mediasAnalytics.filteredLogs;
+                    const opHours = opLogs.reduce((sum, l) => sum + l.durationHours, 0);
+                    const opQty = opLogs.reduce((sum, l) => sum + l.quantity, 0);
+                    const opPPH = opHours > 0 ? opQty / opHours : 0;
+
+                    const matchingProductSummary = mediasAnalytics.productSummary.filter((p) => p.qty > 0);
+                    const bestProduct = matchingProductSummary[0];
+
+                    return (
+                      <div className="text-xs space-y-2 text-purple-900">
+                        <p>
+                          Análise para o operador: <strong className="text-purple-950">{opName}</strong>.
+                        </p>
+                        <div className="grid grid-cols-2 gap-3 pt-1">
+                          <div className="bg-white/85 p-2.5 rounded border border-purple-100">
+                            <span className="text-[9px] text-purple-500 uppercase font-bold tracking-wider block">Média Geral do Operador</span>
+                            <span className="text-sm font-black text-purple-950">{opPPH.toFixed(1)} pçs/h</span>
+                          </div>
+                          {bestProduct && (
+                            <div className="bg-white/85 p-2.5 rounded border border-purple-100">
+                              <span className="text-[9px] text-purple-500 uppercase font-bold tracking-wider block">Produto Mais Rápido</span>
+                              <span className="text-xs font-bold text-purple-950 block truncate">{bestProduct.code}</span>
+                              <span className="text-[10px] font-medium text-purple-700">{bestProduct.avgPerHour.toFixed(1)} pçs/h</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <p className="text-xs text-gray-500 italic">
+                    Selecione um operador específico nos filtros acima para visualizar o seu rendimento médio e produtos de melhor performance.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Three Pillar Analytics Tables */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              
+              {/* Pillar 1: Operator Averages */}
+              <div className="bg-white rounded-xl shadow-xs border border-gray-150 overflow-hidden flex flex-col">
+                <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center">
+                  <h4 className="font-bold text-gray-700 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <span>👤</span> Médias por Operador
+                  </h4>
+                  <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                    {mediasAnalytics.operatorSummary.length} op.
+                  </span>
+                </div>
+                <div className="overflow-auto max-h-[350px]">
+                  {mediasAnalytics.operatorSummary.length === 0 ? (
+                    <p className="p-8 text-center text-xs text-gray-400 italic">Sem dados registrados.</p>
+                  ) : (
+                    <table className="w-full text-xs text-left text-gray-600">
+                      <thead className="text-[9px] uppercase bg-gray-50 text-gray-500 font-bold border-b sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2.5">Operador</th>
+                          <th className="px-4 py-2.5 text-right">Média /h</th>
+                          <th className="px-4 py-2.5 text-right">Média /dia</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {mediasAnalytics.operatorSummary.map((op) => (
+                          <tr key={op.id} className="hover:bg-slate-50/50 transition">
+                            <td className="px-4 py-3">
+                              <span className="font-bold text-gray-800 block">{op.name}</span>
+                              <span className="text-[9px] text-gray-400">Total: {op.qty} un • {op.hours.toFixed(1)}h</span>
+                            </td>
+                            <td className="px-4 py-3 text-right font-extrabold text-emerald-600 font-mono">
+                              {op.avgPerHour.toFixed(1)}
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold text-blue-600 font-mono">
+                              {op.avgPerDay.toFixed(1)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+
+              {/* Pillar 2: Product Averages */}
+              <div className="bg-white rounded-xl shadow-xs border border-gray-150 overflow-hidden flex flex-col">
+                <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center">
+                  <h4 className="font-bold text-gray-700 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <span>📦</span> Médias por Produto
+                  </h4>
+                  <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                    {mediasAnalytics.productSummary.length} prod.
+                  </span>
+                </div>
+                <div className="overflow-auto max-h-[350px]">
+                  {mediasAnalytics.productSummary.length === 0 ? (
+                    <p className="p-8 text-center text-xs text-gray-400 italic">Sem dados registrados.</p>
+                  ) : (
+                    <table className="w-full text-xs text-left text-gray-600">
+                      <thead className="text-[9px] uppercase bg-gray-50 text-gray-500 font-bold border-b sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2.5">Produto</th>
+                          <th className="px-4 py-2.5 text-right">Média /h</th>
+                          <th className="px-4 py-2.5 text-right">Média /dia</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {mediasAnalytics.productSummary.map((p) => (
+                          <tr key={p.id} className="hover:bg-slate-50/50 transition">
+                            <td className="px-4 py-3 max-w-[150px] truncate">
+                              <span className="font-bold text-gray-800 block truncate">{p.code}</span>
+                              <span className="text-[10px] text-gray-500 block truncate">{p.name}</span>
+                              <span className="text-[9px] text-gray-400">Total: {p.qty} un</span>
+                            </td>
+                            <td className="px-4 py-3 text-right font-extrabold text-emerald-600 font-mono">
+                              {p.avgPerHour.toFixed(1)}
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold text-blue-600 font-mono">
+                              {p.avgPerDay.toFixed(1)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+
+              {/* Pillar 3: Sector Averages */}
+              <div className="bg-white rounded-xl shadow-xs border border-gray-150 overflow-hidden flex flex-col">
+                <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center">
+                  <h4 className="font-bold text-gray-700 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <span>⚙️</span> Médias por Setor
+                  </h4>
+                  <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                    {mediasAnalytics.sectorSummary.length} set.
+                  </span>
+                </div>
+                <div className="overflow-auto max-h-[350px]">
+                  {mediasAnalytics.sectorSummary.length === 0 ? (
+                    <p className="p-8 text-center text-xs text-gray-400 italic">Sem dados registrados.</p>
+                  ) : (
+                    <table className="w-full text-xs text-left text-gray-600">
+                      <thead className="text-[9px] uppercase bg-gray-50 text-gray-500 font-bold border-b sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2.5">Setor</th>
+                          <th className="px-4 py-2.5 text-right">Média /h</th>
+                          <th className="px-4 py-2.5 text-right">Média /dia</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {mediasAnalytics.sectorSummary.map((sect) => (
+                          <tr key={sect.id} className="hover:bg-slate-50/50 transition">
+                            <td className="px-4 py-3">
+                              <span className="font-bold text-gray-800 block">{sect.name}</span>
+                              <span className="text-[9px] text-gray-400">Total: {sect.qty} un • {sect.hours.toFixed(1)}h</span>
+                            </td>
+                            <td className="px-4 py-3 text-right font-extrabold text-emerald-600 font-mono">
+                              {sect.avgPerHour.toFixed(1)}
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold text-blue-600 font-mono">
+                              {sect.avgPerDay.toFixed(1)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Individual Records Table (Audit list) */}
+            <div className="bg-white rounded-xl shadow-xs border border-gray-150 overflow-hidden flex flex-col">
+              <h3 className="font-bold text-gray-700 p-4 border-b text-xs uppercase tracking-wider bg-gray-50/50">
+                📋 Registro Geral de Coletas Usadas nos Cálculos
+              </h3>
+              <div className="overflow-auto max-h-[300px]">
+                {mediasAnalytics.filteredLogs.length === 0 ? (
+                  <p className="p-8 text-center text-xs text-gray-400 italic">Nenhum lançamento no período filtrado.</p>
+                ) : (
+                  <table className="w-full text-xs text-left text-gray-600">
+                    <thead className="text-[9px] uppercase bg-gray-50 text-gray-500 font-bold border-b sticky top-0">
+                      <tr>
+                        <th className="px-4 py-2.5">Data/Hora</th>
+                        <th className="px-4 py-2.5">Operador</th>
+                        <th className="px-4 py-2.5">Produto</th>
+                        <th className="px-4 py-2.5">Setor</th>
+                        <th className="px-4 py-2.5 text-right">Qtd</th>
+                        <th className="px-4 py-2.5 text-right">Tempo</th>
+                        <th className="px-4 py-2.5 text-right">Velocidade</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {mediasAnalytics.filteredLogs.slice(0, 50).map((log) => {
+                        const product = db.items.find((i) => i.id === log.itemId);
+                        const user = db.users.find((u) => u.id === log.operatorId);
+                        let operatorName = user?.name || log.operatorId;
+                        if (log.operatorId.startsWith("solda - ")) {
+                          operatorName = log.operatorId.split(" - ")[1];
+                        }
+                        const rate = log.durationHours > 0 ? log.quantity / log.durationHours : 0;
+                        return (
+                          <tr key={log.id} className="hover:bg-gray-50/50 transition">
+                            <td className="px-4 py-2.5 font-mono text-[10px] text-gray-500">
+                              {new Date(log.timestamp).toLocaleString("pt-BR")}
+                            </td>
+                            <td className="px-4 py-2.5 font-semibold text-gray-750">
+                              {operatorName}
+                            </td>
+                            <td className="px-4 py-2.5 font-medium max-w-[150px] truncate">
+                              {product ? `${product.code} - ${product.name}` : "Lançamento Manual"}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-700">
+                                {log.sectorId}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-bold text-gray-800">
+                              {log.quantity}
+                            </td>
+                            <td className="px-4 py-2.5 text-right text-gray-500">
+                              {log.durationHours.toFixed(2)}h
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-extrabold text-emerald-600">
+                              {rate.toFixed(1)}/h
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+          </div>
         )}
       </ScrollContainer>
 

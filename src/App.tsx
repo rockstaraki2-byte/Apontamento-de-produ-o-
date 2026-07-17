@@ -2314,7 +2314,8 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-sm border mb-6 overflow-hidden">
+      <div className="flex-1 overflow-y-auto w-full pr-1">
+        <div className="bg-white rounded-lg shadow-sm border mb-6 overflow-hidden">
         <button
           onClick={() => setIsFormCollapsed(!isFormCollapsed)}
           className="w-full flex justify-between items-center px-4 py-3 bg-gray-50 border-b hover:bg-gray-100/80 transition text-left cursor-pointer"
@@ -2492,7 +2493,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           </div>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto w-full">
+      <div className="w-full">
         {filteredItems.length === 0 ? (
           <p className="text-gray-500 text-center mt-4">
             Nenhum item encontrado.
@@ -2563,9 +2564,8 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
             </div>
           ))
         )}
+        </div>
       </div>
-
-      {/* BOM Modal */}
       {isBomModalOpen && currentBomProduct && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
