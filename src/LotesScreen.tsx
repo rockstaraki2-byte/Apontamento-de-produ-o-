@@ -71,6 +71,8 @@ export function LotesScreen({
 
   const [isPreviewAcompOpen, setIsPreviewAcompOpen] = useState(false);
   const [previewAcompBatch, setPreviewAcompBatch] = useState<ProductionBatch | null>(null);
+  const [destrincharComposicoes, setDestrincharComposicoes] = useState(false);
+  const [ocultarPaiComposicao, setOcultarPaiComposicao] = useState(false);
 
   // Pagination for batch list: show 10 batches by default
   const [visibleCount, setVisibleCount] = useState(10);
@@ -1657,6 +1659,37 @@ export function LotesScreen({
               </button>
             </div>
 
+            {/* Options Panel */}
+            <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center gap-6 shrink-0 text-xs">
+              <span className="font-bold text-slate-700">Configurações de Impressão:</span>
+              
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={destrincharComposicoes}
+                  onChange={(e) => setDestrincharComposicoes(e.target.checked)}
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                />
+                <span className="font-semibold text-slate-800">
+                  Destrinchar kits/composições (BOM)
+                </span>
+              </label>
+
+              {destrincharComposicoes && (
+                <label className="flex items-center gap-2 cursor-pointer select-none animate-in slide-in-from-left-2 duration-150">
+                  <input
+                    type="checkbox"
+                    checked={ocultarPaiComposicao}
+                    onChange={(e) => setOcultarPaiComposicao(e.target.checked)}
+                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                  />
+                  <span className="font-semibold text-slate-800">
+                    Ocultar produto principal (Kits pais)
+                  </span>
+                </label>
+              )}
+            </div>
+
             {/* Scrollable Visual Workspace */}
             <div className="flex-1 overflow-y-auto bg-slate-100 p-6 flex justify-center">
               <div className="shadow-2xl bg-white border border-slate-200 p-2 rounded-xl h-fit">
@@ -1665,6 +1698,8 @@ export function LotesScreen({
                   batch={previewAcompBatch}
                   orderIds={previewAcompBatch.orderIds}
                   db={db}
+                  destrincharComposicoes={destrincharComposicoes}
+                  ocultarPaiComposicao={ocultarPaiComposicao}
                 />
               </div>
             </div>
@@ -1734,6 +1769,8 @@ export function LotesScreen({
               batch={acompBatch}
               orderIds={acompBatch.orderIds}
               db={db}
+              destrincharComposicoes={destrincharComposicoes}
+              ocultarPaiComposicao={ocultarPaiComposicao}
             />
           </div>
         </div>

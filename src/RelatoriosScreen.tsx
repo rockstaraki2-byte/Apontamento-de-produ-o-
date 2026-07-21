@@ -19,6 +19,7 @@ import type { User, ProductionLog } from "./types";
 import { ProdutividadeConfigModal } from "./ProdutividadeConfigModal";
 import { RelatorioCorteLaserTab } from "./RelatorioCorteLaserTab";
 import { MetasProducaoTab } from "./components/MetasProducaoTab";
+import { ProducaoDiariaTab } from "./components/ProducaoDiariaTab";
 import { ScreenLayout, ScrollContainer } from "./components/Layout";
 
 export function RelatoriosScreen({
@@ -29,7 +30,7 @@ export function RelatoriosScreen({
   currentUser: User;
 }) {
   const [reportType, setReportType] = useState<
-    "PRODUTIVIDADE" | "RASTREAMENTO" | "ESTOQUE" | "EPIS" | "CORTE_LASER" | "METAS" | "MEDIAS"
+    "PRODUTIVIDADE" | "RASTREAMENTO" | "ESTOQUE" | "EPIS" | "CORTE_LASER" | "METAS" | "MEDIAS" | "PRODUCAO_DIARIA"
   >("PRODUTIVIDADE");
   const [selectedOrderCode, setSelectedOrderCode] = useState<string>("TODAS");
   const [visibleLogsCount, setVisibleLogsCount] = useState(30);
@@ -1394,10 +1395,16 @@ export function RelatoriosScreen({
             >
               📊 Médias de Produção
             </button>
+            <button
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition cursor-pointer ${reportType === "PRODUCAO_DIARIA" ? "bg-blue-600 text-white shadow-xs" : "bg-transparent text-gray-600 hover:bg-gray-100"}`}
+              onClick={() => setReportType("PRODUCAO_DIARIA")}
+            >
+              🗓️ Produção Diária
+            </button>
           </div>
         </div>
 
-        {reportType !== "CORTE_LASER" && reportType !== "METAS" && (
+        {reportType !== "CORTE_LASER" && reportType !== "METAS" && reportType !== "PRODUCAO_DIARIA" && (
           <div className="flex justify-between items-center flex-wrap gap-2">
             <div className="flex gap-2">
               <button
@@ -2285,6 +2292,10 @@ export function RelatoriosScreen({
 
         {reportType === "METAS" && (
           <MetasProducaoTab db={db} currentUser={currentUser} />
+        )}
+
+        {reportType === "PRODUCAO_DIARIA" && (
+          <ProducaoDiariaTab db={db} />
         )}
 
         {reportType === "MEDIAS" && (

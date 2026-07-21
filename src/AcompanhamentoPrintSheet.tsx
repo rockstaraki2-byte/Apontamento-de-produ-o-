@@ -7,16 +7,19 @@ interface AcompanhamentoPrintSheetProps {
   batch: ProductionBatch;
   orderIds: number[];
   db: ReturnType<typeof useDatabase>;
+  destrincharComposicoes?: boolean;
+  ocultarPaiComposicao?: boolean;
 }
 
 export const AcompanhamentoPrintSheet = forwardRef<
   HTMLDivElement,
   AcompanhamentoPrintSheetProps
->(({ batch, orderIds = [], db }, ref) => {
+>(({ batch, orderIds = [], db, destrincharComposicoes = false, ocultarPaiComposicao = false }, ref) => {
   const logoUrl = db.activeTenant?.logoUrl || "/icon.png";
   const companyName = db.activeTenant?.name || "IMPÉRIO ACESSÓRIOS | METALURGIA";
 
-  // Group batch orders by unique item characteristics: itemId, color, size, variation
+  // Group batch orders by unique item characteristics: itemId, color, size, variation.
+  // If destrincharComposicoes is true, products with compositions are expanded into their sub-components.
   const groupedProducts = React.useMemo(() => {
     const list: {
       itemId: number;
@@ -24,38 +27,145 @@ export const AcompanhamentoPrintSheet = forwardRef<
       size: string;
       variation: string;
       totalQuantity: number;
-      orders: Order[];
+      orders: any[];
+      isComponent?: boolean;
+      parentItemCode?: string;
+      parentItemName?: string;
+      componentUnitQty?: number;
     }[] = [];
 
     (orderIds || []).forEach((oid) => {
       const order = db.orders.find((o) => o.id === oid);
       if (!order) return;
 
-      const existing = list.find(
-        (p) =>
-          p.itemId === order.itemId &&
-          p.color === order.color &&
-          p.size === order.size &&
-          p.variation === order.variation
-      );
+      const item = db.items.find((it) => it.id === order.itemId);
+      const hasComponents = item?.components && item.components.length > 0;
 
-      if (existing) {
-        existing.totalQuantity += order.totalQuantity;
-        existing.orders.push(order);
-      } else {
-        list.push({
-          itemId: order.itemId,
-          color: order.color,
-          size: order.size,
-          variation: order.variation,
-          totalQuantity: order.totalQuantity,
-          orders: [order]
+      if (destrincharComposicoes && hasComponents) {
+        // First, add the parent product itself if we shouldn't hide it
+        if (!ocultarPaiComposicao) {
+          const existingParent = list.find(
+            (p) =>
+              !p.isComponent &&
+              p.itemId === order.itemId &&
+              p.color === order.color &&
+              p.size === order.size &&
+              p.variation === order.variation
+          );
+
+          if (existingParent) {
+            existingParent.totalQuantity += order.totalQuantity;
+            existingParent.orders.push({
+              id: order.id,
+              orderCode: order.orderCode,
+              customerName: order.customerName,
+              deliveryDate: order.deliveryDate,
+              totalQuantity: order.totalQuantity,
+            });
+          } else {
+            list.push({
+              itemId: order.itemId,
+              color: order.color,
+              size: order.size,
+              variation: order.variation,
+              totalQuantity: order.totalQuantity,
+              orders: [{
+                id: order.id,
+                orderCode: order.orderCode,
+                customerName: order.customerName,
+                deliveryDate: order.deliveryDate,
+                totalQuantity: order.totalQuantity,
+              }],
+            });
+          }
+        }
+
+        // Add each sub-component
+        item.components!.forEach((comp) => {
+          const childQty = order.totalQuantity * comp.quantity;
+
+          const existingComponent = list.find(
+            (p) =>
+              p.isComponent &&
+              p.itemId === comp.itemId &&
+              p.parentItemCode === item.code &&
+              p.color === order.color &&
+              p.size === order.size &&
+              p.variation === order.variation
+          );
+
+          if (existingComponent) {
+            existingComponent.totalQuantity += childQty;
+            existingComponent.orders.push({
+              id: order.id,
+              orderCode: order.orderCode,
+              customerName: order.customerName,
+              deliveryDate: order.deliveryDate,
+              totalQuantity: childQty,
+            });
+          } else {
+            list.push({
+              itemId: comp.itemId,
+              color: order.color,
+              size: order.size,
+              variation: order.variation,
+              totalQuantity: childQty,
+              orders: [{
+                id: order.id,
+                orderCode: order.orderCode,
+                customerName: order.customerName,
+                deliveryDate: order.deliveryDate,
+                totalQuantity: childQty,
+              }],
+              isComponent: true,
+              parentItemCode: item.code,
+              parentItemName: item.name,
+              componentUnitQty: comp.quantity,
+            });
+          }
         });
+
+      } else {
+        // Standard flow
+        const existing = list.find(
+          (p) =>
+            !p.isComponent &&
+            p.itemId === order.itemId &&
+            p.color === order.color &&
+            p.size === order.size &&
+            p.variation === order.variation
+        );
+
+        if (existing) {
+          existing.totalQuantity += order.totalQuantity;
+          existing.orders.push({
+            id: order.id,
+            orderCode: order.orderCode,
+            customerName: order.customerName,
+            deliveryDate: order.deliveryDate,
+            totalQuantity: order.totalQuantity,
+          });
+        } else {
+          list.push({
+            itemId: order.itemId,
+            color: order.color,
+            size: order.size,
+            variation: order.variation,
+            totalQuantity: order.totalQuantity,
+            orders: [{
+              id: order.id,
+              orderCode: order.orderCode,
+              customerName: order.customerName,
+              deliveryDate: order.deliveryDate,
+              totalQuantity: order.totalQuantity,
+            }],
+          });
+        }
       }
     });
 
     return list;
-  }, [orderIds, db.orders]);
+  }, [orderIds, db.orders, db.items, destrincharComposicoes, ocultarPaiComposicao]);
 
   const chunks = React.useMemo(() => {
     const list: typeof groupedProducts[] = [];
@@ -145,15 +255,29 @@ export const AcompanhamentoPrintSheet = forwardRef<
                         <div className="col-span-7 flex flex-col justify-between gap-1.5 min-h-0">
                           {/* Product identification brand box */}
                           <div className="border border-slate-200 bg-slate-50/50 p-2.5 rounded-lg shrink-0">
-                            <span className="text-[8px] font-mono font-black text-slate-400 block tracking-wider uppercase mb-0.5">
-                              ESPECIFICAÇÕES DO PRODUTO
-                            </span>
+                            <div className="flex justify-between items-start gap-1">
+                              <span className="text-[8px] font-mono font-black text-slate-400 block tracking-wider uppercase mb-0.5">
+                                ESPECIFICAÇÕES DO PRODUTO
+                              </span>
+                              {p.isComponent && (
+                                <span className="bg-purple-100 text-purple-800 border border-purple-200 text-[7px] font-extrabold px-1.5 py-0.5 rounded uppercase leading-none tracking-wide shrink-0">
+                                  🔗 Componente BOM ({p.componentUnitQty}x)
+                                </span>
+                              )}
+                            </div>
                             <h2 className="text-xs font-black text-slate-900 tracking-tight font-sans uppercase line-clamp-1 leading-snug">
                               {item?.name || "Item Avulso/Manual"}
                             </h2>
-                            <p className="text-[10px] font-mono font-extrabold text-indigo-700 leading-none mt-1">
-                              Código: {item?.code || "N/A"}
-                            </p>
+                            <div className="flex justify-between items-center mt-1">
+                              <p className="text-[10px] font-mono font-extrabold text-indigo-700 leading-none">
+                                Código: {item?.code || "N/A"}
+                              </p>
+                              {p.isComponent && p.parentItemCode && (
+                                <p className="text-[8.5px] font-black text-slate-600 leading-none uppercase">
+                                  Kit: {p.parentItemCode}
+                                </p>
+                              )}
+                            </div>
 
                             {/* ATTRIBUTES GRIDS */}
                             <div className="flex flex-wrap gap-2.5 mt-2 pt-1 border-t border-dashed border-slate-200 text-[10px]">

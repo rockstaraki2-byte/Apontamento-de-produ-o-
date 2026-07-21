@@ -5469,6 +5469,81 @@ function PedidosScreen({
     setVisibleCount(30);
   }, [activeSubTab, debouncedSearchTerm]);
 
+  const handleExportPdfGrouped = () => {
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFontSize(18);
+    doc.setTextColor(30, 41, 59); // slate-800
+    doc.text("Relatório de Pedidos Agrupados", 14, 20);
+
+    // Filter metadata
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139); // slate-500
+    
+    const filterInfo: string[] = [];
+    if (debouncedSearchTerm) filterInfo.push(`Pesquisa: "${debouncedSearchTerm}"`);
+    if (deliveryDateStart || deliveryDateEnd) {
+      const startFmt = deliveryDateStart ? deliveryDateStart.split("-").reverse().join("/") : "início";
+      const endFmt = deliveryDateEnd ? deliveryDateEnd.split("-").reverse().join("/") : "fim";
+      filterInfo.push(`Entrega: ${startFmt} a ${endFmt}`);
+    }
+    
+    const filterText = filterInfo.length > 0 ? `Filtros: ${filterInfo.join(" | ")}` : "Sem filtros ativos (Todos)";
+    doc.text(filterText, 14, 26);
+
+    const tableColumn = [
+      "Pedido",
+      "Emissão",
+      "Entrega Prev.",
+      "Cliente",
+      "Produto(s)",
+      "Qtd",
+      "Status",
+    ];
+    const tableRows: any[] = [];
+
+    groupedOrders.forEach(([code, orders]) => {
+      const firstOrder = orders[0];
+      const deliveryDateStr = firstOrder.deliveryDate
+        ? firstOrder.deliveryDate.substring(0, 10).split("-").reverse().join("/")
+        : "-";
+      const dateStr = firstOrder.createdAt ? new Date(firstOrder.createdAt).toLocaleDateString('pt-BR') : "-";
+      
+      orders.forEach(o => {
+        const item = db.items.find((i) => i.id === o.itemId);
+        let qtdStr = `${o.totalQuantity}`;
+        let statusStr = o.status || "PENDENTE";
+        
+        if (o.status === "FATURADO_PARCIAL" || ((o.invoicedQuantity || 0) > 0 && (o.invoicedQuantity || 0) < o.totalQuantity)) {
+          qtdStr = `${o.invoicedQuantity || 0} / ${o.totalQuantity}`;
+          statusStr = "FATURADO PARCIAL";
+        } else if (o.status === "FATURADO" || (o.invoicedQuantity || 0) >= o.totalQuantity) {
+          statusStr = "FATURADO";
+        }
+
+        tableRows.push([
+          o.orderCode || `#${o.id}`,
+          dateStr,
+          deliveryDateStr,
+          o.customerName,
+          `${item?.name || "Desconhecido"} (${o.size || "-"} / ${o.color || "-"})`,
+          qtdStr,
+          statusStr,
+        ]);
+      });
+    });
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 32,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [79, 70, 229] }, // indigo-600
+    });
+    doc.save(`pedidos_${new Date().toISOString().split("T")[0]}.pdf`);
+  };
+
   const handleExportPDF = () => {
     const doc = new jsPDF();
     
@@ -9146,6 +9221,15 @@ function PedidosScreen({
                   </>
                 )}
               </div>
+
+              <button
+                type="button"
+                onClick={handleExportPdfGrouped}
+                className="flex items-center justify-center shrink-0 gap-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-[11px] py-1.5 px-3 rounded-lg shadow-sm transition"
+                title="Exportar Lista em PDF"
+              >
+                Exportar PDF
+              </button>
             </div>
           </div>
 
