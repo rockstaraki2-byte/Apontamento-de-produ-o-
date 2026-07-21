@@ -13,6 +13,11 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
 
   // Filters State
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [selectedEndDate, setSelectedEndDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [filterShift, setFilterShift] = useState<string>("TODOS");
+  const [filterSector, setFilterSector] = useState<string>("TODOS");
+  const [filterLote, setFilterLote] = useState<string>("");
+  const [filterProduct, setFilterProduct] = useState<string>("");
 
   // Load configuration from local storage or DB (mocking with local storage for now)
   React.useEffect(() => {
@@ -21,6 +26,19 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
     if (savedTime) setReportTime(savedTime);
     if (savedEmails) setReportEmails(savedEmails);
   }, []);
+
+  const availableSectors = useMemo(() => {
+    const sectors = new Set<string>();
+    db.logs.forEach(log => {
+      let sector = log.type || "GERAL";
+      if (log.operatorId) {
+        const parts = log.operatorId.split(" - ");
+        sector = parts[0].toUpperCase();
+      }
+      sectors.add(sector);
+    });
+    return Array.from(sectors).sort();
+  }, [db.logs]);
 
   const handleSaveConfig = () => {
     localStorage.setItem("producaoDiaria_time", reportTime);
@@ -41,7 +59,7 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
   const reportData = useMemo(() => {
     const startOfDay = new Date(selectedDate);
     startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(selectedDate);
+    const endOfDay = new Date(selectedEndDate || selectedDate);
     endOfDay.setHours(23, 59, 59, 999);
 
     const logs = db.logs.filter(
@@ -58,7 +76,11 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
         sector = parts[0].toUpperCase();
       }
 
+      if (filterSector !== "TODOS" && sector !== filterSector) return;
+
       const shift = getShift(log.timestamp);
+      if (filterShift !== "TODOS" && shift !== filterShift) return;
+
       let itemId = log.itemId;
       
       // Attempt to resolve item
@@ -74,6 +96,8 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
         }
       }
 
+      if (filterProduct && !itemName.toLowerCase().includes(filterProduct.toLowerCase())) return;
+
       const qty = log.quantityProcessed || log.quantityCut || log.quantityPainted || log.quantityPacked || log.quantityInvoiced || 0;
       const hours = (log.durationMillis || 10 * 60 * 1000) / (1000 * 60 * 60);
       const pph = qty / hours;
@@ -84,6 +108,8 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
         const batch = db.productionBatches.find(b => b.orderIds.includes(log.orderId!));
         if (batch) loteRef = batch.name || `Lote #${batch.id}`;
       }
+
+      if (filterLote && !loteRef.toLowerCase().includes(filterLote.toLowerCase())) return;
 
       grouped.push({
         id: log.id,
@@ -99,20 +125,25 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
     });
 
     return grouped.sort((a, b) => b.timestamp - a.timestamp);
-  }, [db.logs, db.items, db.orders, db.productionBatches, selectedDate]);
+  }, [db.logs, db.items, db.orders, db.productionBatches, selectedDate, selectedEndDate, filterSector, filterShift, filterProduct, filterLote]);
 
   const handleExportPDF = () => {
     const doc = new jsPDF("landscape");
     
     doc.setFontSize(16);
-    doc.text(`Relatório Diário de Produção - ${new Date(selectedDate).toLocaleDateString('pt-BR')}`, 14, 20);
+    const dateText = selectedDate === selectedEndDate 
+      ? new Date(selectedDate).toLocaleDateString('pt-BR')
+      : `${new Date(selectedDate).toLocaleDateString('pt-BR')} até ${new Date(selectedEndDate).toLocaleDateString('pt-BR')}`;
+    
+    doc.text(`Relatório Diário de Produção - ${dateText}`, 14, 20);
     
     doc.setFontSize(10);
     doc.setTextColor(100, 116, 139);
     doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 28);
     
-    const tableColumn = ["Turno", "Setor", "Item", "Lote", "Tempo (h)", "Qtd", "Produtividade (Pç/h)"];
+    const tableColumn = ["Data", "Turno", "Setor", "Item", "Lote", "Tempo (h)", "Qtd", "Produtividade (Pç/h)"];
     const tableRows = reportData.map(row => [
+      new Date(row.timestamp).toLocaleDateString('pt-BR'),
       row.shift,
       row.sector,
       row.itemName,
@@ -130,11 +161,11 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
       headStyles: { fillColor: [79, 70, 229] },
     });
     
-    doc.save(`relatorio_producao_${selectedDate}.pdf`);
+    doc.save(`relatorio_producao_${selectedDate}_a_${selectedEndDate}.pdf`);
   };
 
   const handleSendEmailMock = () => {
-    alert(`E-mail com relatório de ${selectedDate} enviado com sucesso para: ${reportEmails}`);
+    alert(`E-mail com relatório enviado com sucesso para: ${reportEmails}`);
   };
 
   return (
@@ -203,32 +234,89 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
       )}
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-50/50">
-          <div className="flex items-center gap-3">
-            <div className="flex flex-col">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Data do Relatório</label>
-              <input 
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="border border-slate-200 p-1.5 rounded-md text-sm font-semibold text-slate-700 bg-white" 
-              />
+        <div className="p-4 border-b border-slate-100 flex flex-col gap-4 bg-slate-50/50">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+              <div className="flex flex-col">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Data Início</label>
+                <input 
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="border border-slate-200 p-1.5 rounded-md text-sm font-semibold text-slate-700 bg-white" 
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Data Fim</label>
+                <input 
+                  type="date"
+                  value={selectedEndDate}
+                  onChange={(e) => setSelectedEndDate(e.target.value)}
+                  className="border border-slate-200 p-1.5 rounded-md text-sm font-semibold text-slate-700 bg-white" 
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Turno</label>
+                <select 
+                  value={filterShift}
+                  onChange={(e) => setFilterShift(e.target.value)}
+                  className="border border-slate-200 p-1.5 rounded-md text-sm font-semibold text-slate-700 bg-white"
+                >
+                  <option value="TODOS">Todos os Turnos</option>
+                  <option value="Manhã">Manhã</option>
+                  <option value="Tarde">Tarde</option>
+                  <option value="Noturno / Extra">Noturno / Extra</option>
+                </select>
+              </div>
+              <div className="flex flex-col">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Setor</label>
+                <select 
+                  value={filterSector}
+                  onChange={(e) => setFilterSector(e.target.value)}
+                  className="border border-slate-200 p-1.5 rounded-md text-sm font-semibold text-slate-700 bg-white max-w-[150px] truncate"
+                >
+                  <option value="TODOS">Todos os Setores</option>
+                  {availableSectors.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Produto</label>
+                <input 
+                  type="text"
+                  placeholder="Buscar produto..."
+                  value={filterProduct}
+                  onChange={(e) => setFilterProduct(e.target.value)}
+                  className="border border-slate-200 p-1.5 rounded-md text-sm font-semibold text-slate-700 bg-white w-32" 
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Lote</label>
+                <input 
+                  type="text"
+                  placeholder="Buscar lote..."
+                  value={filterLote}
+                  onChange={(e) => setFilterLote(e.target.value)}
+                  className="border border-slate-200 p-1.5 rounded-md text-sm font-semibold text-slate-700 bg-white w-24" 
+                />
+              </div>
             </div>
-          </div>
-          
-          <div className="flex gap-2">
-            <button 
-              onClick={handleSendEmailMock}
-              className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-bold text-xs rounded-lg transition"
-            >
-              <Mail size={14} /> Enviar p/ E-mail Agora
-            </button>
-            <button 
-              onClick={handleExportPDF}
-              className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-lg transition"
-            >
-              <Download size={14} /> Baixar PDF
-            </button>
+            
+            <div className="flex gap-2 w-full md:w-auto justify-end">
+              <button 
+                onClick={handleSendEmailMock}
+                className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-bold text-xs rounded-lg transition"
+              >
+                <Mail size={14} /> Enviar p/ E-mail Agora
+              </button>
+              <button 
+                onClick={handleExportPDF}
+                className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-lg transition"
+              >
+                <Download size={14} /> Baixar PDF
+              </button>
+            </div>
           </div>
         </div>
 
@@ -243,6 +331,7 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
               <table className="w-full text-left border-collapse min-w-[800px]">
                 <thead>
                   <tr className="bg-slate-100/80 text-[10px] uppercase tracking-widest text-slate-500 font-extrabold border-b border-slate-200">
+                    <th className="p-3 w-24">Data</th>
                     <th className="p-3 w-24">Turno</th>
                     <th className="p-3 w-40">Setor</th>
                     <th className="p-3">Item Produzido</th>
@@ -255,6 +344,9 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
                 <tbody className="text-xs font-medium text-slate-700 divide-y divide-slate-100 bg-white">
                   {reportData.map((row, idx) => (
                     <tr key={idx} className="hover:bg-slate-50 transition">
+                      <td className="p-3 font-semibold text-slate-600">
+                        {new Date(row.timestamp).toLocaleDateString('pt-BR')}
+                      </td>
                       <td className="p-3 font-semibold text-slate-600">
                         {row.shift === "Manhã" ? "🌅 " : (row.shift === "Tarde" ? "☀️ " : "🌙 ")}
                         {row.shift}
