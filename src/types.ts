@@ -513,8 +513,9 @@ export interface LaserQuote {
   totalWithoutMaterial: number; // Soma dos itens sem material
   totalWeightKg: number;        // Peso total do material do lote em KG
   totalBendingCost?: number;    // Custo total de dobra
+  additionPercent?: number;     // Porcentagem adicional sobre o total (padrão 0%)
   notes?: string;
-  status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "REJEITADO";
+  status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "APROVADO_COM_MATERIAL" | "APROVADO_SEM_MATERIAL" | "REJEITADO";
   tenantId?: string;
 }
 

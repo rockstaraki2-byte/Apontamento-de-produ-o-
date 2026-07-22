@@ -20,7 +20,9 @@ import {
   Copy,
   Printer,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Eye,
+  Percent
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -79,8 +81,28 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     new Date().toISOString().split("T")[0]
   );
   const [validityDays, setValidityDays] = useState<number>(10);
-  const [quoteStatus, setQuoteStatus] = useState<"RASCUNHO" | "ENVIADO" | "APROVADO" | "REJEITADO">("RASCUNHO");
+  const [quoteStatus, setQuoteStatus] = useState<"RASCUNHO" | "ENVIADO" | "APROVADO" | "APROVADO_COM_MATERIAL" | "APROVADO_SEM_MATERIAL" | "REJEITADO">("RASCUNHO");
   const [notes, setNotes] = useState("");
+  const [additionPercent, setAdditionPercent] = useState<number>(0);
+  const [viewingQuote, setViewingQuote] = useState<LaserQuote | null>(null);
+
+  // Status badge styling helper
+  const getStatusBadge = (st: string) => {
+    switch (st) {
+      case "APROVADO_COM_MATERIAL":
+        return { label: "APROVADO C/ MAT.", bg: "bg-emerald-100 text-emerald-800 border-emerald-300" };
+      case "APROVADO_SEM_MATERIAL":
+        return { label: "APROVADO S/ MAT.", bg: "bg-cyan-100 text-cyan-800 border-cyan-300" };
+      case "APROVADO":
+        return { label: "APROVADO", bg: "bg-emerald-100 text-emerald-800 border-emerald-300" };
+      case "ENVIADO":
+        return { label: "ENVIADO", bg: "bg-blue-100 text-blue-800 border-blue-300" };
+      case "REJEITADO":
+        return { label: "REJEITADO", bg: "bg-rose-100 text-rose-800 border-rose-300" };
+      default:
+        return { label: "RASCUNHO", bg: "bg-amber-100 text-amber-800 border-amber-300" };
+    }
+  };
 
   // Filter registered customers
   const filteredCustomersList = useMemo(() => {
@@ -132,7 +154,11 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
         q.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         q.quoteCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
         q.items.some((it) => it.description.toLowerCase().includes(searchTerm.toLowerCase()));
-      const matchStatus = statusFilter === "TODOS" || q.status === statusFilter;
+      const matchStatus =
+        statusFilter === "TODOS" ||
+        q.status === statusFilter ||
+        (statusFilter === "APROVADO" &&
+          (q.status === "APROVADO" || q.status === "APROVADO_COM_MATERIAL" || q.status === "APROVADO_SEM_MATERIAL"));
       return matchSearch && matchStatus;
     }).sort((a, b) => b.createdAt - a.createdAt);
   }, [db.laserQuotes, searchTerm, statusFilter]);
@@ -149,6 +175,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     setValidityDays(10);
     setQuoteStatus("RASCUNHO");
     setNotes("");
+    setAdditionPercent(0);
     setDefaultRatePerSec(0.35);
     setDefaultPricePerKg(10.0);
     setDefaultBendingRatePerKg(2.0);
@@ -169,6 +196,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     setValidityDays(quote.validityDays || 10);
     setQuoteStatus(quote.status);
     setNotes(quote.notes || "");
+    setAdditionPercent(quote.additionPercent || 0);
     setItems(quote.items || []);
     resetItemForm();
     setIsModalOpen(true);
@@ -326,15 +354,26 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     }
   };
 
-  // Grand Totals
-  const grandTotalWithMaterial = useMemo(
+  // Base Subtotals from Items
+  const itemsSubtotalWithMaterial = useMemo(
     () => items.reduce((acc, it) => acc + it.totalWithMaterial, 0),
     [items]
   );
 
-  const grandTotalWithoutMaterial = useMemo(
+  const itemsSubtotalWithoutMaterial = useMemo(
     () => items.reduce((acc, it) => acc + it.totalWithoutMaterial, 0),
     [items]
+  );
+
+  // Grand Totals (with addition percentage applied)
+  const grandTotalWithMaterial = useMemo(
+    () => itemsSubtotalWithMaterial * (1 + (additionPercent || 0) / 100),
+    [itemsSubtotalWithMaterial, additionPercent]
+  );
+
+  const grandTotalWithoutMaterial = useMemo(
+    () => itemsSubtotalWithoutMaterial * (1 + (additionPercent || 0) / 100),
+    [itemsSubtotalWithoutMaterial, additionPercent]
   );
 
   const grandTotalWeightKg = useMemo(
@@ -376,6 +415,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       totalWithoutMaterial: grandTotalWithoutMaterial,
       totalWeightKg: grandTotalWeightKg,
       totalBendingCost: grandTotalBendingCost,
+      additionPercent: additionPercent || 0,
       notes,
       status: quoteStatus,
     };
@@ -551,7 +591,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
@@ -563,24 +603,6 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
           </div>
           <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
             <FileText size={20} />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
-              Aprovados (c/ Material)
-            </span>
-            <span className="text-2xl font-black text-emerald-600">
-              R${" "}
-              {(db.laserQuotes || [])
-                .filter((q) => q.status === "APROVADO")
-                .reduce((acc, q) => acc + (q.totalWithMaterial || 0), 0)
-                .toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-            </span>
-          </div>
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-            <CheckCircle size={20} />
           </div>
         </div>
 
@@ -601,15 +623,29 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
-              Taxa de Conversão (KG)
+              Taxa de Conversão
             </span>
-            <span className="text-2xl font-black text-indigo-600">7.92</span>
-            <span className="text-[10px] text-slate-400 block font-semibold">
-              g/cm³ Aço Carbono
-            </span>
+            {(() => {
+              const totalCount = db.laserQuotes?.length || 0;
+              const approvedCount = (db.laserQuotes || []).filter(
+                (q) =>
+                  q.status === "APROVADO" ||
+                  q.status === "APROVADO_COM_MATERIAL" ||
+                  q.status === "APROVADO_SEM_MATERIAL"
+              ).length;
+              const rate = totalCount > 0 ? ((approvedCount / totalCount) * 100).toFixed(1) : "0.0";
+              return (
+                <div>
+                  <span className="text-2xl font-black text-emerald-600">{rate}%</span>
+                  <span className="text-[10px] text-slate-400 block font-semibold">
+                    {approvedCount} de {totalCount} aprovados
+                  </span>
+                </div>
+              );
+            })()}
           </div>
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
-            <Scale size={20} />
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+            <CheckCircle size={20} />
           </div>
         </div>
       </div>
@@ -628,18 +664,25 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
             />
           </div>
 
-          <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
-            {["TODOS", "RASCUNHO", "ENVIADO", "APROVADO", "REJEITADO"].map((st) => (
+          <div className="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto">
+            {[
+              { id: "TODOS", label: "TODOS" },
+              { id: "RASCUNHO", label: "RASCUNHO" },
+              { id: "ENVIADO", label: "ENVIADO" },
+              { id: "APROVADO_COM_MATERIAL", label: "APROVADO C/ MAT." },
+              { id: "APROVADO_SEM_MATERIAL", label: "APROVADO S/ MAT." },
+              { id: "REJEITADO", label: "REJEITADO" },
+            ].map((st) => (
               <button
-                key={st}
-                onClick={() => setStatusFilter(st)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
-                  statusFilter === st
+                key={st.id}
+                onClick={() => setStatusFilter(st.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer whitespace-nowrap ${
+                  statusFilter === st.id
                     ? "bg-slate-900 text-white shadow-xs"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
-                {st}
+                {st.label}
               </button>
             ))}
           </div>
@@ -684,23 +727,27 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                       R$ {q.totalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                     </td>
                     <td className="p-3 text-center">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
-                          q.status === "APROVADO"
-                            ? "bg-emerald-100 text-emerald-800"
-                            : q.status === "ENVIADO"
-                            ? "bg-blue-100 text-blue-800"
-                            : q.status === "REJEITADO"
-                            ? "bg-rose-100 text-rose-800"
-                            : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
-                        {q.status}
-                      </span>
+                      {(() => {
+                        const badge = getStatusBadge(q.status);
+                        return (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase border ${badge.bg}`}
+                          >
+                            {badge.label}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="p-3 text-slate-500 font-medium">{q.createdBy}</td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setViewingQuote(q)}
+                          title="Visualizar Orçamento"
+                          className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition cursor-pointer"
+                        >
+                          <Eye size={14} />
+                        </button>
                         <button
                           onClick={() => handleExportPDF(q)}
                           title="Baixar PDF"
@@ -957,6 +1004,21 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                         setItemBendingRatePerKg(val);
                       }}
                       className="w-20 p-1.5 border border-indigo-200 rounded-lg text-xs font-bold text-amber-700 bg-white text-center"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-amber-100/60 p-1 px-2 rounded-lg border border-amber-200">
+                    <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                      <Percent size={13} className="text-amber-700" /> Acréscimo (%):
+                    </span>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="100"
+                      value={additionPercent}
+                      onChange={(e) => setAdditionPercent(Math.max(0, Number(e.target.value)))}
+                      className="w-16 p-1 border border-amber-300 rounded text-xs font-extrabold text-amber-950 bg-white text-center"
                     />
                   </div>
                 </div>
@@ -1274,9 +1336,37 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                       )}
                     </tbody>
                     <tfoot>
+                      {additionPercent > 0 && (
+                        <>
+                          <tr className="bg-slate-200/80 border-t-2 border-slate-900 font-bold text-xs text-slate-800">
+                            <td colSpan={6} className="p-2 text-right uppercase border-r border-slate-900">
+                              SOMA DOS ITENS (SUBTOTAL)
+                            </td>
+                            <td className="p-2 text-right font-mono border-r border-slate-900">
+                              R$ {itemsSubtotalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="p-2 text-right font-mono border-r border-slate-900">
+                              R$ {itemsSubtotalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td></td>
+                          </tr>
+                          <tr className="bg-amber-100/90 border-t border-slate-900 font-bold text-xs text-amber-950">
+                            <td colSpan={6} className="p-2 text-right uppercase border-r border-slate-900">
+                              ACRÉSCIMO MARGEM ADICIONAL (+{additionPercent}%)
+                            </td>
+                            <td className="p-2 text-right font-mono border-r border-slate-900 text-amber-900">
+                              + R$ {((itemsSubtotalWithMaterial * additionPercent) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="p-2 text-right font-mono border-r border-slate-900 text-amber-900">
+                              + R$ {((itemsSubtotalWithoutMaterial * additionPercent) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td></td>
+                          </tr>
+                        </>
+                      )}
                       <tr className="bg-yellow-300 border-t-2 border-slate-900 font-black text-xs text-slate-900">
                         <td colSpan={6} className="p-2.5 text-right uppercase border-r border-slate-900">
-                          VALOR TOTAL DO SERVIÇO
+                          VALOR TOTAL DO SERVIÇO {additionPercent > 0 ? `(C/ +${additionPercent}%)` : ""}
                         </td>
                         <td className="p-2.5 text-right font-mono text-sm border-r border-slate-900 bg-[#a8e6cf]">
                           R$ {grandTotalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1308,7 +1398,9 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                   >
                     <option value="RASCUNHO">RASCUNHO</option>
                     <option value="ENVIADO">ENVIADO AO CLIENTE</option>
-                    <option value="APROVADO">APROVADO</option>
+                    <option value="APROVADO_COM_MATERIAL">APROVADO C/ MATERIAL</option>
+                    <option value="APROVADO_SEM_MATERIAL">APROVADO S/ MATERIAL</option>
+                    <option value="APROVADO">APROVADO (GERAL)</option>
                     <option value="REJEITADO">REJEITADO</option>
                   </select>
                 </div>
@@ -1348,6 +1440,197 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
                 >
                   <CheckCircle size={16} /> Salvar Orçamento
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK VIEW POPUP MODAL (OLHINHO) */}
+      {viewingQuote && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl my-auto overflow-hidden flex flex-col max-h-[95vh]">
+            {/* Modal Header */}
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
+                  <Eye size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="font-bold text-lg text-white">
+                      Visualizar Orçamento #{viewingQuote.quoteCode}
+                    </h2>
+                    {(() => {
+                      const badge = getStatusBadge(viewingQuote.status);
+                      return (
+                        <span className={`px-2.5 py-0.5 rounded-md text-xs font-bold border ${badge.bg}`}>
+                          {badge.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <span className="text-xs text-slate-400">
+                    Império Jomarci • Criado por {viewingQuote.createdBy}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setViewingQuote(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg transition cursor-pointer"
+              >
+                <XCircle size={20} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-5 overflow-y-auto space-y-5">
+              {/* Customer & Info Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Cliente</span>
+                  <span className="font-bold text-slate-800 text-sm">{viewingQuote.customerName}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Contato</span>
+                  <span className="font-semibold text-slate-700">{viewingQuote.contactInfo || "—"}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Data Emissão</span>
+                  <span className="font-semibold text-slate-700">
+                    {new Date(viewingQuote.createdDate + "T12:00:00").toLocaleDateString("pt-BR")}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Validade</span>
+                  <span className="font-semibold text-slate-700">{viewingQuote.validityDays || 10} dias</span>
+                </div>
+              </div>
+
+              {/* Items Table */}
+              <div>
+                <h4 className="font-extrabold text-xs uppercase text-slate-700 mb-2">
+                  Itens do Orçamento ({viewingQuote.items?.length || 0})
+                </h4>
+                <div className="overflow-x-auto border border-slate-300 rounded-xl">
+                  <table className="w-full text-left border-collapse min-w-[700px] text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 font-extrabold text-[10px] uppercase text-slate-600 border-b border-slate-300">
+                        <th className="p-2.5">Descrição</th>
+                        <th className="p-2.5 text-center">Medidas</th>
+                        <th className="p-2.5 text-center">Material</th>
+                        <th className="p-2.5 text-right">Unit. c/ Mat</th>
+                        <th className="p-2.5 text-right">Unit. s/ Mat</th>
+                        <th className="p-2.5 text-center">Qtd</th>
+                        <th className="p-2.5 text-right bg-emerald-50 text-emerald-900">Total c/ Mat</th>
+                        <th className="p-2.5 text-right bg-blue-50 text-blue-900">Total s/ Mat</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {(viewingQuote.items || []).map((it) => (
+                        <tr key={it.id} className="hover:bg-slate-50">
+                          <td className="p-2.5 font-bold text-slate-800">
+                            {it.description}
+                            {it.hasBending && (
+                              <span className="inline-block ml-1.5 px-1.5 py-0.5 text-[9px] font-extrabold bg-amber-100 text-amber-800 rounded border border-amber-300">
+                                c/ Dobra
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-2.5 text-center font-mono text-slate-600">{it.measures}</td>
+                          <td className="p-2.5 text-center text-slate-700">{it.materialType}</td>
+                          <td className="p-2.5 text-right font-mono">
+                            R$ {it.unitPriceWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-2.5 text-right font-mono">
+                            R$ {it.unitPriceWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-2.5 text-center font-bold">{it.quantity}</td>
+                          <td className="p-2.5 text-right font-mono font-bold bg-emerald-50/50 text-emerald-800">
+                            R$ {it.totalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-2.5 text-right font-mono font-bold bg-blue-50/50 text-blue-800">
+                            R$ {it.totalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Totals Summary */}
+              <div className="bg-slate-900 text-white p-4 rounded-xl space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center border-b border-slate-800 pb-3">
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Peso Total Lote</span>
+                    <span className="text-sm font-mono font-bold text-amber-300">{(viewingQuote.totalWeightKg || 0).toFixed(2)} KG</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Custo Dobra</span>
+                    <span className="text-sm font-mono font-bold text-amber-400">R$ {(viewingQuote.totalBendingCost || 0).toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Acréscimo Adicional</span>
+                    <span className="text-sm font-mono font-bold text-amber-300">+{viewingQuote.additionPercent || 0}%</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Status</span>
+                    <span className="text-xs font-bold text-emerald-400 uppercase">{viewingQuote.status}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+                  <div>
+                    <span className="text-xs text-slate-400 block font-medium">TOTAL FINAL COM MATERIAL:</span>
+                    <span className="text-2xl font-black text-emerald-400 font-mono">
+                      R$ {viewingQuote.totalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-400 block font-medium">TOTAL FINAL SEM MATERIAL:</span>
+                    <span className="text-2xl font-black text-blue-400 font-mono">
+                      R$ {viewingQuote.totalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes if any */}
+              {viewingQuote.notes && (
+                <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs">
+                  <strong className="text-amber-900 block mb-0.5">Observações Internas:</strong>
+                  <p className="text-amber-800">{viewingQuote.notes}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Actions */}
+            <div className="bg-slate-100 p-4 border-t border-slate-200 flex items-center justify-between gap-3">
+              <button
+                onClick={() => setViewingQuote(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                Fechar
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const q = viewingQuote;
+                    setViewingQuote(null);
+                    handleEditQuote(q);
+                  }}
+                  className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Edit size={14} /> Editar Orçamento
+                </button>
+                <button
+                  onClick={() => handleExportPDF(viewingQuote)}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Download size={14} /> Baixar PDF
                 </button>
               </div>
             </div>

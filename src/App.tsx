@@ -173,7 +173,7 @@ function Welcome({
 
     if (!alreadyRedirected) {
       sessionStorage.setItem(hasRedirectedKey, "true");
-      if (role === "PCP" || role === "ADMIN") {
+      if (role === "PCP" || role === "ADMIN" || currentUser.id === "romario" || currentUser.name.toLowerCase().includes("romario")) {
         navigate("/status");
       } else if (role === "GERENCIA") {
         navigate("/relatorios");
@@ -13796,7 +13796,7 @@ export default function App() {
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "PCP" ||
               currentUser.role === "GERENCIA" ||
-              currentUser.role === "LEITURA" ||
+              (currentUser.role === "LEITURA" && currentUser.id !== "romario" && !currentUser.name.toLowerCase().includes("romario")) ||
               currentUser.role === "PROJETISTA") && (
               <>
                 <Route
@@ -13830,20 +13830,25 @@ export default function App() {
               currentUser.role === "PCP" ||
               currentUser.role === "GERENCIA" ||
               currentUser.role === "PROJETISTA") && (
-              <>
-                <Route
-                  path="/estoque-laser"
-                  element={
-                    <EstoqueNestingScreen db={db} currentUser={currentUser} />
-                  }
-                />
-                <Route
-                  path="/orcamentos"
-                  element={
-                    <OrcamentoLaserScreen db={db} currentUser={currentUser} />
-                  }
-                />
-              </>
+              <Route
+                path="/estoque-laser"
+                element={
+                  <EstoqueNestingScreen db={db} currentUser={currentUser} />
+                }
+              />
+            )}
+            {(currentUser.role === "ADMIN" ||
+              currentUser.role === "PCP" ||
+              currentUser.role === "GERENCIA" ||
+              currentUser.role === "PROJETISTA" ||
+              currentUser.id === "romario" ||
+              currentUser.name.toLowerCase().includes("romario")) && (
+              <Route
+                path="/orcamentos"
+                element={
+                  <OrcamentoLaserScreen db={db} currentUser={currentUser} />
+                }
+              />
             )}
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "GERENCIA" ||
@@ -14137,7 +14142,7 @@ export default function App() {
           {(currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
-            currentUser.role === "LEITURA" ||
+            (currentUser.role === "LEITURA" && currentUser.id !== "romario" && !currentUser.name.toLowerCase().includes("romario")) ||
             currentUser.role === "PROJETISTA") && (
             <NavLink
               to="/pedidos"
@@ -14161,18 +14166,24 @@ export default function App() {
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "PROJETISTA") && (
-            <>
-              <NavLink
-                to="/estoque-laser"
-                icon={<Layers size={24} />}
-                label="Estoque Pç Cortadas"
-              />
-              <NavLink
-                to="/orcamentos"
-                icon={<FileText size={24} />}
-                label="Orçamentos Laser"
-              />
-            </>
+            <NavLink
+              to="/estoque-laser"
+              icon={<Layers size={24} />}
+              label="Estoque Pç Cortadas"
+            />
+          )}
+
+          {(currentUser.role === "ADMIN" ||
+            currentUser.role === "PCP" ||
+            currentUser.role === "GERENCIA" ||
+            currentUser.role === "PROJETISTA" ||
+            currentUser.id === "romario" ||
+            currentUser.name.toLowerCase().includes("romario")) && (
+            <NavLink
+              to="/orcamentos"
+              icon={<FileText size={24} />}
+              label="Orçamentos Laser"
+            />
           )}
 
           {(currentUser.role === "ADMIN" ||
