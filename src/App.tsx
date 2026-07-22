@@ -107,6 +107,7 @@ import { TornoCncHenriqueScreen } from "./TornoCncHenriqueScreen";
 import { PrensaRafaelScreen } from "./PrensaRafaelScreen";
 import { InjetoraScreen } from "./InjetoraScreen";
 import { LogisticaScreen } from "./LogisticaScreen";
+import { OrcamentoLaserScreen } from "./OrcamentoLaserScreen";
 import { normalizeString } from "./searchUtils";
 
 // Custom virtualization and metrics components
@@ -13829,12 +13830,20 @@ export default function App() {
               currentUser.role === "PCP" ||
               currentUser.role === "GERENCIA" ||
               currentUser.role === "PROJETISTA") && (
-              <Route
-                path="/estoque-laser"
-                element={
-                  <EstoqueNestingScreen db={db} currentUser={currentUser} />
-                }
-              />
+              <>
+                <Route
+                  path="/estoque-laser"
+                  element={
+                    <EstoqueNestingScreen db={db} currentUser={currentUser} />
+                  }
+                />
+                <Route
+                  path="/orcamentos"
+                  element={
+                    <OrcamentoLaserScreen db={db} currentUser={currentUser} />
+                  }
+                />
+              </>
             )}
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "GERENCIA" ||
@@ -14152,11 +14161,18 @@ export default function App() {
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "PROJETISTA") && (
-            <NavLink
-              to="/estoque-laser"
-              icon={<Layers size={24} />}
-              label="Estoque Pç Cortadas"
-            />
+            <>
+              <NavLink
+                to="/estoque-laser"
+                icon={<Layers size={24} />}
+                label="Estoque Pç Cortadas"
+              />
+              <NavLink
+                to="/orcamentos"
+                icon={<FileText size={24} />}
+                label="Orçamentos Laser"
+              />
+            </>
           )}
 
           {(currentUser.role === "ADMIN" ||

@@ -19,6 +19,8 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
   const [filterLote, setFilterLote] = useState<string>("");
   const [filterProduct, setFilterProduct] = useState<string>("");
 
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+
   // Load configuration from local storage or DB (mocking with local storage for now)
   React.useEffect(() => {
     const savedTime = localStorage.getItem("producaoDiaria_time");
@@ -164,8 +166,38 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
     doc.save(`relatorio_producao_${selectedDate}_a_${selectedEndDate}.pdf`);
   };
 
-  const handleSendEmailMock = () => {
-    alert(`E-mail com relatório enviado com sucesso para: ${reportEmails}`);
+  const handleSendEmail = async () => {
+    setIsSendingEmail(true);
+    try {
+      const res = await fetch("/api/send-daily-production-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          selectedDate,
+          selectedEndDate,
+          reportData,
+          reportEmails,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        alert(
+          data.mode === "simulated"
+            ? "O e-mail foi logado no terminal (modo desenvolvimento)."
+            : `E-mail enviado com sucesso para ${reportEmails}`
+        );
+      } else {
+        alert("Erro ao enviar e-mail: " + data.error);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Erro de conexão ao enviar e-mail.");
+    } finally {
+      setIsSendingEmail(false);
+    }
   };
 
   return (
@@ -305,10 +337,12 @@ export function ProducaoDiariaTab({ db }: { db: ReturnType<typeof useDatabase> }
             
             <div className="flex gap-2 w-full md:w-auto justify-end">
               <button 
-                onClick={handleSendEmailMock}
-                className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-bold text-xs rounded-lg transition"
+                onClick={handleSendEmail}
+                disabled={isSendingEmail}
+                className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-bold text-xs rounded-lg transition disabled:opacity-50"
               >
-                <Mail size={14} /> Enviar p/ E-mail Agora
+                <Mail size={14} className={isSendingEmail ? "animate-pulse" : ""} /> 
+                {isSendingEmail ? "Enviando..." : "Enviar p/ E-mail Agora"}
               </button>
               <button 
                 onClick={handleExportPDF}

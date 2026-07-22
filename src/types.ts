@@ -465,4 +465,58 @@ export interface PerformanceReview {
   sectorAverageMetric: number;
 }
 
+export interface LaserQuoteItem {
+  id: string;
+  description: string;          // e.g. "EUROPA CHAPA LATERAL DE SECCIONADORA CORTE LASER PÇ1"
+  measures: string;             // e.g. "668x240x1/2"
+  lengthMm: number;             // Altura / Comprimento (mm)
+  widthMm: number;              // Largura (mm)
+  thicknessMm: number;          // Espessura (mm)
+  materialType: string;         // e.g. "Aço carbono", "Aço Inox"
+  
+  // Laser Cutting Time calculation
+  cuttingTimeSeconds: number;   // Tempo de corte em segundos
+  cuttingRatePerSec: number;    // Taxa do tempo de corte (R$ 0,15 a R$ 0,60/seg)
+
+  // Bending (Dobra) calculation
+  hasBending?: boolean;         // Possui serviço de dobra?
+  bendingRatePerKg?: number;    // Taxa de dobra por KG (Padrão R$ 2,00/KG)
+  bendingCost?: number;         // Custo unitário de dobra (calculatedWeightKg * bendingRatePerKg)
+  
+  // Material calculation
+  steelDensityFactor: number;   // Padrão 7.92
+  materialPricePerKg: number;   // R$/kg do material
+  calculatedWeightKg: number;   // (lengthMm * widthMm * thicknessMm * 7.92) / 1000000
+  
+  // Calculated prices
+  cuttingCost: number;          // cuttingTimeSeconds * cuttingRatePerSec
+  materialCost: number;         // calculatedWeightKg * materialPricePerKg
+  unitPriceWithMaterial: number;   // cuttingCost + materialCost + bendingCost
+  unitPriceWithoutMaterial: number; // cuttingCost + bendingCost
+  quantity: number;                 // Qtd de peças
+  totalWithMaterial: number;        // quantity * unitPriceWithMaterial
+  totalWithoutMaterial: number;     // quantity * unitPriceWithoutMaterial
+}
+
+export interface LaserQuote {
+  id: string;
+  quoteCode: string;            // e.g. "ORC-001-CLIENTE-2026"
+  customerId?: number;          // Linked customer ID from db.customers
+  customerName: string;         // Nome do Cliente
+  contactInfo?: string;         // Contato
+  createdDate: string;          // YYYY-MM-DD
+  validityDays: number;         // Padrão 10 dias
+  createdBy: string;            // E.g. "Marcos (Projetista)"
+  createdAt: number;            // Timestamp
+  items: LaserQuoteItem[];
+  totalWithMaterial: number;    // Soma dos itens com material
+  totalWithoutMaterial: number; // Soma dos itens sem material
+  totalWeightKg: number;        // Peso total do material do lote em KG
+  totalBendingCost?: number;    // Custo total de dobra
+  notes?: string;
+  status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "REJEITADO";
+  tenantId?: string;
+}
+
+
 

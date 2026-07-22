@@ -2180,8 +2180,7 @@ Retorne obrigatoriamente um array de produtos no formato JSON.
       const pass = process.env.SMTP_PASS;
 
       if (!host || !user || !pass) {
-        console.warn("SMTP_HOST, SMTP_USER, or SMTP_PASS environment variable not set. Email notifications will be mock-simulated only.");
-        return null;
+        throw new Error("Credenciais SMTP não configuradas. Acesse o menu Settings (Settings -> Environment Variables) e configure SMTP_HOST, SMTP_USER e SMTP_PASS para ativar o envio real de e-mails.");
       }
 
       mailTransporter = nodemailer.createTransport({
@@ -2455,6 +2454,88 @@ Retorne obrigatoriamente um array de produtos no formato JSON.
       }
     } catch (error: any) {
       console.error("Error in /api/send-order-print-email:", error);
+      return res.status(500).json({ success: false, error: error?.message || String(error) });
+    }
+  });
+
+  app.post("/api/send-daily-production-email", express.json({limit: '10mb'}), async (req, res) => {
+    try {
+      const { selectedDate, selectedEndDate, reportData, reportEmails } = req.body;
+      
+      const transporter = getMailTransporter();
+      
+      const dateText = selectedDate === selectedEndDate 
+        ? new Date(selectedDate).toLocaleDateString('pt-BR')
+        : `${new Date(selectedDate).toLocaleDateString('pt-BR')} até ${new Date(selectedEndDate).toLocaleDateString('pt-BR')}`;
+      
+      const mailContentHtml = `
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6; max-width: 800px; margin: auto; border: 1px solid #ddd; border-radius: 8px;">
+          <div style="background-color: #0f172a; padding: 15px; text-align: center; border-radius: 6px 6px 0 0;">
+            <h2 style="color: #4f46e5; margin: 0; font-size: 24px; letter-spacing: 2px;">IMPÉRIO</h2>
+            <span style="color: #94a3b8; font-size: 10px; text-transform: uppercase;">Relatório de Produção</span>
+          </div>
+          
+          <div style="padding: 20px;">
+            <p style="font-size: 16px;">Olá,</p>
+            <p>Segue o <strong>Relatório Diário de Produção</strong> referente ao período: <strong>${dateText}</strong>.</p>
+            
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; border: 1px solid #e2e8f0;">
+              <thead>
+                <tr style="background-color: #f1f5f9; text-align: left; text-transform: uppercase; color: #475569;">
+                  <th style="padding: 10px 8px; border-bottom: 2px solid #cbd5e1;">Data</th>
+                  <th style="padding: 10px 8px; border-bottom: 2px solid #cbd5e1;">Turno</th>
+                  <th style="padding: 10px 8px; border-bottom: 2px solid #cbd5e1;">Setor</th>
+                  <th style="padding: 10px 8px; border-bottom: 2px solid #cbd5e1;">Item</th>
+                  <th style="padding: 10px 8px; border-bottom: 2px solid #cbd5e1;">Lote / OP</th>
+                  <th style="padding: 10px 8px; border-bottom: 2px solid #cbd5e1; text-align: right;">Tempo (h)</th>
+                  <th style="padding: 10px 8px; border-bottom: 2px solid #cbd5e1; text-align: right;">Qtd</th>
+                  <th style="padding: 10px 8px; border-bottom: 2px solid #cbd5e1; text-align: right; color: #4338ca;">Produtividade</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${reportData.map((row: any, idx: number) => `
+                  <tr style="border-bottom: 1px solid #e2e8f0; ${idx % 2 === 1 ? 'background-color: #f8fafc;' : ''}">
+                    <td style="padding: 8px;">${new Date(row.timestamp).toLocaleDateString('pt-BR')}</td>
+                    <td style="padding: 8px;">${row.shift}</td>
+                    <td style="padding: 8px; font-weight: bold;">${row.sector}</td>
+                    <td style="padding: 8px;">${row.itemName}</td>
+                    <td style="padding: 8px; font-family: monospace; color: #64748b;">${row.loteRef}</td>
+                    <td style="padding: 8px; text-align: right;">${Number(row.hours).toFixed(2)}h</td>
+                    <td style="padding: 8px; text-align: right; font-weight: bold;">${row.qty} un</td>
+                    <td style="padding: 8px; text-align: right; font-weight: bold; color: #4338ca;">${Number(row.pph).toFixed(1)} Pç/h</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+            
+            ${reportData.length === 0 ? '<p style="text-align: center; color: #64748b; padding: 20px;">Nenhuma produção registrada neste período com os filtros atuais.</p>' : ''}
+            
+            <p style="margin-top: 30px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 15px;">
+              Este é um e-mail automático gerado pelo sistema de PCP da Império.
+            </p>
+          </div>
+        </div>
+      `;
+
+      const fromEmail = "gerencia.imperiojomarci@gmail.com";
+      const toEmails = [fromEmail];
+      if (reportEmails && reportEmails.trim() !== "") {
+        const emails = reportEmails.split(',').map((e: string) => e.trim()).filter((e: string) => e !== "");
+        toEmails.push(...emails);
+      }
+
+      const mailOptions = {
+        from: `"Império PCP & Produção" <${fromEmail}>`,
+        to: toEmails.join(", "),
+        subject: `[PCP] Relatório Diário de Produção - ${dateText}`,
+        html: mailContentHtml,
+      };
+
+      const info = await transporter.sendMail(mailOptions);
+      console.log("Production report email sent successfully via SMTP:", info.messageId);
+      return res.json({ success: true, mode: "smtp", messageId: info.messageId });
+    } catch (error: any) {
+      console.error("Error in /api/send-daily-production-email:", error);
       return res.status(500).json({ success: false, error: error?.message || String(error) });
     }
   });

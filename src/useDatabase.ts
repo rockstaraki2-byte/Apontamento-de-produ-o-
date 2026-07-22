@@ -508,6 +508,7 @@ export function useDatabase(currentUser?: User | null) {
     PerformanceReview[]
   >([]);
   const [attendances, setAttendances] = useState<import("./types").AttendanceRecord[]>([]);
+  const [laserQuotes, setLaserQuotes] = useState<import("./types").LaserQuote[]>([]);
 
   useEffect(() => {
     updateQueueCount();
@@ -797,6 +798,15 @@ export function useDatabase(currentUser?: User | null) {
         setAttendances(list);
       },
       (err) => handleSnapshotError("attendances", err),
+    );
+
+    const unsubLaserQuotes = onSnapshot(
+      collection(db, "laserQuotes"),
+      (snap) => {
+        const list = snap.docs.map((d) => d.data() as import("./types").LaserQuote);
+        setLaserQuotes(list);
+      },
+      (err) => handleSnapshotError("laserQuotes", err),
     );
 
     let unsubPriceHistories = () => {};
@@ -1745,6 +1755,7 @@ export function useDatabase(currentUser?: User | null) {
   const filteredPerformanceQuestions = useMemo(() => performanceQuestions.filter((x) => (x.tenantId || "imperio") === activeTenantId), [performanceQuestions, activeTenantId]);
   const filteredPerformanceReviews = useMemo(() => performanceReviews.filter((x) => (x.tenantId || "imperio") === activeTenantId), [performanceReviews, activeTenantId]);
   const filteredAttendances = useMemo(() => attendances.filter((x) => (x.tenantId || "imperio") === activeTenantId), [attendances, activeTenantId]);
+  const filteredLaserQuotes = useMemo(() => laserQuotes.filter((x) => (x.tenantId || "imperio") === activeTenantId), [laserQuotes, activeTenantId]);
 
   const activeTenant = useMemo(() => {
     return tenants.find((t) => t.id === activeTenantId) || tenants.find((t) => t.id === "imperio") || { id: "imperio", name: "Império Jomarci", logoUrl: "/icon.png", primaryColor: "#00b14f", systemName: "Apontador de Produção" };
@@ -2112,6 +2123,20 @@ export function useDatabase(currentUser?: User | null) {
     saveAttendance: async (attendance: import("./types").AttendanceRecord) => {
       await setDoc(doc(db, "attendances", attendance.id), cleanUndefined(attendance));
     },
+
+    laserQuotes: filteredLaserQuotes,
+    addLaserQuote: async (quote: Omit<import("./types").LaserQuote, "id"> & { id?: string }) => {
+      const id = quote.id || Date.now().toString();
+      const newQuote = { ...quote, id, tenantId: quote.tenantId || activeTenantId };
+      await setDoc(doc(db, "laserQuotes", id), cleanUndefined(newQuote));
+    },
+    updateLaserQuote: async (id: string, updates: Partial<import("./types").LaserQuote>) => {
+      await setDoc(doc(db, "laserQuotes", id), cleanUndefined(updates), { merge: true });
+    },
+    deleteLaserQuote: async (id: string) => {
+      await deleteDoc(doc(db, "laserQuotes", id));
+    },
+
     tenants,
     allSectors: sectors,
     addTenant,
