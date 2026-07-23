@@ -483,8 +483,13 @@ export interface LaserQuoteItem {
 
   // Bending (Dobra) calculation
   hasBending?: boolean;         // Possui serviço de dobra?
+  bendingQuantity?: number;     // Qtd de dobras por peça
   bendingRatePerKg?: number;    // Taxa de dobra por KG (Padrão R$ 2,00/KG)
-  bendingCost?: number;         // Custo unitário de dobra (calculatedWeightKg * bendingRatePerKg)
+  bendingCost?: number;         // Custo unitário de dobra (calculatedWeightKg * bendingRatePerKg * bendingQuantity)
+  
+  // Rateio e Custos Adicionais
+  proratedExtraCostWithMat?: number;    // Custo extra rateado unitário com material
+  proratedExtraCostWithoutMat?: number; // Custo extra rateado unitário sem material
   
   // Material calculation
   steelDensityFactor: number;   // Padrão 7.92
@@ -494,8 +499,8 @@ export interface LaserQuoteItem {
   // Calculated prices
   cuttingCost: number;          // cuttingTimeSeconds * cuttingRatePerSec
   materialCost: number;         // calculatedWeightKg * materialPricePerKg
-  unitPriceWithMaterial: number;   // cuttingCost + materialCost + bendingCost
-  unitPriceWithoutMaterial: number; // cuttingCost + bendingCost
+  unitPriceWithMaterial: number;   // (cuttingCost + materialCost + bendingCost + proratedExtra) * (1 + additionPercent/100)
+  unitPriceWithoutMaterial: number; // (cuttingCost + bendingCost + proratedExtra) * (1 + additionPercent/100)
   quantity: number;                 // Qtd de peças
   totalWithMaterial: number;        // quantity * unitPriceWithMaterial
   totalWithoutMaterial: number;     // quantity * unitPriceWithoutMaterial
@@ -516,7 +521,8 @@ export interface LaserQuote {
   totalWithoutMaterial: number; // Soma dos itens sem material
   totalWeightKg: number;        // Peso total do material do lote em KG
   totalBendingCost?: number;    // Custo total de dobra
-  additionPercent?: number;     // Porcentagem adicional sobre o total (padrão 0%)
+  extraCosts?: number;          // Custos adicionais fixos (mão de obra, frete, etc.) em R$ rateados nos unitários
+  additionPercent?: number;     // Porcentagem adicional aplicada nos valores unitários (padrão 0%)
   notes?: string;
   status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "APROVADO_COM_MATERIAL" | "APROVADO_SEM_MATERIAL" | "REJEITADO";
   tenantId?: string;

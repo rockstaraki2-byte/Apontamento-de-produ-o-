@@ -46,6 +46,58 @@ const THICKNESS_PRESETS = [
   { label: "1\" (25.4mm)", mm: 25.4, fraction: "1\"" },
 ];
 
+// Helper to format thickness into fraction or inch notation e.g. "1/8\"", "3/16\"", "1/4\"", "1/2\""
+export const formatThicknessString = (thicknessMm: number, thicknessLabel?: string) => {
+  if (thicknessLabel && thicknessLabel.trim()) {
+    const lbl = thicknessLabel.trim();
+    if (lbl.endsWith('"') || lbl.toLowerCase().endsWith('mm')) {
+      return lbl;
+    }
+    if (/^\d+(\/\d+)?$/.test(lbl)) {
+      return `${lbl}"`;
+    }
+    return lbl;
+  }
+  const preset = THICKNESS_PRESETS.find((p) => Math.abs(p.mm - thicknessMm) < 0.05);
+  if (preset) {
+    const frac = preset.fraction;
+    return frac.endsWith('"') ? frac : `${frac}"`;
+  }
+  return `${thicknessMm}mm`;
+};
+
+// Helper to format measures string in requested pattern: "chapa [espessura] x [comprimento] mm x [largura] mm"
+export const formatItemMeasures = (it: {
+  lengthMm?: number;
+  widthMm?: number;
+  thicknessMm?: number;
+  thicknessLabel?: string;
+  measures?: string;
+}) => {
+  if (it.lengthMm && it.widthMm && (it.thicknessMm || it.thicknessLabel)) {
+    const thick = formatThicknessString(it.thicknessMm || 0, it.thicknessLabel);
+    return `chapa ${thick} x ${it.lengthMm} mm x ${it.widthMm} mm`;
+  }
+  if (it.measures && it.measures.trim()) {
+    const raw = it.measures.trim();
+    if (raw.toLowerCase().startsWith("chapa ")) {
+      return raw;
+    }
+    const parts = raw.split("x");
+    if (parts.length === 3) {
+      const len = parts[0].trim();
+      const wid = parts[1].trim();
+      let thick = parts[2].trim();
+      if (/^\d+(\/\d+)?$/.test(thick)) {
+        thick = `${thick}"`;
+      }
+      return `chapa ${thick} x ${len} mm x ${wid} mm`;
+    }
+    return raw;
+  }
+  return "-";
+};
+
 // Helper to format customer slug for quote code e.g. "ORC-001-RANGEL-2026"
 const formatCustomerSlug = (name: string) => {
   if (!name || !name.trim()) return "CLIENTE";
@@ -84,7 +136,12 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
   const [quoteStatus, setQuoteStatus] = useState<"RASCUNHO" | "ENVIADO" | "APROVADO" | "APROVADO_COM_MATERIAL" | "APROVADO_SEM_MATERIAL" | "REJEITADO">("RASCUNHO");
   const [notes, setNotes] = useState("");
   const [additionPercent, setAdditionPercent] = useState<number>(0);
+  const [extraCosts, setExtraCosts] = useState<number>(0);
   const [viewingQuote, setViewingQuote] = useState<LaserQuote | null>(null);
+
+  // PDF Export Modal State
+  const [pdfModalQuote, setPdfModalQuote] = useState<LaserQuote | null>(null);
+  const [selectedReportMode, setSelectedReportMode] = useState<"AMBOS" | "COM_MATERIAL" | "SEM_MATERIAL">("AMBOS");
 
   // Status badge styling helper
   const getStatusBadge = (st: string) => {
@@ -143,6 +200,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
   const [itemCuttingRatePerSec, setItemCuttingRatePerSec] = useState<number>(0.35);
   const [itemPricePerKg, setItemPricePerKg] = useState<number>(10.0);
   const [itemHasBending, setItemHasBending] = useState<boolean>(false);
+  const [itemBendingQuantity, setItemBendingQuantity] = useState<number>(1);
   const [itemBendingRatePerKg, setItemBendingRatePerKg] = useState<number>(2.0);
   const [itemQuantity, setItemQuantity] = useState<number>(1);
   const [showAdvancedItemCalc, setShowAdvancedItemCalc] = useState(false);
@@ -175,6 +233,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     setValidityDays(10);
     setQuoteStatus("RASCUNHO");
     setNotes("");
+    setExtraCosts(0);
     setAdditionPercent(0);
     setDefaultRatePerSec(0.35);
     setDefaultPricePerKg(10.0);
@@ -196,6 +255,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     setValidityDays(quote.validityDays || 10);
     setQuoteStatus(quote.status);
     setNotes(quote.notes || "");
+    setExtraCosts(quote.extraCosts || 0);
     setAdditionPercent(quote.additionPercent || 0);
     setItems(quote.items || []);
     resetItemForm();
@@ -228,6 +288,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     setItemCuttingRatePerSec(defaultRatePerSec);
     setItemPricePerKg(defaultPricePerKg);
     setItemHasBending(false);
+    setItemBendingQuantity(1);
     setItemBendingRatePerKg(defaultBendingRatePerKg);
     setItemQuantity(1);
     setShowAdvancedItemCalc(false);
@@ -241,7 +302,9 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     
     const cuttingCost = itemCuttingTimeSeconds * itemCuttingRatePerSec;
     const materialCost = calculatedWeightKg * itemPricePerKg;
-    const bendingCost = itemHasBending ? (calculatedWeightKg * itemBendingRatePerKg) : 0;
+    const bendingCost = itemHasBending
+      ? (calculatedWeightKg * itemBendingRatePerKg * Math.max(1, itemBendingQuantity))
+      : 0;
 
     const unitPriceWithMaterial = cuttingCost + materialCost + bendingCost;
     const unitPriceWithoutMaterial = cuttingCost + bendingCost;
@@ -249,8 +312,13 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     const totalWithMaterial = unitPriceWithMaterial * itemQuantity;
     const totalWithoutMaterial = unitPriceWithoutMaterial * itemQuantity;
 
-    // Formatted measures string, e.g., "668x240x1/2" or "668x240x6.35mm"
-    const measures = `${itemLengthMm}x${itemWidthMm}x${itemThicknessLabel || `${itemThicknessMm}mm`}`;
+    // Formatted measures string, e.g., "chapa 1/2" x 200 mm x 580 mm"
+    const measures = formatItemMeasures({
+      lengthMm: itemLengthMm,
+      widthMm: itemWidthMm,
+      thicknessMm: itemThicknessMm,
+      thicknessLabel: itemThicknessLabel,
+    });
 
     return {
       calculatedWeightKg,
@@ -273,6 +341,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     itemPricePerKg,
     itemHasBending,
     itemBendingRatePerKg,
+    itemBendingQuantity,
     itemQuantity,
   ]);
 
@@ -296,6 +365,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       cuttingTimeSeconds: itemCuttingTimeSeconds,
       cuttingRatePerSec: itemCuttingRatePerSec,
       hasBending: itemHasBending,
+      bendingQuantity: itemHasBending ? itemBendingQuantity : undefined,
       bendingRatePerKg: itemHasBending ? itemBendingRatePerKg : undefined,
       bendingCost: calc.bendingCost,
       steelDensityFactor: 7.92,
@@ -333,6 +403,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     setItemCuttingRatePerSec(item.cuttingRatePerSec);
     setItemPricePerKg(item.materialPricePerKg);
     setItemHasBending(item.hasBending || false);
+    setItemBendingQuantity(item.bendingQuantity ?? 1);
     setItemBendingRatePerKg(item.bendingRatePerKg ?? defaultBendingRatePerKg);
     setItemQuantity(item.quantity);
 
@@ -354,36 +425,114 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     }
   };
 
-  // Base Subtotals from Items
-  const itemsSubtotalWithMaterial = useMemo(
-    () => items.reduce((acc, it) => acc + it.totalWithMaterial, 0),
-    [items]
+  // Dynamic recalculation of items incorporating extraCosts proration AND additionPercent markup in UNIT PRICES
+  const computedItems = useMemo(() => {
+    if (!items || items.length === 0) return [];
+
+    // 1. Calculate raw base values for each item
+    const baseItems = items.map((it) => {
+      const calcWeight = (it.lengthMm * it.widthMm * it.thicknessMm * 7.92) / 1000000;
+      const cutCost = it.cuttingTimeSeconds * it.cuttingRatePerSec;
+      const matCost = calcWeight * it.materialPricePerKg;
+      const bendQty = it.hasBending ? (it.bendingQuantity ?? 1) : 0;
+      const bendRate = it.bendingRatePerKg ?? 2.0;
+      const bendCost = it.hasBending ? (calcWeight * bendRate * bendQty) : 0;
+
+      const baseUnitWithMat = cutCost + matCost + bendCost;
+      const baseUnitWithoutMat = cutCost + bendCost;
+
+      const qty = Math.max(1, it.quantity || 1);
+      const baseTotalWithMat = baseUnitWithMat * qty;
+      const baseTotalWithoutMat = baseUnitWithoutMat * qty;
+
+      return {
+        it,
+        calcWeight,
+        cutCost,
+        matCost,
+        bendQty,
+        bendRate,
+        bendCost,
+        baseUnitWithMat,
+        baseUnitWithoutMat,
+        qty,
+        baseTotalWithMat,
+        baseTotalWithoutMat,
+      };
+    });
+
+    // 2. Sum base totals
+    const sumBaseTotalWithMat = baseItems.reduce((acc, d) => acc + d.baseTotalWithMat, 0);
+    const sumBaseTotalWithoutMat = baseItems.reduce((acc, d) => acc + d.baseTotalWithoutMat, 0);
+
+    // 3. Markup multiplier from additionPercent
+    const markupFactor = 1 + (additionPercent || 0) / 100;
+
+    // 4. Prorate extraCosts and apply markup to unit prices
+    return baseItems.map((d) => {
+      const shareWithMat = sumBaseTotalWithMat > 0 ? (d.baseTotalWithMat / sumBaseTotalWithMat) : (1 / items.length);
+      const proratedExtraTotalWithMat = (extraCosts || 0) * shareWithMat;
+      const proratedExtraUnitWithMat = proratedExtraTotalWithMat / d.qty;
+
+      const shareWithoutMat = sumBaseTotalWithoutMat > 0 ? (d.baseTotalWithoutMat / sumBaseTotalWithoutMat) : (1 / items.length);
+      const proratedExtraTotalWithoutMat = (extraCosts || 0) * shareWithoutMat;
+      const proratedExtraUnitWithoutMat = proratedExtraTotalWithoutMat / d.qty;
+
+      // Unit prices incorporate prorated extra costs AND +additionPercent% markup directly
+      const unitPriceWithMaterial = (d.baseUnitWithMat + proratedExtraUnitWithMat) * markupFactor;
+      const unitPriceWithoutMaterial = (d.baseUnitWithoutMat + proratedExtraUnitWithoutMat) * markupFactor;
+
+      const totalWithMaterial = unitPriceWithMaterial * d.qty;
+      const totalWithoutMaterial = unitPriceWithoutMaterial * d.qty;
+
+      return {
+        ...d.it,
+        calculatedWeightKg: d.calcWeight,
+        cuttingCost: d.cutCost,
+        materialCost: d.matCost,
+        bendingCost: d.bendCost,
+        bendingQuantity: d.bendQty,
+        bendingRatePerKg: d.bendRate,
+        proratedExtraCostWithMat: proratedExtraUnitWithMat,
+        proratedExtraCostWithoutMat: proratedExtraUnitWithoutMat,
+        unitPriceWithMaterial,
+        unitPriceWithoutMaterial,
+        totalWithMaterial,
+        totalWithoutMaterial,
+      };
+    });
+  }, [items, extraCosts, additionPercent]);
+
+  // Base Subtotals from Items (before extra costs & markup)
+  const baseSubtotalWithMaterial = useMemo(
+    () => computedItems.reduce((acc, it) => acc + (it.cuttingCost + it.materialCost + (it.bendingCost || 0)) * it.quantity, 0),
+    [computedItems]
   );
 
-  const itemsSubtotalWithoutMaterial = useMemo(
-    () => items.reduce((acc, it) => acc + it.totalWithoutMaterial, 0),
-    [items]
+  const baseSubtotalWithoutMaterial = useMemo(
+    () => computedItems.reduce((acc, it) => acc + (it.cuttingCost + (it.bendingCost || 0)) * it.quantity, 0),
+    [computedItems]
   );
 
-  // Grand Totals (with addition percentage applied)
+  // Grand Totals (Sum of computed item totals)
   const grandTotalWithMaterial = useMemo(
-    () => itemsSubtotalWithMaterial * (1 + (additionPercent || 0) / 100),
-    [itemsSubtotalWithMaterial, additionPercent]
+    () => computedItems.reduce((acc, it) => acc + it.totalWithMaterial, 0),
+    [computedItems]
   );
 
   const grandTotalWithoutMaterial = useMemo(
-    () => itemsSubtotalWithoutMaterial * (1 + (additionPercent || 0) / 100),
-    [itemsSubtotalWithoutMaterial, additionPercent]
+    () => computedItems.reduce((acc, it) => acc + it.totalWithoutMaterial, 0),
+    [computedItems]
   );
 
   const grandTotalWeightKg = useMemo(
-    () => items.reduce((acc, it) => acc + (it.calculatedWeightKg * it.quantity), 0),
-    [items]
+    () => computedItems.reduce((acc, it) => acc + (it.calculatedWeightKg * it.quantity), 0),
+    [computedItems]
   );
 
   const grandTotalBendingCost = useMemo(
-    () => items.reduce((acc, it) => acc + ((it.bendingCost || 0) * it.quantity), 0),
-    [items]
+    () => computedItems.reduce((acc, it) => acc + ((it.bendingCost || 0) * it.quantity), 0),
+    [computedItems]
   );
 
   // Save Quote to Database
@@ -393,7 +542,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       return;
     }
 
-    if (items.length === 0) {
+    if (computedItems.length === 0) {
       alert("Adicione pelo menos 1 item ao orçamento.");
       return;
     }
@@ -410,11 +559,12 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       validityDays,
       createdBy: currentUser.name || "Marcos (Projetista)",
       createdAt: editingQuote?.createdAt || Date.now(),
-      items,
+      items: computedItems,
       totalWithMaterial: grandTotalWithMaterial,
       totalWithoutMaterial: grandTotalWithoutMaterial,
       totalWeightKg: grandTotalWeightKg,
       totalBendingCost: grandTotalBendingCost,
+      extraCosts: extraCosts || 0,
       additionPercent: additionPercent || 0,
       notes,
       status: quoteStatus,
@@ -438,8 +588,11 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     }
   };
 
-  // Export PDF Report matching exact visual of provided image
-  const handleExportPDF = (quote: LaserQuote) => {
+  // Export PDF Report with flexible display mode options
+  const handleExportPDF = (
+    quote: LaserQuote,
+    reportMode: "AMBOS" | "COM_MATERIAL" | "SEM_MATERIAL" = "AMBOS"
+  ) => {
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
@@ -488,44 +641,181 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     doc.text(formattedDate, 48, 49);
     doc.line(48, 50, 200, 50);
 
-    // Build Table Rows
-    const tableRows = quote.items.map((it) => [
-      it.hasBending ? `${it.description} [C/ DOBRA]` : it.description,
-      it.measures,
-      it.materialType,
-      `R$ ${it.unitPriceWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      `R$ ${it.unitPriceWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      it.quantity.toString(),
-      `R$ ${it.totalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      `R$ ${it.totalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-    ]);
+    let headRow: any[] = [];
+    let tableRows: any[] = [];
+    let totalsRow: any[] = [];
+    let columnStyles: any = {};
 
-    // Pad empty rows to match spreadsheet style if less than 12
-    const targetRows = Math.max(12, tableRows.length);
-    while (tableRows.length < targetRows) {
-      tableRows.push(["", "", "", "R$ -", "R$ -", "", "R$ -", "R$ -"]);
-    }
+    if (reportMode === "COM_MATERIAL") {
+      headRow = [
+        [
+          { content: "DESCRIÇÃO", styles: { halign: "center", valign: "middle" } },
+          { content: "MEDIDAS", styles: { halign: "center", valign: "middle" } },
+          { content: "MATERIAL", styles: { halign: "center", valign: "middle" } },
+          { content: "VALOR UNITÁRIO", styles: { halign: "center", valign: "middle" } },
+          { content: "Qtd.", styles: { halign: "center", valign: "middle" } },
+          { content: "VALOR TOTAL POR PEÇA", styles: { halign: "center", valign: "middle" } },
+        ],
+      ];
 
-    // Totals row
-    const totalsRow = [
-      { content: "VALOR TOTAL DO SERVIÇO", colSpan: 6, styles: { fontStyle: "bold", halign: "right", fillColor: [255, 255, 0] as [number, number, number] } },
-      { content: `R$ ${quote.totalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, styles: { fontStyle: "bold", halign: "center", fillColor: [168, 230, 207] as [number, number, number] } },
-      { content: `R$ ${quote.totalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, styles: { fontStyle: "bold", halign: "center", fillColor: [255, 204, 153] as [number, number, number] } },
-    ];
+      tableRows = quote.items.map((it) => {
+        const desc = it.hasBending
+          ? `${it.description} [C/ ${it.bendingQuantity || 1} DOBRA(S)]`
+          : it.description;
+        return [
+          desc,
+          formatItemMeasures(it),
+          it.materialType,
+          `R$ ${it.unitPriceWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          it.quantity.toString(),
+          `R$ ${it.totalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        ];
+      });
 
-    autoTable(doc, {
-      head: [
+      const targetRows = Math.max(12, tableRows.length);
+      while (tableRows.length < targetRows) {
+        tableRows.push(["", "", "", "R$ -", "", "R$ -"]);
+      }
+
+      totalsRow = [
+        {
+          content: "VALOR TOTAL DO SERVIÇO (COM MATERIAL)",
+          colSpan: 5,
+          styles: { fontStyle: "bold", halign: "right", fillColor: [255, 255, 0] },
+        },
+        {
+          content: `R$ ${quote.totalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          styles: { fontStyle: "bold", halign: "center", fillColor: [168, 230, 207] },
+        },
+      ];
+
+      columnStyles = {
+        0: { cellWidth: 62 },
+        1: { cellWidth: 42, halign: "center" },
+        2: { cellWidth: 20, halign: "center" },
+        3: { cellWidth: 24, halign: "right" },
+        4: { cellWidth: 12, halign: "center" },
+        5: { cellWidth: 30, halign: "right", fillColor: [224, 247, 250] },
+      };
+
+    } else if (reportMode === "SEM_MATERIAL") {
+      headRow = [
+        [
+          { content: "DESCRIÇÃO", styles: { halign: "center", valign: "middle" } },
+          { content: "MEDIDAS", styles: { halign: "center", valign: "middle" } },
+          { content: "MATERIAL", styles: { halign: "center", valign: "middle" } },
+          { content: "VALOR UNITÁRIO (SERVIÇO)", styles: { halign: "center", valign: "middle" } },
+          { content: "Qtd.", styles: { halign: "center", valign: "middle" } },
+          { content: "VALOR TOTAL POR PEÇA", styles: { halign: "center", valign: "middle" } },
+        ],
+      ];
+
+      tableRows = quote.items.map((it) => {
+        const desc = it.hasBending
+          ? `${it.description} [C/ ${it.bendingQuantity || 1} DOBRA(S)]`
+          : it.description;
+        return [
+          desc,
+          formatItemMeasures(it),
+          it.materialType,
+          `R$ ${it.unitPriceWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          it.quantity.toString(),
+          `R$ ${it.totalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        ];
+      });
+
+      const targetRows = Math.max(12, tableRows.length);
+      while (tableRows.length < targetRows) {
+        tableRows.push(["", "", "", "R$ -", "", "R$ -"]);
+      }
+
+      totalsRow = [
+        {
+          content: "VALOR TOTAL DO SERVIÇO (SEM MATERIAL)",
+          colSpan: 5,
+          styles: { fontStyle: "bold", halign: "right", fillColor: [255, 255, 0] },
+        },
+        {
+          content: `R$ ${quote.totalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          styles: { fontStyle: "bold", halign: "center", fillColor: [255, 204, 153] },
+        },
+      ];
+
+      columnStyles = {
+        0: { cellWidth: 62 },
+        1: { cellWidth: 42, halign: "center" },
+        2: { cellWidth: 20, halign: "center" },
+        3: { cellWidth: 24, halign: "right" },
+        4: { cellWidth: 12, halign: "center" },
+        5: { cellWidth: 30, halign: "right", fillColor: [255, 243, 224] },
+      };
+
+    } else {
+      // AMBOS (Com e Sem Material)
+      headRow = [
         [
           { content: "DESCRIÇÃO", styles: { halign: "center", valign: "middle" } },
           { content: "MEDIDAS", styles: { halign: "center", valign: "middle" } },
           { content: "MATERIAL", styles: { halign: "center", valign: "middle" } },
           { content: "VALOR UNITÁRIO COM MATERIAL", styles: { halign: "center", valign: "middle" } },
           { content: "VALOR UNITÁRIO SEM MATERIAL", styles: { halign: "center", valign: "middle" } },
-          { content: "QUANTIDADE", styles: { halign: "center", valign: "middle" } },
+          { content: "Qtd.", styles: { halign: "center", valign: "middle" } },
           { content: "VALOR TOTAL POR PEÇA COM MATERIAL", styles: { halign: "center", valign: "middle" } },
           { content: "VALOR TOTAL POR PEÇA SEM MATERIAL", styles: { halign: "center", valign: "middle" } },
         ],
-      ],
+      ];
+
+      tableRows = quote.items.map((it) => {
+        const desc = it.hasBending
+          ? `${it.description} [C/ ${it.bendingQuantity || 1} DOBRA(S)]`
+          : it.description;
+        return [
+          desc,
+          formatItemMeasures(it),
+          it.materialType,
+          `R$ ${it.unitPriceWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          `R$ ${it.unitPriceWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          it.quantity.toString(),
+          `R$ ${it.totalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          `R$ ${it.totalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        ];
+      });
+
+      const targetRows = Math.max(12, tableRows.length);
+      while (tableRows.length < targetRows) {
+        tableRows.push(["", "", "", "R$ -", "R$ -", "", "R$ -", "R$ -"]);
+      }
+
+      totalsRow = [
+        {
+          content: "VALOR TOTAL DO SERVIÇO",
+          colSpan: 6,
+          styles: { fontStyle: "bold", halign: "right", fillColor: [255, 255, 0] },
+        },
+        {
+          content: `R$ ${quote.totalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          styles: { fontStyle: "bold", halign: "center", fillColor: [168, 230, 207] },
+        },
+        {
+          content: `R$ ${quote.totalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          styles: { fontStyle: "bold", halign: "center", fillColor: [255, 204, 153] },
+        },
+      ];
+
+      columnStyles = {
+        0: { cellWidth: 42 },
+        1: { cellWidth: 35, halign: "center" },
+        2: { cellWidth: 16, halign: "center" },
+        3: { cellWidth: 20, halign: "right" },
+        4: { cellWidth: 20, halign: "right" },
+        5: { cellWidth: 10, halign: "center" },
+        6: { cellWidth: 23.5, halign: "right", fillColor: [224, 247, 250] },
+        7: { cellWidth: 23.5, halign: "right", fillColor: [255, 243, 224] },
+      };
+    }
+
+    autoTable(doc, {
+      head: headRow,
       body: [...tableRows, totalsRow as any],
       startY: 53,
       margin: { left: 10, right: 10, top: 53, bottom: 15 },
@@ -539,31 +829,28 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
         overflow: "linebreak",
       },
       headStyles: {
-        fillColor: [168, 230, 207], // Light pastel green like image
+        fillColor: [168, 230, 207],
         textColor: [0, 0, 0],
         fontStyle: "bold",
         fontSize: 6.5,
       },
-      columnStyles: {
-        0: { cellWidth: 50 }, // Descrição
-        1: { cellWidth: 19, halign: "center" }, // Medidas
-        2: { cellWidth: 18, halign: "center" }, // Material
-        3: { cellWidth: 21, halign: "right" }, // Valor Unit c/ Mat
-        4: { cellWidth: 21, halign: "right" }, // Valor Unit s/ Mat
-        5: { cellWidth: 11, halign: "center" }, // Qtd
-        6: { cellWidth: 25, halign: "right", fillColor: [224, 247, 250] }, // Total c/ Mat (light cyan)
-        7: { cellWidth: 25, halign: "right", fillColor: [255, 243, 224] }, // Total s/ Mat (light orange)
-      },
+      columnStyles,
     });
 
-    // Validity footer note
     const finalY = (doc as any).lastAutoTable.finalY + 10;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
     doc.text(`ORÇAMENTO VÁLIDO POR ${quote.validityDays || 10} DIAS`, 105, finalY, { align: "center" });
 
-    doc.save(`Orcamento_Corte_Laser_${quote.quoteCode}_${quote.customerName.replace(/\s+/g, "_")}.pdf`);
+    const reportSuffix =
+      reportMode === "COM_MATERIAL"
+        ? "_Com_Material"
+        : reportMode === "SEM_MATERIAL"
+        ? "_Sem_Material"
+        : "";
+
+    doc.save(`Orcamento_Corte_Laser_${quote.quoteCode}_${quote.customerName.replace(/\s+/g, "_")}${reportSuffix}.pdf`);
   };
 
   return (
@@ -749,8 +1036,11 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                           <Eye size={14} />
                         </button>
                         <button
-                          onClick={() => handleExportPDF(q)}
-                          title="Baixar PDF"
+                          onClick={() => {
+                            setSelectedReportMode("AMBOS");
+                            setPdfModalQuote(q);
+                          }}
+                          title="Emitir Relatório PDF"
                           className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition cursor-pointer"
                         >
                           <Download size={14} />
@@ -954,10 +1244,10 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
               {/* Global Default Calculation Sliders */}
               <div className="bg-indigo-50/60 border border-indigo-100 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-2 text-indigo-900 font-bold text-xs">
-                  <Sparkles size={16} className="text-indigo-600" /> Parâmetros Padrão do Lote:
+                  <Sparkles size={16} className="text-indigo-600" /> Parâmetros do Orçamento:
                 </div>
 
-                <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-slate-600">Taxa Tempo (R$/s):</span>
                     <input
@@ -971,7 +1261,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                         setDefaultRatePerSec(val);
                         setItemCuttingRatePerSec(val);
                       }}
-                      className="w-20 p-1.5 border border-indigo-200 rounded-lg text-xs font-bold text-indigo-700 bg-white text-center"
+                      className="w-16 p-1.5 border border-indigo-200 rounded-lg text-xs font-bold text-indigo-700 bg-white text-center"
                     />
                   </div>
 
@@ -987,7 +1277,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                         setDefaultPricePerKg(val);
                         setItemPricePerKg(val);
                       }}
-                      className="w-20 p-1.5 border border-indigo-200 rounded-lg text-xs font-bold text-indigo-700 bg-white text-center"
+                      className="w-16 p-1.5 border border-indigo-200 rounded-lg text-xs font-bold text-indigo-700 bg-white text-center"
                     />
                   </div>
 
@@ -1003,7 +1293,22 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                         setDefaultBendingRatePerKg(val);
                         setItemBendingRatePerKg(val);
                       }}
-                      className="w-20 p-1.5 border border-indigo-200 rounded-lg text-xs font-bold text-amber-700 bg-white text-center"
+                      className="w-16 p-1.5 border border-indigo-200 rounded-lg text-xs font-bold text-amber-700 bg-white text-center"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-slate-100 p-1 px-2 rounded-lg border border-slate-200">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                      Custos Extra (R$):
+                    </span>
+                    <input
+                      type="number"
+                      step="10"
+                      min="0"
+                      placeholder="0.00"
+                      value={extraCosts || ""}
+                      onChange={(e) => setExtraCosts(Math.max(0, Number(e.target.value)))}
+                      className="w-20 p-1 border border-slate-300 rounded text-xs font-extrabold text-slate-900 bg-white text-center"
                     />
                   </div>
 
@@ -1111,7 +1416,17 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                   {itemHasBending && (
                     <div className="flex items-center gap-3 flex-wrap">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-slate-600">Valor da Dobra (R$/KG):</span>
+                        <span className="text-xs font-semibold text-slate-600">Qtd. Dobras:</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={itemBendingQuantity}
+                          onChange={(e) => setItemBendingQuantity(Math.max(1, Number(e.target.value)))}
+                          className="w-16 p-1 border border-amber-300 rounded-md text-xs font-bold text-amber-900 bg-white text-center focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-slate-600">Valor Dobra (R$/KG):</span>
                         <input
                           type="number"
                           step="0.25"
@@ -1122,7 +1437,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                         />
                       </div>
                       <span className="text-xs font-mono text-amber-800 bg-amber-100/80 px-2 py-1 rounded border border-amber-300">
-                        Custo Dobra Unit.: <strong>R$ {currentItemCalculations.bendingCost.toFixed(2)}</strong> ({currentItemCalculations.calculatedWeightKg.toFixed(2)} kg × R$ {itemBendingRatePerKg.toFixed(2)})
+                        Custo Dobra: <strong>R$ {currentItemCalculations.bendingCost.toFixed(2)}</strong> ({currentItemCalculations.calculatedWeightKg.toFixed(2)} kg × R$ {itemBendingRatePerKg.toFixed(2)} × {itemBendingQuantity} dobra{itemBendingQuantity > 1 ? 's' : ''})
                       </span>
                     </div>
                   )}
@@ -1274,31 +1589,31 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                         <th className="p-2.5 border-r border-slate-900 text-center w-24">MATERIAL</th>
                         <th className="p-2.5 border-r border-slate-900 text-right w-32">VALOR UNITÁRIO COM MATERIAL</th>
                         <th className="p-2.5 border-r border-slate-900 text-right w-32">VALOR UNITÁRIO SEM MATERIAL</th>
-                        <th className="p-2.5 border-r border-slate-900 text-center w-16">QUANTIDADE</th>
+                        <th className="p-2.5 border-r border-slate-900 text-center w-16">Qtd.</th>
                         <th className="p-2.5 border-r border-slate-900 text-right w-36 bg-[#e0f7fa]">VALOR TOTAL POR PEÇA COM MATERIAL</th>
                         <th className="p-2.5 border-r border-slate-900 text-right w-36 bg-[#fff3e0]">VALOR TOTAL POR PEÇA SEM MATERIAL</th>
                         <th className="p-2.5 text-center w-16">AÇÕES</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-300 font-medium text-slate-800">
-                      {items.length === 0 ? (
+                      {computedItems.length === 0 ? (
                         <tr>
                           <td colSpan={9} className="text-center py-6 text-slate-400">
                             Nenhum item adicionado. Utilize o formulário acima para adicionar os itens.
                           </td>
                         </tr>
                       ) : (
-                        items.map((it, idx) => (
+                        computedItems.map((it, idx) => (
                           <tr key={it.id} className="hover:bg-slate-100 transition">
                             <td className="p-2 border-r border-slate-300 font-bold">
                               {it.description}
                               {it.hasBending && (
                                 <span className="inline-block ml-1.5 px-1.5 py-0.5 text-[9px] font-extrabold bg-amber-100 text-amber-800 rounded border border-amber-300">
-                                  c/ Dobra
+                                  c/ {it.bendingQuantity || 1} Dobra{(it.bendingQuantity || 1) > 1 ? "s" : ""}
                                 </span>
                               )}
                             </td>
-                            <td className="p-2 border-r border-slate-300 text-center font-mono">{it.measures}</td>
+                            <td className="p-2 border-r border-slate-300 text-center font-mono">{formatItemMeasures(it)}</td>
                             <td className="p-2 border-r border-slate-300 text-center">{it.materialType}</td>
                             <td className="p-2 border-r border-slate-300 text-right font-mono">
                               R$ {it.unitPriceWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1336,33 +1651,47 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                       )}
                     </tbody>
                     <tfoot>
+                      {(extraCosts > 0 || additionPercent > 0) && (
+                        <tr className="bg-slate-200/80 border-t-2 border-slate-900 font-bold text-xs text-slate-800">
+                          <td colSpan={6} className="p-2 text-right uppercase border-r border-slate-900">
+                            SOMA BASE DOS ITENS (SUBTOTAL)
+                          </td>
+                          <td className="p-2 text-right font-mono border-r border-slate-900">
+                            R$ {baseSubtotalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-2 text-right font-mono border-r border-slate-900">
+                            R$ {baseSubtotalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td></td>
+                        </tr>
+                      )}
+                      {extraCosts > 0 && (
+                        <tr className="bg-slate-100 border-t border-slate-900 font-bold text-xs text-slate-800">
+                          <td colSpan={6} className="p-2 text-right uppercase border-r border-slate-900">
+                            CUSTOS EXTRA RATEADOS NOS VALORES UNITÁRIOS
+                          </td>
+                          <td className="p-2 text-right font-mono border-r border-slate-900 text-indigo-900">
+                            + R$ {extraCosts.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-2 text-right font-mono border-r border-slate-900 text-indigo-900">
+                            + R$ {extraCosts.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td></td>
+                        </tr>
+                      )}
                       {additionPercent > 0 && (
-                        <>
-                          <tr className="bg-slate-200/80 border-t-2 border-slate-900 font-bold text-xs text-slate-800">
-                            <td colSpan={6} className="p-2 text-right uppercase border-r border-slate-900">
-                              SOMA DOS ITENS (SUBTOTAL)
-                            </td>
-                            <td className="p-2 text-right font-mono border-r border-slate-900">
-                              R$ {itemsSubtotalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                            <td className="p-2 text-right font-mono border-r border-slate-900">
-                              R$ {itemsSubtotalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                            <td></td>
-                          </tr>
-                          <tr className="bg-amber-100/90 border-t border-slate-900 font-bold text-xs text-amber-950">
-                            <td colSpan={6} className="p-2 text-right uppercase border-r border-slate-900">
-                              ACRÉSCIMO MARGEM ADICIONAL (+{additionPercent}%)
-                            </td>
-                            <td className="p-2 text-right font-mono border-r border-slate-900 text-amber-900">
-                              + R$ {((itemsSubtotalWithMaterial * additionPercent) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                            <td className="p-2 text-right font-mono border-r border-slate-900 text-amber-900">
-                              + R$ {((itemsSubtotalWithoutMaterial * additionPercent) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                            <td></td>
-                          </tr>
-                        </>
+                        <tr className="bg-amber-100/90 border-t border-slate-900 font-bold text-xs text-amber-950">
+                          <td colSpan={6} className="p-2 text-right uppercase border-r border-slate-900">
+                            ACRÉSCIMO MARGEM (+{additionPercent}% INCORPORADO NO UNITÁRIO)
+                          </td>
+                          <td className="p-2 text-right font-mono border-r border-slate-900 text-amber-900">
+                            + R$ {(grandTotalWithMaterial - (baseSubtotalWithMaterial + extraCosts)).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-2 text-right font-mono border-r border-slate-900 text-amber-900">
+                            + R$ {(grandTotalWithoutMaterial - (baseSubtotalWithoutMaterial + extraCosts)).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td></td>
+                        </tr>
                       )}
                       <tr className="bg-yellow-300 border-t-2 border-slate-900 font-black text-xs text-slate-900">
                         <td colSpan={6} className="p-2.5 text-right uppercase border-r border-slate-900">
@@ -1538,7 +1867,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                               </span>
                             )}
                           </td>
-                          <td className="p-2.5 text-center font-mono text-slate-600">{it.measures}</td>
+                          <td className="p-2.5 text-center font-mono text-slate-600">{formatItemMeasures(it)}</td>
                           <td className="p-2.5 text-center text-slate-700">{it.materialType}</td>
                           <td className="p-2.5 text-right font-mono">
                             R$ {it.unitPriceWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1627,12 +1956,144 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                   <Edit size={14} /> Editar Orçamento
                 </button>
                 <button
-                  onClick={() => handleExportPDF(viewingQuote)}
+                  onClick={() => {
+                    const q = viewingQuote;
+                    setSelectedReportMode("AMBOS");
+                    setPdfModalQuote(q);
+                  }}
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
                 >
-                  <Download size={14} /> Baixar PDF
+                  <Download size={14} /> Emitir PDF
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PDF REPORT MODE MODAL */}
+      {pdfModalQuote && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-6 space-y-5 animate-in fade-in zoom-in duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
+                  <Printer size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">Opções de Emissão de Relatório PDF</h3>
+                  <span className="text-xs text-slate-500 font-mono">
+                    {pdfModalQuote.quoteCode} - {pdfModalQuote.customerName}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setPdfModalQuote(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Selecione quais valores devem ser exibidos nas colunas e totais do relatório oficial em PDF enviado para o cliente:
+            </p>
+
+            <div className="space-y-2.5">
+              <label
+                onClick={() => setSelectedReportMode("AMBOS")}
+                className={`p-3.5 rounded-xl border-2 flex items-center justify-between cursor-pointer transition ${
+                  selectedReportMode === "AMBOS"
+                    ? "bg-emerald-50/80 border-emerald-500 text-emerald-950 shadow-xs"
+                    : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="radio"
+                    name="reportMode"
+                    checked={selectedReportMode === "AMBOS"}
+                    onChange={() => setSelectedReportMode("AMBOS")}
+                    className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <div>
+                    <span className="block text-xs font-extrabold">Com e Sem Material (Padrão Completo)</span>
+                    <span className="block text-[11px] text-slate-500">
+                      Exibe ambas as colunas de valor unitário e totais
+                    </span>
+                  </div>
+                </div>
+              </label>
+
+              <label
+                onClick={() => setSelectedReportMode("COM_MATERIAL")}
+                className={`p-3.5 rounded-xl border-2 flex items-center justify-between cursor-pointer transition ${
+                  selectedReportMode === "COM_MATERIAL"
+                    ? "bg-emerald-50/80 border-emerald-500 text-emerald-950 shadow-xs"
+                    : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="radio"
+                    name="reportMode"
+                    checked={selectedReportMode === "COM_MATERIAL"}
+                    onChange={() => setSelectedReportMode("COM_MATERIAL")}
+                    className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <div>
+                    <span className="block text-xs font-extrabold">Somente com o Valor COM Material</span>
+                    <span className="block text-[11px] text-slate-500">
+                      Ideal para clientes que compram a peça pronta (chapa + corte)
+                    </span>
+                  </div>
+                </div>
+              </label>
+
+              <label
+                onClick={() => setSelectedReportMode("SEM_MATERIAL")}
+                className={`p-3.5 rounded-xl border-2 flex items-center justify-between cursor-pointer transition ${
+                  selectedReportMode === "SEM_MATERIAL"
+                    ? "bg-emerald-50/80 border-emerald-500 text-emerald-950 shadow-xs"
+                    : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="radio"
+                    name="reportMode"
+                    checked={selectedReportMode === "SEM_MATERIAL"}
+                    onChange={() => setSelectedReportMode("SEM_MATERIAL")}
+                    className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <div>
+                    <span className="block text-xs font-extrabold">Somente com o Valor SEM Material</span>
+                    <span className="block text-[11px] text-slate-500">
+                      Ideal para prestação de serviço em chapa enviada pelo cliente
+                    </span>
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setPdfModalQuote(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  const q = pdfModalQuote;
+                  const mode = selectedReportMode;
+                  setPdfModalQuote(null);
+                  handleExportPDF(q, mode);
+                }}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Download size={14} /> Gerar e Baixar PDF
+              </button>
             </div>
           </div>
         </div>
