@@ -29,11 +29,102 @@ import {
   ArrowRight,
   ShieldAlert,
   Sparkles,
-  Layers
+  Layers,
+  ArrowUpDown,
+  RotateCcw,
+  Flame,
+  Check
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { normalizeString } from "./searchUtils";
+
+// Helper for delivery date urgency calculation
+export type DeliveryUrgencyType = "OVERDUE" | "CRITICAL_24H" | "UPCOMING_48H" | "ON_TIME" | "NO_DATE";
+
+export function getDeliveryUrgency(deliveryDateStr?: string) {
+  if (!deliveryDateStr) {
+    return {
+      urgency: "NO_DATE" as DeliveryUrgencyType,
+      daysDiff: 999,
+      label: "Sem data",
+      bgClass: "bg-slate-100 text-slate-600 border-slate-200",
+      rowClass: "",
+    };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let targetDate: Date;
+  if (deliveryDateStr.includes("T")) {
+    targetDate = new Date(deliveryDateStr);
+  } else {
+    const parts = deliveryDateStr.split("-").map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      targetDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    } else {
+      targetDate = new Date(deliveryDateStr);
+    }
+  }
+
+  if (isNaN(targetDate.getTime())) {
+    return {
+      urgency: "NO_DATE" as DeliveryUrgencyType,
+      daysDiff: 999,
+      label: "Data inválida",
+      bgClass: "bg-slate-100 text-slate-600 border-slate-200",
+      rowClass: "",
+    };
+  }
+
+  targetDate.setHours(0, 0, 0, 0);
+  const diffMs = targetDate.getTime() - today.getTime();
+  const daysDiff = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+  if (daysDiff < 0) {
+    const absDays = Math.abs(daysDiff);
+    return {
+      urgency: "OVERDUE" as DeliveryUrgencyType,
+      daysDiff,
+      label: `VENCIDO (${absDays}d atrás)`,
+      bgClass: "bg-rose-100 text-rose-900 border-rose-300 font-extrabold animate-pulse",
+      rowClass: "bg-rose-50/70 hover:bg-rose-100/80 border-l-4 border-l-rose-500",
+    };
+  } else if (daysDiff === 0) {
+    return {
+      urgency: "CRITICAL_24H" as DeliveryUrgencyType,
+      daysDiff,
+      label: "HOJE (<24h)",
+      bgClass: "bg-amber-100 text-amber-900 border-amber-400 font-extrabold",
+      rowClass: "bg-amber-50/70 hover:bg-amber-100/80 border-l-4 border-l-amber-500",
+    };
+  } else if (daysDiff === 1) {
+    return {
+      urgency: "CRITICAL_24H" as DeliveryUrgencyType,
+      daysDiff,
+      label: "Amanhã (<48h)",
+      bgClass: "bg-amber-50 text-amber-800 border-amber-300 font-bold",
+      rowClass: "bg-amber-50/30 hover:bg-amber-50/70 border-l-4 border-l-amber-300",
+    };
+  } else if (daysDiff <= 3) {
+    return {
+      urgency: "UPCOMING_48H" as DeliveryUrgencyType,
+      daysDiff,
+      label: `Em ${daysDiff} dias`,
+      bgClass: "bg-blue-50 text-blue-800 border-blue-200 font-semibold",
+      rowClass: "",
+    };
+  } else {
+    return {
+      urgency: "ON_TIME" as DeliveryUrgencyType,
+      daysDiff,
+      label: targetDate.toLocaleDateString("pt-BR"),
+      bgClass: "bg-slate-100 text-slate-700 border-slate-200",
+      rowClass: "",
+    };
+  }
+}
 
 export function LogisticaScreen({
   db,
@@ -51,6 +142,8 @@ export function LogisticaScreen({
   const [filterDeliveryStart, setFilterDeliveryStart] = useState("");
   const [filterDeliveryEnd, setFilterDeliveryEnd] = useState("");
   const [readinessFilter, setReadinessFilter] = useState<"TODOS" | "PRONTO" | "ESTOQUE" | "EM_PRODUCAO">("TODOS");
+  const [urgencyFilter, setUrgencyFilter] = useState<"TODOS" | "OVERDUE" | "CRITICAL_24H" | "UPCOMING_48H" | "ON_TIME">("TODOS");
+  const [sortBy, setSortBy] = useState<"URGENCIA" | "ENTREGA_ASC" | "ENTREGA_DESC" | "NOME">("URGENCIA");
 
   // View Mode: 'CLIENTE' | 'PRODUTO' | 'GERAL'
   const [viewMode, setViewMode] = useState<"CLIENTE" | "PRODUTO" | "GERAL">("PRODUTO");
@@ -71,7 +164,6 @@ export function LogisticaScreen({
 
   // Viewing/Editing Saved Cargas
   const [viewingCarga, setViewingCarga] = useState<Carga | null>(null);
-  const [editingCarga, setEditingCarga] = useState<Carga | null>(null);
 
   // Accordion state for grouped views
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -110,6 +202,15 @@ export function LogisticaScreen({
     return stockAcabadoMap.get(key) || 0;
   };
 
+  // Helper for product identification keys
+  const getProductKey = (o: Order) => {
+    return o.customProductName ? `custom:${o.customProductName}` : `item:${o.itemId}`;
+  };
+
+  const getProductName = (o: Order) => {
+    return o.customProductName || itemsMap.get(o.itemId) || `Item #${o.itemId}`;
+  };
+
   // Filter pending orders (not invoiced completely and active)
   const pendingOrders = useMemo(() => {
     return (db.orders || []).filter((o) => {
@@ -120,29 +221,72 @@ export function LogisticaScreen({
     });
   }, [db.orders]);
 
-  // Unique list of customers with pending orders
+  // Overall Urgency Statistics for Metric Cards
+  const urgencyStats = useMemo(() => {
+    let overdue = 0;
+    let critical24h = 0;
+    let upcoming48h = 0;
+    let onTime = 0;
+    let readyToShip = 0;
+
+    pendingOrders.forEach((o) => {
+      const urg = getDeliveryUrgency(o.deliveryDate);
+      if (urg.urgency === "OVERDUE") overdue += 1;
+      else if (urg.urgency === "CRITICAL_24H") critical24h += 1;
+      else if (urg.urgency === "UPCOMING_48H") upcoming48h += 1;
+      else if (urg.urgency === "ON_TIME") onTime += 1;
+
+      const isPacked = o.packedQuantity >= o.totalQuantity;
+      const stockQty = getStockQtyForOrder(o);
+      const pendingQty = o.totalQuantity - (o.invoicedQuantity || 0);
+      if (isPacked || stockQty >= pendingQty) {
+        readyToShip += 1;
+      }
+    });
+
+    return {
+      overdue,
+      critical24h,
+      upcoming48h,
+      onTime,
+      readyToShip,
+      total: pendingOrders.length,
+    };
+  }, [pendingOrders, stockAcabadoMap]);
+
+  // Dynamic customers list (responsive to product filter)
   const pendingCustomersList = useMemo(() => {
     const set = new Set<string>();
     pendingOrders.forEach((o) => {
+      if (selectedProductFilter !== "TODOS") {
+        const prodKey = getProductKey(o);
+        if (prodKey !== selectedProductFilter && o.itemId.toString() !== selectedProductFilter) {
+          return;
+        }
+      }
       if (o.customerName) set.add(o.customerName);
     });
     return Array.from(set).sort();
-  }, [pendingOrders]);
+  }, [pendingOrders, selectedProductFilter]);
 
-  // Unique list of products with pending orders
+  // Dynamic products list (responsive to customer filter)
   const pendingProductsList = useMemo(() => {
-    const map = new Map<number, string>();
+    const map = new Map<string, string>();
     pendingOrders.forEach((o) => {
-      const name = o.customProductName || itemsMap.get(o.itemId) || `Item #${o.itemId}`;
-      map.set(o.itemId, name);
+      if (selectedCustomerFilter !== "TODOS" && o.customerName !== selectedCustomerFilter) {
+        return;
+      }
+      const key = getProductKey(o);
+      const name = getProductName(o);
+      map.set(key, name);
     });
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-  }, [pendingOrders, itemsMap]);
+  }, [pendingOrders, selectedCustomerFilter, itemsMap]);
 
-  // Filtered pending orders based on search & filter controls
+  // Filtered & Sorted pending orders
   const filteredOrders = useMemo(() => {
-    return pendingOrders.filter((o) => {
-      const itemName = o.customProductName || itemsMap.get(o.itemId) || `Item #${o.itemId}`;
+    const list = pendingOrders.filter((o) => {
+      const itemName = getProductName(o);
       const searchNorm = normalizeString(searchTerm);
 
       // Search term
@@ -163,8 +307,11 @@ export function LogisticaScreen({
       }
 
       // Product filter
-      if (selectedProductFilter !== "TODOS" && o.itemId.toString() !== selectedProductFilter) {
-        return false;
+      if (selectedProductFilter !== "TODOS") {
+        const prodKey = getProductKey(o);
+        if (prodKey !== selectedProductFilter && o.itemId.toString() !== selectedProductFilter) {
+          return false;
+        }
       }
 
       // Delivery date filter
@@ -185,7 +332,35 @@ export function LogisticaScreen({
         if (readinessFilter === "EM_PRODUCAO" && (isPacked || hasStock)) return false;
       }
 
+      // Urgency filter
+      if (urgencyFilter !== "TODOS") {
+        const urgInfo = getDeliveryUrgency(o.deliveryDate);
+        if (urgencyFilter === "OVERDUE" && urgInfo.urgency !== "OVERDUE") return false;
+        if (urgencyFilter === "CRITICAL_24H" && urgInfo.urgency !== "CRITICAL_24H") return false;
+        if (urgencyFilter === "UPCOMING_48H" && urgInfo.urgency !== "UPCOMING_48H") return false;
+        if (urgencyFilter === "ON_TIME" && urgInfo.urgency !== "ON_TIME") return false;
+      }
+
       return true;
+    });
+
+    // Sort list
+    return list.sort((a, b) => {
+      const urgA = getDeliveryUrgency(a.deliveryDate);
+      const urgB = getDeliveryUrgency(b.deliveryDate);
+
+      if (sortBy === "URGENCIA") {
+        if (urgA.daysDiff !== urgB.daysDiff) {
+          return urgA.daysDiff - urgB.daysDiff;
+        }
+      } else if (sortBy === "ENTREGA_ASC") {
+        return urgA.daysDiff - urgB.daysDiff;
+      } else if (sortBy === "ENTREGA_DESC") {
+        return urgB.daysDiff - urgA.daysDiff;
+      } else if (sortBy === "NOME") {
+        return (a.customerName || "").localeCompare(b.customerName || "");
+      }
+      return 0;
     });
   }, [
     pendingOrders,
@@ -195,52 +370,104 @@ export function LogisticaScreen({
     filterDeliveryStart,
     filterDeliveryEnd,
     readinessFilter,
+    urgencyFilter,
+    sortBy,
     itemsMap,
     stockAcabadoMap
   ]);
 
   // Grouped by Product view
   const groupedByProduct = useMemo(() => {
-    const groups: { [key: string]: { itemId: number; itemName: string; orders: Order[]; totalPending: number } } = {};
+    const groups: {
+      [key: string]: {
+        itemId: number;
+        productKey: string;
+        itemName: string;
+        orders: Order[];
+        totalPending: number;
+        overdueCount: number;
+        criticalCount: number;
+        maxUrgencyDays: number;
+      };
+    } = {};
 
     filteredOrders.forEach((o) => {
-      const itemName = o.customProductName || itemsMap.get(o.itemId) || `Item #${o.itemId}`;
-      const key = `${o.itemId}_${itemName}`;
+      const itemName = getProductName(o);
+      const key = getProductKey(o);
+      const urg = getDeliveryUrgency(o.deliveryDate);
 
       if (!groups[key]) {
         groups[key] = {
           itemId: o.itemId,
+          productKey: key,
           itemName,
           orders: [],
-          totalPending: 0
+          totalPending: 0,
+          overdueCount: 0,
+          criticalCount: 0,
+          maxUrgencyDays: urg.daysDiff,
         };
       }
       groups[key].orders.push(o);
       groups[key].totalPending += Math.max(0, o.totalQuantity - (o.invoicedQuantity || 0));
+      if (urg.urgency === "OVERDUE") groups[key].overdueCount += 1;
+      if (urg.urgency === "CRITICAL_24H") groups[key].criticalCount += 1;
+      if (urg.daysDiff < groups[key].maxUrgencyDays) groups[key].maxUrgencyDays = urg.daysDiff;
     });
 
-    return Object.values(groups).sort((a, b) => a.itemName.localeCompare(b.itemName));
-  }, [filteredOrders, itemsMap]);
+    return Object.values(groups).sort((a, b) => {
+      if (sortBy === "URGENCIA") {
+        if (a.overdueCount !== b.overdueCount) return b.overdueCount - a.overdueCount;
+        if (a.criticalCount !== b.criticalCount) return b.criticalCount - a.criticalCount;
+        if (a.maxUrgencyDays !== b.maxUrgencyDays) return a.maxUrgencyDays - b.maxUrgencyDays;
+      }
+      return a.itemName.localeCompare(b.itemName);
+    });
+  }, [filteredOrders, itemsMap, sortBy]);
 
   // Grouped by Customer view
   const groupedByCustomer = useMemo(() => {
-    const groups: { [key: string]: { customerName: string; orders: Order[]; totalPending: number } } = {};
+    const groups: {
+      [key: string]: {
+        customerName: string;
+        orders: Order[];
+        totalPending: number;
+        overdueCount: number;
+        criticalCount: number;
+        maxUrgencyDays: number;
+      };
+    } = {};
 
     filteredOrders.forEach((o) => {
       const key = o.customerName || "Cliente Indefinido";
+      const urg = getDeliveryUrgency(o.deliveryDate);
+
       if (!groups[key]) {
         groups[key] = {
           customerName: key,
           orders: [],
-          totalPending: 0
+          totalPending: 0,
+          overdueCount: 0,
+          criticalCount: 0,
+          maxUrgencyDays: urg.daysDiff,
         };
       }
       groups[key].orders.push(o);
       groups[key].totalPending += Math.max(0, o.totalQuantity - (o.invoicedQuantity || 0));
+      if (urg.urgency === "OVERDUE") groups[key].overdueCount += 1;
+      if (urg.urgency === "CRITICAL_24H") groups[key].criticalCount += 1;
+      if (urg.daysDiff < groups[key].maxUrgencyDays) groups[key].maxUrgencyDays = urg.daysDiff;
     });
 
-    return Object.values(groups).sort((a, b) => a.customerName.localeCompare(b.customerName));
-  }, [filteredOrders]);
+    return Object.values(groups).sort((a, b) => {
+      if (sortBy === "URGENCIA") {
+        if (a.overdueCount !== b.overdueCount) return b.overdueCount - a.overdueCount;
+        if (a.criticalCount !== b.criticalCount) return b.criticalCount - a.criticalCount;
+        if (a.maxUrgencyDays !== b.maxUrgencyDays) return a.maxUrgencyDays - b.maxUrgencyDays;
+      }
+      return a.customerName.localeCompare(b.customerName);
+    });
+  }, [filteredOrders, sortBy]);
 
   // Checkbox Selection logic
   const handleToggleSelectOrder = (orderId: number, defaultQty: number) => {
@@ -267,7 +494,6 @@ export function LogisticaScreen({
     const allSelected = groupOrderIds.every((id) => selectedOrderIds.includes(id));
 
     if (allSelected) {
-      // Unselect group
       setSelectedOrderIds((prev) => prev.filter((id) => !groupOrderIds.includes(id)));
       setOrderQuantities((q) => {
         const newQ = { ...q };
@@ -275,7 +501,6 @@ export function LogisticaScreen({
         return newQ;
       });
     } else {
-      // Select all in group
       const newIds = [...selectedOrderIds];
       const newQuantities = { ...orderQuantities };
 
@@ -320,7 +545,7 @@ export function LogisticaScreen({
     };
   }, [db.orders, selectedOrderIds, orderQuantities]);
 
-  // Open Load Modal with auto-generated default name
+  // Open Load Modal
   const handleOpenCreateCargaModal = () => {
     if (selectedOrderIds.length === 0) return;
     const nextNumber = (db.cargas || []).length + 1;
@@ -364,12 +589,11 @@ export function LogisticaScreen({
     }
   };
 
-  // Print PDF Romaneio de Carga
+  // Print PDF Romaneio
   const handlePrintRomaneioPDF = (carga: Carga) => {
     const doc = new jsPDF();
 
-    // Header
-    doc.setFillColor(15, 23, 42); // slate-900
+    doc.setFillColor(15, 23, 42);
     doc.rect(0, 0, 210, 32, "F");
 
     doc.setTextColor(255, 255, 255);
@@ -381,7 +605,6 @@ export function LogisticaScreen({
     doc.setFont("helvetica", "normal");
     doc.text(`Império Jomarci • Gerado em: ${new Date().toLocaleDateString("pt-BR")} ${new Date().toLocaleTimeString("pt-BR")}`, 14, 24);
 
-    // Carga Metadata Table
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
@@ -406,7 +629,6 @@ export function LogisticaScreen({
       theme: "grid"
     });
 
-    // Load Items List
     const cargaOrders = (db.orders || []).filter((o) => (carga.orderIds || []).includes(o.id));
 
     const tableRows: any[] = [];
@@ -450,7 +672,7 @@ export function LogisticaScreen({
     doc.save(`Romaneio_${carga.name.replace(/\s+/g, "_")}.pdf`);
   };
 
-  // Helper render for Status Badges of an Item
+  // Status Badges rendering helper
   const renderItemStatusBadges = (o: Order) => {
     const isPacked = o.packedQuantity >= o.totalQuantity;
     const isPacking = o.packedQuantity > 0 && o.packedQuantity < o.totalQuantity;
@@ -466,7 +688,7 @@ export function LogisticaScreen({
     const hasFullStock = stockQty >= pendingQty;
 
     return (
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex items-center gap-1.5 flex-wrap justify-center sm:justify-start">
         {/* Stock Badge */}
         {stockQty > 0 ? (
           <span
@@ -500,7 +722,7 @@ export function LogisticaScreen({
           </span>
         )}
 
-        {/* Pintura Badge if applicable */}
+        {/* Pintura Badge */}
         {isPainted ? (
           <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-purple-50 text-purple-800 border-purple-300">
             Pintado
@@ -511,7 +733,7 @@ export function LogisticaScreen({
           </span>
         ) : null}
 
-        {/* Laser / Corte Badge if applicable */}
+        {/* Laser / Corte Badge */}
         {(o.isThirdPartyLaser || (o.cutQuantity && o.cutQuantity > 0)) && (
           isCut ? (
             <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-cyan-50 text-cyan-800 border-cyan-300">
@@ -527,8 +749,27 @@ export function LogisticaScreen({
     );
   };
 
+  const hasActiveFilters =
+    searchTerm ||
+    selectedCustomerFilter !== "TODOS" ||
+    selectedProductFilter !== "TODOS" ||
+    filterDeliveryStart ||
+    filterDeliveryEnd ||
+    readinessFilter !== "TODOS" ||
+    urgencyFilter !== "TODOS";
+
+  const resetAllFilters = () => {
+    setSearchTerm("");
+    setSelectedCustomerFilter("TODOS");
+    setSelectedProductFilter("TODOS");
+    setFilterDeliveryStart("");
+    setFilterDeliveryEnd("");
+    setReadinessFilter("TODOS");
+    setUrgencyFilter("TODOS");
+  };
+
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+    <div className="h-full w-full overflow-y-auto p-4 md:p-6 max-w-7xl mx-auto space-y-5">
       {/* Screen Title & Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div>
@@ -541,7 +782,7 @@ export function LogisticaScreen({
                 Formação de Carga & Expedição
               </h1>
               <p className="text-xs font-semibold text-slate-500">
-                Pesquise pendências por cliente ou produto, verifique o estoque e monte cargas para despacho.
+                Priorização visual de entregas com alerta de prazo vencido ou próximo (&lt;24h) e montagem de carga.
               </p>
             </div>
           </div>
@@ -587,7 +828,161 @@ export function LogisticaScreen({
       </div>
 
       {activeTab === "formacao" ? (
-        <div className="space-y-6">
+        <div className="space-y-5">
+          {/* URGENCY ALERT SUMMARY CARDS (KPI Dashboard for Delivery Deadlines) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {/* OVERDUE CARD */}
+            <button
+              onClick={() => {
+                if (urgencyFilter === "OVERDUE") setUrgencyFilter("TODOS");
+                else setUrgencyFilter("OVERDUE");
+              }}
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                urgencyFilter === "OVERDUE"
+                  ? "bg-rose-900 text-white border-rose-950 ring-2 ring-rose-500 shadow-md"
+                  : urgencyStats.overdue > 0
+                  ? "bg-rose-50/90 text-rose-950 border-rose-200 hover:border-rose-400 hover:bg-rose-100/80 shadow-xs"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] font-extrabold uppercase tracking-wider ${
+                  urgencyFilter === "OVERDUE" ? "text-rose-200" : "text-rose-700"
+                }`}>
+                  🚨 Vencidos
+                </span>
+                {urgencyStats.overdue > 0 && (
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                )}
+              </div>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="text-2xl font-black">{urgencyStats.overdue}</span>
+                <span className={`text-[10px] font-bold ${
+                  urgencyFilter === "OVERDUE" ? "text-rose-200" : "text-rose-600"
+                }`}>
+                  {urgencyFilter === "OVERDUE" ? "Filtro Ativo" : "Filtrar"}
+                </span>
+              </div>
+            </button>
+
+            {/* CRITICAL <24H CARD */}
+            <button
+              onClick={() => {
+                if (urgencyFilter === "CRITICAL_24H") setUrgencyFilter("TODOS");
+                else setUrgencyFilter("CRITICAL_24H");
+              }}
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                urgencyFilter === "CRITICAL_24H"
+                  ? "bg-amber-900 text-white border-amber-950 ring-2 ring-amber-500 shadow-md"
+                  : urgencyStats.critical24h > 0
+                  ? "bg-amber-50/90 text-amber-950 border-amber-200 hover:border-amber-400 hover:bg-amber-100/80 shadow-xs"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] font-extrabold uppercase tracking-wider ${
+                  urgencyFilter === "CRITICAL_24H" ? "text-amber-200" : "text-amber-800"
+                }`}>
+                  ⚡ Vencendo Hoje (&lt;24h)
+                </span>
+                <Clock size={14} className={urgencyFilter === "CRITICAL_24H" ? "text-amber-300" : "text-amber-600"} />
+              </div>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="text-2xl font-black">{urgencyStats.critical24h}</span>
+                <span className={`text-[10px] font-bold ${
+                  urgencyFilter === "CRITICAL_24H" ? "text-amber-200" : "text-amber-700"
+                }`}>
+                  {urgencyFilter === "CRITICAL_24H" ? "Filtro Ativo" : "Filtrar"}
+                </span>
+              </div>
+            </button>
+
+            {/* UPCOMING <48H CARD */}
+            <button
+              onClick={() => {
+                if (urgencyFilter === "UPCOMING_48H") setUrgencyFilter("TODOS");
+                else setUrgencyFilter("UPCOMING_48H");
+              }}
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                urgencyFilter === "UPCOMING_48H"
+                  ? "bg-blue-900 text-white border-blue-950 ring-2 ring-blue-500 shadow-md"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-700">
+                  🗓️ Próx. 2 a 3 Dias
+                </span>
+                <Calendar size={14} className="text-blue-500" />
+              </div>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="text-2xl font-black">{urgencyStats.upcoming48h}</span>
+                <span className="text-[10px] font-bold text-blue-600">
+                  {urgencyFilter === "UPCOMING_48H" ? "Filtro Ativo" : "Filtrar"}
+                </span>
+              </div>
+            </button>
+
+            {/* READY TO SHIP CARD */}
+            <button
+              onClick={() => {
+                if (readinessFilter === "PRONTO") setReadinessFilter("TODOS");
+                else setReadinessFilter("PRONTO");
+              }}
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                readinessFilter === "PRONTO"
+                  ? "bg-emerald-900 text-white border-emerald-950 ring-2 ring-emerald-500 shadow-md"
+                  : urgencyStats.readyToShip > 0
+                  ? "bg-emerald-50/90 text-emerald-950 border-emerald-200 hover:border-emerald-300 shadow-xs"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] font-extrabold uppercase tracking-wider ${
+                  readinessFilter === "PRONTO" ? "text-emerald-200" : "text-emerald-800"
+                }`}>
+                  📦 Prontos p/ Carga
+                </span>
+                <CheckCircle2 size={14} className={readinessFilter === "PRONTO" ? "text-emerald-300" : "text-emerald-600"} />
+              </div>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="text-2xl font-black">{urgencyStats.readyToShip}</span>
+                <span className={`text-[10px] font-bold ${
+                  readinessFilter === "PRONTO" ? "text-emerald-200" : "text-emerald-700"
+                }`}>
+                  {readinessFilter === "PRONTO" ? "Filtro Ativo" : "Filtrar"}
+                </span>
+              </div>
+            </button>
+
+            {/* TOTAL PENDING CARD */}
+            <button
+              onClick={resetAllFilters}
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between col-span-2 sm:col-span-1 ${
+                !hasActiveFilters
+                  ? "bg-slate-900 text-white border-slate-950 shadow-xs"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] font-extrabold uppercase tracking-wider ${
+                  !hasActiveFilters ? "text-slate-300" : "text-slate-500"
+                }`}>
+                  📋 Total Pendentes
+                </span>
+                <Boxes size={14} className={!hasActiveFilters ? "text-slate-300" : "text-slate-400"} />
+              </div>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="text-2xl font-black">{urgencyStats.total}</span>
+                <span className={`text-[10px] font-bold ${
+                  !hasActiveFilters ? "text-emerald-400" : "text-slate-500"
+                }`}>
+                  {!hasActiveFilters ? "Exibindo Todos" : "Limpar Filtros"}
+                </span>
+              </div>
+            </button>
+          </div>
+
           {/* Search & Filter Controls Bar */}
           <div className="bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
             {/* Top row: Search input + View mode toggles */}
@@ -612,7 +1007,7 @@ export function LogisticaScreen({
               </div>
 
               {/* View Mode Toggle Buttons */}
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0">
                 <button
                   onClick={() => setViewMode("PRODUTO")}
                   className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 ${
@@ -621,7 +1016,7 @@ export function LogisticaScreen({
                       : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
-                  <Package size={13} /> Por Produto
+                  <Package size={13} /> Agrupar Produto
                 </button>
                 <button
                   onClick={() => setViewMode("CLIENTE")}
@@ -631,7 +1026,7 @@ export function LogisticaScreen({
                       : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
-                  <Building2 size={13} /> Por Cliente
+                  <Building2 size={13} /> Agrupar Cliente
                 </button>
                 <button
                   onClick={() => setViewMode("GERAL")}
@@ -647,7 +1042,7 @@ export function LogisticaScreen({
             </div>
 
             {/* Bottom Row: Detailed Dropdown Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1 border-t border-slate-100 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-1 border-t border-slate-100 text-xs">
               {/* Filter by Customer */}
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
@@ -678,34 +1073,36 @@ export function LogisticaScreen({
                   className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white"
                 >
                   <option value="TODOS">Todos os Produtos ({pendingProductsList.length})</option>
-                  {pendingProductsList.map(([id, name]) => (
-                    <option key={id} value={id.toString()}>
+                  {pendingProductsList.map(([key, name]) => (
+                    <option key={key} value={key}>
                       {name}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Filter by Delivery Date range */}
+              {/* Delivery Urgency Filter */}
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                  Previsão de Entrega (De / Até)
+                  Urgência de Prazo
                 </label>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="date"
-                    value={filterDeliveryStart}
-                    onChange={(e) => setFilterDeliveryStart(e.target.value)}
-                    className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
-                  />
-                  <span className="text-slate-400 font-bold">-</span>
-                  <input
-                    type="date"
-                    value={filterDeliveryEnd}
-                    onChange={(e) => setFilterDeliveryEnd(e.target.value)}
-                    className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
-                  />
-                </div>
+                <select
+                  value={urgencyFilter}
+                  onChange={(e) => setUrgencyFilter(e.target.value as any)}
+                  className={`w-full p-2 border rounded-xl text-xs font-extrabold ${
+                    urgencyFilter === "OVERDUE"
+                      ? "bg-rose-50 text-rose-900 border-rose-300"
+                      : urgencyFilter === "CRITICAL_24H"
+                      ? "bg-amber-50 text-amber-900 border-amber-300"
+                      : "bg-slate-50 text-slate-800 border-slate-200 focus:bg-white"
+                  }`}
+                >
+                  <option value="TODOS">Todas as Prazos</option>
+                  <option value="OVERDUE">🚨 Somente VENCIDOS</option>
+                  <option value="CRITICAL_24H">⚡ Vencendo Hoje (&lt;24h)</option>
+                  <option value="UPCOMING_48H">🗓️ Próximos 2-3 dias</option>
+                  <option value="ON_TIME">✅ No Prazo</option>
+                </select>
               </div>
 
               {/* Readiness Filter */}
@@ -718,32 +1115,62 @@ export function LogisticaScreen({
                   onChange={(e) => setReadinessFilter(e.target.value as any)}
                   className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white"
                 >
-                  <option value="TODOS">Todos os Itens</option>
+                  <option value="TODOS">Todos os Status</option>
                   <option value="PRONTO">Somente 100% Embalados</option>
-                  <option value="ESTOQUE">Com Estoque Acabado Disponível</option>
+                  <option value="ESTOQUE">Com Estoque Disponível</option>
                   <option value="EM_PRODUCAO">Em Produção / Pendente</option>
+                </select>
+              </div>
+
+              {/* Sort Order */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  Ordenação
+                </label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white"
+                >
+                  <option value="URGENCIA">🚨 Urgência (Vencidos 1º)</option>
+                  <option value="ENTREGA_ASC">📅 Data Entrega (Antiga 1º)</option>
+                  <option value="ENTREGA_DESC">📅 Data Entrega (Recente 1º)</option>
+                  <option value="NOME">🔤 Nome (A-Z)</option>
                 </select>
               </div>
             </div>
 
             {/* Clear Filters Indicator if active */}
-            {(searchTerm || selectedCustomerFilter !== "TODOS" || selectedProductFilter !== "TODOS" || filterDeliveryStart || filterDeliveryEnd || readinessFilter !== "TODOS") && (
-              <div className="flex items-center justify-between bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200 text-xs">
-                <span className="font-semibold text-amber-900">
-                  Filtros ativos: exibindo {filteredOrders.length} de {pendingOrders.length} pendências.
-                </span>
+            {hasActiveFilters && (
+              <div className="flex flex-wrap items-center justify-between bg-amber-50 px-3.5 py-2 rounded-xl border border-amber-200 text-xs gap-2">
+                <div className="flex items-center gap-2 flex-wrap text-amber-900 font-medium">
+                  <span className="font-extrabold flex items-center gap-1">
+                    <Filter size={13} /> Filtros Ativos:
+                  </span>
+                  <span>
+                    Exibindo <strong>{filteredOrders.length}</strong> de <strong>{pendingOrders.length}</strong> pendências.
+                  </span>
+                  {selectedCustomerFilter !== "TODOS" && (
+                    <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md font-bold text-[11px] border border-amber-300">
+                      Cliente: {selectedCustomerFilter}
+                    </span>
+                  )}
+                  {selectedProductFilter !== "TODOS" && (
+                    <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md font-bold text-[11px] border border-amber-300">
+                      Produto selecionado
+                    </span>
+                  )}
+                  {urgencyFilter !== "TODOS" && (
+                    <span className="bg-rose-100 text-rose-900 px-2 py-0.5 rounded-md font-extrabold text-[11px] border border-rose-300">
+                      Urgência: {urgencyFilter}
+                    </span>
+                  )}
+                </div>
                 <button
-                  onClick={() => {
-                    setSearchTerm("");
-                    setSelectedCustomerFilter("TODOS");
-                    setSelectedProductFilter("TODOS");
-                    setFilterDeliveryStart("");
-                    setFilterDeliveryEnd("");
-                    setReadinessFilter("TODOS");
-                  }}
-                  className="text-xs font-bold text-amber-800 hover:underline cursor-pointer"
+                  onClick={resetAllFilters}
+                  className="text-xs font-extrabold text-amber-900 hover:text-amber-950 underline cursor-pointer flex items-center gap-1"
                 >
-                  Limpar Filtros
+                  <RotateCcw size={12} /> Limpar Todos os Filtros
                 </button>
               </div>
             )}
@@ -795,30 +1222,67 @@ export function LogisticaScreen({
               <p className="text-xs text-slate-500 max-w-md mx-auto">
                 Não há pedidos ou itens pendentes de entrega com os filtros selecionados no momento.
               </p>
+              {hasActiveFilters && (
+                <button
+                  onClick={resetAllFilters}
+                  className="mt-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold transition hover:bg-slate-800"
+                >
+                  Limpar Filtros e Ver Todos
+                </button>
+              )}
             </div>
           ) : viewMode === "PRODUTO" ? (
             /* VIEW MODE: GROUPED BY PRODUCT */
             <div className="space-y-4">
               {groupedByProduct.map((group) => {
-                const isExpanded = expandedGroups[`prod_${group.itemId}`] !== false; // Default open
+                const isExpanded = expandedGroups[`prod_${group.productKey}`] !== false; // Default open
                 const allSelected = group.orders.every((o) => selectedOrderIds.includes(o.id));
 
                 return (
-                  <div key={group.itemId} className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                  <div
+                    key={group.productKey}
+                    className={`bg-white rounded-2xl border shadow-xs overflow-hidden transition-all ${
+                      group.overdueCount > 0
+                        ? "border-rose-300 ring-1 ring-rose-200"
+                        : group.criticalCount > 0
+                        ? "border-amber-300 ring-1 ring-amber-200"
+                        : "border-slate-200"
+                    }`}
+                  >
                     {/* Group Header */}
-                    <div className="bg-slate-50 p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div
+                      className={`p-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        group.overdueCount > 0
+                          ? "bg-rose-50/70 border-rose-200"
+                          : group.criticalCount > 0
+                          ? "bg-amber-50/70 border-amber-200"
+                          : "bg-slate-50 border-slate-200"
+                      }`}
+                    >
                       <div className="flex items-center gap-3">
                         <button
-                          onClick={() => toggleGroupExpand(`prod_${group.itemId}`)}
-                          className="p-1 hover:bg-slate-200 rounded-lg transition cursor-pointer text-slate-600"
+                          onClick={() => toggleGroupExpand(`prod_${group.productKey}`)}
+                          className="p-1 hover:bg-slate-200/80 rounded-lg transition cursor-pointer text-slate-600"
                         >
                           {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                         </button>
                         <div>
-                          <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                            <Package size={16} className="text-indigo-600" /> {group.itemName}
-                          </h3>
-                          <span className="text-xs font-semibold text-slate-500">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                              <Package size={16} className="text-indigo-600" /> {group.itemName}
+                            </h3>
+                            {group.overdueCount > 0 && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white flex items-center gap-1 shadow-xs animate-pulse">
+                                <AlertTriangle size={10} /> {group.overdueCount} VENCIDO(S)
+                              </span>
+                            )}
+                            {group.criticalCount > 0 && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white flex items-center gap-1 shadow-xs">
+                                <Clock size={10} /> {group.criticalCount} HOJE (&lt;24h)
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs font-semibold text-slate-500 block mt-0.5">
                             {group.orders.length} pedido(s) pendente(s) • Total:{" "}
                             <strong className="text-slate-800">{group.totalPending} peças</strong>
                           </span>
@@ -862,13 +1326,13 @@ export function LogisticaScreen({
                               const pendingQty = Math.max(0, ord.totalQuantity - (ord.invoicedQuantity || 0));
                               const currentSelectedQty = orderQuantities[ord.id] || pendingQty;
 
-                              const isAtrasado = ord.deliveryDate && new Date(ord.deliveryDate) < new Date();
+                              const urgInfo = getDeliveryUrgency(ord.deliveryDate);
 
                               return (
                                 <tr
                                   key={ord.id}
-                                  className={`transition ${
-                                    isSelected ? "bg-emerald-50/60" : "hover:bg-slate-50"
+                                  className={`transition ${urgInfo.rowClass} ${
+                                    isSelected ? "!bg-emerald-50/80" : ""
                                   }`}
                                 >
                                   <td className="p-3 text-center">
@@ -890,13 +1354,11 @@ export function LogisticaScreen({
                                   </td>
                                   <td className="p-3 text-center">
                                     <span
-                                      className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
-                                        isAtrasado
-                                          ? "bg-rose-100 text-rose-800 border border-rose-300"
-                                          : "text-slate-700 bg-slate-100"
-                                      }`}
+                                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] border ${urgInfo.bgClass}`}
                                     >
-                                      {ord.deliveryDate ? new Date(ord.deliveryDate + "T12:00:00").toLocaleDateString("pt-BR") : "—"}
+                                      {urgInfo.urgency === "OVERDUE" && <AlertTriangle size={11} className="text-rose-600" />}
+                                      {urgInfo.urgency === "CRITICAL_24H" && <Clock size={11} className="text-amber-600" />}
+                                      {urgInfo.label}
                                     </span>
                                   </td>
                                   <td className="p-3 text-center">
@@ -938,21 +1400,50 @@ export function LogisticaScreen({
                 const allSelected = group.orders.every((o) => selectedOrderIds.includes(o.id));
 
                 return (
-                  <div key={group.customerName} className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                  <div
+                    key={group.customerName}
+                    className={`bg-white rounded-2xl border shadow-xs overflow-hidden transition-all ${
+                      group.overdueCount > 0
+                        ? "border-rose-300 ring-1 ring-rose-200"
+                        : group.criticalCount > 0
+                        ? "border-amber-300 ring-1 ring-amber-200"
+                        : "border-slate-200"
+                    }`}
+                  >
                     {/* Group Header */}
-                    <div className="bg-slate-50 p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div
+                      className={`p-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        group.overdueCount > 0
+                          ? "bg-rose-50/70 border-rose-200"
+                          : group.criticalCount > 0
+                          ? "bg-amber-50/70 border-amber-200"
+                          : "bg-slate-50 border-slate-200"
+                      }`}
+                    >
                       <div className="flex items-center gap-3">
                         <button
                           onClick={() => toggleGroupExpand(`cust_${group.customerName}`)}
-                          className="p-1 hover:bg-slate-200 rounded-lg transition cursor-pointer text-slate-600"
+                          className="p-1 hover:bg-slate-200/80 rounded-lg transition cursor-pointer text-slate-600"
                         >
                           {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                         </button>
                         <div>
-                          <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                            <Building2 size={16} className="text-blue-600" /> {group.customerName}
-                          </h3>
-                          <span className="text-xs font-semibold text-slate-500">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                              <Building2 size={16} className="text-blue-600" /> {group.customerName}
+                            </h3>
+                            {group.overdueCount > 0 && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white flex items-center gap-1 shadow-xs animate-pulse">
+                                <AlertTriangle size={10} /> {group.overdueCount} VENCIDO(S)
+                              </span>
+                            )}
+                            {group.criticalCount > 0 && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white flex items-center gap-1 shadow-xs">
+                                <Clock size={10} /> {group.criticalCount} HOJE (&lt;24h)
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs font-semibold text-slate-500 block mt-0.5">
                             {group.orders.length} item(ns) pendente(s) • Total:{" "}
                             <strong className="text-slate-800">{group.totalPending} peças</strong>
                           </span>
@@ -995,14 +1486,14 @@ export function LogisticaScreen({
                               const isSelected = selectedOrderIds.includes(ord.id);
                               const pendingQty = Math.max(0, ord.totalQuantity - (ord.invoicedQuantity || 0));
                               const currentSelectedQty = orderQuantities[ord.id] || pendingQty;
-                              const itemName = ord.customProductName || itemsMap.get(ord.itemId) || `Item #${ord.itemId}`;
-                              const isAtrasado = ord.deliveryDate && new Date(ord.deliveryDate) < new Date();
+                              const itemName = getProductName(ord);
+                              const urgInfo = getDeliveryUrgency(ord.deliveryDate);
 
                               return (
                                 <tr
                                   key={ord.id}
-                                  className={`transition ${
-                                    isSelected ? "bg-emerald-50/60" : "hover:bg-slate-50"
+                                  className={`transition ${urgInfo.rowClass} ${
+                                    isSelected ? "!bg-emerald-50/80" : ""
                                   }`}
                                 >
                                   <td className="p-3 text-center">
@@ -1027,13 +1518,11 @@ export function LogisticaScreen({
                                   </td>
                                   <td className="p-3 text-center">
                                     <span
-                                      className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
-                                        isAtrasado
-                                          ? "bg-rose-100 text-rose-800 border border-rose-300"
-                                          : "text-slate-700 bg-slate-100"
-                                      }`}
+                                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] border ${urgInfo.bgClass}`}
                                     >
-                                      {ord.deliveryDate ? new Date(ord.deliveryDate + "T12:00:00").toLocaleDateString("pt-BR") : "—"}
+                                      {urgInfo.urgency === "OVERDUE" && <AlertTriangle size={11} className="text-rose-600" />}
+                                      {urgInfo.urgency === "CRITICAL_24H" && <Clock size={11} className="text-amber-600" />}
+                                      {urgInfo.label}
                                     </span>
                                   </td>
                                   <td className="p-3 text-center">
@@ -1097,14 +1586,14 @@ export function LogisticaScreen({
                       const isSelected = selectedOrderIds.includes(ord.id);
                       const pendingQty = Math.max(0, ord.totalQuantity - (ord.invoicedQuantity || 0));
                       const currentSelectedQty = orderQuantities[ord.id] || pendingQty;
-                      const itemName = ord.customProductName || itemsMap.get(ord.itemId) || `Item #${ord.itemId}`;
-                      const isAtrasado = ord.deliveryDate && new Date(ord.deliveryDate) < new Date();
+                      const itemName = getProductName(ord);
+                      const urgInfo = getDeliveryUrgency(ord.deliveryDate);
 
                       return (
                         <tr
                           key={ord.id}
-                          className={`transition ${
-                            isSelected ? "bg-emerald-50/60" : "hover:bg-slate-50"
+                          className={`transition ${urgInfo.rowClass} ${
+                            isSelected ? "!bg-emerald-50/80" : ""
                           }`}
                         >
                           <td className="p-3 text-center">
@@ -1132,13 +1621,11 @@ export function LogisticaScreen({
                           </td>
                           <td className="p-3 text-center">
                             <span
-                              className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
-                                isAtrasado
-                                  ? "bg-rose-100 text-rose-800 border border-rose-300"
-                                  : "text-slate-700 bg-slate-100"
-                              }`}
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] border ${urgInfo.bgClass}`}
                             >
-                              {ord.deliveryDate ? new Date(ord.deliveryDate + "T12:00:00").toLocaleDateString("pt-BR") : "—"}
+                              {urgInfo.urgency === "OVERDUE" && <AlertTriangle size={11} className="text-rose-600" />}
+                              {urgInfo.urgency === "CRITICAL_24H" && <Clock size={11} className="text-amber-600" />}
+                              {urgInfo.label}
                             </span>
                           </td>
                           <td className="p-3 text-center">
@@ -1321,7 +1808,7 @@ export function LogisticaScreen({
                   type="text"
                   value={cargaName}
                   onChange={(e) => setCargaName(e.target.value)}
-                  placeholder="Ex: CARGA #001 - REGIONAL REGIONAL SUL"
+                  placeholder="Ex: CARGA #001 - REGIONAL SUL"
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white"
                 />
               </div>
