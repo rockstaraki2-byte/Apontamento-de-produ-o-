@@ -1,27 +1,35 @@
 import React, { useState, useMemo } from "react";
 import { useDatabase } from "./useDatabase";
-import { Order, Customer } from "./types";
+import { Order, Carga } from "./types";
 import {
   Package,
   Truck,
   Calendar,
-  MapPin,
-  AlertTriangle,
-  ShieldCheck,
-  CheckSquare,
-  Plus,
-  ChevronDown,
-  ChevronUp,
   Search,
   Filter,
   FileText,
   Printer,
   X,
   Trash2,
-  Edit2,
-  Pencil,
-  ArrowUp,
-  ArrowDown,
+  Edit,
+  Eye,
+  Download,
+  CheckCircle2,
+  AlertTriangle,
+  Boxes,
+  User,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  CheckSquare,
+  Square,
+  Building2,
+  ListFilter,
+  Plus,
+  ArrowRight,
+  ShieldAlert,
+  Sparkles,
+  Layers
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -34,214 +42,210 @@ export function LogisticaScreen({
   db: ReturnType<typeof useDatabase>;
   currentUser: any;
 }) {
-  const [activeTab, setActiveTab] = useState<"montagem" | "historico">(
-    "montagem",
-  );
-  const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay()); // 0 = Sunday, 1 = Monday...
+  const [activeTab, setActiveTab] = useState<"formacao" | "historico">("formacao");
 
-  const [filterCity, setFilterCity] = useState("");
-  const [filterCustomer, setFilterCustomer] = useState("");
-  const [filterDeliveryDateStart, setFilterDeliveryDateStart] = useState("");
-  const [filterDeliveryDateEnd, setFilterDeliveryDateEnd] = useState("");
+  // Search & Filter state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCustomerFilter, setSelectedCustomerFilter] = useState("TODOS");
+  const [selectedProductFilter, setSelectedProductFilter] = useState("TODOS");
+  const [filterDeliveryStart, setFilterDeliveryStart] = useState("");
+  const [filterDeliveryEnd, setFilterDeliveryEnd] = useState("");
+  const [readinessFilter, setReadinessFilter] = useState<"TODOS" | "PRONTO" | "ESTOQUE" | "EM_PRODUCAO">("TODOS");
 
+  // View Mode: 'CLIENTE' | 'PRODUTO' | 'GERAL'
+  const [viewMode, setViewMode] = useState<"CLIENTE" | "PRODUTO" | "GERAL">("PRODUTO");
+
+  // Load Assembly state
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
-  const [orderQuantities, setOrderQuantities] = useState<
-    Record<number, number>
-  >({});
+  const [orderQuantities, setOrderQuantities] = useState<Record<number, number>>({});
+  
+  // Load Creation Modal/Form state
   const [isCargaModalOpen, setIsCargaModalOpen] = useState(false);
-  const [newCargaName, setNewCargaName] = useState("");
+  const [cargaName, setCargaName] = useState("");
+  const [driverName, setDriverName] = useState("");
+  const [vehiclePlate, setVehiclePlate] = useState("");
+  const [departureDate, setDepartureDate] = useState<string>(
+    new Date().toISOString().split("T")[0]
+  );
+  const [cargaNotes, setCargaNotes] = useState("");
 
-  const [expandedCargaId, setExpandedCargaId] = useState<string | null>(null);
-  const [editingCarga, setEditingCarga] = useState<any>(null);
+  // Viewing/Editing Saved Cargas
+  const [viewingCarga, setViewingCarga] = useState<Carga | null>(null);
+  const [editingCarga, setEditingCarga] = useState<Carga | null>(null);
 
-  // Suggestion logic based on day of week and customer city
-  const cityToDayMap: Record<string, number> = {
-    "visconde do rio branco": 1,
-    "astolfo dutra": 1,
-    guiricema: 1,
-    rodeiro: 5,
-    "diamante de ubá": 5,
-    "são geraldo": 5,
+  // Accordion state for grouped views
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
+  const toggleGroupExpand = (groupKey: string) => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [groupKey]: !prev[groupKey]
+    }));
   };
 
-  const suggestedRoutes = useMemo(() => {
-    let routes: string[] = [];
-    Object.keys(cityToDayMap).forEach((city) => {
-      if (cityToDayMap[city] === selectedDay) routes.push(city);
-    });
-    routes.push("ubá");
-    return routes;
-  }, [selectedDay]);
-
-  const customerCityMap = useMemo(() => {
-    const map = new Map<string, string>();
-    db.customers.forEach((c) => {
-      let city = "";
-      if (c.address && c.address.includes(" - ")) {
-        city = c.address.split(" - ")[0].trim();
-      } else {
-        city = c.address || "";
-      }
-      map.set(c.name.toLowerCase().trim(), city.toLowerCase());
+  // Map items by ID for quick lookup
+  const itemsMap = useMemo(() => {
+    const map = new Map<number, string>();
+    db.items.forEach((it) => {
+      map.set(it.id, it.name);
     });
     return map;
-  }, [db.customers]);
+  }, [db.items]);
 
-  const orderDates = useMemo(() => {
-    const dates = new Map<
-      number,
-      { lastEmbalagem?: number; lastPintura?: number }
-    >();
-    db.logs.forEach((log) => {
-      if (!log.orderId) return;
-      const ex = dates.get(log.orderId) || {};
-      if (
-        log.type === "EMBALAGEM" ||
-        log.processName?.toLowerCase().includes("embalagem")
-      ) {
-        if (!ex.lastEmbalagem || log.timestamp > ex.lastEmbalagem)
-          ex.lastEmbalagem = log.timestamp;
+  // Map available stock entries (Acabado) by item & variation
+  const stockAcabadoMap = useMemo(() => {
+    const map = new Map<string, number>();
+    (db.stocks || []).forEach((st) => {
+      if (st.stage === "ACABADO") {
+        const key = `${st.itemId}|${(st.color || "").trim().toUpperCase()}|${(st.size || "").trim().toUpperCase()}|${(st.variation || "").trim().toUpperCase()}`;
+        map.set(key, (map.get(key) || 0) + st.quantity);
       }
-      if (
-        log.type === "PINTURA" ||
-        log.processName?.toLowerCase().includes("pintura")
-      ) {
-        if (!ex.lastPintura || log.timestamp > ex.lastPintura)
-          ex.lastPintura = log.timestamp;
-      }
-      dates.set(log.orderId, ex);
     });
-    return dates;
-  }, [db.logs]);
+    return map;
+  }, [db.stocks]);
 
-  const now = new Date();
+  // Helper to get available finished stock for an order
+  const getStockQtyForOrder = (order: Order) => {
+    const key = `${order.itemId}|${(order.color || "").trim().toUpperCase()}|${(order.size || "").trim().toUpperCase()}|${(order.variation || "").trim().toUpperCase()}`;
+    return stockAcabadoMap.get(key) || 0;
+  };
 
-  const orderSuggestions = useMemo(() => {
-    const suggestions = db.orders
-      .filter((o) => o.isActive && o.status !== "FATURADO" && (o.totalQuantity - (o.invoicedQuantity || 0)) > 0)
-      .map((o) => {
-        const isAtrasado = new Date(o.deliveryDate) < now;
-        const normalizedCity =
-          customerCityMap.get(o.customerName.toLowerCase().trim()) ||
-          "desconhecida";
+  // Filter pending orders (not invoiced completely and active)
+  const pendingOrders = useMemo(() => {
+    return (db.orders || []).filter((o) => {
+      if (!o.isActive) return false;
+      if (o.status === "FATURADO") return false;
+      const pendingQty = o.totalQuantity - (o.invoicedQuantity || 0);
+      return pendingQty > 0;
+    });
+  }, [db.orders]);
 
-        const cleanCity = normalizeString(normalizedCity);
+  // Unique list of customers with pending orders
+  const pendingCustomersList = useMemo(() => {
+    const set = new Set<string>();
+    pendingOrders.forEach((o) => {
+      if (o.customerName) set.add(o.customerName);
+    });
+    return Array.from(set).sort();
+  }, [pendingOrders]);
 
-        let shouldHideDueToDay = false;
-        if (!filterDeliveryDateStart && !filterDeliveryDateEnd) {
-          // Verify if city is mapped to a specific day explicitly
-          let mappedCityKey = Object.keys(cityToDayMap).find((k) =>
-            cleanCity.includes(normalizeString(k)),
-          );
-          if (mappedCityKey) {
-            if (cityToDayMap[mappedCityKey] !== selectedDay) {
-              shouldHideDueToDay = true;
-            }
-          }
-        }
+  // Unique list of products with pending orders
+  const pendingProductsList = useMemo(() => {
+    const map = new Map<number, string>();
+    pendingOrders.forEach((o) => {
+      const name = o.customProductName || itemsMap.get(o.itemId) || `Item #${o.itemId}`;
+      map.set(o.itemId, name);
+    });
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [pendingOrders, itemsMap]);
 
-        const isSuggestedCity = (filterDeliveryDateStart || filterDeliveryDateEnd)
-          ? true // If filtering by date, any city is valid for display
-          : suggestedRoutes.some((r) => cleanCity.includes(normalizeString(r)));
+  // Filtered pending orders based on search & filter controls
+  const filteredOrders = useMemo(() => {
+    return pendingOrders.filter((o) => {
+      const itemName = o.customProductName || itemsMap.get(o.itemId) || `Item #${o.itemId}`;
+      const searchNorm = normalizeString(searchTerm);
 
-        const readyQty = o.packedQuantity || o.invoicedQuantity || 0;
-        const almostReadyQty = o.paintedQuantity || 0;
-        const producingQty = o.producedQuantity || o.cutQuantity || 0;
+      // Search term
+      if (searchTerm.trim() !== "") {
+        const matchCustomer = normalizeString(o.customerName).includes(searchNorm);
+        const matchCode = normalizeString(o.orderCode || `#PED-${o.id}`).includes(searchNorm);
+        const matchProduct = normalizeString(itemName).includes(searchNorm);
+        const matchVariation = normalizeString(`${o.color} ${o.size} ${o.variation}`).includes(searchNorm);
 
-        let score = 0;
-        if (isAtrasado) score += 1000;
-        if (isSuggestedCity && !(filterDeliveryDateStart || filterDeliveryDateEnd)) score += 500;
-        if (readyQty > 0) score += 300;
-        if (almostReadyQty > 0) score += 200;
-
-        const dates = orderDates.get(o.id) || {};
-
-        return {
-          order: o,
-          city:
-            customerCityMap.get(o.customerName.toLowerCase().trim()) ||
-            "desconhecida",
-          isAtrasado,
-          isSuggestedCity,
-          shouldHideDueToDay,
-          readyQty,
-          almostReadyQty,
-          producingQty,
-          score,
-          lastEmbalagem: dates.lastEmbalagem,
-          lastPintura: dates.lastPintura,
-        };
-      })
-      .filter(
-        (s) =>
-          !s.shouldHideDueToDay &&
-          (filterDeliveryDateStart ||
-            filterDeliveryDateEnd ||
-            s.readyQty > 0 ||
-            s.almostReadyQty > 0 ||
-            s.producingQty > 0 ||
-            s.isAtrasado),
-      )
-      .filter((s) => {
-        if (
-          filterCity &&
-          !s.city.toLowerCase().includes(filterCity.toLowerCase())
-        )
+        if (!matchCustomer && !matchCode && !matchProduct && !matchVariation) {
           return false;
-        if (
-          filterCustomer &&
-          !s.order.customerName
-            .toLowerCase()
-            .includes(filterCustomer.toLowerCase())
-        )
-          return false;
-        if (filterDeliveryDateStart || filterDeliveryDateEnd) {
-          const orderDateStr = s.order.deliveryDate ? s.order.deliveryDate.substring(0, 10) : "";
-          if (filterDeliveryDateStart && orderDateStr < filterDeliveryDateStart) return false;
-          if (filterDeliveryDateEnd && orderDateStr > filterDeliveryDateEnd) return false;
         }
-        return true;
-      });
+      }
 
-    return suggestions.sort((a, b) => b.score - a.score);
+      // Customer filter
+      if (selectedCustomerFilter !== "TODOS" && o.customerName !== selectedCustomerFilter) {
+        return false;
+      }
+
+      // Product filter
+      if (selectedProductFilter !== "TODOS" && o.itemId.toString() !== selectedProductFilter) {
+        return false;
+      }
+
+      // Delivery date filter
+      if (filterDeliveryStart || filterDeliveryEnd) {
+        const delivDate = o.deliveryDate ? o.deliveryDate.substring(0, 10) : "";
+        if (filterDeliveryStart && delivDate < filterDeliveryStart) return false;
+        if (filterDeliveryEnd && delivDate > filterDeliveryEnd) return false;
+      }
+
+      // Readiness filter
+      if (readinessFilter !== "TODOS") {
+        const isPacked = o.packedQuantity >= o.totalQuantity;
+        const stockQty = getStockQtyForOrder(o);
+        const hasStock = stockQty >= (o.totalQuantity - (o.invoicedQuantity || 0));
+
+        if (readinessFilter === "PRONTO" && !isPacked) return false;
+        if (readinessFilter === "ESTOQUE" && !hasStock) return false;
+        if (readinessFilter === "EM_PRODUCAO" && (isPacked || hasStock)) return false;
+      }
+
+      return true;
+    });
   }, [
-    db.orders,
-    customerCityMap,
-    suggestedRoutes,
-    now,
-    selectedDay,
-    filterCity,
-    filterCustomer,
-    orderDates,
-    filterDeliveryDateStart,
-    filterDeliveryDateEnd,
+    pendingOrders,
+    searchTerm,
+    selectedCustomerFilter,
+    selectedProductFilter,
+    filterDeliveryStart,
+    filterDeliveryEnd,
+    readinessFilter,
+    itemsMap,
+    stockAcabadoMap
   ]);
 
-  const daysOfWeek = [
-    "Domingo",
-    "Segunda-feira",
-    "Terça-feira",
-    "Quarta-feira",
-    "Quinta-feira",
-    "Sexta-feira",
-    "Sábado",
-  ];
+  // Grouped by Product view
+  const groupedByProduct = useMemo(() => {
+    const groups: { [key: string]: { itemId: number; itemName: string; orders: Order[]; totalPending: number } } = {};
 
-  const getDefaultCargaQty = React.useCallback((order: any) => {
-    const faturado = order.invoicedQuantity || 0;
-    const remaining = Math.max(0, (order.totalQuantity || 1) - faturado);
-    const availablePacked = Math.max(0, (order.packedQuantity || 0) - faturado);
-    
-    if (availablePacked > 0) {
-      return Math.min(remaining, availablePacked);
-    }
-    return remaining;
-  }, []);
+    filteredOrders.forEach((o) => {
+      const itemName = o.customProductName || itemsMap.get(o.itemId) || `Item #${o.itemId}`;
+      const key = `${o.itemId}_${itemName}`;
 
-  const handleToggleOrderSelection = (orderId: number) => {
+      if (!groups[key]) {
+        groups[key] = {
+          itemId: o.itemId,
+          itemName,
+          orders: [],
+          totalPending: 0
+        };
+      }
+      groups[key].orders.push(o);
+      groups[key].totalPending += Math.max(0, o.totalQuantity - (o.invoicedQuantity || 0));
+    });
+
+    return Object.values(groups).sort((a, b) => a.itemName.localeCompare(b.itemName));
+  }, [filteredOrders, itemsMap]);
+
+  // Grouped by Customer view
+  const groupedByCustomer = useMemo(() => {
+    const groups: { [key: string]: { customerName: string; orders: Order[]; totalPending: number } } = {};
+
+    filteredOrders.forEach((o) => {
+      const key = o.customerName || "Cliente Indefinido";
+      if (!groups[key]) {
+        groups[key] = {
+          customerName: key,
+          orders: [],
+          totalPending: 0
+        };
+      }
+      groups[key].orders.push(o);
+      groups[key].totalPending += Math.max(0, o.totalQuantity - (o.invoicedQuantity || 0));
+    });
+
+    return Object.values(groups).sort((a, b) => a.customerName.localeCompare(b.customerName));
+  }, [filteredOrders]);
+
+  // Checkbox Selection logic
+  const handleToggleSelectOrder = (orderId: number, defaultQty: number) => {
     setSelectedOrderIds((prev) => {
-      const isSelected = prev.includes(orderId);
-      if (isSelected) {
+      if (prev.includes(orderId)) {
         setOrderQuantities((q) => {
           const newQ = { ...q };
           delete newQ[orderId];
@@ -249,919 +253,1278 @@ export function LogisticaScreen({
         });
         return prev.filter((id) => id !== orderId);
       } else {
-        const order = db.orders.find((o) => o.id === orderId);
-        if (order) {
-          const defaultQty = getDefaultCargaQty(order);
-          setOrderQuantities((q) => ({ ...q, [orderId]: defaultQty }));
-        }
+        setOrderQuantities((q) => ({
+          ...q,
+          [orderId]: defaultQty
+        }));
         return [...prev, orderId];
       }
     });
   };
 
-  const handleSmartSuggest = () => {
-    const candidates = orderSuggestions.filter((s) => {
-      // Regra 1: SÓ pode sugerir cidades que estão NA ROTA (escopo do dia)
-      if (!s.isSuggestedCity) return false;
+  const handleSelectAllInGroup = (ordersInGroup: Order[]) => {
+    const groupOrderIds = ordersInGroup.map((o) => o.id);
+    const allSelected = groupOrderIds.every((id) => selectedOrderIds.includes(id));
 
-      const order = s.order;
-      const total = order.totalQuantity || 1;
-      const packed = order.packedQuantity || order.invoicedQuantity || 0;
-      const painted = order.paintedQuantity || 0;
+    if (allSelected) {
+      // Unselect group
+      setSelectedOrderIds((prev) => prev.filter((id) => !groupOrderIds.includes(id)));
+      setOrderQuantities((q) => {
+        const newQ = { ...q };
+        groupOrderIds.forEach((id) => delete newQ[id]);
+        return newQ;
+      });
+    } else {
+      // Select all in group
+      const newIds = [...selectedOrderIds];
+      const newQuantities = { ...orderQuantities };
 
-      const isComplete = packed >= total;
-      const packed80 = packed / total >= 0.8;
-      const painted90 = painted / total >= 0.9;
+      ordersInGroup.forEach((o) => {
+        if (!newIds.includes(o.id)) {
+          newIds.push(o.id);
+        }
+        const pendingQty = Math.max(0, o.totalQuantity - (o.invoicedQuantity || 0));
+        newQuantities[o.id] = pendingQty;
+      });
 
-      let enters = isComplete || packed80 || painted90;
+      setSelectedOrderIds(newIds);
+      setOrderQuantities(newQuantities);
+    }
+  };
 
-      // Regra especial: "Caso tenha uma quantidade total pintada e parcial embalada,
-      // então o sistema pode considerar previsão de embarque futuro -
-      // nesse caso, o item não entra no relatório e nem na rota."
-      if (painted >= total && packed > 0 && packed < total && !packed80) {
-        enters = false;
-      }
+  const handleQuantityChange = (orderId: number, qty: number, maxQty: number) => {
+    const val = Math.max(1, Math.min(qty, maxQty));
+    setOrderQuantities((prev) => ({
+      ...prev,
+      [orderId]: val
+    }));
+  };
 
-      return enters;
+  // Selected orders metrics
+  const selectedOrdersData = useMemo(() => {
+    const orders = (db.orders || []).filter((o) => selectedOrderIds.includes(o.id));
+    let totalPieces = 0;
+    const uniqueCustomers = new Set<string>();
+
+    orders.forEach((o) => {
+      const qty = orderQuantities[o.id] || (o.totalQuantity - (o.invoicedQuantity || 0));
+      totalPieces += qty;
+      if (o.customerName) uniqueCustomers.add(o.customerName);
     });
 
-    if (candidates.length === 0) {
-      alert(
-        "Nenhum pedido atende aos critérios de quantidade completa, 80% embalada ou 90% pintada na rota sugerida de hoje.",
-      );
+    return {
+      orders,
+      totalPieces,
+      customerCount: uniqueCustomers.size,
+      orderCount: orders.length
+    };
+  }, [db.orders, selectedOrderIds, orderQuantities]);
+
+  // Open Load Modal with auto-generated default name
+  const handleOpenCreateCargaModal = () => {
+    if (selectedOrderIds.length === 0) return;
+    const nextNumber = (db.cargas || []).length + 1;
+    const dateStr = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    setCargaName(`CARGA #${String(nextNumber).padStart(3, "0")} - ${dateStr}`);
+    setDriverName("");
+    setVehiclePlate("");
+    setDepartureDate(new Date().toISOString().split("T")[0]);
+    setCargaNotes("");
+    setIsCargaModalOpen(true);
+  };
+
+  // Save new Carga
+  const handleSaveCarga = async () => {
+    if (!cargaName.trim()) {
+      alert("Por favor, informe o nome da carga.");
       return;
     }
 
-    const newIds: number[] = [];
-    const newQtys: Record<number, number> = {};
+    try {
+      const newCarga: Omit<Carga, "id"> = {
+        name: cargaName.trim(),
+        orderIds: selectedOrderIds,
+        orderQuantities,
+        status: "PLANEJADA",
+        createdAt: Date.now(),
+        notes: cargaNotes.trim(),
+        driverName: driverName.trim() || undefined,
+        vehiclePlate: vehiclePlate.trim().toUpperCase() || undefined,
+        departureDate
+      };
 
-    candidates.slice(0, 30).forEach((c) => {
-      newIds.push(c.order.id);
-      const defaultCarga = getDefaultCargaQty(c.order);
-      newQtys[c.order.id] = defaultCarga;
-    });
-
-    setSelectedOrderIds(newIds);
-    setOrderQuantities(newQtys);
-    alert(
-      `Sugestão Inteligente aplicada! ${newIds.length} pedidos selecionados para carga.`,
-    );
-  };
-
-  const handleCreateCarga = () => {
-    if (selectedOrderIds.length === 0 || !newCargaName.trim()) return;
-    db.addCarga({
-      name: newCargaName.trim(),
-      dayOfWeek: daysOfWeek[selectedDay],
-      orderIds: selectedOrderIds,
-      orderQuantities: orderQuantities,
-      route: [daysOfWeek[selectedDay]],
-      status: "PLANEJADA",
-      createdAt: Date.now(),
-    });
-    setIsCargaModalOpen(false);
-    setSelectedOrderIds([]);
-    setOrderQuantities({});
-    setNewCargaName("");
-    alert("Carga gerada com sucesso!");
-  };
-
-  const handleDeleteCarga = (cargaId: string) => {
-    if (confirm("Tem certeza que deseja excluir esta rota?")) {
-      db.deleteCarga(cargaId);
+      await db.addCarga(newCarga);
+      setIsCargaModalOpen(false);
+      setSelectedOrderIds([]);
+      setOrderQuantities({});
+      setActiveTab("historico");
+    } catch (e) {
+      console.error("Erro ao salvar carga:", e);
+      alert("Ocorreu um erro ao salvar a carga.");
     }
   };
 
-  const handleSaveEditCarga = async () => {
-    if (editingCarga) {
-      await db.updateCarga(editingCarga);
-      setExpandedCargaId(null);
-      setEditingCarga(null);
-      alert("Rota atualizada com sucesso.");
-    }
-  };
+  // Print PDF Romaneio de Carga
+  const handlePrintRomaneioPDF = (carga: Carga) => {
+    const doc = new jsPDF();
 
-  const printCarga = (cargaId: string) => {
-    const carga = db.cargas.find((c) => c.id === cargaId);
-    if (!carga) return;
+    // Header
+    doc.setFillColor(15, 23, 42); // slate-900
+    doc.rect(0, 0, 210, 32, "F");
 
-    const doc = new jsPDF("landscape");
-    doc.setFont("helvetica");
-
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
-    doc.text(`Relatório de Carga: ${carga.name} (${carga.dayOfWeek})`, 14, 20);
+    doc.text("ROMANEIO DE CARGA E EXPEDIÇÃO", 14, 16);
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Império Jomarci • Gerado em: ${new Date().toLocaleDateString("pt-BR")} ${new Date().toLocaleTimeString("pt-BR")}`, 14, 24);
+
+    // Carga Metadata Table
+    doc.setTextColor(0, 0, 0);
     doc.setFontSize(10);
-    doc.text(
-      `Gerado em: ${new Date().toLocaleString()} - Status: ${carga.status}`,
-      14,
-      26,
-    );
+    doc.setFont("helvetica", "bold");
+    doc.text(`Identificação: ${carga.name}`, 14, 40);
 
-    const tableColumn = [
-      "Pedido",
-      "Cliente",
-      "Repres.",
-      "Cidade",
-      "Produto",
-      "Cor/Tamanho",
-      "Qtd. a carregar",
-    ];
+    const depDateFormatted = carga.departureDate
+      ? new Date(carga.departureDate + "T12:00:00").toLocaleDateString("pt-BR")
+      : "Não definida";
+
+    autoTable(doc, {
+      startY: 44,
+      head: [["STATUS", "DATA PREVISTA", "MOTORISTA", "PLACA VEÍCULO", "TOTAL PEDIDOS"]],
+      body: [[
+        carga.status,
+        depDateFormatted,
+        carga.driverName || "Não informado",
+        carga.vehiclePlate || "Não informada",
+        `${carga.orderIds?.length || 0} pedido(s)`
+      ]],
+      styles: { fontSize: 8, cellPadding: 3, halign: "center" },
+      headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontStyle: "bold" },
+      theme: "grid"
+    });
+
+    // Load Items List
+    const cargaOrders = (db.orders || []).filter((o) => (carga.orderIds || []).includes(o.id));
+
     const tableRows: any[] = [];
+    let grandTotalPieces = 0;
 
-    const involvedOrders = db.orders.filter((o) =>
-      carga.orderIds.includes(o.id),
-    );
-
-    // Sort by orderId array order to maintain user chosen order
-    involvedOrders.sort(
-      (a, b) => carga.orderIds.indexOf(a.id) - carga.orderIds.indexOf(b.id),
-    );
-
-    involvedOrders.forEach((order) => {
-      const item = db.items.find((i) => i.id === order.itemId);
-      const normalizedCity = (
-        customerCityMap.get(order.customerName.toLowerCase().trim()) ||
-        "desconhecida"
-      ).toUpperCase();
-
-      const cargaQty = carga.orderQuantities?.[order.id] ?? getDefaultCargaQty(order);
+    cargaOrders.forEach((ord) => {
+      const itemName = ord.customProductName || itemsMap.get(ord.itemId) || `Item #${ord.itemId}`;
+      const qtyInCarga = carga.orderQuantities?.[ord.id] || (ord.totalQuantity - (ord.invoicedQuantity || 0));
+      grandTotalPieces += qtyInCarga;
 
       tableRows.push([
-        order.orderCode || `#${order.id}`,
-        order.customerName,
-        order.representativeName || "-",
-        normalizedCity,
-        item?.name || order.customProductName || "Item Desconhecido",
-        `${order.color} / ${order.size}`,
-        cargaQty,
+        ord.customerName,
+        ord.orderCode || `#PED-${ord.id}`,
+        `${itemName} - ${ord.color || ""} ${ord.size || ""} ${ord.variation || ""}`.trim(),
+        qtyInCarga,
+        ord.deliveryDate ? new Date(ord.deliveryDate + "T12:00:00").toLocaleDateString("pt-BR") : "—",
+        "[  ] ____/____/____"
       ]);
     });
 
     autoTable(doc, {
-      head: [tableColumn],
+      startY: (doc as any).lastAutoTable.finalY + 8,
+      head: [["CLIENTE", "PEDIDO", "PRODUTO / ITEM", "QTD CARGA", "ENTREGA PREV.", "VISTO / RECEBIMENTO"]],
       body: tableRows,
-      startY: 32,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [59, 130, 246] },
+      foot: [["TOTAL GERAL DA CARGA", "", "", `${grandTotalPieces} pçs`, "", ""]],
+      styles: { fontSize: 8, cellPadding: 2.5 },
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: "bold" },
+      footStyles: { fillColor: [226, 232, 240], textColor: [15, 23, 42], fontStyle: "bold" },
+      theme: "striped"
     });
 
-    doc.save(`relatorio_carga_${carga.name.replace(/\s+/g, "_")}.pdf`);
+    if (carga.notes) {
+      const finalY = (doc as any).lastAutoTable.finalY + 8;
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "bold");
+      doc.text("OBSERVAÇÕES DA CARGA:", 14, finalY);
+      doc.setFont("helvetica", "normal");
+      doc.text(carga.notes, 14, finalY + 5);
+    }
+
+    doc.save(`Romaneio_${carga.name.replace(/\s+/g, "_")}.pdf`);
   };
 
-  const generatePDFReport = () => {
-    if (selectedOrderIds.length === 0) return;
+  // Helper render for Status Badges of an Item
+  const renderItemStatusBadges = (o: Order) => {
+    const isPacked = o.packedQuantity >= o.totalQuantity;
+    const isPacking = o.packedQuantity > 0 && o.packedQuantity < o.totalQuantity;
 
-    const doc = new jsPDF("landscape");
-    doc.setFont("helvetica");
+    const isPainted = (o.paintedQuantity || 0) >= o.totalQuantity;
+    const isPainting = (o.paintedQuantity || 0) > 0 && (o.paintedQuantity || 0) < o.totalQuantity;
 
-    doc.setFontSize(16);
-    doc.text(`Relatório de Carga - ${daysOfWeek[selectedDay]}`, 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Gerado em: ${new Date().toLocaleString()}`, 14, 26);
+    const isCut = (o.cutQuantity || 0) >= o.totalQuantity;
+    const isCutting = (o.cutQuantity || 0) > 0 && (o.cutQuantity || 0) < o.totalQuantity;
 
-    const tableColumn = [
-      "Pedido",
-      "Cliente",
-      "Cidade",
-      "Produto",
-      "Qtde Pedido",
-      "Qtde Pint./Emb.",
-      "Faturado",
-      "Qtd. a carregar",
-      "Prev. Prontidão",
-    ];
-    const tableRows: any[] = [];
+    const stockQty = getStockQtyForOrder(o);
+    const pendingQty = o.totalQuantity - (o.invoicedQuantity || 0);
+    const hasFullStock = stockQty >= pendingQty;
 
-    const selectedSuggestions = orderSuggestions.filter((s) =>
-      selectedOrderIds.includes(s.order.id),
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Stock Badge */}
+        {stockQty > 0 ? (
+          <span
+            title={`Estoque acabado disponível no sistema: ${stockQty} pçs`}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold border flex items-center gap-1 ${
+              hasFullStock
+                ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                : "bg-blue-50 text-blue-800 border-blue-300"
+            }`}
+          >
+            <Boxes size={11} /> Estoque: {stockQty} pçs
+          </span>
+        ) : (
+          <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-slate-50 text-slate-400 border-slate-200">
+            S/ Estoque
+          </span>
+        )}
+
+        {/* Embalagem Badge */}
+        {isPacked ? (
+          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold border bg-emerald-100 text-emerald-900 border-emerald-300 flex items-center gap-1">
+            <CheckCircle2 size={11} className="text-emerald-700" /> Embalado ({o.packedQuantity}/{o.totalQuantity})
+          </span>
+        ) : isPacking ? (
+          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold border bg-amber-100 text-amber-900 border-amber-300 flex items-center gap-1">
+            <Clock size={11} className="text-amber-700" /> Embalando ({o.packedQuantity}/{o.totalQuantity})
+          </span>
+        ) : (
+          <span className="px-2 py-0.5 rounded text-[10px] font-semibold border bg-slate-100 text-slate-500 border-slate-200">
+            Pendente Emb.
+          </span>
+        )}
+
+        {/* Pintura Badge if applicable */}
+        {isPainted ? (
+          <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-purple-50 text-purple-800 border-purple-300">
+            Pintado
+          </span>
+        ) : isPainting ? (
+          <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-purple-50 text-purple-700 border-purple-200">
+            Pintando ({o.paintedQuantity}/{o.totalQuantity})
+          </span>
+        ) : null}
+
+        {/* Laser / Corte Badge if applicable */}
+        {(o.isThirdPartyLaser || (o.cutQuantity && o.cutQuantity > 0)) && (
+          isCut ? (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-cyan-50 text-cyan-800 border-cyan-300">
+              Cortado Laser
+            </span>
+          ) : isCutting ? (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-cyan-50 text-cyan-700 border-cyan-200">
+              Em Corte ({o.cutQuantity}/{o.totalQuantity})
+            </span>
+          ) : null
+        )}
+      </div>
     );
-
-    selectedSuggestions.sort(
-      (a, b) =>
-        selectedOrderIds.indexOf(a.order.id) -
-        selectedOrderIds.indexOf(b.order.id),
-    );
-
-    selectedSuggestions.forEach((s) => {
-      const order = s.order;
-      const item = db.items.find((i) => i.id === order.itemId);
-      const faturado = order.invoicedQuantity || 0;
-      const cargaQty = orderQuantities[order.id] ?? getDefaultCargaQty(order);
-
-      const readyQty = order.packedQuantity || order.invoicedQuantity || 0;
-      const paintedQty = order.paintedQuantity || 0;
-
-      const availableReadyQty = Math.max(0, readyQty - faturado);
-      const availablePaintedQty = Math.max(0, paintedQty - faturado);
-
-      let prevEmbarque = "Imediata";
-      if (availableReadyQty < cargaQty) {
-        if (availablePaintedQty >= cargaQty) {
-          prevEmbarque = "Necessita Montagem";
-        } else {
-          const expectedDate = new Date(order.deliveryDate);
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-
-          if (expectedDate <= today) {
-            prevEmbarque = "Imediata";
-          } else {
-            prevEmbarque = expectedDate.toLocaleDateString("pt-BR");
-          }
-        }
-      }
-
-      tableRows.push([
-        order.orderCode || `#${order.id}`,
-        order.customerName,
-        s.city.toUpperCase(),
-        item?.name || order.customProductName || "Item Desconhecido",
-        order.totalQuantity,
-        `${paintedQty} / ${readyQty}`,
-        `${faturado} / ${order.totalQuantity}`,
-        cargaQty,
-        prevEmbarque,
-      ]);
-    });
-
-    autoTable(doc, {
-      head: [tableColumn],
-      body: tableRows,
-      startY: 32,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [59, 130, 246] },
-    });
-
-    doc.save(`relatorio_carga_${daysOfWeek[selectedDay]}.pdf`);
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 relative overflow-hidden">
-      <div className="bg-white px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0 shadow-sm">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+      {/* Screen Title & Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800">
-            <Truck className="text-blue-600" />
-            Logística
-          </h1>
-          <div className="flex bg-slate-100 p-1 rounded-lg mt-3 w-max">
-            <button
-              onClick={() => setActiveTab("montagem")}
-              className={`px-4 py-1.5 text-xs font-bold rounded-md transition ${activeTab === "montagem" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:bg-slate-200"}`}
-            >
-              Criar Rotas
-            </button>
-            <button
-              onClick={() => setActiveTab("historico")}
-              className={`px-4 py-1.5 text-xs font-bold rounded-md transition ${activeTab === "historico" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:bg-slate-200"}`}
-            >
-              Rotas Criadas
-            </button>
+          <div className="flex items-center gap-2.5">
+            <div className="p-2.5 bg-slate-900 text-white rounded-xl shadow-xs">
+              <Truck size={22} />
+            </div>
+            <div>
+              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                Formação de Carga & Expedição
+              </h1>
+              <p className="text-xs font-semibold text-slate-500">
+                Pesquise pendências por cliente ou produto, verifique o estoque e monte cargas para despacho.
+              </p>
+            </div>
           </div>
         </div>
-        {activeTab === "montagem" && (
-          <div className="flex flex-col items-end gap-2">
-            <span className="text-xs font-bold text-slate-500">
-              Dia da Semana:
-            </span>
-            <div className="flex bg-slate-100 p-1 rounded-lg">
-              {daysOfWeek.map((day, ix) => {
-                if (ix === 0 || ix === 6) return null; // Skip weekends in selector typically
-                return (
-                  <button
-                    key={ix}
-                    onClick={() => setSelectedDay(ix)}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition ${selectedDay === ix ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:bg-slate-200"}`}
-                  >
-                    {day.split("-")[0]}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+
+        {/* Tab Selector */}
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+          <button
+            onClick={() => setActiveTab("formacao")}
+            className={`px-4 py-2 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-2 ${
+              activeTab === "formacao"
+                ? "bg-slate-900 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <Boxes size={15} /> Formação de Carga
+            {filteredOrders.length > 0 && (
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                activeTab === "formacao" ? "bg-emerald-500 text-white" : "bg-slate-300 text-slate-800"
+              }`}>
+                {filteredOrders.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("historico")}
+            className={`px-4 py-2 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-2 ${
+              activeTab === "historico"
+                ? "bg-slate-900 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <FileText size={15} /> Cargas Montadas
+            {(db.cargas || []).length > 0 && (
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                activeTab === "historico" ? "bg-emerald-500 text-white" : "bg-slate-300 text-slate-800"
+              }`}>
+                {(db.cargas || []).length}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 md:p-6 space-y-6">
-        {activeTab === "montagem" ? (
-          <>
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="bg-white border text-sm border-blue-100 rounded-xl p-4 shadow-sm relative overflow-hidden flex-1">
-                <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500"></div>
-                <h3 className="font-bold flex items-center gap-2 text-blue-800">
-                  <MapPin size={16} />
-                  Rotas Sugeridas para {daysOfWeek[selectedDay]}
-                </h3>
-                <p className="text-slate-600 mt-1 text-xs">
-                  As sugestões priorizam pedidos atrasados e cidades na rota do
-                  dia:{" "}
-                  <strong className="text-slate-800">
-                    {suggestedRoutes.map((s) => s.toUpperCase()).join(", ")}
-                  </strong>
-                  . Pedidos com itens pintados ou embalados também são
-                  apresentados, pois estão próximos da expedição.
-                </p>
-              </div>
-
-              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-3 min-w-[280px]">
-                <h3 className="font-bold flex items-center gap-2 text-slate-700 text-sm">
-                  <Filter size={16} />
-                  Filtros
-                </h3>
-                <div className="flex flex-col gap-2">
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                      <Search size={14} className="text-slate-400" />
-                    </div>
-                    <input
-                      type="text"
-                      value={filterCustomer}
-                      onChange={(e) => setFilterCustomer(e.target.value)}
-                      className="pl-8 w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 outline-none transition"
-                      placeholder="Filtrar por Cliente..."
-                    />
-                  </div>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                      <MapPin size={14} className="text-slate-400" />
-                    </div>
-                    <input
-                      type="text"
-                      value={filterCity}
-                      onChange={(e) => setFilterCity(e.target.value)}
-                      className="pl-8 w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 outline-none transition"
-                      placeholder="Filtrar por Cidade..."
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5 border border-slate-100 rounded-lg p-2 bg-slate-50">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                      <Calendar size={11} className="text-slate-400" /> Prazo de Entrega
-                    </span>
-                    <div className="grid grid-cols-2 gap-1">
-                      <div className="relative">
-                        <input
-                          type="date"
-                          value={filterDeliveryDateStart}
-                          onChange={(e) => setFilterDeliveryDateStart(e.target.value)}
-                          className="w-full border border-slate-200 bg-white rounded-md px-1.5 py-1 text-[11px] focus:ring-2 focus:ring-blue-500 outline-none transition text-slate-700"
-                          title="Data início"
-                        />
-                      </div>
-                      <div className="relative">
-                        <input
-                          type="date"
-                          value={filterDeliveryDateEnd}
-                          onChange={(e) => setFilterDeliveryDateEnd(e.target.value)}
-                          className="w-full border border-slate-200 bg-white rounded-md px-1.5 py-1 text-[11px] focus:ring-2 focus:ring-blue-500 outline-none transition text-slate-700"
-                          title="Data fim"
-                        />
-                      </div>
-                    </div>
-                    {(filterDeliveryDateStart || filterDeliveryDateEnd) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFilterDeliveryDateStart("");
-                          setFilterDeliveryDateEnd("");
-                        }}
-                        className="text-[10px] text-red-600 font-bold hover:underline self-end flex items-center gap-0.5 mt-0.5"
-                      >
-                        <X size={10} /> Limpar período
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-                <h3 className="font-bold text-slate-700 uppercase text-xs tracking-wider">
-                  Pedidos para Carregamento ({orderSuggestions.length})
-                </h3>
-
-                <div className="flex items-center gap-2">
+      {activeTab === "formacao" ? (
+        <div className="space-y-6">
+          {/* Search & Filter Controls Bar */}
+          <div className="bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            {/* Top row: Search input + View mode toggles */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+              <div className="relative flex-1">
+                <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar por Cliente, Código do Pedido ou Produto..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+                {searchTerm && (
                   <button
-                    onClick={handleSmartSuggest}
-                    className="bg-indigo-600 border border-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700 transition shadow-sm flex items-center justify-center gap-1.5 min-w-max"
-                    title="Seleciona automaticamente pedidos com itens prontos, estoque ou atrasados"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   >
-                    <Package size={14} /> Sugestão Inteligente
+                    <X size={14} />
                   </button>
-                  {selectedOrderIds.length > 0 && (
-                    <>
-                      <button
-                        onClick={generatePDFReport}
-                        className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-50 transition flex items-center gap-1.5"
-                      >
-                        <Printer size={14} /> Relatório
-                      </button>
-                      <button
-                        onClick={() => setIsCargaModalOpen(true)}
-                        className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-700 transition shadow-sm flex items-center gap-1.5"
-                      >
-                        <Truck size={14} /> Criar Rota (
-                        {selectedOrderIds.length})
-                      </button>
-                    </>
-                  )}
-                </div>
+                )}
               </div>
 
-              {orderSuggestions.length === 0 ? (
-                <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
-                  <Package className="mx-auto text-gray-300 mb-2" size={32} />
-                  <p className="text-gray-500 font-medium">
-                    Nenhum pedido compatível encontrado para carregar.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {orderSuggestions.map((sug) => {
-                    const {
-                      order,
-                      city,
-                      isAtrasado,
-                      readyQty,
-                      almostReadyQty,
-                      producingQty,
-                    } = sug;
-                    const item = db.items.find((i) => i.id === order.itemId);
-
-                    return (
-                      <div
-                        key={order.id}
-                        className={`bg-white rounded-xl border ${selectedOrderIds.includes(order.id) ? "border-blue-400 ring-2 ring-blue-100" : isAtrasado ? "border-red-300 shadow-sm" : "border-slate-200 shadow-sm"} overflow-hidden transition hover:shadow-md flex flex-col`}
-                      >
-                        <div
-                          className={`p-3 border-b flex justify-between items-start gap-2 ${selectedOrderIds.includes(order.id) ? "bg-blue-50/50" : isAtrasado ? "bg-red-50 border-red-100" : "bg-slate-50 border-slate-100"}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedOrderIds.includes(order.id)}
-                            onChange={() =>
-                              handleToggleOrderSelection(order.id)
-                            }
-                            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                          />
-                          <div className="flex-1 truncate">
-                            <div className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
-                              {order.customerName}
-                              {isAtrasado && (
-                                <AlertTriangle
-                                  size={12}
-                                  className="text-red-500 shrink-0"
-                                  title="Pedido Atrasado"
-                                />
-                              )}
-                            </div>
-                            <div className="text-[10px] text-slate-500 font-medium flex items-center gap-1 mt-0.5 truncate">
-                              <MapPin size={10} />
-                              {city.toUpperCase()}
-                            </div>
-                          </div>
-                          <div className="bg-white px-2 py-0.5 rounded shadow-sm text-[10px] font-mono text-slate-600 border border-slate-200 shrink-0">
-                            {order.orderCode || `#${order.id}`}
-                          </div>
-                        </div>
-
-                        <div className="p-3 flex-1 flex flex-col gap-2">
-                          <div className="text-xs font-bold text-slate-700 leading-tight">
-                            {item?.name ||
-                              order.customProductName ||
-                              "Item Desconhecido"}
-                          </div>
-                          <div className="text-[10px] text-slate-500 mb-1">
-                            Cor: {order.color} | Tam: {order.size}
-                          </div>
-
-                          {(sug.lastEmbalagem || sug.lastPintura) && (
-                            <div className="text-[9px] text-slate-400 mb-2 border-t border-slate-100 pt-1.5 space-y-0.5">
-                              {sug.lastEmbalagem && (
-                                <div>
-                                  ✅ Ult Embalagem:{" "}
-                                  {new Date(sug.lastEmbalagem).toLocaleString(
-                                    "pt-BR",
-                                    {
-                                      day: "2-digit",
-                                      month: "2-digit",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    },
-                                  )}
-                                </div>
-                              )}
-                              {sug.lastPintura && (
-                                <div>
-                                  🎨 Ult Pintura:{" "}
-                                  {new Date(sug.lastPintura).toLocaleString(
-                                    "pt-BR",
-                                    {
-                                      day: "2-digit",
-                                      month: "2-digit",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    },
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          <div className="mt-auto space-y-1.5 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                            <div className="flex justify-between items-center text-[10px] font-bold">
-                              <span className="text-slate-500">
-                                Total Pedido:
-                              </span>
-                              <span className="text-slate-800">
-                                {order.totalQuantity}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center text-[10px] font-medium text-purple-700">
-                              <span className="flex items-center gap-1 font-bold">
-                                <FileText size={10} /> Faturado:
-                              </span>
-                              <span className="font-bold">
-                                {order.invoicedQuantity || 0} / {order.totalQuantity}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center text-[10px] font-medium text-orange-700 bg-orange-50 px-1 py-0.5 rounded border border-orange-100">
-                              <span className="flex items-center gap-1 font-bold">
-                                <Truck size={10} /> Saldo a Carregar:
-                              </span>
-                              <span className="font-bold font-mono">
-                                {Math.max(0, order.totalQuantity - (order.invoicedQuantity || 0))}
-                              </span>
-                            </div>
-                            <div className="h-px w-full bg-slate-200 my-1"></div>
-                            <div className="flex justify-between items-center text-[10px]">
-                              <span className="text-emerald-600 font-bold flex items-center gap-1">
-                                <CheckSquare size={10} /> Pronto (Emb):
-                              </span>
-                              <span className="font-bold text-emerald-700">
-                                {readyQty}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center text-[10px]">
-                              <span className="text-amber-600 font-bold flex items-center gap-1">
-                                <Package size={10} /> Pintado (Qse lá):
-                              </span>
-                              <span className="font-bold text-amber-700">
-                                {almostReadyQty}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center text-[10px]">
-                              <span className="text-blue-600 font-bold flex items-center gap-1">
-                                <ShieldCheck size={10} /> Em Prod.:
-                              </span>
-                              <span className="font-bold text-blue-700">
-                                {producingQty}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              {/* View Mode Toggle Buttons */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setViewMode("PRODUTO")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 ${
+                    viewMode === "PRODUTO"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Package size={13} /> Por Produto
+                </button>
+                <button
+                  onClick={() => setViewMode("CLIENTE")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 ${
+                    viewMode === "CLIENTE"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Building2 size={13} /> Por Cliente
+                </button>
+                <button
+                  onClick={() => setViewMode("GERAL")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 ${
+                    viewMode === "GERAL"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <ListFilter size={13} /> Lista Geral
+                </button>
+              </div>
             </div>
-          </>
-        ) : (
-          <div className="space-y-4">
-            <h3 className="font-bold text-slate-700 uppercase text-xs tracking-wider border-b border-slate-200 pb-2">
-              Histórico de Rotas Carregadas
-            </h3>
-            {db.cargas.length === 0 ? (
-              <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
-                <Truck className="mx-auto text-gray-300 mb-2" size={32} />
-                <p className="text-gray-500 font-medium">
-                  Nenhuma rota foi criada ainda.
-                </p>
+
+            {/* Bottom Row: Detailed Dropdown Filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1 border-t border-slate-100 text-xs">
+              {/* Filter by Customer */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  Filtrar por Cliente
+                </label>
+                <select
+                  value={selectedCustomerFilter}
+                  onChange={(e) => setSelectedCustomerFilter(e.target.value)}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white"
+                >
+                  <option value="TODOS">Todos os Clientes ({pendingCustomersList.length})</option>
+                  {pendingCustomersList.map((cust) => (
+                    <option key={cust} value={cust}>
+                      {cust}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {db.cargas
-                  .sort((a, b) => b.createdAt - a.createdAt)
-                  .map((carga) => {
-                    return (
-                      <div
-                        key={carga.id}
-                        className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col"
-                      >
-                        <div className="p-3 border-b bg-slate-50 border-slate-100 flex justify-between items-start">
-                          <div>
-                            <div className="text-sm font-bold text-slate-800">
-                              {carga.name}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {carga.dayOfWeek}
-                            </div>
-                          </div>
-                          <div
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              carga.status === "PLANEJADA"
-                                ? "bg-amber-100 text-amber-700"
-                                : carga.status === "EM_TRANSITO"
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-emerald-100 text-emerald-700"
-                            }`}
-                          >
-                            {carga.status}
-                          </div>
-                        </div>
-                        <div className="p-3 flex-1 flex flex-col gap-2">
-                          <div className="text-xs text-slate-600">
-                            <strong>{carga.orderIds.length}</strong> pedidos na
-                            carga
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            Criada em:{" "}
-                            {new Date(carga.createdAt).toLocaleString("pt-BR")}
-                          </div>
 
-                          {expandedCargaId === carga.id && editingCarga && (
-                            <div className="mt-2 text-xs border border-blue-200 bg-blue-50/30 rounded-lg p-2 space-y-2">
-                              <div className="font-bold text-slate-700">
-                                Edição Rápida:
-                              </div>
-                              <input
-                                type="text"
-                                className="w-full border p-1 rounded mb-2 text-xs"
-                                value={editingCarga.name}
-                                onChange={(e) =>
-                                  setEditingCarga({
-                                    ...editingCarga,
-                                    name: e.target.value,
-                                  })
-                                }
-                                placeholder="Nome da Rota"
-                              />
-                              {editingCarga.orderIds.map(
-                                (oId: number, idx: number) => {
-                                  const o = db.orders.find((x) => x.id === oId);
-                                  if (!o) return null;
-                                  return (
-                                    <div
-                                      key={oId}
-                                      className="flex gap-1 items-center bg-white border border-slate-200 p-1 rounded"
-                                    >
-                                      <div className="flex flex-col gap-0.5">
-                                        <button
-                                          onClick={() => {
-                                            if (idx === 0) return;
-                                            const newArr = [
-                                              ...editingCarga.orderIds,
-                                            ];
-                                            [newArr[idx - 1], newArr[idx]] = [
-                                              newArr[idx],
-                                              newArr[idx - 1],
-                                            ];
-                                            setEditingCarga({
-                                              ...editingCarga,
-                                              orderIds: newArr,
-                                            });
-                                          }}
-                                          className="text-slate-400 hover:text-blue-600 disabled:opacity-30"
-                                          disabled={idx === 0}
-                                        >
-                                          <ArrowUp size={12} />
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            if (
-                                              idx ===
-                                              editingCarga.orderIds.length - 1
-                                            )
-                                              return;
-                                            const newArr = [
-                                              ...editingCarga.orderIds,
-                                            ];
-                                            [newArr[idx + 1], newArr[idx]] = [
-                                              newArr[idx],
-                                              newArr[idx + 1],
-                                            ];
-                                            setEditingCarga({
-                                              ...editingCarga,
-                                              orderIds: newArr,
-                                            });
-                                          }}
-                                          className="text-slate-400 hover:text-blue-600 disabled:opacity-30"
-                                          disabled={
-                                            idx ===
-                                            editingCarga.orderIds.length - 1
-                                          }
-                                        >
-                                          <ArrowDown size={12} />
-                                        </button>
-                                      </div>
-                                      <div className="flex-1 truncate text-[10px] pl-1 font-bold">
-                                        {o.customerName}
-                                        <span className="block text-[9px] text-slate-500 font-normal">
-                                          Fat: {o.invoicedQuantity || 0}/{o.totalQuantity} | Pend: {Math.max(0, o.totalQuantity - (o.invoicedQuantity || 0))}
-                                        </span>
-                                      </div>
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        max={Math.max(0, o.totalQuantity - (o.invoicedQuantity || 0))}
-                                        className="w-12 text-center text-[10px] border rounded py-0.5"
-                                        value={
-                                          editingCarga.orderQuantities?.[oId] !== undefined ? editingCarga.orderQuantities[oId] : getDefaultCargaQty(o)
-                                        }
-                                        onChange={(e) => {
-                                          const maxVal = Math.max(0, o.totalQuantity - (o.invoicedQuantity || 0));
-                                          let val = Number(e.target.value);
-                                          if (val > maxVal) val = maxVal;
-                                          if (val < 0) val = 0;
-                                          setEditingCarga({
-                                            ...editingCarga,
-                                            orderQuantities: {
-                                              ...(editingCarga.orderQuantities ||
-                                                {}),
-                                              [oId]: val,
-                                            },
-                                          });
-                                        }}
-                                      />
-                                      <button
-                                        onClick={() => {
-                                          const newArr =
-                                            editingCarga.orderIds.filter(
-                                              (_id: number) => _id !== oId,
-                                            );
-                                          const newQ = {
-                                            ...(editingCarga.orderQuantities ||
-                                              {}),
-                                          };
-                                          delete newQ[oId];
-                                          setEditingCarga({
-                                            ...editingCarga,
-                                            orderIds: newArr,
-                                            orderQuantities: newQ,
-                                          });
-                                        }}
-                                        className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
-                                      >
-                                        <Trash2 size={12} />
-                                      </button>
-                                    </div>
-                                  );
-                                },
-                              )}
-                              <div className="flex justify-end gap-2 pt-2">
-                                <button
-                                  onClick={() => {
-                                    setExpandedCargaId(null);
-                                    setEditingCarga(null);
-                                  }}
-                                  className="px-2 py-1 bg-white border border-slate-300 rounded text-slate-600 font-bold hover:bg-slate-50"
-                                >
-                                  Cancelar
-                                </button>
-                                <button
-                                  onClick={handleSaveEditCarga}
-                                  className="px-2 py-1 bg-blue-600 text-white rounded font-bold hover:bg-blue-700"
-                                >
-                                  Salvar
-                                </button>
-                              </div>
-                            </div>
-                          )}
+              {/* Filter by Product */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  Filtrar por Produto
+                </label>
+                <select
+                  value={selectedProductFilter}
+                  onChange={(e) => setSelectedProductFilter(e.target.value)}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white"
+                >
+                  <option value="TODOS">Todos os Produtos ({pendingProductsList.length})</option>
+                  {pendingProductsList.map(([id, name]) => (
+                    <option key={id} value={id.toString()}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                          <div className="mt-auto pt-3 border-t border-slate-100 flex justify-end gap-2 text-xs flex-wrap">
-                            <button
-                              onClick={() => {
-                                setExpandedCargaId(carga.id);
-                                setEditingCarga(
-                                  JSON.parse(JSON.stringify(carga)),
-                                );
-                              }}
-                              className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg font-bold hover:bg-slate-50 transition flex items-center gap-1.5"
-                            >
-                              <Edit2 size={14} /> Editar
-                            </button>
-                            <button
-                              onClick={() => handleDeleteCarga(carga.id)}
-                              className="bg-white border border-red-200 text-red-600 px-3 py-1.5 rounded-lg font-bold hover:bg-red-50 transition flex items-center gap-1.5"
-                            >
-                              <Trash2 size={14} /> Excluir
-                            </button>
-                            <button
-                              onClick={() => printCarga(carga.id)}
-                              className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg font-bold hover:bg-slate-50 transition flex items-center gap-1.5 mt-2 sm:mt-0"
-                            >
-                              <Printer size={14} /> Imprimir
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+              {/* Filter by Delivery Date range */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  Previsão de Entrega (De / Até)
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="date"
+                    value={filterDeliveryStart}
+                    onChange={(e) => setFilterDeliveryStart(e.target.value)}
+                    className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
+                  />
+                  <span className="text-slate-400 font-bold">-</span>
+                  <input
+                    type="date"
+                    value={filterDeliveryEnd}
+                    onChange={(e) => setFilterDeliveryEnd(e.target.value)}
+                    className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
+                  />
+                </div>
+              </div>
+
+              {/* Readiness Filter */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  Status de Prontidão
+                </label>
+                <select
+                  value={readinessFilter}
+                  onChange={(e) => setReadinessFilter(e.target.value as any)}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white"
+                >
+                  <option value="TODOS">Todos os Itens</option>
+                  <option value="PRONTO">Somente 100% Embalados</option>
+                  <option value="ESTOQUE">Com Estoque Acabado Disponível</option>
+                  <option value="EM_PRODUCAO">Em Produção / Pendente</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Clear Filters Indicator if active */}
+            {(searchTerm || selectedCustomerFilter !== "TODOS" || selectedProductFilter !== "TODOS" || filterDeliveryStart || filterDeliveryEnd || readinessFilter !== "TODOS") && (
+              <div className="flex items-center justify-between bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200 text-xs">
+                <span className="font-semibold text-amber-900">
+                  Filtros ativos: exibindo {filteredOrders.length} de {pendingOrders.length} pendências.
+                </span>
+                <button
+                  onClick={() => {
+                    setSearchTerm("");
+                    setSelectedCustomerFilter("TODOS");
+                    setSelectedProductFilter("TODOS");
+                    setFilterDeliveryStart("");
+                    setFilterDeliveryEnd("");
+                    setReadinessFilter("TODOS");
+                  }}
+                  className="text-xs font-bold text-amber-800 hover:underline cursor-pointer"
+                >
+                  Limpar Filtros
+                </button>
               </div>
             )}
           </div>
-        )}
-      </div>
 
+          {/* Active Carga Selection Bar (Floating Drawer when items are selected) */}
+          {selectedOrderIds.length > 0 && (
+            <div className="sticky top-4 z-30 bg-slate-900 text-white p-4 rounded-2xl shadow-xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-500 text-slate-900 font-extrabold rounded-xl">
+                  {selectedOrdersData.orderCount}
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-white">
+                    {selectedOrdersData.orderCount} item(ns) selecionado(s) para montar Carga
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    Total de <strong className="text-emerald-400">{selectedOrdersData.totalPieces} peças</strong> de{" "}
+                    <strong className="text-emerald-400">{selectedOrdersData.customerCount} cliente(s)</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={() => {
+                    setSelectedOrderIds([]);
+                    setOrderQuantities({});
+                  }}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition cursor-pointer"
+                >
+                  Limpar Seleção
+                </button>
+                <button
+                  onClick={handleOpenCreateCargaModal}
+                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2 flex-1 sm:flex-none"
+                >
+                  <Truck size={16} /> Montar e Salvar Carga
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* MAIN CONTENT AREA BY VIEW MODE */}
+          {filteredOrders.length === 0 ? (
+            <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 shadow-xs space-y-3">
+              <Package size={40} className="mx-auto text-slate-300" />
+              <h3 className="text-base font-bold text-slate-700">Nenhuma pendência encontrada</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Não há pedidos ou itens pendentes de entrega com os filtros selecionados no momento.
+              </p>
+            </div>
+          ) : viewMode === "PRODUTO" ? (
+            /* VIEW MODE: GROUPED BY PRODUCT */
+            <div className="space-y-4">
+              {groupedByProduct.map((group) => {
+                const isExpanded = expandedGroups[`prod_${group.itemId}`] !== false; // Default open
+                const allSelected = group.orders.every((o) => selectedOrderIds.includes(o.id));
+
+                return (
+                  <div key={group.itemId} className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    {/* Group Header */}
+                    <div className="bg-slate-50 p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => toggleGroupExpand(`prod_${group.itemId}`)}
+                          className="p-1 hover:bg-slate-200 rounded-lg transition cursor-pointer text-slate-600"
+                        >
+                          {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                        </button>
+                        <div>
+                          <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                            <Package size={16} className="text-indigo-600" /> {group.itemName}
+                          </h3>
+                          <span className="text-xs font-semibold text-slate-500">
+                            {group.orders.length} pedido(s) pendente(s) • Total:{" "}
+                            <strong className="text-slate-800">{group.totalPending} peças</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleSelectAllInGroup(group.orders)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 border ${
+                            allSelected
+                              ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          {allSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+                          {allSelected ? "Desmarcar Todos do Produto" : "Selecionar Todos do Produto"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Group Orders List */}
+                    {isExpanded && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[800px] text-xs">
+                          <thead>
+                            <tr className="bg-slate-100/70 text-[10px] font-extrabold text-slate-500 uppercase border-b border-slate-200">
+                              <th className="p-3 w-10 text-center">Sel.</th>
+                              <th className="p-3">Pedido</th>
+                              <th className="p-3">Cliente</th>
+                              <th className="p-3 text-center">Data Pedido</th>
+                              <th className="p-3 text-center">Entrega Prevista</th>
+                              <th className="p-3 text-center">Status Produção & Estoque</th>
+                              <th className="p-3 text-right">Pendência</th>
+                              <th className="p-3 text-center w-28">Qtd Carga</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {group.orders.map((ord) => {
+                              const isSelected = selectedOrderIds.includes(ord.id);
+                              const pendingQty = Math.max(0, ord.totalQuantity - (ord.invoicedQuantity || 0));
+                              const currentSelectedQty = orderQuantities[ord.id] || pendingQty;
+
+                              const isAtrasado = ord.deliveryDate && new Date(ord.deliveryDate) < new Date();
+
+                              return (
+                                <tr
+                                  key={ord.id}
+                                  className={`transition ${
+                                    isSelected ? "bg-emerald-50/60" : "hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <td className="p-3 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => handleToggleSelectOrder(ord.id, pendingQty)}
+                                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                    />
+                                  </td>
+                                  <td className="p-3 font-bold text-slate-800">
+                                    {ord.orderCode || `#PED-${ord.id}`}
+                                  </td>
+                                  <td className="p-3 font-semibold text-slate-800">
+                                    {ord.customerName}
+                                  </td>
+                                  <td className="p-3 text-center text-slate-500">
+                                    {ord.createdAt ? new Date(ord.createdAt).toLocaleDateString("pt-BR") : "—"}
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <span
+                                      className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                                        isAtrasado
+                                          ? "bg-rose-100 text-rose-800 border border-rose-300"
+                                          : "text-slate-700 bg-slate-100"
+                                      }`}
+                                    >
+                                      {ord.deliveryDate ? new Date(ord.deliveryDate + "T12:00:00").toLocaleDateString("pt-BR") : "—"}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    {renderItemStatusBadges(ord)}
+                                  </td>
+                                  <td className="p-3 text-right font-black text-slate-900">
+                                    {pendingQty} pçs
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    {isSelected ? (
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        max={pendingQty}
+                                        value={currentSelectedQty}
+                                        onChange={(e) => handleQuantityChange(ord.id, Number(e.target.value), pendingQty)}
+                                        className="w-20 p-1 border border-emerald-400 rounded-lg text-xs font-bold text-center text-emerald-950 bg-white"
+                                      />
+                                    ) : (
+                                      <span className="text-slate-400 font-semibold">—</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : viewMode === "CLIENTE" ? (
+            /* VIEW MODE: GROUPED BY CUSTOMER */
+            <div className="space-y-4">
+              {groupedByCustomer.map((group) => {
+                const isExpanded = expandedGroups[`cust_${group.customerName}`] !== false; // Default open
+                const allSelected = group.orders.every((o) => selectedOrderIds.includes(o.id));
+
+                return (
+                  <div key={group.customerName} className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    {/* Group Header */}
+                    <div className="bg-slate-50 p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => toggleGroupExpand(`cust_${group.customerName}`)}
+                          className="p-1 hover:bg-slate-200 rounded-lg transition cursor-pointer text-slate-600"
+                        >
+                          {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                        </button>
+                        <div>
+                          <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                            <Building2 size={16} className="text-blue-600" /> {group.customerName}
+                          </h3>
+                          <span className="text-xs font-semibold text-slate-500">
+                            {group.orders.length} item(ns) pendente(s) • Total:{" "}
+                            <strong className="text-slate-800">{group.totalPending} peças</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleSelectAllInGroup(group.orders)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 border ${
+                            allSelected
+                              ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          {allSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+                          {allSelected ? "Desmarcar Todos do Cliente" : "Selecionar Todos do Cliente"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Group Orders List */}
+                    {isExpanded && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[800px] text-xs">
+                          <thead>
+                            <tr className="bg-slate-100/70 text-[10px] font-extrabold text-slate-500 uppercase border-b border-slate-200">
+                              <th className="p-3 w-10 text-center">Sel.</th>
+                              <th className="p-3">Pedido</th>
+                              <th className="p-3">Produto / Item</th>
+                              <th className="p-3 text-center">Data Pedido</th>
+                              <th className="p-3 text-center">Entrega Prevista</th>
+                              <th className="p-3 text-center">Status Produção & Estoque</th>
+                              <th className="p-3 text-right">Pendência</th>
+                              <th className="p-3 text-center w-28">Qtd Carga</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {group.orders.map((ord) => {
+                              const isSelected = selectedOrderIds.includes(ord.id);
+                              const pendingQty = Math.max(0, ord.totalQuantity - (ord.invoicedQuantity || 0));
+                              const currentSelectedQty = orderQuantities[ord.id] || pendingQty;
+                              const itemName = ord.customProductName || itemsMap.get(ord.itemId) || `Item #${ord.itemId}`;
+                              const isAtrasado = ord.deliveryDate && new Date(ord.deliveryDate) < new Date();
+
+                              return (
+                                <tr
+                                  key={ord.id}
+                                  className={`transition ${
+                                    isSelected ? "bg-emerald-50/60" : "hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <td className="p-3 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => handleToggleSelectOrder(ord.id, pendingQty)}
+                                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                    />
+                                  </td>
+                                  <td className="p-3 font-bold text-slate-800">
+                                    {ord.orderCode || `#PED-${ord.id}`}
+                                  </td>
+                                  <td className="p-3 font-bold text-slate-900">
+                                    {itemName}
+                                    <span className="block text-[10px] font-normal text-slate-500">
+                                      {ord.color} {ord.size} {ord.variation}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-center text-slate-500">
+                                    {ord.createdAt ? new Date(ord.createdAt).toLocaleDateString("pt-BR") : "—"}
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <span
+                                      className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                                        isAtrasado
+                                          ? "bg-rose-100 text-rose-800 border border-rose-300"
+                                          : "text-slate-700 bg-slate-100"
+                                      }`}
+                                    >
+                                      {ord.deliveryDate ? new Date(ord.deliveryDate + "T12:00:00").toLocaleDateString("pt-BR") : "—"}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    {renderItemStatusBadges(ord)}
+                                  </td>
+                                  <td className="p-3 text-right font-black text-slate-900">
+                                    {pendingQty} pçs
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    {isSelected ? (
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        max={pendingQty}
+                                        value={currentSelectedQty}
+                                        onChange={(e) => handleQuantityChange(ord.id, Number(e.target.value), pendingQty)}
+                                        className="w-20 p-1 border border-emerald-400 rounded-lg text-xs font-bold text-center text-emerald-950 bg-white"
+                                      />
+                                    ) : (
+                                      <span className="text-slate-400 font-semibold">—</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* VIEW MODE: FULL GENERAL LIST */
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[850px] text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 text-[10px] font-extrabold text-slate-500 uppercase border-b border-slate-200">
+                      <th className="p-3 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={filteredOrders.length > 0 && filteredOrders.every((o) => selectedOrderIds.includes(o.id))}
+                          onChange={() => handleSelectAllInGroup(filteredOrders)}
+                          className="w-4 h-4 rounded text-emerald-600 cursor-pointer"
+                        />
+                      </th>
+                      <th className="p-3">Pedido</th>
+                      <th className="p-3">Cliente</th>
+                      <th className="p-3">Produto / Item</th>
+                      <th className="p-3 text-center">Data Pedido</th>
+                      <th className="p-3 text-center">Entrega Prevista</th>
+                      <th className="p-3 text-center">Status Produção & Estoque</th>
+                      <th className="p-3 text-right">Pendência</th>
+                      <th className="p-3 text-center w-28">Qtd Carga</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredOrders.map((ord) => {
+                      const isSelected = selectedOrderIds.includes(ord.id);
+                      const pendingQty = Math.max(0, ord.totalQuantity - (ord.invoicedQuantity || 0));
+                      const currentSelectedQty = orderQuantities[ord.id] || pendingQty;
+                      const itemName = ord.customProductName || itemsMap.get(ord.itemId) || `Item #${ord.itemId}`;
+                      const isAtrasado = ord.deliveryDate && new Date(ord.deliveryDate) < new Date();
+
+                      return (
+                        <tr
+                          key={ord.id}
+                          className={`transition ${
+                            isSelected ? "bg-emerald-50/60" : "hover:bg-slate-50"
+                          }`}
+                        >
+                          <td className="p-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleSelectOrder(ord.id, pendingQty)}
+                              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                            />
+                          </td>
+                          <td className="p-3 font-bold text-slate-800">
+                            {ord.orderCode || `#PED-${ord.id}`}
+                          </td>
+                          <td className="p-3 font-semibold text-slate-800">
+                            {ord.customerName}
+                          </td>
+                          <td className="p-3 font-bold text-slate-900">
+                            {itemName}
+                            <span className="block text-[10px] font-normal text-slate-500">
+                              {ord.color} {ord.size} {ord.variation}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center text-slate-500">
+                            {ord.createdAt ? new Date(ord.createdAt).toLocaleDateString("pt-BR") : "—"}
+                          </td>
+                          <td className="p-3 text-center">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                                isAtrasado
+                                  ? "bg-rose-100 text-rose-800 border border-rose-300"
+                                  : "text-slate-700 bg-slate-100"
+                              }`}
+                            >
+                              {ord.deliveryDate ? new Date(ord.deliveryDate + "T12:00:00").toLocaleDateString("pt-BR") : "—"}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            {renderItemStatusBadges(ord)}
+                          </td>
+                          <td className="p-3 text-right font-black text-slate-900">
+                            {pendingQty} pçs
+                          </td>
+                          <td className="p-3 text-center">
+                            {isSelected ? (
+                              <input
+                                type="number"
+                                min="1"
+                                max={pendingQty}
+                                value={currentSelectedQty}
+                                onChange={(e) => handleQuantityChange(ord.id, Number(e.target.value), pendingQty)}
+                                className="w-20 p-1 border border-emerald-400 rounded-lg text-xs font-bold text-center text-emerald-950 bg-white"
+                              />
+                            ) : (
+                              <span className="text-slate-400 font-semibold">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* HISTÓRICO DE CARGAS MONTADAS */
+        <div className="space-y-4">
+          {(db.cargas || []).length === 0 ? (
+            <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 shadow-xs space-y-3">
+              <Truck size={40} className="mx-auto text-slate-300" />
+              <h3 className="text-base font-bold text-slate-700">Nenhuma carga montada no histórico</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Acesse a aba "Formação de Carga", selecione as pendências desejadas e crie uma nova carga de entrega.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {(db.cargas || [])
+                .sort((a, b) => b.createdAt - a.createdAt)
+                .map((carga) => {
+                  const cargaOrders = (db.orders || []).filter((o) => (carga.orderIds || []).includes(o.id));
+                  let totalItemsCount = cargaOrders.length;
+                  let totalPiecesCount = 0;
+
+                  cargaOrders.forEach((o) => {
+                    totalPiecesCount += carga.orderQuantities?.[o.id] || (o.totalQuantity - (o.invoicedQuantity || 0));
+                  });
+
+                  return (
+                    <div
+                      key={carga.id}
+                      className="bg-white rounded-2xl border border-slate-200 shadow-xs hover:shadow-md transition p-5 space-y-4 flex flex-col justify-between"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                              {new Date(carga.createdAt).toLocaleDateString("pt-BR")}
+                            </span>
+                            <h3 className="font-extrabold text-slate-900 text-sm">{carga.name}</h3>
+                          </div>
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase border ${
+                              carga.status === "ENTREGUE"
+                                ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                : carga.status === "EM_TRANSITO"
+                                ? "bg-blue-100 text-blue-800 border-blue-300"
+                                : carga.status === "FATURADA"
+                                ? "bg-purple-100 text-purple-800 border-purple-300"
+                                : "bg-amber-100 text-amber-800 border-amber-300"
+                            }`}
+                          >
+                            {carga.status}
+                          </span>
+                        </div>
+
+                        {/* Details grid */}
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between text-slate-600">
+                            <span className="font-semibold flex items-center gap-1">
+                              <User size={13} className="text-slate-400" /> Motorista:
+                            </span>
+                            <span className="font-bold text-slate-800">{carga.driverName || "—"}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-slate-600">
+                            <span className="font-semibold flex items-center gap-1">
+                              <Truck size={13} className="text-slate-400" /> Veículo/Placa:
+                            </span>
+                            <span className="font-bold text-slate-800">{carga.vehiclePlate || "—"}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-slate-600">
+                            <span className="font-semibold flex items-center gap-1">
+                              <Calendar size={13} className="text-slate-400" /> Previsão Saída:
+                            </span>
+                            <span className="font-bold text-slate-800">
+                              {carga.departureDate ? new Date(carga.departureDate + "T12:00:00").toLocaleDateString("pt-BR") : "—"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs pt-1">
+                          <span className="text-slate-500 font-semibold">{totalItemsCount} pedido(s)</span>
+                          <span className="font-black text-slate-900 text-sm">{totalPiecesCount} peças totais</span>
+                        </div>
+                      </div>
+
+                      {/* Actions Footer */}
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                        <button
+                          onClick={() => setViewingCarga(carga)}
+                          className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer flex items-center gap-1 text-xs font-bold"
+                          title="Visualizar Carga"
+                        >
+                          <Eye size={14} /> Ver
+                        </button>
+
+                        <button
+                          onClick={() => handlePrintRomaneioPDF(carga)}
+                          className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl transition cursor-pointer flex items-center gap-1 text-xs font-bold border border-emerald-200"
+                          title="Imprimir Romaneio PDF"
+                        >
+                          <Printer size={14} /> Romaneio PDF
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Deseja realmente excluir a carga "${carga.name}"?`)) {
+                              await db.deleteCarga(carga.id);
+                            }
+                          }}
+                          className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl transition cursor-pointer"
+                          title="Excluir Carga"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* CREATE CARGA MODAL */}
       {isCargaModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
-            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-              <h2 className="font-bold text-gray-800 flex items-center gap-2">
-                <Truck size={18} className="text-blue-600" />
-                Criar Rota de Carregamento
-              </h2>
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-3 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden flex flex-col my-auto">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
+                  <Truck size={20} />
+                </div>
+                <div>
+                  <h2 className="font-extrabold text-base text-white">Montar Nova Carga de Expedição</h2>
+                  <span className="text-xs text-slate-400">{selectedOrdersData.orderCount} pedido(s) selecionado(s)</span>
+                </div>
+              </div>
               <button
                 onClick={() => setIsCargaModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-slate-400 hover:text-white p-1 rounded-lg transition cursor-pointer"
               >
                 <X size={20} />
               </button>
             </div>
+
             <div className="p-5 space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">
-                  Nome da Rota / Destino
+                <label className="text-xs font-extrabold text-slate-700 uppercase block mb-1">
+                  Identificação / Nome da Carga *
                 </label>
                 <input
                   type="text"
-                  value={newCargaName}
-                  onChange={(e) => setNewCargaName(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="Ex: Rota Ubá - Tarde"
-                  autoFocus
+                  value={cargaName}
+                  onChange={(e) => setCargaName(e.target.value)}
+                  placeholder="Ex: CARGA #001 - REGIONAL REGIONAL SUL"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white"
                 />
               </div>
-              <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-xs text-blue-800">
-                <strong>{selectedOrderIds.length}</strong> pedidos selecionados
-                para compor esta carga. Opcionalmente, você pode imprimir um
-                relatório após criar clicando no botão [Relatório].
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase block mb-1">
+                    Nome do Motorista
+                  </label>
+                  <input
+                    type="text"
+                    value={driverName}
+                    onChange={(e) => setDriverName(e.target.value)}
+                    placeholder="Nome do motorista responsável"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase block mb-1">
+                    Placa do Veículo
+                  </label>
+                  <input
+                    type="text"
+                    value={vehiclePlate}
+                    onChange={(e) => setVehiclePlate(e.target.value)}
+                    placeholder="Ex: ABC-1234"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold uppercase text-slate-800"
+                  />
+                </div>
               </div>
-              {selectedOrderIds.length > 0 && (
-                <div className="max-h-[30vh] overflow-y-auto space-y-2 border border-slate-200 rounded-lg p-2">
-                  <span className="block text-xs font-bold text-slate-700">
-                    Quantidades por Pedido:
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase block mb-1">
+                  Data Previsão de Saída / Despacho
+                </label>
+                <input
+                  type="date"
+                  value={departureDate}
+                  onChange={(e) => setDepartureDate(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase block mb-1">
+                  Observações de Transporte
+                </label>
+                <textarea
+                  rows={2}
+                  value={cargaNotes}
+                  onChange={(e) => setCargaNotes(e.target.value)}
+                  placeholder="Instruções para o motorista, rota ou entrega..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
+                />
+              </div>
+
+              {/* Summary box */}
+              <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl space-y-1 text-xs">
+                <span className="font-black text-emerald-900 block">Resumo do Carregamento:</span>
+                <p className="text-emerald-800 font-medium">
+                  • Total: <strong>{selectedOrdersData.totalPieces} peças</strong> distribuídas em{" "}
+                  <strong>{selectedOrdersData.customerCount} cliente(s)</strong> diferentes.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-100 p-4 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setIsCargaModalOpen(false)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveCarga}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Truck size={15} /> Finalizar Carga
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW CARGA DETAILS MODAL */}
+      {viewingCarga && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-3 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl overflow-hidden flex flex-col my-auto max-h-[90vh]">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-500/20 text-blue-400 rounded-xl">
+                  <Truck size={20} />
+                </div>
+                <div>
+                  <h2 className="font-extrabold text-base text-white">{viewingCarga.name}</h2>
+                  <span className="text-xs text-slate-400">
+                    Criado em {new Date(viewingCarga.createdAt).toLocaleDateString("pt-BR")}
                   </span>
-                  {selectedOrderIds.map((oid) => {
-                    const order = db.orders.find((o) => o.id === oid);
-                    if (!order) return null;
-                    return (
-                      <div
-                        key={oid}
-                        className="flex justify-between items-center text-xs p-1.5 hover:bg-slate-50 border-b border-slate-100 last:border-0"
-                      >
-                        <div className="flex-1 truncate pr-2">
-                          <div className="font-bold text-slate-800">{order.customerName}</div>
-                          <div className="text-[10px] text-slate-500 font-medium">
-                            {order.customProductName ||
-                              db.items.find((i) => i.id === order.itemId)?.name}
-                          </div>
-                          <div className="text-[9px] text-slate-400">
-                            Faturado: {order.invoicedQuantity || 0}/{order.totalQuantity} | Pend: {Math.max(0, order.totalQuantity - (order.invoicedQuantity || 0))}
-                          </div>
-                        </div>
-                        <div className="flex bg-white items-center gap-1 border border-slate-300 rounded overflow-hidden">
-                          <span className="px-1.5 py-1 text-[10px] bg-slate-100 border-r border-slate-300 text-slate-500 font-bold col-span">
-                            Qtd
-                          </span>
-                          <input
-                            type="number"
-                            min="1"
-                            max={Math.max(0, order.totalQuantity - (order.invoicedQuantity || 0))}
-                            value={orderQuantities[oid] !== undefined ? orderQuantities[oid] : getDefaultCargaQty(order)}
-                            onChange={(e) => {
-                              const maxVal = Math.max(0, order.totalQuantity - (order.invoicedQuantity || 0));
-                              let val = Number(e.target.value);
-                              if (val > maxVal) val = maxVal;
-                              if (val < 0) val = 0;
-                              setOrderQuantities((q) => ({
-                                ...q,
-                                [oid]: val,
-                              }));
-                            }}
-                            className="w-14 outline-none px-1 py-1 text-center font-bold text-slate-750"
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
+                </div>
+              </div>
+              <button
+                onClick={() => setViewingCarga(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg transition cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto">
+              {/* Info grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Status</span>
+                  <select
+                    value={viewingCarga.status}
+                    onChange={async (e) => {
+                      const newStatus = e.target.value as any;
+                      await db.updateCarga({ ...viewingCarga, status: newStatus });
+                      setViewingCarga({ ...viewingCarga, status: newStatus });
+                    }}
+                    className="font-bold text-xs bg-white border border-slate-300 rounded p-1 text-slate-800 cursor-pointer"
+                  >
+                    <option value="PLANEJADA">PLANEJADA</option>
+                    <option value="EM_TRANSITO">EM TRÂNSITO</option>
+                    <option value="ENTREGUE">ENTREGUE</option>
+                    <option value="FATURADA">FATURADA</option>
+                  </select>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Motorista</span>
+                  <span className="font-bold text-slate-800">{viewingCarga.driverName || "—"}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Placa</span>
+                  <span className="font-bold text-slate-800">{viewingCarga.vehiclePlate || "—"}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Previsão Saída</span>
+                  <span className="font-bold text-slate-800">
+                    {viewingCarga.departureDate
+                      ? new Date(viewingCarga.departureDate + "T12:00:00").toLocaleDateString("pt-BR")
+                      : "—"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Items Table */}
+              <div>
+                <h4 className="font-extrabold text-xs uppercase text-slate-700 mb-2">
+                  Itens da Carga ({viewingCarga.orderIds?.length || 0})
+                </h4>
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 font-extrabold text-[10px] uppercase text-slate-600 border-b border-slate-200">
+                        <th className="p-2.5">Cliente</th>
+                        <th className="p-2.5">Pedido</th>
+                        <th className="p-2.5">Produto</th>
+                        <th className="p-2.5 text-right">Qtd Carregada</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(db.orders || [])
+                        .filter((o) => (viewingCarga.orderIds || []).includes(o.id))
+                        .map((o) => {
+                          const itemName = o.customProductName || itemsMap.get(o.itemId) || `Item #${o.itemId}`;
+                          const qty = viewingCarga.orderQuantities?.[o.id] || (o.totalQuantity - (o.invoicedQuantity || 0));
+
+                          return (
+                            <tr key={o.id}>
+                              <td className="p-2.5 font-bold text-slate-800">{o.customerName}</td>
+                              <td className="p-2.5 text-slate-600">{o.orderCode || `#PED-${o.id}`}</td>
+                              <td className="p-2.5 font-semibold text-slate-900">{itemName}</td>
+                              <td className="p-2.5 text-right font-black text-slate-900">{qty} pçs</td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {viewingCarga.notes && (
+                <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-xs text-amber-900">
+                  <strong>Observações:</strong> {viewingCarga.notes}
                 </div>
               )}
-              <div className="pt-4 flex justify-end gap-2">
-                <button
-                  onClick={() => setIsCargaModalOpen(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg font-bold text-gray-600 hover:bg-gray-50 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleCreateCarga}
-                  disabled={!newCargaName.trim()}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition disabled:opacity-50"
-                >
-                  Salvar Rota
-                </button>
-              </div>
+            </div>
+
+            <div className="bg-slate-100 p-4 border-t border-slate-200 flex items-center justify-between">
+              <button
+                onClick={() => setViewingCarga(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={() => handlePrintRomaneioPDF(viewingCarga)}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Printer size={15} /> Imprimir Romaneio PDF
+              </button>
             </div>
           </div>
         </div>

@@ -362,7 +362,7 @@ export interface CoilCuttingPlan {
 export interface Carga {
   id: string;
   name: string;
-  dayOfWeek: string;
+  dayOfWeek?: string;
   orderIds: number[];
   orderQuantities?: Record<number, number>;
   stockEntries?: {
@@ -373,10 +373,13 @@ export interface Carga {
     variation: string;
     quantity: number;
   }[];
-  route: string[];
+  route?: string[];
   status: "PLANEJADA" | "EM_TRANSITO" | "ENTREGUE" | "FATURADA";
   createdAt: number;
   notes?: string;
+  driverName?: string;
+  vehiclePlate?: string;
+  departureDate?: string;
 }
 
 export interface ProductionSchedule {
