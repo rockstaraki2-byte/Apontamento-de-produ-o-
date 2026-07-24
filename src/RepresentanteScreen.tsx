@@ -65,9 +65,39 @@ export function RepresentanteScreen({
   >("boleto");
   const [customPaymentCondition, setCustomPaymentCondition] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("");
+  const [fiscalType, setFiscalType] = useState<"COM_NF" | "SEM_NF" | "MEIA_NOTA">("COM_NF");
   const [billingRule, setBillingRule] = useState<"cadastro" | "ultimo_pedido">(
     "cadastro",
   );
+
+  const matchedCustomerForRep = React.useMemo(() => {
+    if (!customerName || !customerName.trim()) return null;
+    const trimmedVal = customerName.trim();
+    const idMatch = trimmedVal.match(/^(\d+)\s*-\s*(.*)$/);
+    if (idMatch) {
+      const id = Number(idMatch[1]);
+      const found = db.customers.find((c) => c.id === id);
+      if (found) return found;
+    }
+    return (
+      db.customers.find(
+        (c) =>
+          (c.name && c.name.toLowerCase() === trimmedVal.toLowerCase()) ||
+          (c.tradeName && c.tradeName.toLowerCase() === trimmedVal.toLowerCase())
+      ) || null
+    );
+  }, [customerName, db.customers]);
+
+  React.useEffect(() => {
+    if (matchedCustomerForRep) {
+      if (matchedCustomerForRep.fiscalType) {
+        setFiscalType(matchedCustomerForRep.fiscalType);
+      }
+      if (billingRule === "cadastro" && matchedCustomerForRep.defaultPaymentTerms) {
+        setPaymentTerms(matchedCustomerForRep.defaultPaymentTerms);
+      }
+    }
+  }, [matchedCustomerForRep, billingRule]);
 
   const [fullSizeImage, setFullSizeImage] = useState<string | null>(null);
 
@@ -267,6 +297,7 @@ export function RepresentanteScreen({
         isUrgent,
         paymentCondition: finalPaymentCondition,
         paymentTerms,
+        fiscalType,
         billingRule,
         unitPrice: itemUnitPrice,
         isActive: true,
@@ -762,7 +793,22 @@ export function RepresentanteScreen({
                 Condições de Faturamento & Regras
               </span>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-slate-700">
+                    Tipo de Nota Fiscal
+                  </span>
+                  <select
+                    value={fiscalType}
+                    onChange={(e) => setFiscalType(e.target.value as any)}
+                    className="border border-gray-300 p-2 rounded text-xs bg-white text-slate-800 font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="COM_NF">Com Nota Fiscal (100% NF)</option>
+                    <option value="SEM_NF">Sem Nota Fiscal</option>
+                    <option value="MEIA_NOTA">Meia Nota Fiscal</option>
+                  </select>
+                </div>
+
                 <div className="flex flex-col gap-1">
                   <span className="text-xs font-semibold text-slate-700">
                     Forma de Pagamento

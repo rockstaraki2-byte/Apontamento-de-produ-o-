@@ -209,6 +209,7 @@ export interface Order {
   deliveryDate: string;
   paymentCondition?: string;
   paymentTerms?: string;
+  fiscalType?: "COM_NF" | "SEM_NF" | "MEIA_NOTA";
   billingRule?: 'cadastro' | 'ultimo_pedido';
   isUrgent?: boolean;
   isProgramacao?: boolean;
@@ -291,6 +292,8 @@ export interface Customer {
   phone?: string;
   address?: string;
   tradeName?: string;
+  fiscalType?: "COM_NF" | "SEM_NF" | "MEIA_NOTA";
+  defaultPaymentTerms?: string;
 }
 
 export interface Sector {

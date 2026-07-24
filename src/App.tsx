@@ -3189,9 +3189,39 @@ function PedidosScreen({
   const [paymentType, setPaymentType] = useState<
     "pix" | "boleto" | "deposito" | "carteira" | "outro"
   >("boleto");
+  const [fiscalType, setFiscalType] = useState<"COM_NF" | "SEM_NF" | "MEIA_NOTA">("COM_NF");
   const [billingRule, setBillingRule] = useState<"cadastro" | "ultimo_pedido">(
     "cadastro",
   );
+
+  const matchedCustomerForOrder = React.useMemo(() => {
+    if (!customerName || !customerName.trim()) return null;
+    const trimmedVal = customerName.trim();
+    const idMatch = trimmedVal.match(/^(\d+)\s*-\s*(.*)$/);
+    if (idMatch) {
+      const id = Number(idMatch[1]);
+      const found = db.customers.find((c) => c.id === id);
+      if (found) return found;
+    }
+    return (
+      db.customers.find(
+        (c) =>
+          (c.name && c.name.toLowerCase() === trimmedVal.toLowerCase()) ||
+          (c.tradeName && c.tradeName.toLowerCase() === trimmedVal.toLowerCase())
+      ) || null
+    );
+  }, [customerName, db.customers]);
+
+  React.useEffect(() => {
+    if (matchedCustomerForOrder) {
+      if (matchedCustomerForOrder.fiscalType) {
+        setFiscalType(matchedCustomerForOrder.fiscalType);
+      }
+      if (billingRule === "cadastro" && matchedCustomerForOrder.defaultPaymentTerms) {
+        setPaymentTerms(matchedCustomerForOrder.defaultPaymentTerms);
+      }
+    }
+  }, [matchedCustomerForOrder, billingRule]);
 
   const selectedItemObj = React.useMemo(() => {
     return db.items.find((i) => i.id === itemId);
@@ -5079,6 +5109,7 @@ function PedidosScreen({
             deliveryDate,
             paymentCondition: finalPaymentCondition,
             paymentTerms,
+            fiscalType,
             billingRule,
             isThirdPartyLaser,
             isUrgent,
@@ -5173,6 +5204,7 @@ function PedidosScreen({
           unitPrice: itemInfo.unitPrice,
           paymentCondition: finalPaymentCondition,
           paymentTerms,
+          fiscalType,
           billingRule,
           packedQuantity: qtFromStock,
           producedQuantity: qtFromStock,
@@ -7981,6 +8013,21 @@ function PedidosScreen({
                     </div>
 
                     <div className="flex gap-2">
+                      <div className="flex flex-col gap-1 w-28 shrink-0">
+                        <label className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">
+                          Nota Fiscal
+                        </label>
+                        <select
+                          value={fiscalType}
+                          onChange={(e) => setFiscalType(e.target.value as any)}
+                          className="border border-slate-300 text-[10px] p-1.5 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-bold text-slate-800"
+                        >
+                          <option value="COM_NF">Com NF</option>
+                          <option value="SEM_NF">Sem NF</option>
+                          <option value="MEIA_NOTA">Meia Nota</option>
+                        </select>
+                      </div>
+
                       <div className="flex flex-col gap-1 flex-1">
                         <label className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">
                           Condição / Forma
@@ -8015,7 +8062,7 @@ function PedidosScreen({
                           )}
                         </div>
                       </div>
-                      <div className="flex flex-col gap-1 w-1/3">
+                      <div className="flex flex-col gap-1 w-1/4">
                         <label className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">
                           Prazos
                         </label>

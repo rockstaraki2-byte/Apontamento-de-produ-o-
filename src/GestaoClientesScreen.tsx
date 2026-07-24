@@ -60,6 +60,11 @@ export function GestaoClientesScreen({
   const [newCustomerUF, setNewCustomerUF] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [newCustomerEmail, setNewCustomerEmail] = useState("");
+  const [newCustomerFiscalType, setNewCustomerFiscalType] = useState<
+    "COM_NF" | "SEM_NF" | "MEIA_NOTA"
+  >("COM_NF");
+  const [newCustomerDefaultPaymentTerms, setNewCustomerDefaultPaymentTerms] =
+    useState("");
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,6 +100,8 @@ export function GestaoClientesScreen({
       address,
       phone: newCustomerPhone.trim(),
       email: newCustomerEmail.trim().toLowerCase(),
+      fiscalType: newCustomerFiscalType,
+      defaultPaymentTerms: newCustomerDefaultPaymentTerms.trim(),
     });
 
     setIsAddModalOpen(false);
@@ -105,6 +112,8 @@ export function GestaoClientesScreen({
     setNewCustomerUF("");
     setNewCustomerPhone("");
     setNewCustomerEmail("");
+    setNewCustomerFiscalType("COM_NF");
+    setNewCustomerDefaultPaymentTerms("");
   };
 
   // Editing Row State (Inline Quick-Edit)
@@ -116,6 +125,11 @@ export function GestaoClientesScreen({
   const [inlineEditUF, setInlineEditUF] = useState("");
   const [inlineEditPhone, setInlineEditPhone] = useState("");
   const [inlineEditEmail, setInlineEditEmail] = useState("");
+  const [inlineEditFiscalType, setInlineEditFiscalType] = useState<
+    "COM_NF" | "SEM_NF" | "MEIA_NOTA"
+  >("COM_NF");
+  const [inlineEditDefaultPaymentTerms, setInlineEditDefaultPaymentTerms] =
+    useState("");
 
   // Creative Mock Coordinate mappings for key cities to make map indicators look authentic:
   const cityCoordinates: Record<string, { lat: number; lng: number }> = {
@@ -303,6 +317,8 @@ export function GestaoClientesScreen({
     setInlineEditUF(uf);
     setInlineEditPhone(c.phone || "");
     setInlineEditEmail(c.email || "");
+    setInlineEditFiscalType(c.fiscalType || "COM_NF");
+    setInlineEditDefaultPaymentTerms(c.defaultPaymentTerms || "");
   };
 
   // Save changes from quick inline edits
@@ -330,25 +346,22 @@ export function GestaoClientesScreen({
       finalTradeName = inlineEditName.trim().split(" ").slice(0, 3).join(" ");
     }
 
-    await db.updateCustomer({
+    const updatedCustomer: Customer = {
       id: parsedNewId,
       name: inlineEditName.trim(),
       tradeName: finalTradeName,
       address,
       phone: inlineEditPhone.trim(),
       email: inlineEditEmail.trim().toLowerCase(),
-    }, inlineEditId!);
+      fiscalType: inlineEditFiscalType,
+      defaultPaymentTerms: inlineEditDefaultPaymentTerms.trim(),
+    };
+
+    await db.updateCustomer(updatedCustomer, inlineEditId!);
 
     // If currently selected details customer was edited, sync the object state
     if (selectedCustomer?.id === inlineEditId) {
-      setSelectedCustomer({
-        id: parsedNewId,
-        name: inlineEditName.trim(),
-        tradeName: finalTradeName,
-        address,
-        phone: inlineEditPhone.trim(),
-        email: inlineEditEmail.trim().toLowerCase(),
-      });
+      setSelectedCustomer(updatedCustomer);
     }
 
     setInlineEditId(null);
@@ -597,6 +610,7 @@ export function GestaoClientesScreen({
                       </div>
                     </th>
                     <th className="py-3.5 px-4">Informação de Contato</th>
+                    <th className="py-3.5 px-4">Condição Fiscal & Pgto</th>
                     <th className="py-3.5 px-4 w-28 text-center bg-slate-50">
                       Pedidos
                     </th>
@@ -607,7 +621,7 @@ export function GestaoClientesScreen({
                   {paginatedCustomers.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={7}
                         className="py-12 text-center text-gray-400"
                       >
                         Nenhum cliente cadastrado atende aos critérios de
@@ -790,6 +804,67 @@ export function GestaoClientesScreen({
                                       Nenhum contato cadastrado
                                     </span>
                                   )
+                                )}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* FISCAL & PAYMENT TERMS CELL */}
+                          <td className="py-3 px-4">
+                            {isEditing ? (
+                              <div
+                                className="flex flex-col gap-1"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <select
+                                  value={inlineEditFiscalType}
+                                  onChange={(e) =>
+                                    setInlineEditFiscalType(e.target.value as any)
+                                  }
+                                  className="border border-blue-400 rounded px-1.5 py-0.5 outline-none text-[11px] font-semibold bg-white"
+                                >
+                                  <option value="COM_NF">Com NF</option>
+                                  <option value="SEM_NF">Sem NF</option>
+                                  <option value="MEIA_NOTA">Meia Nota</option>
+                                </select>
+                                <input
+                                  type="text"
+                                  placeholder="Cond. Pgto (ex: 30/60 dias)"
+                                  value={inlineEditDefaultPaymentTerms}
+                                  onChange={(e) =>
+                                    setInlineEditDefaultPaymentTerms(e.target.value)
+                                  }
+                                  className="border border-blue-400 rounded px-1.5 py-0.5 outline-none text-[11px]"
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-1 text-[11px]">
+                                <div>
+                                  {c.fiscalType === "SEM_NF" ? (
+                                    <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full inline-block">
+                                      Sem NF
+                                    </span>
+                                  ) : c.fiscalType === "MEIA_NOTA" ? (
+                                    <span className="bg-purple-100 text-purple-900 border border-purple-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full inline-block">
+                                      Meia Nota
+                                    </span>
+                                  ) : (
+                                    <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full inline-block">
+                                      Com NF
+                                    </span>
+                                  )}
+                                </div>
+                                {c.defaultPaymentTerms ? (
+                                  <span
+                                    className="text-slate-700 font-semibold truncate max-w-[140px]"
+                                    title={c.defaultPaymentTerms}
+                                  >
+                                    {c.defaultPaymentTerms}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-300 italic">
+                                    Condição não informada
+                                  </span>
                                 )}
                               </div>
                             )}
@@ -1039,6 +1114,37 @@ export function GestaoClientesScreen({
                       />
                       <span className="font-semibold text-gray-800 select-all truncate">
                         {selectedCustomer.email || "Nenhum email cadastrado"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Billing & Payment Defaults Panel */}
+                <div className="space-y-2 border-t border-gray-100 pt-4">
+                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                    Regras Fiscais & Pagamento Padrão
+                  </h4>
+                  <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg space-y-2 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-medium">Tipo de Nota Fiscal:</span>
+                      {selectedCustomer.fiscalType === "SEM_NF" ? (
+                        <span className="bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-[10px] px-2 py-0.5 rounded-full">
+                          Sem Nota (Sem NF)
+                        </span>
+                      ) : selectedCustomer.fiscalType === "MEIA_NOTA" ? (
+                        <span className="bg-purple-100 text-purple-900 border border-purple-300 font-extrabold text-[10px] px-2 py-0.5 rounded-full">
+                          Meia Nota
+                        </span>
+                      ) : (
+                        <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 font-extrabold text-[10px] px-2 py-0.5 rounded-full">
+                          Com Nota Fiscal (100% NF)
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+                      <span className="text-slate-500 font-medium">Condição de Pagamento Padrão:</span>
+                      <span className="font-bold text-slate-800">
+                        {selectedCustomer.defaultPaymentTerms || "Não cadastrada"}
                       </span>
                     </div>
                   </div>
@@ -1298,6 +1404,38 @@ export function GestaoClientesScreen({
                     onChange={(e) => setNewCustomerEmail(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                     placeholder="contato@empresa.com"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 border-t border-gray-100 pt-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">
+                    Tipo de Nota Fiscal / Emissão
+                  </label>
+                  <select
+                    value={newCustomerFiscalType}
+                    onChange={(e) =>
+                      setNewCustomerFiscalType(e.target.value as any)
+                    }
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white font-semibold focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  >
+                    <option value="COM_NF">Com Nota Fiscal (100% NF)</option>
+                    <option value="SEM_NF">Sem Nota Fiscal</option>
+                    <option value="MEIA_NOTA">Meia Nota Fiscal</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">
+                    Condição de Pagamento Padrão
+                  </label>
+                  <input
+                    type="text"
+                    value={newCustomerDefaultPaymentTerms}
+                    onChange={(e) =>
+                      setNewCustomerDefaultPaymentTerms(e.target.value)
+                    }
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    placeholder="Ex: 30/60/90 dias"
                   />
                 </div>
               </div>
