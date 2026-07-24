@@ -71,6 +71,7 @@ export function LotesScreen({
 
   const [isPreviewAcompOpen, setIsPreviewAcompOpen] = useState(false);
   const [previewAcompBatch, setPreviewAcompBatch] = useState<ProductionBatch | null>(null);
+  const [acompSelectedOrderIds, setAcompSelectedOrderIds] = useState<number[]>([]);
   const [destrincharComposicoes, setDestrincharComposicoes] = useState(false);
   const [ocultarPaiComposicao, setOcultarPaiComposicao] = useState(false);
 
@@ -100,9 +101,12 @@ export function LotesScreen({
     );
   }, [currentUser]);
 
-  const handleGenerateAcompPdf = async (b: ProductionBatch) => {
+  const handleGenerateAcompPdf = async (b: ProductionBatch, selectedIds?: number[]) => {
     setIsGeneratingAcomp(true);
     setAcompBatch(b);
+    if (selectedIds) {
+      setAcompSelectedOrderIds(selectedIds);
+    }
     try {
       await new Promise((resolve) => setTimeout(resolve, 350));
       const element = document.getElementById("acomp-print-root");
@@ -800,6 +804,7 @@ export function LotesScreen({
                         disabled={isGeneratingAcomp}
                         onClick={() => {
                           setPreviewAcompBatch(b);
+                          setAcompSelectedOrderIds(b.orderIds || []);
                           setIsPreviewAcompOpen(true);
                         }}
                         className={`border text-[10px] font-black px-3 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer transition active:scale-[0.98] uppercase tracking-wide bg-indigo-50 border-indigo-200/80 text-indigo-855 hover:bg-indigo-100/80`}
@@ -1637,15 +1642,15 @@ export function LotesScreen({
       {/* ========================================================= */}
       {isPreviewAcompOpen && previewAcompBatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl w-full max-w-4xl h-[85vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+          <div className="bg-white rounded-2xl w-full max-w-6xl h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
             
             {/* Header */}
             <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex justify-between items-center shrink-0">
-              <div className="flex items-center gap-2">
-                <FileText className="text-indigo-600 animate-pulse" size={22} />
+              <div className="flex items-center gap-2.5">
+                <FileText className="text-indigo-600" size={22} />
                 <div>
                   <h3 className="font-extrabold text-slate-900 text-lg">Pré-Visualização: Ficha de Acompanhamento</h3>
-                  <p className="text-xs text-slate-500 font-medium">Lote: {previewAcompBatch.name || `Lote #${previewAcompBatch.id}`} — Verifique o desenho técnico, especificações e composição dos pedidos.</p>
+                  <p className="text-xs text-slate-500 font-medium">Lote: {previewAcompBatch.name || `Lote #${previewAcompBatch.id}`} — Escolha quais peças/pedidos deseja imprimir e configure a ficha.</p>
                 </div>
               </div>
               <button
@@ -1659,55 +1664,162 @@ export function LotesScreen({
               </button>
             </div>
 
-            {/* Options Panel */}
-            <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center gap-6 shrink-0 text-xs">
-              <span className="font-bold text-slate-700">Configurações de Impressão:</span>
+            {/* Content Body - Dual Column */}
+            <div className="flex-1 overflow-hidden flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-200">
               
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={destrincharComposicoes}
-                  onChange={(e) => setDestrincharComposicoes(e.target.checked)}
-                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
-                />
-                <span className="font-semibold text-slate-800">
-                  Destrinchar kits/composições (BOM)
-                </span>
-              </label>
+              {/* Left Column - Options & Items Selection Controls */}
+              <div className="w-full md:w-80 lg:w-96 p-4 overflow-y-auto bg-slate-50 text-left space-y-4 shrink-0 flex flex-col justify-between">
+                <div className="space-y-4">
+                  
+                  {/* Options Section */}
+                  <div className="bg-white border border-slate-200/80 p-3.5 rounded-xl shadow-2xs space-y-2.5">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider block">
+                      ⚙️ Configurações da Ficha
+                    </span>
 
-              {destrincharComposicoes && (
-                <label className="flex items-center gap-2 cursor-pointer select-none animate-in slide-in-from-left-2 duration-150">
-                  <input
-                    type="checkbox"
-                    checked={ocultarPaiComposicao}
-                    onChange={(e) => setOcultarPaiComposicao(e.target.checked)}
-                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
-                  />
-                  <span className="font-semibold text-slate-800">
-                    Ocultar produto principal (Kits pais)
-                  </span>
-                </label>
-              )}
-            </div>
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={destrincharComposicoes}
+                        onChange={(e) => setDestrincharComposicoes(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span className="text-xs font-semibold text-slate-700 leading-tight">
+                        Destrinchar kits/composições (BOM)
+                      </span>
+                    </label>
 
-            {/* Scrollable Visual Workspace */}
-            <div className="flex-1 overflow-y-auto bg-slate-100 p-6 flex justify-center">
-              <div className="shadow-2xl bg-white border border-slate-200 p-2 rounded-xl h-fit">
-                {/* Visual A4 Mock */}
-                <AcompanhamentoPrintSheet
-                  batch={previewAcompBatch}
-                  orderIds={previewAcompBatch.orderIds}
-                  db={db}
-                  destrincharComposicoes={destrincharComposicoes}
-                  ocultarPaiComposicao={ocultarPaiComposicao}
-                />
+                    {destrincharComposicoes && (
+                      <label className="flex items-start gap-2.5 cursor-pointer select-none pl-3 border-l-2 border-indigo-200 animate-in slide-in-from-left-2 duration-150">
+                        <input
+                          type="checkbox"
+                          checked={ocultarPaiComposicao}
+                          onChange={(e) => setOcultarPaiComposicao(e.target.checked)}
+                          className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 leading-tight">
+                          Ocultar produto principal (Kits pais)
+                        </span>
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Items selection check List */}
+                  <div className="bg-white border border-slate-200/80 p-3.5 rounded-xl shadow-2xs space-y-3 flex-1 flex flex-col">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="text-xs font-black text-slate-800 uppercase tracking-wider block">
+                          Peças / Pedidos na Ficha
+                        </span>
+                        <span className="text-[11px] text-indigo-600 font-bold">
+                          {acompSelectedOrderIds.length} de {previewAcompBatch.orderIds.length} selecionados
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setAcompSelectedOrderIds(previewAcompBatch.orderIds)}
+                          className="text-[10px] text-indigo-600 font-extrabold hover:underline uppercase cursor-pointer bg-indigo-50 px-2 py-1 rounded"
+                        >
+                          Todos
+                        </button>
+                        <button
+                          onClick={() => setAcompSelectedOrderIds([])}
+                          className="text-[10px] text-slate-500 font-extrabold hover:underline uppercase cursor-pointer bg-slate-100 px-2 py-1 rounded"
+                        >
+                          Nenhum
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                      {previewAcompBatch.orderIds.map((oid) => {
+                        const o = db.orders.find((x) => x.id === oid);
+                        if (!o) return null;
+                        const it = db.items.find((i) => i.id === o.itemId);
+                        const isIncluded = acompSelectedOrderIds.includes(oid);
+
+                        return (
+                          <label
+                            key={oid}
+                            className={`flex items-start gap-2.5 p-2.5 rounded-xl cursor-pointer transition select-none border ${
+                              isIncluded
+                                ? "bg-indigo-50/60 border-indigo-200 text-indigo-950 shadow-2xs"
+                                : "bg-slate-50/50 border-slate-200 text-slate-400 opacity-60 hover:opacity-90"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isIncluded}
+                              onChange={() => {
+                                if (isIncluded) {
+                                  setAcompSelectedOrderIds(acompSelectedOrderIds.filter((x) => x !== oid));
+                                } else {
+                                  setAcompSelectedOrderIds([...acompSelectedOrderIds, oid]);
+                                }
+                              }}
+                              className="mt-0.5 border-slate-300 rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                            />
+                            <div className="text-xs leading-tight min-w-0 flex-1">
+                              <div className="flex justify-between items-center gap-1">
+                                <strong className="font-mono text-indigo-700 text-xs font-extrabold">#{o.orderCode}</strong>
+                                <span className="font-bold text-[11px] text-slate-800 bg-white border px-1.5 py-0.5 rounded shadow-2xs">
+                                  {o.totalQuantity} un
+                                </span>
+                              </div>
+                              <div className="text-slate-900 font-bold truncate mt-0.5">{o.customerName}</div>
+                              <div className="text-[11px] text-slate-600 truncate mt-0.5">{it?.name || "Desconhecido"}</div>
+                              {(o.color || o.size || o.variation) && (
+                                <div className="text-[10px] text-slate-500 mt-0.5 flex flex-wrap gap-1">
+                                  {o.color && <span>Cor: <strong>{o.color}</strong></span>}
+                                  {o.size && <span>Tam: <strong>{o.size}</strong></span>}
+                                  {o.variation && <span>Var: <strong>{o.variation}</strong></span>}
+                                </div>
+                              )}
+                            </div>
+                          </label>
+                        );
+                      })}
+
+                      {previewAcompBatch.orderIds.length === 0 && (
+                        <div className="text-center p-4 text-slate-400 text-xs italic">
+                          Nenhum pedido encontrado neste lote.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Right Column - Scrollable Visual A4 Workspace */}
+              <div className="flex-1 overflow-y-auto bg-slate-100 p-6 flex justify-center items-start">
+                {acompSelectedOrderIds.length === 0 ? (
+                  <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center max-w-md my-12 shadow-sm">
+                    <Layers className="mx-auto text-slate-300 mb-3" size={40} />
+                    <h4 className="font-bold text-slate-700 text-sm mb-1">Nenhuma peça selecionada</h4>
+                    <p className="text-xs text-slate-500">
+                      Marque pelo menos uma peça ou pedido na lista ao lado para visualizar e gerar a ficha de acompanhamento.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="shadow-2xl bg-white border border-slate-200 p-2 rounded-xl h-fit">
+                    {/* Visual A4 Mock */}
+                    <AcompanhamentoPrintSheet
+                      batch={previewAcompBatch}
+                      orderIds={acompSelectedOrderIds}
+                      db={db}
+                      destrincharComposicoes={destrincharComposicoes}
+                      ocultarPaiComposicao={ocultarPaiComposicao}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Footer */}
             <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-3 shrink-0">
-              <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">
-                IMPÉRIO ACESSÓRIOS · CONTROLE DE PROCESSO
+              <span className="text-xs text-slate-600 font-bold uppercase tracking-wide">
+                IMPÉRIO ACESSÓRIOS · {acompSelectedOrderIds.length} {acompSelectedOrderIds.length === 1 ? "pedido selecionado" : "pedidos selecionados"}
               </span>
               <div className="flex gap-3 justify-end">
                 <button
@@ -1721,22 +1833,32 @@ export function LotesScreen({
                 </button>
 
                 <button
-                  disabled={isDirectPrintingAcomp}
+                  disabled={isDirectPrintingAcomp || acompSelectedOrderIds.length === 0}
                   onClick={handleDirectPrintAcomp}
-                  className={`px-5 py-2.5 text-xs font-black text-white rounded-xl cursor-pointer flex items-center gap-1.5 transition active:scale-95 shadow-lg ${isDirectPrintingAcomp ? "bg-sky-800 cursor-not-allowed opacity-75" : "bg-sky-600 hover:bg-sky-500 shadow-sky-700/20"}`}
+                  className={`px-5 py-2.5 text-xs font-black text-white rounded-xl cursor-pointer flex items-center gap-1.5 transition active:scale-95 shadow-lg ${
+                    isDirectPrintingAcomp || acompSelectedOrderIds.length === 0
+                      ? "bg-slate-300 cursor-not-allowed text-slate-500"
+                      : "bg-sky-600 hover:bg-sky-500 shadow-sky-700/20"
+                  }`}
                 >
                   <Printer size={14} className={isDirectPrintingAcomp ? "animate-spin" : ""} />
                   {isDirectPrintingAcomp ? "Preparando..." : "Imprimir Direto"}
                 </button>
 
                 <button
+                  disabled={acompSelectedOrderIds.length === 0}
                   onClick={() => {
                     const b = previewAcompBatch;
+                    const ids = acompSelectedOrderIds;
                     setIsPreviewAcompOpen(false);
                     setPreviewAcompBatch(null);
-                    handleGenerateAcompPdf(b);
+                    handleGenerateAcompPdf(b, ids);
                   }}
-                  className="bg-indigo-600 hover:bg-indigo-550 text-white font-extrabold text-xs px-6 py-2.5 rounded-xl transition cursor-pointer shadow-md shadow-indigo-600/10 flex items-center gap-2 hover:scale-[1.01]"
+                  className={`font-extrabold text-xs px-6 py-2.5 rounded-xl transition cursor-pointer shadow-md flex items-center gap-2 ${
+                    acompSelectedOrderIds.length === 0
+                      ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none"
+                      : "bg-indigo-600 hover:bg-indigo-550 text-white shadow-indigo-600/10 hover:scale-[1.01]"
+                  }`}
                 >
                   <FileText size={15} />
                   Confirmar & Baixar PDF Ficha
@@ -1767,7 +1889,7 @@ export function LotesScreen({
             <AcompanhamentoPrintSheet
               ref={acompPrintRef}
               batch={acompBatch}
-              orderIds={acompBatch.orderIds}
+              orderIds={acompSelectedOrderIds}
               db={db}
               destrincharComposicoes={destrincharComposicoes}
               ocultarPaiComposicao={ocultarPaiComposicao}
