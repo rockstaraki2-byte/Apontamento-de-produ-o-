@@ -207,13 +207,22 @@ export function MachineStopWidget({
   });
   const [elapsedMs, setElapsedMs] = useState(0);
 
-  // Identify active stop for this machine from db
+  const targetMachine = machineName || currentUser.role || currentUser.name;
+
+  // Identify active stop strictly for this operator and this specific machine
   const myStops = db.machineStops
-    .filter((s) => s.operatorId === currentUser.id)
+    .filter(
+      (s) =>
+        s.operatorId === currentUser.id &&
+        (!s.machineName || s.machineName === targetMachine || s.machineName === machineName)
+    )
     .sort((a, b) => b.timestamp - a.timestamp);
 
   const activeStop = db.machineStops.find(
-    (s) => s.operatorId === currentUser.id && s.status === "ATIVO"
+    (s) =>
+      s.operatorId === currentUser.id &&
+      (!s.machineName || s.machineName === targetMachine || s.machineName === machineName) &&
+      s.status === "ATIVO"
   );
 
   // Side Effect to read activeStop state and sync stopwatch

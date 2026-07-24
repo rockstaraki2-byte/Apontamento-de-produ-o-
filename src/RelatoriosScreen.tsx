@@ -12,7 +12,20 @@ import {
   Plus,
   Sparkles,
   Settings,
+  AlertTriangle,
+  Search,
+  Activity,
+  Filter,
+  RotateCcw,
+  Wrench,
+  XCircle,
+  User as UserIcon,
+  Cpu,
+  BarChart2,
 } from "lucide-react";
+
+const normalizeStr = (str: string) =>
+  str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { User, ProductionLog } from "./types";
@@ -30,7 +43,7 @@ export function RelatoriosScreen({
   currentUser: User;
 }) {
   const [reportType, setReportType] = useState<
-    "PRODUTIVIDADE" | "RASTREAMENTO" | "ESTOQUE" | "EPIS" | "CORTE_LASER" | "METAS" | "MEDIAS" | "PRODUCAO_DIARIA"
+    "PRODUTIVIDADE" | "RASTREAMENTO" | "ESTOQUE" | "EPIS" | "CORTE_LASER" | "METAS" | "MEDIAS" | "PRODUCAO_DIARIA" | "PARADAS"
   >("PRODUTIVIDADE");
   const [selectedOrderCode, setSelectedOrderCode] = useState<string>("TODAS");
   const [visibleLogsCount, setVisibleLogsCount] = useState(30);
@@ -42,6 +55,138 @@ export function RelatoriosScreen({
   const [mediasSectorId, setMediasSectorId] = useState<string>("ALL");
   const [mediasStartDate, setMediasStartDate] = useState<string>("");
   const [mediasEndDate, setMediasEndDate] = useState<string>("");
+
+  // Filters for Paradas tab
+  const [paradaMachineFilter, setParadaMachineFilter] = useState<string>("ALL");
+  const [paradaReasonFilter, setParadaReasonFilter] = useState<string>("ALL");
+  const [paradaStatusFilter, setParadaStatusFilter] = useState<string>("ALL");
+  const [paradaStartDate, setParadaStartDate] = useState<string>("");
+  const [paradaEndDate, setParadaEndDate] = useState<string>("");
+  const [paradaSearchTerm, setParadaSearchTerm] = useState<string>("");
+
+  const formatMinutesToHours = (totalMinutes: number) => {
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    if (hours === 0) return `${mins} min`;
+    return `${hours}h ${mins.toString().padStart(2, "0")}min`;
+  };
+
+  const uniqueMachineNames = useMemo(() => {
+    const set = new Set<string>();
+    (db.machineStops || []).forEach((s) => {
+      const name = s.machineName || s.role;
+      if (name) set.add(name);
+    });
+    return Array.from(set).sort();
+  }, [db.machineStops]);
+
+  const paradasAnalytics = useMemo(() => {
+    const rawStops = db.machineStops || [];
+    const filteredStops = rawStops.filter((stop) => {
+      const machineName = stop.machineName || stop.role || "";
+      if (paradaMachineFilter !== "ALL" && machineName !== paradaMachineFilter) {
+        return false;
+      }
+      if (paradaReasonFilter !== "ALL" && stop.reason !== paradaReasonFilter) {
+        return false;
+      }
+      if (paradaStatusFilter !== "ALL" && stop.status !== paradaStatusFilter) {
+        return false;
+      }
+      if (paradaStartDate) {
+        const startMs = new Date(`${paradaStartDate}T00:00:00`).getTime();
+        if (stop.timestamp < startMs) return false;
+      }
+      if (paradaEndDate) {
+        const endMs = new Date(`${paradaEndDate}T23:59:59`).getTime();
+        if (stop.timestamp > endMs) return false;
+      }
+      if (paradaSearchTerm.trim()) {
+        const term = normalizeStr(paradaSearchTerm);
+        const textToSearch = normalizeStr(
+          `${stop.operatorName || ""} ${stop.machineName || ""} ${stop.role || ""} ${stop.reason || ""} ${stop.otherReasonDescription || ""}`
+        );
+        if (!textToSearch.includes(term)) return false;
+      }
+      return true;
+    }).sort((a, b) => b.timestamp - a.timestamp);
+
+    const totalCount = filteredStops.length;
+    const activeCount = filteredStops.filter((s) => s.status === "ATIVO").length;
+    const resolvedCount = filteredStops.filter((s) => s.status === "RESOLVIDO").length;
+
+    let totalDurationMinutes = 0;
+    const reasonBreakdown: Record<string, { count: number; totalMinutes: number }> = {
+      MANUTENÇÃO: { count: 0, totalMinutes: 0 },
+      QUEBRA: { count: 0, totalMinutes: 0 },
+      OUTRO: { count: 0, totalMinutes: 0 },
+    };
+
+    const machineBreakdown: Record<string, { count: number; totalMinutes: number }> = {};
+
+    filteredStops.forEach((stop) => {
+      const duration = stop.status === "ATIVO"
+        ? Math.max(1, Math.round((Date.now() - stop.timestamp) / 60000))
+        : (stop.durationMinutes || 0);
+
+      totalDurationMinutes += duration;
+
+      const rKey = stop.reason || "OUTRO";
+      if (!reasonBreakdown[rKey]) {
+        reasonBreakdown[rKey] = { count: 0, totalMinutes: 0 };
+      }
+      reasonBreakdown[rKey].count += 1;
+      reasonBreakdown[rKey].totalMinutes += duration;
+
+      const mKey = stop.machineName || stop.role || "Não identificado";
+      if (!machineBreakdown[mKey]) {
+        machineBreakdown[mKey] = { count: 0, totalMinutes: 0 };
+      }
+      machineBreakdown[mKey].count += 1;
+      machineBreakdown[mKey].totalMinutes += duration;
+    });
+
+    const avgDurationMinutes = totalCount > 0 ? Math.round(totalDurationMinutes / totalCount) : 0;
+
+    let topReason = "Nenhum";
+    let maxReasonCount = 0;
+    Object.entries(reasonBreakdown).forEach(([r, data]) => {
+      if (data.count > maxReasonCount) {
+        maxReasonCount = data.count;
+        topReason = r;
+      }
+    });
+
+    let topMachineByDowntime = "Nenhum";
+    let maxMachineMinutes = 0;
+    Object.entries(machineBreakdown).forEach(([m, data]) => {
+      if (data.totalMinutes > maxMachineMinutes) {
+        maxMachineMinutes = data.totalMinutes;
+        topMachineByDowntime = m;
+      }
+    });
+
+    return {
+      filteredStops,
+      totalCount,
+      activeCount,
+      resolvedCount,
+      totalDurationMinutes,
+      avgDurationMinutes,
+      topReason,
+      topMachineByDowntime,
+      reasonBreakdown,
+      machineBreakdown,
+    };
+  }, [
+    db.machineStops,
+    paradaMachineFilter,
+    paradaReasonFilter,
+    paradaStatusFilter,
+    paradaStartDate,
+    paradaEndDate,
+    paradaSearchTerm,
+  ]);
 
   // Advanced sector-wise productivity logic that compares the latest collection with the prior average
   const sectorProductivityMetrics = useMemo(() => {
@@ -1198,6 +1343,8 @@ export function RelatoriosScreen({
       titleStr = "Relatorio de Rastreabilidade de Pecas";
     } else if (reportType === "MEDIAS") {
       titleStr = "Relatorio de Medias de Producao (Acompanhamento)";
+    } else if (reportType === "PARADAS") {
+      titleStr = "Relatorio de Apontamento de Paradas de Maquinas";
     } else {
       titleStr = "Historico de Movimentacoes de Estoque";
     }
@@ -1274,6 +1421,53 @@ export function RelatoriosScreen({
         body: prodData,
         startY: finalY + 18,
       });
+    } else if (reportType === "PARADAS") {
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text(
+        `Total de Paradas: ${paradasAnalytics.totalCount} | Ativas: ${paradasAnalytics.activeCount} | Resolvidas: ${paradasAnalytics.resolvedCount} | Tempo Total Parado: ${formatMinutesToHours(paradasAnalytics.totalDurationMinutes)} | Tempo Medio (MTTR): ${paradasAnalytics.avgDurationMinutes} min`,
+        14,
+        22
+      );
+      doc.setFontSize(10);
+      doc.setTextColor(0);
+
+      const tableData = paradasAnalytics.filteredStops.map((s) => {
+        const dur =
+          s.status === "ATIVO"
+            ? `${Math.max(1, Math.round((Date.now() - s.timestamp) / 60000))} min (Ativo)`
+            : `${s.durationMinutes || 0} min`;
+        const reasonText = s.otherReasonDescription
+          ? `${s.reason} (${s.otherReasonDescription})`
+          : s.reason;
+        const dateStr = new Date(s.timestamp).toLocaleString("pt-BR");
+
+        return [
+          dateStr,
+          s.machineName || s.role || "-",
+          s.operatorName || s.operatorId || "-",
+          reasonText,
+          s.status === "ATIVO" ? "ATIVO" : "RESOLVIDO",
+          dur,
+        ];
+      });
+
+      autoTable(doc, {
+        head: [
+          [
+            "Data/Hora",
+            "Maquina/Setor",
+            "Operador",
+            "Motivo / Descricao",
+            "Status",
+            "Duracao",
+          ],
+        ],
+        body: tableData,
+        startY: 28,
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [220, 38, 38] },
+      });
     } else {
       const tableData = stockMovementsFormatted.map((m) => [
         m.date,
@@ -1326,6 +1520,23 @@ export function RelatoriosScreen({
       csvContent += "Produto,Quantidade Total,Horas Trabalhadas,Media por Hora,Media por Dia\n";
       mediasAnalytics.productSummary.forEach((p) => {
         csvContent += `"${p.code} - ${p.name}",${p.qty},${p.hours.toFixed(2)},${p.avgPerHour.toFixed(2)},${p.avgPerDay.toFixed(2)}\n`;
+      });
+    } else if (reportType === "PARADAS") {
+      csvContent += "=== RESUMO DE PARADAS DE MAQUINAS ===\n";
+      csvContent += `Total Paradas,${paradasAnalytics.totalCount}\n`;
+      csvContent += `Paradas Ativas,${paradasAnalytics.activeCount}\n`;
+      csvContent += `Paradas Resolvidas,${paradasAnalytics.resolvedCount}\n`;
+      csvContent += `Tempo Total Parado (min),${paradasAnalytics.totalDurationMinutes}\n`;
+      csvContent += `Tempo Medio por Parada (min),${paradasAnalytics.avgDurationMinutes}\n\n`;
+      csvContent += "=== REGISTRO DE PARADAS ===\n";
+      csvContent += "Data/Hora,Maquina/Setor,Operador,Motivo,Descricao,Status,Duracao (min)\n";
+      paradasAnalytics.filteredStops.forEach((s) => {
+        const dateStr = new Date(s.timestamp).toLocaleString("pt-BR");
+        const dur =
+          s.status === "ATIVO"
+            ? Math.max(1, Math.round((Date.now() - s.timestamp) / 60000))
+            : s.durationMinutes || 0;
+        csvContent += `"${dateStr}","${s.machineName || s.role || ""}","${s.operatorName || s.operatorId || ""}","${s.reason}","${s.otherReasonDescription || ""}","${s.status}",${dur}\n`;
       });
     } else {
       csvContent +=
@@ -1400,6 +1611,12 @@ export function RelatoriosScreen({
               onClick={() => setReportType("PRODUCAO_DIARIA")}
             >
               🗓️ Produção Diária
+            </button>
+            <button
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition cursor-pointer ${reportType === "PARADAS" ? "bg-red-600 text-white shadow-xs" : "bg-transparent text-gray-600 hover:bg-gray-100"}`}
+              onClick={() => setReportType("PARADAS")}
+            >
+              🛑 Apontamento de Paradas
             </button>
           </div>
         </div>
@@ -2783,6 +3000,354 @@ export function RelatoriosScreen({
               </div>
             </div>
 
+          </div>
+        )}
+
+        {reportType === "PARADAS" && (
+          <div className="flex-1 flex flex-col gap-6 animate-in fade-in duration-200">
+            {/* Header info alert */}
+            <div className="bg-red-50 border-l-4 border-red-600 p-4 rounded-lg text-xs text-red-900 flex justify-between items-center shadow-xs">
+              <div className="space-y-1">
+                <h4 className="font-bold flex items-center gap-1 text-sm text-red-800">
+                  <AlertTriangle size={16} className="text-red-600" />
+                  Métricas de Apontamento de Paradas de Máquinas (Downtime Analytics)
+                </h4>
+                <p className="text-red-700">
+                  Acompanhamento completo de paralisações operacionais, tempo médio de reparo (MTTR), principais causas e impacto por máquina.
+                </p>
+              </div>
+            </div>
+
+            {/* KPI Cards Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white p-4 rounded-xl border border-red-200 shadow-xs flex flex-col justify-between">
+                <div className="flex items-center justify-between text-gray-500 mb-2">
+                  <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">Tempo Total Parado</span>
+                  <div className="p-2 bg-red-100 text-red-600 rounded-lg">
+                    <Clock size={18} />
+                  </div>
+                </div>
+                <div>
+                  <span className="text-2xl font-black text-red-700 font-mono">
+                    {formatMinutesToHours(paradasAnalytics.totalDurationMinutes)}
+                  </span>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Soma de todas as interrupções
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-xs flex flex-col justify-between">
+                <div className="flex items-center justify-between text-gray-500 mb-2">
+                  <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">Total de Ocorrências</span>
+                  <div className="p-2 bg-amber-100 text-amber-600 rounded-lg">
+                    <AlertCircle size={18} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-black text-amber-700 font-mono">
+                      {paradasAnalytics.totalCount}
+                    </span>
+                    <span className="text-xs font-semibold text-gray-500">paradas</span>
+                  </div>
+                  <div className="flex gap-2 mt-1 text-[11px]">
+                    <span className="text-red-600 font-bold">{paradasAnalytics.activeCount} ativas</span>
+                    <span className="text-gray-300">•</span>
+                    <span className="text-emerald-600 font-bold">{paradasAnalytics.resolvedCount} resolvidas</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-xs flex flex-col justify-between">
+                <div className="flex items-center justify-between text-gray-500 mb-2">
+                  <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">Tempo Médio (MTTR)</span>
+                  <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
+                    <Activity size={18} />
+                  </div>
+                </div>
+                <div>
+                  <span className="text-2xl font-black text-blue-700 font-mono">
+                    {paradasAnalytics.avgDurationMinutes} min
+                  </span>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Duração média por ocorrência
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-xl border border-purple-200 shadow-xs flex flex-col justify-between">
+                <div className="flex items-center justify-between text-gray-500 mb-2">
+                  <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">Maior Impacto</span>
+                  <div className="p-2 bg-purple-100 text-purple-600 rounded-lg">
+                    <Cpu size={18} />
+                  </div>
+                </div>
+                <div>
+                  <span className="text-sm font-bold text-purple-900 block truncate">
+                    {paradasAnalytics.topMachineByDowntime}
+                  </span>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Motivo mais frequente: <strong className="text-purple-700">{paradasAnalytics.topReason}</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Analytics Breakdown Panels */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Reason Distribution */}
+              <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col gap-4">
+                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-2">
+                  <BarChart2 size={16} className="text-red-600" />
+                  Distribuição por Motivo da Parada
+                </h3>
+                <div className="space-y-3">
+                  {Object.entries(paradasAnalytics.reasonBreakdown).map(([reason, dataVal]) => {
+                    const data = dataVal as { count: number; totalMinutes: number };
+                    const percent = paradasAnalytics.totalDurationMinutes > 0
+                      ? Math.round((data.totalMinutes / paradasAnalytics.totalDurationMinutes) * 100)
+                      : 0;
+                    const barColor = reason === "QUEBRA" ? "bg-red-500" : reason === "MANUTENÇÃO" ? "bg-amber-500" : "bg-blue-500";
+                    return (
+                      <div key={reason} className="space-y-1">
+                        <div className="flex justify-between text-xs font-medium text-gray-700">
+                          <span className="font-bold">{reason} ({data.count}x)</span>
+                          <span className="font-mono">{formatMinutesToHours(data.totalMinutes)} ({percent}%)</span>
+                        </div>
+                        <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${barColor} transition-all duration-500`}
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Machine Downtime Ranking */}
+              <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col gap-4">
+                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-2">
+                  <Cpu size={16} className="text-blue-600" />
+                  Tempo de Parada por Máquina / Setor
+                </h3>
+                <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+                  {Object.keys(paradasAnalytics.machineBreakdown).length === 0 ? (
+                    <p className="text-xs text-gray-400 italic py-4 text-center">Nenhuma parada registrada.</p>
+                  ) : (
+                    (Object.entries(paradasAnalytics.machineBreakdown) as [string, { count: number; totalMinutes: number }][])
+                      .sort((a, b) => b[1].totalMinutes - a[1].totalMinutes)
+                      .map(([machine, data]) => {
+                        const percent = paradasAnalytics.totalDurationMinutes > 0
+                          ? Math.round((data.totalMinutes / paradasAnalytics.totalDurationMinutes) * 100)
+                          : 0;
+                        return (
+                          <div key={machine} className="space-y-1">
+                            <div className="flex justify-between text-xs font-medium text-gray-700">
+                              <span className="font-bold text-gray-800">{machine} ({data.count} ocorrências)</span>
+                              <span className="font-mono text-red-600 font-bold">{formatMinutesToHours(data.totalMinutes)}</span>
+                            </div>
+                            <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-slate-700 transition-all duration-500"
+                                style={{ width: `${percent}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Filter Control Bar */}
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-2">
+                  <Filter size={16} className="text-slate-700" />
+                  Filtros de Pesquisa de Paradas
+                </h3>
+                {(paradaMachineFilter !== "ALL" ||
+                  paradaReasonFilter !== "ALL" ||
+                  paradaStatusFilter !== "ALL" ||
+                  paradaStartDate !== "" ||
+                  paradaEndDate !== "" ||
+                  paradaSearchTerm !== "") && (
+                  <button
+                    onClick={() => {
+                      setParadaMachineFilter("ALL");
+                      setParadaReasonFilter("ALL");
+                      setParadaStatusFilter("ALL");
+                      setParadaStartDate("");
+                      setParadaEndDate("");
+                      setParadaSearchTerm("");
+                    }}
+                    className="text-xs text-red-600 hover:text-red-800 flex items-center gap-1 font-bold cursor-pointer"
+                  >
+                    <RotateCcw size={12} /> Limpar Filtros
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
+                {/* Search Text */}
+                <div className="flex flex-col gap-1 lg:col-span-2">
+                  <label className="font-semibold text-gray-600">Busca Rápida:</label>
+                  <div className="relative">
+                    <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Buscar por operador, motivo ou descrição..."
+                      value={paradaSearchTerm}
+                      onChange={(e) => setParadaSearchTerm(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-red-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Machine Filter */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-semibold text-gray-600">Máquina / Setor:</label>
+                  <select
+                    value={paradaMachineFilter}
+                    onChange={(e) => setParadaMachineFilter(e.target.value)}
+                    className="w-full p-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-red-500 focus:outline-none"
+                  >
+                    <option value="ALL">Todas as Máquinas</option>
+                    {uniqueMachineNames.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Reason Filter */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-semibold text-gray-600">Motivo:</label>
+                  <select
+                    value={paradaReasonFilter}
+                    onChange={(e) => setParadaReasonFilter(e.target.value)}
+                    className="w-full p-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-red-500 focus:outline-none"
+                  >
+                    <option value="ALL">Todos os Motivos</option>
+                    <option value="MANUTENÇÃO">Manutenção</option>
+                    <option value="QUEBRA">Quebra</option>
+                    <option value="OUTRO">Outro</option>
+                  </select>
+                </div>
+
+                {/* Status Filter */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-semibold text-gray-600">Status:</label>
+                  <select
+                    value={paradaStatusFilter}
+                    onChange={(e) => setParadaStatusFilter(e.target.value)}
+                    className="w-full p-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-red-500 focus:outline-none"
+                  >
+                    <option value="ALL">Todos os Status</option>
+                    <option value="ATIVO">🔴 Ativo</option>
+                    <option value="RESOLVIDO">✅ Resolvido</option>
+                  </select>
+                </div>
+
+                {/* Start Date */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-semibold text-gray-600">Data Inicial:</label>
+                  <input
+                    type="date"
+                    value={paradaStartDate}
+                    onChange={(e) => setParadaStartDate(e.target.value)}
+                    className="w-full p-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-red-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Detailed Table */}
+            <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden flex flex-col">
+              <div className="p-4 bg-gray-50/80 border-b border-gray-200 flex justify-between items-center">
+                <h3 className="font-bold text-gray-700 text-xs uppercase tracking-wider">
+                  📋 Histórico Detalhado de Apontamentos ({paradasAnalytics.filteredStops.length})
+                </h3>
+              </div>
+              <div className="overflow-x-auto">
+                {paradasAnalytics.filteredStops.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-gray-400 italic flex flex-col items-center gap-2">
+                    <CheckCircle size={28} className="text-gray-300" />
+                    <span>Nenhum apontamento de parada encontrado para os filtros selecionados.</span>
+                  </div>
+                ) : (
+                  <table className="w-full text-xs text-left text-gray-600">
+                    <thead className="text-[10px] uppercase bg-gray-100 text-gray-600 font-bold border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3">Data / Hora</th>
+                        <th className="px-4 py-3">Máquina / Setor</th>
+                        <th className="px-4 py-3">Operador</th>
+                        <th className="px-4 py-3">Motivo & Descrição</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3 text-right">Duração</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {paradasAnalytics.filteredStops.map((stop) => {
+                        const isAtivo = stop.status === "ATIVO";
+                        const durationMins = isAtivo
+                          ? Math.max(1, Math.round((Date.now() - stop.timestamp) / 60000))
+                          : stop.durationMinutes || 0;
+
+                        return (
+                          <tr key={stop.id} className="hover:bg-gray-50/70 transition">
+                            <td className="px-4 py-3 font-mono text-[11px] text-gray-500 whitespace-nowrap">
+                              {new Date(stop.timestamp).toLocaleString("pt-BR")}
+                            </td>
+                            <td className="px-4 py-3 font-bold text-gray-800">
+                              <span className="flex items-center gap-1.5">
+                                <Cpu size={14} className="text-slate-500" />
+                                {stop.machineName || stop.role || "Não informado"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-medium text-gray-700">
+                              <span className="flex items-center gap-1">
+                                <UserIcon size={12} className="text-gray-400" />
+                                {stop.operatorName || stop.operatorId}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="font-bold text-gray-800 block">
+                                {stop.reason}
+                              </span>
+                              {stop.otherReasonDescription && (
+                                <span className="text-[11px] text-gray-500 block italic">
+                                  "{stop.otherReasonDescription}"
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              {isAtivo ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-red-100 text-red-700 animate-pulse border border-red-200">
+                                  🔴 Ativo
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  ✅ Resolvido
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono font-extrabold text-slate-800 whitespace-nowrap">
+                              {formatMinutesToHours(durationMins)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </ScrollContainer>

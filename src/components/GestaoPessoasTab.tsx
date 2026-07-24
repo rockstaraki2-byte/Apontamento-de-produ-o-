@@ -1,12 +1,13 @@
 import React, { useState } from "react";
 import type { useDatabase } from "../useDatabase";
 import type { User } from "../types";
-import { Users, Clock, Calendar, Handshake, BarChart, Shield } from "lucide-react";
+import { Users, Clock, Calendar, Handshake, BarChart, Shield, MapPin } from "lucide-react";
 import { CadastrosPeopleTab } from "./gestaopesoas/CadastrosPeopleTab";
 import { ControlePontoTab } from "./gestaopesoas/ControlePontoTab";
 import { HoraExtraPessoasTab } from "./gestaopesoas/HoraExtraPessoasTab";
 import { GestaoDesempenhoTab } from "./gestaopesoas/GestaoDesempenhoTab";
 import { GestaoUsuariosTab } from "./gestaopesoas/GestaoUsuariosTab";
+import { MapaFabricaTab } from "./gestaopesoas/MapaFabricaTab";
 import { ScrollContainer } from "./Layout";
 
 export function GestaoPessoasTab({
@@ -17,12 +18,23 @@ export function GestaoPessoasTab({
   currentUser: User;
 }) {
   const [subTab, setSubTab] = useState<
-    "CADASTROS" | "PONTO" | "HORA_EXTRA" | "DESEMPENHO" | "USUARIOS_SISTEMA"
-  >("CADASTROS");
+    "MAPA_FABRICA" | "CADASTROS" | "PONTO" | "HORA_EXTRA" | "DESEMPENHO" | "USUARIOS_SISTEMA"
+  >("MAPA_FABRICA");
 
   return (
     <div className="flex flex-col flex-1 min-h-0 h-full w-full animate-in fade-in p-4 md:p-6 gap-4">
       <div className="flex flex-wrap bg-white rounded-lg p-1.5 shadow-sm border border-slate-200 shrink-0 gap-1">
+        <button
+          onClick={() => setSubTab("MAPA_FABRICA")}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-md transition-colors ${
+            subTab === "MAPA_FABRICA"
+              ? "bg-indigo-600 text-white shadow-xs"
+              : "text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          <MapPin size={16} /> Mapa da Fábrica (Alocação & Vagas)
+        </button>
+
         <button
           onClick={() => setSubTab("CADASTROS")}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-md transition-colors ${
@@ -82,6 +94,9 @@ export function GestaoPessoasTab({
       </div>
 
       <ScrollContainer paddingSize="none" className="flex-1 w-full relative min-h-0">
+        {subTab === "MAPA_FABRICA" && (
+          <MapaFabricaTab db={db} currentUser={currentUser} />
+        )}
         {subTab === "CADASTROS" && <CadastrosPeopleTab db={db} />}
         {subTab === "PONTO" && <ControlePontoTab db={db} />}
         {subTab === "HORA_EXTRA" && <HoraExtraPessoasTab db={db} />}

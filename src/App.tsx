@@ -173,7 +173,7 @@ function Welcome({
 
     if (!alreadyRedirected) {
       sessionStorage.setItem(hasRedirectedKey, "true");
-      if (role === "PCP" || role === "ADMIN" || currentUser.id === "romario" || currentUser.name.toLowerCase().includes("romario")) {
+      if (role === "PCP" || role === "ADMIN" || currentUser.id === "romario" || currentUser.name.toLowerCase().includes("romario") || currentUser.id === "dinei" || currentUser.name.toLowerCase().includes("dinei")) {
         navigate("/status");
       } else if (role === "GERENCIA") {
         navigate("/relatorios");
@@ -13778,7 +13778,9 @@ export default function App() {
               currentUser.role === "PCP" ||
               currentUser.role === "GERENCIA" ||
               currentUser.role === "LEITURA" ||
-              currentUser.role === "ENCARREGADO") && (
+              currentUser.role === "ENCARREGADO" ||
+              currentUser.id === "dinei" ||
+              currentUser.name.toLowerCase().includes("dinei")) && (
               <>
                 <Route
                   path="/status"
@@ -14123,7 +14125,10 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" || currentUser.role === "PCP") && (
+          {(currentUser.role === "ADMIN" ||
+            currentUser.role === "PCP" ||
+            currentUser.id === "dinei" ||
+            currentUser.name.toLowerCase().includes("dinei")) && (
             <NavLink to="/itens" icon={<List size={24} />} label="Itens" />
           )}
 
@@ -14131,7 +14136,9 @@ export default function App() {
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "LEITURA" ||
-            currentUser.role === "ENCARREGADO") && (
+            currentUser.role === "ENCARREGADO" ||
+            currentUser.id === "dinei" ||
+            currentUser.name.toLowerCase().includes("dinei")) && (
             <NavLink
               to="/status"
               icon={<ClipboardList size={24} />}
