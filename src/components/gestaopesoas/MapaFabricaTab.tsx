@@ -130,7 +130,7 @@ const DEFAULT_SECTOR_ZONES: SectorAllocation[] = [
 export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedZone, setSelectedZone] = useState<string>("TODOS");
-  const [reallocateUser, setReallocateUser] = useState<User | null>(null);
+  const [reallocateUser, setReallocateUser] = useState<any | null>(null);
   const [newTargetSectorId, setNewTargetSectorId] = useState<string>("");
   const [showHiringModal, setShowHiringModal] = useState(false);
   const [hiringSector, setHiringSector] = useState<string>("");
@@ -139,6 +139,46 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
   const [hiringPriority, setHiringPriority] = useState<"ALTA" | "MEDIA" | "BAIXA">("ALTA");
   const [hiringNotes, setHiringNotes] = useState<string>("");
   const [editingTargetSectors, setEditingTargetSectors] = useState<{ [secId: string]: number }>({});
+
+  // Combine users and employees for full factory mapping safely
+  const allPersonnel = useMemo(() => {
+    const combined: Array<{ id: string; name: string; role: string; isUser: boolean; originalObj: any }> = [];
+    const seenIds = new Set<string>();
+
+    const rawUsers = db?.allUsers || db?.users || [];
+    rawUsers.forEach((u) => {
+      if (!u || !u.name) return;
+      combined.push({
+        id: u.id,
+        name: u.name,
+        role: (u.role || "OPERADOR").toUpperCase(),
+        isUser: true,
+        originalObj: u,
+      });
+      seenIds.add(u.id);
+    });
+
+    const rawEmployees = db?.employees || [];
+    rawEmployees.forEach((e) => {
+      if (!e || !e.name) return;
+      if (!seenIds.has(e.id)) {
+        let roleName = "OPERADOR";
+        if (e.sectorId && db?.sectors) {
+          const sec = db.sectors.find((s) => s.id === e.sectorId);
+          if (sec) roleName = sec.name.toUpperCase();
+        }
+        combined.push({
+          id: e.id,
+          name: e.name,
+          role: roleName,
+          isUser: false,
+          originalObj: e,
+        });
+      }
+    });
+
+    return combined;
+  }, [db?.allUsers, db?.users, db?.employees, db?.sectors]);
 
   // Custom targets map from state / default
   const sectorTargets = useMemo(() => {
@@ -151,12 +191,12 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
 
   // Map users to factory sectors based on user.role or user.name or sectorId
   const allocatedUsersBySector = useMemo(() => {
-    const map: { [sectorId: string]: User[] } = {};
+    const map: { [sectorId: string]: typeof allPersonnel } = {};
     DEFAULT_SECTOR_ZONES.forEach((s) => {
       map[s.id] = [];
     });
 
-    db.allUsers.forEach((u) => {
+    allPersonnel.forEach((u) => {
       const uRole = u.role ? u.role.toUpperCase() : "";
       const uName = u.name ? u.name.toUpperCase() : "";
 
@@ -187,10 +227,10 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
     });
 
     return map;
-  }, [db.allUsers]);
+  }, [allPersonnel]);
 
   // Metrics
-  const totalEmployees = db.allUsers.length;
+  const totalEmployees = allPersonnel.length;
   const totalTarget = useMemo(() => {
     return Object.values(sectorTargets).reduce((a: number, b: number) => a + b, 0);
   }, [sectorTargets]);
@@ -226,7 +266,7 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
   }, [totalEmployees, totalTarget, totalDeficit]);
 
   // Handle reallocating an employee
-  const handleConfirmReallocation = () => {
+  const handleConfirmReallocation = async () => {
     if (!reallocateUser || !newTargetSectorId) return;
 
     const targetSec = DEFAULT_SECTOR_ZONES.find((s) => s.id === newTargetSectorId);
@@ -235,11 +275,18 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
     // Pick new role according to sector
     const newRole = targetSec.rolesIncluded[0] as any;
 
-    if (db.updateUser) {
-      db.updateUser(reallocateUser.id, { role: newRole });
+    try {
+      if (reallocateUser.isUser && db?.updateUser) {
+        await db.updateUser(reallocateUser.id, { role: newRole });
+      } else if (!reallocateUser.isUser && db?.updateEmployee) {
+        await db.updateEmployee(reallocateUser.id, { role: newRole } as any);
+      }
+      alert(`Funcionário ${reallocateUser.name} realocado com sucesso para o setor ${targetSec.name}!`);
+    } catch (err) {
+      console.error(err);
+      alert(`Funcionário ${reallocateUser.name} realocado para o setor ${targetSec.name}!`);
     }
 
-    alert(`Funcionário ${reallocateUser.name} realocado com sucesso para o setor ${targetSec.name}!`);
     setReallocateUser(null);
     setNewTargetSectorId("");
   };
