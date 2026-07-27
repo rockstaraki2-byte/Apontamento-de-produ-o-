@@ -1,10 +1,13 @@
 import React, { useState, useMemo } from "react";
 import type { useDatabase } from "../../useDatabase";
 import type { User } from "../../types";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   MapPin,
   Users,
   UserPlus,
+  UserX,
   ArrowRightLeft,
   AlertTriangle,
   CheckCircle2,
@@ -17,6 +20,9 @@ import {
   X,
   Edit2,
   Check,
+  Plus,
+  Trash2,
+  Download,
 } from "lucide-react";
 
 interface MapaFabricaTabProps {
@@ -34,7 +40,7 @@ interface SectorAllocation {
   rolesIncluded: string[];
 }
 
-const DEFAULT_SECTOR_ZONES: SectorAllocation[] = [
+const INITIAL_SECTOR_ZONES: SectorAllocation[] = [
   {
     id: "laser",
     name: "Corte a Laser",
@@ -140,70 +146,273 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
   const [hiringNotes, setHiringNotes] = useState<string>("");
   const [editingTargetSectors, setEditingTargetSectors] = useState<{ [secId: string]: number }>({});
 
-  // Combine users and employees for full factory mapping safely
+  const [sectors, setSectors] = useState<SectorAllocation[]>(() => {
+    try {
+      const saved = localStorage.getItem("producao_factory_sectors_v1");
+      return saved ? JSON.parse(saved) : INITIAL_SECTOR_ZONES;
+    } catch {
+      return INITIAL_SECTOR_ZONES;
+    }
+  });
+
+  const saveSectors = (newSectors: SectorAllocation[]) => {
+    setSectors(newSectors);
+    try {
+      localStorage.setItem("producao_factory_sectors_v1", JSON.stringify(newSectors));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const [isSectorModalOpen, setIsSectorModalOpen] = useState(false);
+  const [editingSector, setEditingSector] = useState<SectorAllocation | null>(null);
+
+  const handleOpenSectorModal = (sec?: SectorAllocation) => {
+    if (sec) {
+      setEditingSector(sec);
+    } else {
+      setEditingSector({
+        id: `sec_${Date.now()}`,
+        name: "",
+        zone: "",
+        recommendedCount: 1,
+        icon: "🏭",
+        description: "",
+        rolesIncluded: [],
+      });
+    }
+    setIsSectorModalOpen(true);
+  };
+
+  const handleSaveSector = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSector) return;
+    
+    const isExisting = sectors.some((s) => s.id === editingSector.id);
+    let newSectors = [...sectors];
+    if (isExisting) {
+      newSectors = newSectors.map((s) => (s.id === editingSector.id ? editingSector : s));
+    } else {
+      newSectors.push(editingSector);
+    }
+    saveSectors(newSectors);
+    setIsSectorModalOpen(false);
+    setEditingSector(null);
+  };
+  
+  const handleDeleteSector = (id: string) => {
+    if (!confirm("Tem certeza que deseja excluir este setor? Pessoas alocadas neste setor podem ficar 'Sem Setor'.")) return;
+    const newSectors = sectors.filter((s) => s.id !== id);
+    saveSectors(newSectors);
+    setIsSectorModalOpen(false);
+    setEditingSector(null);
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF("landscape");
+    doc.setFontSize(16);
+    doc.text("Relatório - Mapa da Fábrica", 14, 20);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Filtro Zona: ${selectedZone} | Data: ${new Date().toLocaleDateString("pt-BR")} | Total de Colaboradores: ${totalEmployees}`, 14, 28);
+    
+    doc.setTextColor(0);
+    
+    const tableData: any[][] = [];
+    
+    sectors.filter(sec => selectedZone === "TODOS" || sec.zone === selectedZone).forEach(sec => {
+      const emps = allocatedUsersBySector[sec.id] || [];
+      const secFiltered = emps.filter((emp) =>
+          searchTerm.trim() ? emp.name.toLowerCase().includes(searchTerm.toLowerCase()) : true
+      );
+      
+      const count = secFiltered.length;
+      tableData.push([
+        sec.name,
+        sec.zone,
+        `${count} / ${sec.recommendedCount}`,
+        secFiltered.map(e => e.name).join(", ")
+      ]);
+    });
+    
+    if (unallocatedPersonnel.length > 0) {
+        tableData.push([
+            "SEM SETOR",
+            "-",
+            `${unallocatedPersonnel.length}`,
+            unallocatedPersonnel.map(e => e.name).join(", ")
+        ]);
+    }
+    
+    autoTable(doc, {
+      startY: 35,
+      head: [["Setor", "Zona", "Lotação", "Colaboradores"]],
+      body: tableData,
+      theme: "grid",
+      headStyles: { fillColor: [79, 70, 229] },
+      styles: { fontSize: 8 }
+    });
+    
+    doc.save(`mapa_fabrica_${new Date().toISOString().split("T")[0]}.pdf`);
+  };
+
+  // Saved manual sector allocations map state (persisted in localStorage)
+  const [savedAllocations, setSavedAllocations] = useState<{ [personKey: string]: string }>(() => {
+    try {
+      const raw = localStorage.getItem("producao_factory_allocations_v1");
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const saveAllocations = (newMap: { [personKey: string]: string }) => {
+    setSavedAllocations(newMap);
+    try {
+      localStorage.setItem("producao_factory_allocations_v1", JSON.stringify(newMap));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const getPersonKey = (p: { userId?: string; employeeId?: string; name: string }) => {
+    if (p.userId) return `u_${p.userId}`;
+    if (p.employeeId) return `e_${p.employeeId}`;
+    return `n_${p.name.toLowerCase().trim()}`;
+  };
+
+  // Combine users and employees for full factory mapping safely with deduplication
   const allPersonnel = useMemo(() => {
-    const combined: Array<{ id: string; name: string; role: string; isUser: boolean; originalObj: any }> = [];
-    const seenIds = new Set<string>();
+    type PersonnelItem = {
+      id: string;
+      name: string;
+      role: string;
+      isUser: boolean;
+      userId?: string;
+      employeeId?: string;
+      factorySectorId?: string;
+      originalObj: any;
+    };
+
+    const normalize = (str: string) =>
+      str
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]/g, " ")
+        .trim();
+
+    const nameMap = new Map<string, PersonnelItem>();
 
     const rawUsers = db?.allUsers || db?.users || [];
     rawUsers.forEach((u) => {
       if (!u || !u.name) return;
-      combined.push({
-        id: u.id,
+      const normName = normalize(u.name);
+      if (!normName) return;
+
+      const item: PersonnelItem = {
+        id: `usr_${u.id}`,
         name: u.name,
         role: (u.role || "OPERADOR").toUpperCase(),
         isUser: true,
+        userId: u.id,
+        factorySectorId: (u as any).factorySectorId,
         originalObj: u,
-      });
-      seenIds.add(u.id);
+      };
+      nameMap.set(normName, item);
     });
 
     const rawEmployees = db?.employees || [];
     rawEmployees.forEach((e) => {
       if (!e || !e.name) return;
-      if (!seenIds.has(e.id)) {
+      const normName = normalize(e.name);
+      if (!normName) return;
+
+      let existing = nameMap.get(normName);
+      if (!existing) {
+        for (const [key, val] of nameMap.entries()) {
+          if (
+            key === normName ||
+            (key.length >= 3 && normName.length >= 3 && (key.startsWith(normName) || normName.startsWith(key)))
+          ) {
+            existing = val;
+            break;
+          }
+        }
+      }
+
+      if (existing) {
+        existing.employeeId = e.id;
+        if (e.sectorId && !existing.factorySectorId) {
+          const sec = db?.sectors?.find((s) => s.id === e.sectorId);
+          if (sec) existing.role = sec.name.toUpperCase();
+        }
+        if ((e as any).factorySectorId) {
+          existing.factorySectorId = (e as any).factorySectorId;
+        }
+      } else {
         let roleName = "OPERADOR";
         if (e.sectorId && db?.sectors) {
           const sec = db.sectors.find((s) => s.id === e.sectorId);
           if (sec) roleName = sec.name.toUpperCase();
         }
-        combined.push({
-          id: e.id,
+        const item: PersonnelItem = {
+          id: `emp_${e.id}`,
           name: e.name,
           role: roleName,
           isUser: false,
+          employeeId: e.id,
+          factorySectorId: (e as any).factorySectorId,
           originalObj: e,
-        });
+        };
+        nameMap.set(normName, item);
       }
     });
 
-    return combined;
+    return Array.from(nameMap.values());
   }, [db?.allUsers, db?.users, db?.employees, db?.sectors]);
 
   // Custom targets map from state / default
   const sectorTargets = useMemo(() => {
     const map: { [id: string]: number } = {};
-    DEFAULT_SECTOR_ZONES.forEach((s) => {
+    sectors.forEach((s) => {
       map[s.id] = editingTargetSectors[s.id] ?? s.recommendedCount;
     });
     return map;
   }, [editingTargetSectors]);
 
-  // Map users to factory sectors based on user.role or user.name or sectorId
+  // Map users to factory sectors based on user.role or explicit saved allocation
   const allocatedUsersBySector = useMemo(() => {
     const map: { [sectorId: string]: typeof allPersonnel } = {};
-    DEFAULT_SECTOR_ZONES.forEach((s) => {
+    sectors.forEach((s) => {
       map[s.id] = [];
     });
+    map["SEM_SETOR"] = [];
 
     allPersonnel.forEach((u) => {
+      const personKey = getPersonKey(u);
+      const explicitSector = savedAllocations[personKey] || u.factorySectorId || u.originalObj?.factorySectorId;
+
+      if (
+        explicitSector === "SEM_SETOR" ||
+        explicitSector === "UNALLOCATED" ||
+        explicitSector === "NONE" ||
+        explicitSector === "DESALOCADO"
+      ) {
+        map["SEM_SETOR"].push(u);
+        return;
+      }
+
+      if (explicitSector && map[explicitSector]) {
+        map[explicitSector].push(u);
+        return;
+      }
+
       const uRole = u.role ? u.role.toUpperCase() : "";
-      const uName = u.name ? u.name.toUpperCase() : "";
 
       let assigned = false;
-
-      // Match by custom override in localStorage/user property if any or role match
-      for (const sec of DEFAULT_SECTOR_ZONES) {
+      for (const sec of sectors) {
         if (sec.rolesIncluded.some((r) => uRole.includes(r) || uRole === r)) {
           map[sec.id].push(u);
           assigned = true;
@@ -211,33 +420,31 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
         }
       }
 
-      // Name fallback heuristics if not matched
       if (!assigned) {
-        if (uName.includes("LASER")) map["laser"].push(u);
-        else if (uName.includes("PRENSA") || uName.includes("EDUARDO") || uName.includes("RAFAEL")) map["prensas"].push(u);
-        else if (uName.includes("TORNO") || uName.includes("WILLIAN") || uName.includes("HENRIQUE")) map["torno"].push(u);
-        else if (uName.includes("SOLDA")) map["solda"].push(u);
-        else if (uName.includes("BANHO")) map["banho"].push(u);
-        else if (uName.includes("PINTURA")) map["pintura"].push(u);
-        else if (uName.includes("INJETORA")) map["injetora"].push(u);
-        else if (uName.includes("EMBALAGEM")) map["embalagem"].push(u);
-        else if (uName.includes("PCP") || uName.includes("MARCOS") || uName.includes("RAUL") || uName.includes("ROMARIO")) map["pcp_logistica"].push(u);
-        else map["producao_geral"].push(u);
+        // If not explicitly matched to a sector, place in SEM_SETOR (Unallocated)
+        map["SEM_SETOR"].push(u);
       }
     });
 
     return map;
-  }, [allPersonnel]);
+  }, [allPersonnel, savedAllocations]);
+
+  // Unallocated personnel list
+  const unallocatedPersonnel = useMemo(() => {
+    return allocatedUsersBySector["SEM_SETOR"] || [];
+  }, [allocatedUsersBySector]);
 
   // Metrics
   const totalEmployees = allPersonnel.length;
+  const totalAllocated = totalEmployees - unallocatedPersonnel.length;
+
   const totalTarget = useMemo(() => {
     return Object.values(sectorTargets).reduce((a: number, b: number) => a + b, 0);
   }, [sectorTargets]);
 
   const totalDeficit = useMemo(() => {
     let count = 0;
-    DEFAULT_SECTOR_ZONES.forEach((s) => {
+    sectors.forEach((s) => {
       const actual = (allocatedUsersBySector[s.id] || []).length;
       const target = sectorTargets[s.id];
       if (actual < target) {
@@ -249,7 +456,7 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
 
   const totalSurplus = useMemo(() => {
     let count = 0;
-    DEFAULT_SECTOR_ZONES.forEach((s) => {
+    sectors.forEach((s) => {
       const actual = (allocatedUsersBySector[s.id] || []).length;
       const target = sectorTargets[s.id];
       if (actual > target) {
@@ -261,30 +468,64 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
 
   const allocationEfficiencyPct = useMemo(() => {
     if (totalTarget === 0) return 100;
-    const filled = Math.min(totalEmployees, totalTarget - totalDeficit);
+    const filled = Math.min(totalAllocated, totalTarget - totalDeficit);
     return Math.min(100, Math.round((filled / totalTarget) * 100));
-  }, [totalEmployees, totalTarget, totalDeficit]);
+  }, [totalAllocated, totalTarget, totalDeficit]);
+
+  // Handle removing a person from any sector
+  const handleRemoveFromSector = async (person: any) => {
+    if (!person) return;
+    const personKey = getPersonKey(person);
+    const newMap = { ...savedAllocations, [personKey]: "SEM_SETOR" };
+    saveAllocations(newMap);
+
+    try {
+      if (person.userId && db?.updateUser) {
+        await db.updateUser(person.userId, { factorySectorId: "SEM_SETOR" } as any);
+      }
+      if (person.employeeId && db?.updateEmployee) {
+        await db.updateEmployee(person.employeeId, { factorySectorId: "SEM_SETOR" } as any);
+      }
+    } catch (err) {
+      console.error("Erro ao desalocar colaborador:", err);
+    }
+
+    alert(`Colaborador(a) ${person.name} foi removido(a) do setor e marcado(a) como Sem Setor!`);
+    if (reallocateUser && (reallocateUser.id === person.id || reallocateUser.userId === person.userId)) {
+      setReallocateUser(null);
+      setNewTargetSectorId("");
+    }
+  };
 
   // Handle reallocating an employee
   const handleConfirmReallocation = async () => {
     if (!reallocateUser || !newTargetSectorId) return;
 
-    const targetSec = DEFAULT_SECTOR_ZONES.find((s) => s.id === newTargetSectorId);
+    if (newTargetSectorId === "SEM_SETOR") {
+      await handleRemoveFromSector(reallocateUser);
+      return;
+    }
+
+    const targetSec = sectors.find((s) => s.id === newTargetSectorId);
     if (!targetSec) return;
 
-    // Pick new role according to sector
+    const personKey = getPersonKey(reallocateUser);
+    const newMap = { ...savedAllocations, [personKey]: newTargetSectorId };
+    saveAllocations(newMap);
+
     const newRole = targetSec.rolesIncluded[0] as any;
 
     try {
-      if (reallocateUser.isUser && db?.updateUser) {
-        await db.updateUser(reallocateUser.id, { role: newRole });
-      } else if (!reallocateUser.isUser && db?.updateEmployee) {
-        await db.updateEmployee(reallocateUser.id, { role: newRole } as any);
+      if (reallocateUser.userId && db?.updateUser) {
+        await db.updateUser(reallocateUser.userId, { role: newRole, factorySectorId: newTargetSectorId } as any);
       }
-      alert(`Funcionário ${reallocateUser.name} realocado com sucesso para o setor ${targetSec.name}!`);
+      if (reallocateUser.employeeId && db?.updateEmployee) {
+        await db.updateEmployee(reallocateUser.employeeId, { role: newRole, factorySectorId: newTargetSectorId } as any);
+      }
+      alert(`Colaborador(a) ${reallocateUser.name} realocado(a) com sucesso para o setor ${targetSec.name}!`);
     } catch (err) {
       console.error(err);
-      alert(`Funcionário ${reallocateUser.name} realocado para o setor ${targetSec.name}!`);
+      alert(`Colaborador(a) ${reallocateUser.name} realocado(a) para o setor ${targetSec.name}!`);
     }
 
     setReallocateUser(null);
@@ -296,7 +537,7 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
     e.preventDefault();
     if (!hiringSector || !hiringRole) return;
 
-    const secObj = DEFAULT_SECTOR_ZONES.find((s) => s.id === hiringSector);
+    const secObj = sectors.find((s) => s.id === hiringSector);
     const secName = secObj ? secObj.name : hiringSector;
 
     alert(`Solicitação de contratação enviada com sucesso!\n\nSetor: ${secName}\nCargo: ${hiringRole}\nQuantidade: ${hiringQty}\nPrioridade: ${hiringPriority}`);
@@ -309,7 +550,7 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
   // Zones for filter dropdown
   const uniqueZones = useMemo(() => {
     const set = new Set<string>();
-    DEFAULT_SECTOR_ZONES.forEach((s) => set.add(s.zone));
+    sectors.forEach((s) => set.add(s.zone));
     return Array.from(set);
   }, []);
 
@@ -399,7 +640,19 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+        <div className="flex items-center gap-3 w-full md:w-auto justify-end flex-wrap">
+          <button
+            onClick={() => handleOpenSectorModal()}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-xl transition shadow-xs cursor-pointer border border-slate-300"
+          >
+            <Plus size={16} /> Novo Setor
+          </button>
+          <button
+            onClick={handleExportPDF}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition shadow-xs cursor-pointer"
+          >
+            <Download size={16} /> Exportar PDF
+          </button>
           <button
             onClick={() => setShowHiringModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl transition shadow-xs cursor-pointer"
@@ -417,12 +670,69 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
             Planta Industrial & Alocação por Setor
           </h3>
           <span className="text-xs text-slate-500 font-medium">
-            Clique em "⚡ Realocar" em qualquer colaborador para remanejamento instantâneo.
+            Clique em "⚡ Realocar" ou "Desalocar" em qualquer colaborador para atualizar seu setor.
           </span>
         </div>
 
+        {/* Colaboradores Sem Setor Alocado Card/Section */}
+        {unallocatedPersonnel.length > 0 && (
+          <div className="bg-amber-50/70 border border-amber-200/90 rounded-2xl p-4 shadow-xs flex flex-col gap-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <UserX size={20} className="text-amber-600 shrink-0" />
+                <div>
+                  <h4 className="font-extrabold text-amber-950 text-sm leading-tight">
+                    Colaboradores Sem Setor Alocado ({unallocatedPersonnel.length})
+                  </h4>
+                  <p className="text-xs text-amber-700 font-medium">
+                    Estas pessoas foram removidas de um setor ou ainda não possuem setor definido. Elas NÃO contam na lotação dos setores da fábrica.
+                  </p>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
+                {unallocatedPersonnel.length} Não Alocado(s)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              {unallocatedPersonnel
+                .filter((emp) =>
+                  searchTerm.trim() ? emp.name.toLowerCase().includes(searchTerm.toLowerCase()) : true
+                )
+                .map((emp) => (
+                  <div
+                    key={emp.id}
+                    className="bg-white p-2.5 rounded-xl border border-amber-200/80 flex items-center justify-between gap-2 shadow-2xs hover:border-amber-300 transition"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 font-bold text-xs flex items-center justify-center shrink-0 border border-amber-200">
+                        {emp.name.substring(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-extrabold text-xs text-slate-800 truncate">{emp.name}</div>
+                        <div className="text-[10px] text-amber-700 font-semibold truncate">Sem Setor</div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setReallocateUser(emp);
+                        setNewTargetSectorId("");
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-600 hover:text-white rounded-lg transition shrink-0 cursor-pointer flex items-center gap-1"
+                      title="Atribuir setor para este colaborador"
+                    >
+                      <ArrowRightLeft size={12} />
+                      <span>Alocar</span>
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {DEFAULT_SECTOR_ZONES.filter((sec) => {
+          {sectors.filter((sec) => {
             if (selectedZone !== "TODOS" && sec.zone !== selectedZone) return false;
             if (searchTerm.trim()) {
               const term = searchTerm.toLowerCase();
@@ -475,6 +785,13 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
                       <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${badgeColor}`}>
                         {actual}/{target}
                       </span>
+                      <button
+                        onClick={() => handleOpenSectorModal(sec)}
+                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                        title="Editar Setor"
+                      >
+                        <Edit2 size={14} />
+                      </button>
                     </div>
                   </div>
 
@@ -521,33 +838,43 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
                     filteredEmployees.map((emp) => (
                       <div
                         key={emp.id}
-                        className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 hover:border-indigo-100 hover:bg-indigo-50/30 transition group"
+                        className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 hover:border-indigo-100 hover:bg-indigo-50/30 transition group gap-2"
                       >
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
                           <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-xs text-slate-700 shrink-0">
                             {emp.name.substring(0, 2).toUpperCase()}
                           </div>
-                          <div>
-                            <div className="font-bold text-xs text-slate-800 leading-tight group-hover:text-indigo-900 transition">
+                          <div className="min-w-0">
+                            <div className="font-bold text-xs text-slate-800 leading-tight group-hover:text-indigo-900 transition truncate">
                               {emp.name}
                             </div>
-                            <div className="text-[10px] text-slate-500 font-medium">
+                            <div className="text-[10px] text-slate-500 font-medium truncate">
                               {emp.role || "OPERADOR"}
                             </div>
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => {
-                            setReallocateUser(emp);
-                            setNewTargetSectorId("");
-                          }}
-                          className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-600 hover:text-white rounded-lg transition shadow-2xs cursor-pointer shrink-0"
-                          title="Realocar operador para outro setor"
-                        >
-                          <ArrowRightLeft size={12} />
-                          <span>Realocar</span>
-                        </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => {
+                              setReallocateUser(emp);
+                              setNewTargetSectorId("");
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-600 hover:text-white rounded-lg transition shadow-2xs cursor-pointer"
+                            title="Realocar operador para outro setor"
+                          >
+                            <ArrowRightLeft size={12} />
+                            <span>Realocar</span>
+                          </button>
+                          <button
+                            onClick={() => handleRemoveFromSector(emp)}
+                            className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-600 hover:text-white rounded-lg transition shadow-2xs cursor-pointer"
+                            title="Remover do setor e marcar como Sem Setor"
+                          >
+                            <UserX size={12} />
+                            <span>Desalocar</span>
+                          </button>
+                        </div>
                       </div>
                     ))
                   )}
@@ -558,14 +885,14 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
         </div>
       </div>
 
-      {/* Modal: Realocar Funcionário */}
+      {/* Modal: Realocar / Remover Funcionário */}
       {reallocateUser && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 flex flex-col gap-4 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                 <ArrowRightLeft size={20} className="text-indigo-600" />
-                Realocar Colaborador
+                Realocar / Desalocar Colaborador
               </h3>
               <button
                 onClick={() => setReallocateUser(null)}
@@ -581,19 +908,20 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
               </div>
               <div>
                 <div className="font-extrabold text-slate-900 text-sm">{reallocateUser.name}</div>
-                <div className="text-xs text-slate-500 font-medium">Cargo Atual: {reallocateUser.role || "Operador"}</div>
+                <div className="text-xs text-slate-500 font-medium">Cargo/Setor Atual: {reallocateUser.role || "Operador"}</div>
               </div>
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-bold text-slate-700">Selecione o Novo Setor de Destino:</label>
+              <label className="text-xs font-bold text-slate-700">Selecione o Novo Setor ou Remova do Setor:</label>
               <select
                 value={newTargetSectorId}
                 onChange={(e) => setNewTargetSectorId(e.target.value)}
                 className="w-full p-3 border border-slate-200 rounded-xl bg-white text-sm font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
               >
-                <option value="">-- Escolha um Setor --</option>
-                {DEFAULT_SECTOR_ZONES.map((s) => (
+                <option value="">-- Escolha uma Opção --</option>
+                <option value="SEM_SETOR">🚫 REMOVER DO SETOR (Manter Sem Setor Alocado)</option>
+                {sectors.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.icon} {s.name} ({s.zone})
                   </option>
@@ -601,20 +929,33 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
               </select>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100">
               <button
-                onClick={() => setReallocateUser(null)}
-                className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                type="button"
+                onClick={() => handleRemoveFromSector(reallocateUser)}
+                className="px-3 py-2 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-600 hover:text-white rounded-xl transition cursor-pointer flex items-center gap-1 shrink-0"
+                title="Remover operador do setor e deixar como Sem Setor"
               >
-                Cancelar
+                <UserX size={14} /> Desalocar do Setor
               </button>
-              <button
-                onClick={handleConfirmReallocation}
-                disabled={!newTargetSectorId}
-                className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl transition shadow-xs cursor-pointer flex items-center gap-2"
-              >
-                <Check size={16} /> Confirmar Realocação
-              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReallocateUser(null)}
+                  className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmReallocation}
+                  disabled={!newTargetSectorId}
+                  className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl transition shadow-xs cursor-pointer flex items-center gap-2"
+                >
+                  <Check size={16} /> Confirmar
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -648,7 +989,7 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
                   className="p-2.5 border border-slate-200 rounded-xl text-sm font-medium bg-white"
                 >
                   <option value="">-- Selecione o Setor --</option>
-                  {DEFAULT_SECTOR_ZONES.map((s) => (
+                  {sectors.map((s) => (
                     <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
                   ))}
                 </select>
@@ -719,6 +1060,125 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
               </button>
             </div>
           </form>
+        </div>
+      )}
+      {/* Modal: Editar/Adicionar Setor */}
+      {isSectorModalOpen && editingSector && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 flex flex-col gap-4 animate-in zoom-in-95 duration-200 my-8">
+            <div className="flex items-start justify-between">
+              <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                <Building2 size={20} className="text-indigo-600" />
+                {sectors.some(s => s.id === editingSector.id) ? "Editar Setor" : "Novo Setor"}
+              </h3>
+              <button
+                onClick={() => setIsSectorModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-lg transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSector} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-700">Nome do Setor:</label>
+                <input
+                  type="text"
+                  required
+                  value={editingSector.name}
+                  onChange={(e) => setEditingSector({ ...editingSector, name: e.target.value })}
+                  className="p-2.5 border border-slate-200 rounded-xl text-sm font-medium"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-700">Zona/Localização:</label>
+                <input
+                  type="text"
+                  required
+                  value={editingSector.zone}
+                  onChange={(e) => setEditingSector({ ...editingSector, zone: e.target.value })}
+                  className="p-2.5 border border-slate-200 rounded-xl text-sm font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-700">Meta de Lotação:</label>
+                  <input
+                    type="number"
+                    min={1}
+                    required
+                    value={editingSector.recommendedCount}
+                    onChange={(e) => setEditingSector({ ...editingSector, recommendedCount: Number(e.target.value) })}
+                    className="p-2.5 border border-slate-200 rounded-xl text-sm font-medium"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-700">Ícone (Emoji):</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingSector.icon}
+                    onChange={(e) => setEditingSector({ ...editingSector, icon: e.target.value })}
+                    className="p-2.5 border border-slate-200 rounded-xl text-sm font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-700">Cargos Inclusos (Separados por vírgula):</label>
+                <input
+                  type="text"
+                  value={editingSector.rolesIncluded.join(", ")}
+                  onChange={(e) =>
+                    setEditingSector({
+                      ...editingSector,
+                      rolesIncluded: e.target.value.split(",").map((r) => r.trim()).filter(Boolean),
+                    })
+                  }
+                  className="p-2.5 border border-slate-200 rounded-xl text-sm font-medium"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-700">Descrição:</label>
+                <textarea
+                  rows={2}
+                  value={editingSector.description}
+                  onChange={(e) => setEditingSector({ ...editingSector, description: e.target.value })}
+                  className="p-2.5 border border-slate-200 rounded-xl text-sm font-medium resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100">
+                {sectors.some(s => s.id === editingSector.id) && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSector(editingSector.id)}
+                    className="px-3 py-2 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-600 hover:text-white rounded-xl transition cursor-pointer flex items-center gap-1 shrink-0"
+                  >
+                    <Trash2 size={14} /> Excluir
+                  </button>
+                )}
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsSectorModalOpen(false)}
+                    className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition shadow-xs cursor-pointer flex items-center gap-2"
+                  >
+                    <Check size={16} /> Salvar Setor
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

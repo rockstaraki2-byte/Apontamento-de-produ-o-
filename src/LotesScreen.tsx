@@ -22,7 +22,8 @@ import {
   FileDown,
   FileSpreadsheet,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Tag
 } from "lucide-react";
 import { printHtml, printElementById } from "./printUtils";
 import {
@@ -43,6 +44,7 @@ import {
   assertPrintableElement
 } from "./BatchPrintSheet";
 import { AcompanhamentoPrintSheet } from "./AcompanhamentoPrintSheet";
+import { BatchEtiquetasPrintSheet } from "./BatchEtiquetasPrintSheet";
 import html2pdf from "html2pdf.js";
 
 export function LotesScreen({
@@ -74,6 +76,17 @@ export function LotesScreen({
   const [acompSelectedOrderIds, setAcompSelectedOrderIds] = useState<number[]>([]);
   const [destrincharComposicoes, setDestrincharComposicoes] = useState(false);
   const [ocultarPaiComposicao, setOcultarPaiComposicao] = useState(false);
+
+  // Batch Etiquetas State
+  const [isPreviewEtiquetasOpen, setIsPreviewEtiquetasOpen] = useState(false);
+  const [previewEtiquetasBatch, setPreviewEtiquetasBatch] = useState<ProductionBatch | null>(null);
+  const [etiquetasSelectedOrderIds, setEtiquetasSelectedOrderIds] = useState<number[]>([]);
+  const [etiquetasLayoutFormat, setEtiquetasLayoutFormat] = useState<"thermal" | "a4">("thermal");
+  const [etiquetasDestrinchar, setEtiquetasDestrinchar] = useState(false);
+  const [etiquetasOcultarPai, setEtiquetasOcultarPai] = useState(false);
+  const [isDirectPrintingEtiquetas, setIsDirectPrintingEtiquetas] = useState(false);
+  const [isGeneratingEtiquetasPdf, setIsGeneratingEtiquetasPdf] = useState(false);
+  const [etiquetasSearchTerm, setEtiquetasSearchTerm] = useState("");
 
   // Pagination for batch list: show 10 batches by default
   const [visibleCount, setVisibleCount] = useState(10);
@@ -469,6 +482,107 @@ export function LotesScreen({
     }
   };
 
+  const handleDirectPrintEtiquetas = async () => {
+    if (!previewEtiquetasBatch) return;
+
+    console.log("[Print Etiquetas] starting direct printing flow using printElementById...");
+    setIsDirectPrintingEtiquetas(true);
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const targetId = "batch-etiquetas-printable-wrapper";
+      const targetEl = document.getElementById(targetId);
+      if (!targetEl) {
+        throw new Error("O container de etiquetas do lote não foi encontrado no DOM.");
+      }
+
+      printElementById(targetId, `Etiquetas_Lote_${previewEtiquetasBatch.name}`, true);
+
+    } catch (err: any) {
+      console.error("[Print Etiquetas] failed:", err);
+      alert(`Erro na impressão direta de etiquetas: ${err.message || err}`);
+    } finally {
+      setIsDirectPrintingEtiquetas(false);
+    }
+  };
+
+  const handleGenerateEtiquetasPdf = async () => {
+    if (!previewEtiquetasBatch) return;
+
+    setIsGeneratingEtiquetasPdf(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      const element = document.getElementById("batch-etiquetas-printable-wrapper");
+      if (!element) {
+        throw new Error("Elemento de etiquetas não foi localizado no DOM.");
+      }
+
+      await waitForFonts();
+
+      const sanitizedName = previewEtiquetasBatch.name.replace(/[^a-zA-Z0-9]/g, "_");
+
+      if (etiquetasLayoutFormat === "thermal") {
+        const labelBoxes = element.querySelectorAll<HTMLElement>("[style*='100mm']");
+        if (labelBoxes.length === 0) {
+          throw new Error("Nenhuma etiqueta térmica foi encontrada para gerar o PDF.");
+        }
+
+        const pdf = new jsPDF({
+          orientation: "landscape",
+          unit: "mm",
+          format: [100, 50],
+        });
+
+        for (let i = 0; i < labelBoxes.length; i++) {
+          const box = labelBoxes[i];
+          const canvas = await html2canvas(box, {
+            scale: 3,
+            useCORS: true,
+            backgroundColor: "#ffffff",
+            logging: false,
+          });
+          const imgData = canvas.toDataURL("image/jpeg", 1.0);
+          if (i > 0) {
+            pdf.addPage([100, 50], "landscape");
+          }
+          pdf.addImage(imgData, "JPEG", 0, 0, 100, 50);
+        }
+
+        pdf.save(`Etiquetas_Termicas_10x5_Lote_${sanitizedName}.pdf`);
+      } else {
+        const a4Pages = element.querySelectorAll<HTMLElement>("[style*='210mm']");
+        if (a4Pages.length === 0) {
+          throw new Error("Nenhuma folha A4 de etiquetas foi encontrada para gerar o PDF.");
+        }
+
+        const pdf = new jsPDF("p", "mm", "a4");
+
+        for (let i = 0; i < a4Pages.length; i++) {
+          const page = a4Pages[i];
+          const canvas = await html2canvas(page, {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: "#ffffff",
+            logging: false,
+          });
+          const imgData = canvas.toDataURL("image/jpeg", 1.0);
+          if (i > 0) {
+            pdf.addPage();
+          }
+          pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
+        }
+
+        pdf.save(`Etiquetas_A4_Lote_${sanitizedName}.pdf`);
+      }
+    } catch (e: any) {
+      console.error("Erro ao gerar PDF de etiquetas:", e);
+      alert(`Erro ao salvar PDF de etiquetas do lote: ${e.message || e}`);
+    } finally {
+      setIsGeneratingEtiquetasPdf(false);
+    }
+  };
+
   const handleGenerateReport = () => {
     let ordersToExport: { batch: ProductionBatch; order: Order; item: any; produced: number; missing: number; inProductionString: string; sectorName: string }[] = [];
 
@@ -811,6 +925,20 @@ export function LotesScreen({
                       >
                         <FileText size={13} className="text-indigo-600" />
                         Acompanhamento de Peça
+                      </button>
+
+                      {/* Botão de Impressão de Etiquetas do Lote */}
+                      <button
+                        onClick={() => {
+                          setPreviewEtiquetasBatch(b);
+                          setEtiquetasSelectedOrderIds(b.orderIds || []);
+                          setEtiquetasSearchTerm("");
+                          setIsPreviewEtiquetasOpen(true);
+                        }}
+                        className={`border text-[10px] font-black px-3 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer transition active:scale-[0.98] uppercase tracking-wide bg-amber-50 border-amber-200/80 text-amber-900 hover:bg-amber-100/80`}
+                      >
+                        <Tag size={13} className="text-amber-600" />
+                        Etiquetas do Lote
                       </button>
 
                       {/* Botão de Exportação para Excel */}
@@ -1862,6 +1990,295 @@ export function LotesScreen({
                 >
                   <FileText size={15} />
                   Confirmar & Baixar PDF Ficha
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* --- PREVIEW MODAL FOR ETIQUETAS DE PRODUTOS DO LOTE --- */}
+      {/* ========================================================= */}
+      {isPreviewEtiquetasOpen && previewEtiquetasBatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-6xl h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+            
+            {/* Header */}
+            <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Tag className="text-amber-600" size={22} />
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-lg">Impressão de Etiquetas de Produtos do Lote</h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Lote: {previewEtiquetasBatch.name || `Lote #${previewEtiquetasBatch.id}`} — Identificação prévia para cortes terceirizados e rotulagem.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsPreviewEtiquetasOpen(false);
+                  setPreviewEtiquetasBatch(null);
+                }}
+                className="text-slate-400 hover:text-slate-700 bg-slate-200/50 p-2 rounded-full hover:bg-slate-200 transition cursor-pointer self-center"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content Body - Dual Column */}
+            <div className="flex-1 overflow-hidden flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-200">
+              
+              {/* Left Column - Controls & Selection List */}
+              <div className="w-full md:w-80 lg:w-96 p-4 overflow-y-auto bg-slate-50 text-left space-y-4 shrink-0 flex flex-col justify-between">
+                <div className="space-y-4">
+                  
+                  {/* Formato do Layout */}
+                  <div className="bg-white border border-slate-200/80 p-3.5 rounded-xl shadow-2xs space-y-3">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider block">
+                      📐 Formato da Etiqueta
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEtiquetasLayoutFormat("thermal")}
+                        className={`p-2.5 rounded-xl text-xs font-black flex flex-col items-center justify-center gap-1 cursor-pointer transition border ${
+                          etiquetasLayoutFormat === "thermal"
+                            ? "bg-amber-500 text-white border-amber-600 shadow-sm"
+                            : "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
+                        }`}
+                      >
+                        <Tag size={16} />
+                        <span>Térmica 10x5 cm</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setEtiquetasLayoutFormat("a4")}
+                        className={`p-2.5 rounded-xl text-xs font-black flex flex-col items-center justify-center gap-1 cursor-pointer transition border ${
+                          etiquetasLayoutFormat === "a4"
+                            ? "bg-amber-500 text-white border-amber-600 shadow-sm"
+                            : "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
+                        }`}
+                      >
+                        <FileText size={16} />
+                        <span>Grade A4</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Configurações da Etiqueta */}
+                  <div className="bg-white border border-slate-200/80 p-3.5 rounded-xl shadow-2xs space-y-2.5">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider block">
+                      ⚙️ Opções de Kits / Peças
+                    </span>
+
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={etiquetasDestrinchar}
+                        onChange={(e) => setEtiquetasDestrinchar(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span className="text-xs font-semibold text-slate-700 leading-tight">
+                        Destrinchar kits/composições em peças individuais (BOM)
+                      </span>
+                    </label>
+
+                    {etiquetasDestrinchar && (
+                      <label className="flex items-start gap-2.5 cursor-pointer select-none pl-3 border-l-2 border-amber-300 animate-in slide-in-from-left-2 duration-150">
+                        <input
+                          type="checkbox"
+                          checked={etiquetasOcultarPai}
+                          onChange={(e) => setEtiquetasOcultarPai(e.target.checked)}
+                          className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+                        />
+                        <span className="text-xs font-semibold text-slate-700 leading-tight">
+                          Ocultar produto principal (Kits pais)
+                        </span>
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Items Selection List */}
+                  <div className="bg-white border border-slate-200/80 p-3.5 rounded-xl shadow-2xs space-y-3 flex-1 flex flex-col">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="text-xs font-black text-slate-800 uppercase tracking-wider block">
+                          Peças no Lote
+                        </span>
+                        <span className="text-[11px] text-amber-700 font-bold">
+                          {etiquetasSelectedOrderIds.length} de {previewEtiquetasBatch.orderIds.length} selecionados
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setEtiquetasSelectedOrderIds(previewEtiquetasBatch.orderIds)}
+                          className="text-[10px] text-amber-700 font-extrabold hover:underline uppercase cursor-pointer bg-amber-50 px-2 py-1 rounded"
+                        >
+                          Todos
+                        </button>
+                        <button
+                          onClick={() => setEtiquetasSelectedOrderIds([])}
+                          className="text-[10px] text-slate-500 font-extrabold hover:underline uppercase cursor-pointer bg-slate-100 px-2 py-1 rounded"
+                        >
+                          Nenhum
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Search filter in modal */}
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 text-slate-400" size={13} />
+                      <input
+                        type="text"
+                        value={etiquetasSearchTerm}
+                        onChange={(e) => setEtiquetasSearchTerm(e.target.value)}
+                        placeholder="Buscar item ou pedido..."
+                        className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+
+                    <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                      {previewEtiquetasBatch.orderIds
+                        .filter((oid) => {
+                          if (!etiquetasSearchTerm.trim()) return true;
+                          const o = db.orders.find((x) => x.id === oid);
+                          if (!o) return false;
+                          const it = db.items.find((i) => i.id === o.itemId);
+                          const term = etiquetasSearchTerm.toLowerCase();
+                          return (
+                            (o.orderCode && o.orderCode.toLowerCase().includes(term)) ||
+                            (o.customerName && o.customerName.toLowerCase().includes(term)) ||
+                            (it?.name && it.name.toLowerCase().includes(term)) ||
+                            (it?.code && it.code.toLowerCase().includes(term))
+                          );
+                        })
+                        .map((oid) => {
+                          const o = db.orders.find((x) => x.id === oid);
+                          if (!o) return null;
+                          const it = db.items.find((i) => i.id === o.itemId);
+                          const isIncluded = etiquetasSelectedOrderIds.includes(oid);
+
+                          return (
+                            <label
+                              key={oid}
+                              className={`flex items-start gap-2.5 p-2.5 rounded-xl cursor-pointer transition select-none border ${
+                                isIncluded
+                                  ? "bg-amber-50/70 border-amber-300 text-amber-950 shadow-2xs"
+                                  : "bg-slate-50/50 border-slate-200 text-slate-400 opacity-60 hover:opacity-90"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isIncluded}
+                                onChange={() => {
+                                  if (isIncluded) {
+                                    setEtiquetasSelectedOrderIds(etiquetasSelectedOrderIds.filter((x) => x !== oid));
+                                  } else {
+                                    setEtiquetasSelectedOrderIds([...etiquetasSelectedOrderIds, oid]);
+                                  }
+                                }}
+                                className="mt-0.5 border-slate-300 rounded text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+                              />
+                              <div className="text-xs leading-tight min-w-0 flex-1">
+                                <div className="flex justify-between items-center gap-1">
+                                  <strong className="font-mono text-amber-800 text-xs font-extrabold">#{o.orderCode}</strong>
+                                  <span className="font-bold text-[11px] text-slate-800 bg-white border px-1.5 py-0.5 rounded shadow-2xs">
+                                    {o.totalQuantity} un
+                                  </span>
+                                </div>
+                                <div className="text-slate-900 font-bold truncate mt-0.5">{o.customerName}</div>
+                                <div className="text-[11px] text-slate-600 truncate mt-0.5">{it?.name || "Desconhecido"}</div>
+                                {(o.color || o.size || o.variation) && (
+                                  <div className="text-[10px] text-slate-500 mt-0.5 flex flex-wrap gap-1">
+                                    {o.color && <span>Cor: <strong>{o.color}</strong></span>}
+                                    {o.size && <span>Tam: <strong>{o.size}</strong></span>}
+                                    {o.variation && <span>Var: <strong>{o.variation}</strong></span>}
+                                  </div>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })}
+
+                      {previewEtiquetasBatch.orderIds.length === 0 && (
+                        <div className="text-center p-4 text-slate-400 text-xs italic">
+                          Nenhum pedido encontrado neste lote.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Right Column - Scrollable Visual Preview */}
+              <div className="flex-1 overflow-y-auto bg-slate-100 p-6 flex justify-center items-start">
+                {etiquetasSelectedOrderIds.length === 0 ? (
+                  <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center max-w-md my-12 shadow-sm">
+                    <Tag className="mx-auto text-slate-300 mb-3" size={40} />
+                    <h4 className="font-bold text-slate-700 text-sm mb-1">Nenhuma etiqueta selecionada</h4>
+                    <p className="text-xs text-slate-500">
+                      Marque pelo menos uma peça/pedido na lista ao lado para visualizar e gerar as etiquetas do lote.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="shadow-2xl bg-white border border-slate-200 p-4 rounded-xl h-fit">
+                    <BatchEtiquetasPrintSheet
+                      batch={previewEtiquetasBatch}
+                      orderIds={etiquetasSelectedOrderIds}
+                      db={db}
+                      layoutFormat={etiquetasLayoutFormat}
+                      destrincharComposicoes={etiquetasDestrinchar}
+                      ocultarPaiComposicao={etiquetasOcultarPai}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-3 shrink-0">
+              <span className="text-xs text-slate-600 font-bold uppercase tracking-wide">
+                IMPÉRIO ACESSÓRIOS · {etiquetasSelectedOrderIds.length} {etiquetasSelectedOrderIds.length === 1 ? "pedido selecionado" : "pedidos selecionados"}
+              </span>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => {
+                    setIsPreviewEtiquetasOpen(false);
+                    setPreviewEtiquetasBatch(null);
+                  }}
+                  className="px-5 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+                >
+                  Fechar Prévia
+                </button>
+
+                <button
+                  disabled={isDirectPrintingEtiquetas || etiquetasSelectedOrderIds.length === 0}
+                  onClick={handleDirectPrintEtiquetas}
+                  className={`px-5 py-2.5 text-xs font-black text-white rounded-xl cursor-pointer flex items-center gap-1.5 transition active:scale-95 shadow-lg ${
+                    isDirectPrintingEtiquetas || etiquetasSelectedOrderIds.length === 0
+                      ? "bg-slate-300 cursor-not-allowed text-slate-500"
+                      : "bg-amber-600 hover:bg-amber-500 shadow-amber-700/20"
+                  }`}
+                >
+                  <Printer size={14} className={isDirectPrintingEtiquetas ? "animate-spin" : ""} />
+                  {isDirectPrintingEtiquetas ? "Preparando..." : "Imprimir Direto"}
+                </button>
+
+                <button
+                  disabled={isGeneratingEtiquetasPdf || etiquetasSelectedOrderIds.length === 0}
+                  onClick={handleGenerateEtiquetasPdf}
+                  className={`font-extrabold text-xs px-6 py-2.5 rounded-xl transition cursor-pointer shadow-md flex items-center gap-2 text-white ${
+                    isGeneratingEtiquetasPdf || etiquetasSelectedOrderIds.length === 0
+                      ? "bg-slate-300 cursor-not-allowed shadow-none"
+                      : "bg-emerald-600 hover:bg-emerald-550 shadow-emerald-600/10 hover:scale-[1.01]"
+                  }`}
+                >
+                  <FileDown size={15} className={isGeneratingEtiquetasPdf ? "animate-spin" : ""} />
+                  {isGeneratingEtiquetasPdf ? "Gerando PDF..." : "Confirmar & Baixar PDF Etiquetas"}
                 </button>
               </div>
             </div>
