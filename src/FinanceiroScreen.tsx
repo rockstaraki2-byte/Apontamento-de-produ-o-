@@ -154,7 +154,11 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
   const [securityMessage, setSecurityMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Daily Summary (Faturamento por Representante) States
-  const [summaryDate, setSummaryDate] = useState<string>(() => {
+  const [summaryStartDate, setSummaryStartDate] = useState<string>(() => {
+    const d = new Date();
+    return d.toISOString().split("T")[0]; // YYYY-MM-DD
+  });
+  const [summaryEndDate, setSummaryEndDate] = useState<string>(() => {
     const d = new Date();
     return d.toISOString().split("T")[0]; // YYYY-MM-DD
   });
@@ -165,31 +169,51 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
   const [waMessageText, setWaMessageText] = useState("");
   const [waRecipientPhone, setWaRecipientPhone] = useState("");
 
-  // Helper to calculate exact quantity fatured on a specific day
-  const getInvoicedQtyOnDay = (o: Order, targetDate: string) => {
-    // Find logs for this order of type FATURAMENTO
-    const ordLogs = db.logs.filter(
+  // Helper to format date range display
+  const formatRangeLabel = (start: string, end: string, isFiltered: boolean) => {
+    if (!isFiltered) return "Todo o Período";
+    const formatDateStr = (s: string) => {
+      if (!s) return "";
+      const parts = s.split("-");
+      if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      return s;
+    };
+
+    if (start === end || !end) {
+      return formatDateStr(start);
+    }
+    return `${formatDateStr(start)} até ${formatDateStr(end)}`;
+  };
+
+  // Helper to calculate exact quantity fatured within a date range (or single day)
+  const getInvoicedQtyInDateRange = (o: Order, startDate: string, endDate: string) => {
+    const ordLogs = (db.logs || []).filter(
       (l) => l.orderId === o.id && l.type === "FATURAMENTO"
     );
     
     if (ordLogs.length > 0) {
-      // Filter logs where date parts exactly match targetDate
-      const logsOnDay = ordLogs.filter((l) => {
+      const logsInRange = ordLogs.filter((l) => {
         try {
           const logDateStr = getLocalDateString(l.timestamp);
-          return logDateStr === targetDate;
+          if (startDate && logDateStr < startDate) return false;
+          if (endDate && logDateStr > endDate) return false;
+          return true;
         } catch (e) {
           return false;
         }
       });
-      return logsOnDay.reduce((sum, l) => sum + (l.quantityInvoiced || 0), 0);
+      return logsInRange.reduce((sum, l) => sum + (l.quantityInvoiced || 0), 0);
     }
     
-    // If no logs found, fallback to order statistics
-    if (getLocalDateString(o.deliveryDate) === targetDate) {
-      return o.status === "FATURADO" ? (o.totalQuantity || 0) : (o.invoicedQuantity || 0);
-    }
-    return 0;
+    // Fallback to order delivery Date
+    const delDateStr = getLocalDateString(o.deliveryDate);
+    if (startDate && delDateStr < startDate) return 0;
+    if (endDate && delDateStr > endDate) return 0;
+    return o.status === "FATURADO" ? (o.totalQuantity || 0) : (o.invoicedQuantity || 0);
+  };
+
+  const getInvoicedQtyOnDay = (o: Order, targetDate: string) => {
+    return getInvoicedQtyInDateRange(o, targetDate, targetDate);
   };
 
   const resolveRepresentativeName = (o: Order) => {
@@ -257,32 +281,35 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
     });
   }, [db.orders, selectedMonth]);
 
-  // Orders we consider "faturados" under active/historic records for daily compilation
+  // Orders we consider "faturados" under active/historic records for daily/period compilation
   const dailyFaturadosOrders = useMemo(() => {
-    return db.orders.filter((o) => {
+    return (db.orders || []).filter((o) => {
       // Must be faturado (full status, partial status, or has some invoiced quantity)
       const isFaturado = o.status === "FATURADO" || o.status === "FATURADO_PARCIAL" || (o.invoicedQuantity || 0) > 0;
       if (!isFaturado) return false;
       
-      // Filter by deliveryDate which operates as billingDate in system
+      // Filter by date range
       if (filterByDate) {
-        const ordLogs = db.logs.filter(
+        const ordLogs = (db.logs || []).filter(
           (l) => l.orderId === o.id && l.type === "FATURAMENTO"
         );
         if (ordLogs.length > 0) {
-          const hasLogToday = ordLogs.some(
-            (l) => getLocalDateString(l.timestamp) === summaryDate
-          );
-          return hasLogToday;
+          const hasLogInRange = ordLogs.some((l) => {
+            const dateStr = getLocalDateString(l.timestamp);
+            if (summaryStartDate && dateStr < summaryStartDate) return false;
+            if (summaryEndDate && dateStr > summaryEndDate) return false;
+            return true;
+          });
+          return hasLogInRange;
         }
         
-        if (getLocalDateString(o.deliveryDate) !== summaryDate) {
-          return false;
-        }
+        const delDateStr = getLocalDateString(o.deliveryDate);
+        if (summaryStartDate && delDateStr < summaryStartDate) return false;
+        if (summaryEndDate && delDateStr > summaryEndDate) return false;
       }
       return true;
     });
-  }, [db.orders, db.logs, summaryDate, filterByDate]);
+  }, [db.orders, db.logs, summaryStartDate, summaryEndDate, filterByDate]);
 
   // Now we group dailyFaturadosOrders by representative
   const representativeSummary = useMemo(() => {
@@ -298,7 +325,11 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
 
     dailyFaturadosOrders.forEach((o) => {
       const repName = resolveRepresentativeName(o);
-      const qtyFat = getInvoicedQtyOnDay(o, summaryDate);
+      const qtyFat = getInvoicedQtyInDateRange(
+        o,
+        filterByDate ? summaryStartDate : "",
+        filterByDate ? summaryEndDate : ""
+      );
       const value = qtyFat * (o.unitPrice || 0);
 
       if (!groups[repName]) {
@@ -316,7 +347,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
     });
 
     return Object.values(groups).sort((a, b) => b.totalValue - a.totalValue);
-  }, [dailyFaturadosOrders, db.logs, summaryDate]);
+  }, [dailyFaturadosOrders, db.logs, summaryStartDate, summaryEndDate, filterByDate]);
 
   // Overall Financial stats
   const stats = useMemo(() => {
@@ -985,10 +1016,10 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       />
 
       {/* Tabs navigation */}
-      <div className="shrink-0 bg-white border-b border-slate-200 flex overflow-x-auto">
+      <div className="shrink-0 bg-white border-b border-slate-200 flex overflow-x-auto scrollbar-thin">
         <button
           onClick={() => setActiveTab("OVERVIEW")}
-          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
             activeTab === "OVERVIEW"
               ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
               : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
@@ -998,7 +1029,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
         </button>
         <button
           onClick={() => setActiveTab("DRE_ANALYSIS")}
-          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
             activeTab === "DRE_ANALYSIS"
               ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
               : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
@@ -1008,7 +1039,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
         </button>
         <button
           onClick={() => setActiveTab("PRODUCTS")}
-          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
             activeTab === "PRODUCTS"
               ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
               : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
@@ -1018,7 +1049,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
         </button>
         <button
           onClick={() => setActiveTab("CUSTOMERS")}
-          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
             activeTab === "CUSTOMERS"
               ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
               : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
@@ -1028,7 +1059,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
         </button>
         <button
           onClick={() => setActiveTab("TERMS")}
-          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
             activeTab === "TERMS"
               ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
               : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
@@ -1038,7 +1069,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
         </button>
         <button
           onClick={() => setActiveTab("SECURITY")}
-          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
             activeTab === "SECURITY"
               ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
               : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
@@ -1048,7 +1079,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
         </button>
         <button
           onClick={() => setActiveTab("DAILY_SUMMARY")}
-          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
             activeTab === "DAILY_SUMMARY"
               ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
               : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
@@ -1058,7 +1089,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
         </button>
         <button
           onClick={() => setActiveTab("SECTORS_PERFORMANCE")}
-          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
             activeTab === "SECTORS_PERFORMANCE"
               ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
               : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
@@ -1068,7 +1099,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
         </button>
         <button
           onClick={() => setActiveTab("IDEAL_BATCH_SUGGESTION")}
-          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
             activeTab === "IDEAL_BATCH_SUGGESTION"
               ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
               : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
@@ -1078,7 +1109,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
         </button>
         <button
           onClick={() => setActiveTab("SECTOR_GOALS_CONFIG")}
-          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+          className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
             activeTab === "SECTOR_GOALS_CONFIG"
               ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
               : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
@@ -2084,33 +2115,25 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
         {/* TAB 6: DAILY_SUMMARY RENDERING */}
         {activeTab === "DAILY_SUMMARY" && (() => {
           const generateWhatsAppText = (repName: string, orders: Order[], totalItems: number, totalValue: number) => {
-            const dateStr = (() => {
-              if (!filterByDate) return "Geral";
-              const d = new Date(summaryDate + "T12:00:00");
-              const day = String(d.getDate()).padStart(2, '0');
-              const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-              const month = months[d.getMonth()];
-              const year = String(d.getFullYear()).slice(-2);
-              return `${day}/${month}/${year}`;
-            })();
+            const dateStr = formatRangeLabel(summaryStartDate, summaryEndDate, filterByDate);
 
-            let msg = `*RESUMO DIÁRIO DE FATURAMENTO* 💼🚀\n`;
+            let msg = `*RESUMO DE FATURAMENTO* 💼🚀\n`;
             msg += `*Representante:* ${repName}\n`;
-            msg += `*Data:* ${dateStr}\n\n`;
+            msg += `*Período:* ${dateStr}\n\n`;
             
-            msg += `Olá, segue o consolidado dos seus pedidos faturados:\n\n`;
+            msg += `Olá, segue o consolidado dos seus pedidos faturados no período:\n\n`;
             
             orders.forEach((o, index) => {
-              const item = db.items.find((i) => String(i.id) === String(o.itemId));
+              const item = (db.items || []).find((i) => String(i.id) === String(o.itemId));
               const prodName = item?.name || o.customProductName || `Produto #${o.itemId}`;
-              const qtyFatToday = getInvoicedQtyOnDay(o, summaryDate);
+              const qtyFatToday = getInvoicedQtyInDateRange(o, filterByDate ? summaryStartDate : "", filterByDate ? summaryEndDate : "");
               const accumFat = o.status === "FATURADO" ? (o.totalQuantity || 0) : (o.invoicedQuantity || 0);
               const totalQty = o.totalQuantity || 0;
 
               msg += `*${index + 1}. Pedido: #${o.orderCode}*\n`;
               msg += `• *Cliente:* ${o.customerName}\n`;
               msg += `• *Item:* ${prodName}\n`;
-              msg += `• *Qtd:* ${qtyFatToday} (${accumFat} de ${totalQty})\n\n`;
+              msg += `• *Qtd Faturada:* ${qtyFatToday} (${accumFat} de ${totalQty})\n\n`;
             });
             
             msg += `--------------------------\n`;
@@ -2125,22 +2148,81 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
           return (
             <div className="flex flex-col gap-4 animate-in fade-in-50 duration-200">
               {/* Filtros */}
-              <div className="bg-white border border-slate-200 p-4.5 rounded-xl shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
-                  <div className="flex items-center gap-2">
+              <div className="bg-white border border-slate-200 p-4.5 rounded-xl shadow-xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+                <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
+                  <div className="flex items-center gap-2 shrink-0">
                     <Calendar size={18} className="text-[#00b14f]" />
                     <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                      Data do Faturamento:
+                      Período de Faturamento:
                     </span>
                   </div>
-                  <div className="flex items-center gap-2.5 w-full md:w-auto">
-                    <input
-                      type="date"
-                      value={summaryDate}
-                      onChange={(e) => setSummaryDate(e.target.value)}
-                      disabled={!filterByDate}
-                      className="border border-slate-200 p-2 text-xs rounded-lg bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#00b14f] disabled:bg-slate-100 disabled:text-gray-400"
-                    />
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[11px] font-bold text-slate-500">De:</span>
+                      <input
+                        type="date"
+                        value={summaryStartDate}
+                        onChange={(e) => setSummaryStartDate(e.target.value)}
+                        disabled={!filterByDate}
+                        className="border border-slate-200 p-2 text-xs rounded-lg bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#00b14f] disabled:bg-slate-100 disabled:text-gray-400"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <span className="text-[11px] font-bold text-slate-500">Até:</span>
+                      <input
+                        type="date"
+                        value={summaryEndDate}
+                        onChange={(e) => setSummaryEndDate(e.target.value)}
+                        disabled={!filterByDate}
+                        className="border border-slate-200 p-2 text-xs rounded-lg bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#00b14f] disabled:bg-slate-100 disabled:text-gray-400"
+                      />
+                    </div>
+
+                    {/* Quick Date Presets */}
+                    <div className="flex items-center gap-1 ml-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const today = new Date().toISOString().split("T")[0];
+                          setSummaryStartDate(today);
+                          setSummaryEndDate(today);
+                          setFilterByDate(true);
+                        }}
+                        className="px-2 py-1 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition cursor-pointer"
+                      >
+                        Hoje
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const end = new Date();
+                          const start = new Date();
+                          start.setDate(end.getDate() - 7);
+                          setSummaryStartDate(start.toISOString().split("T")[0]);
+                          setSummaryEndDate(end.toISOString().split("T")[0]);
+                          setFilterByDate(true);
+                        }}
+                        className="px-2 py-1 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition cursor-pointer"
+                      >
+                        7 Dias
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const end = new Date();
+                          const start = new Date(end.getFullYear(), end.getMonth(), 1);
+                          setSummaryStartDate(start.toISOString().split("T")[0]);
+                          setSummaryEndDate(end.toISOString().split("T")[0]);
+                          setFilterByDate(true);
+                        }}
+                        className="px-2 py-1 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition cursor-pointer"
+                      >
+                        Este Mês
+                      </button>
+                    </div>
+
                     <div className="flex items-center gap-1.5 ml-2">
                       <input
                         id="filter_by_date_toggle"
@@ -2153,7 +2235,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                         htmlFor="filter_by_date_toggle"
                         className="text-xs text-slate-600 font-bold cursor-pointer select-none"
                       >
-                        Filtrar por Data
+                        Filtrar por Período
                       </label>
                     </div>
                   </div>
@@ -2172,7 +2254,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                   <FileText size={48} className="text-slate-300 stroke-1 animate-pulse" />
                   <p className="text-sm font-bold text-slate-700">Nenhum faturamento registrado para o período.</p>
                   <p className="text-xs text-gray-400 max-w-md">
-                    Verifique a data selecionada ou certifique-se de que os pedidos foram faturados de forma correta e constam com o status de faturados (&quot;FATURADO&quot;).
+                    Verifique as datas selecionadas no filtro de período ou certifique-se de que os pedidos foram faturados com o status &quot;FATURADO&quot;.
                   </p>
                 </div>
               ) : (
@@ -2268,7 +2350,6 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
             </div>
           );
         })()}
-      </ScrollContainer>
 
       {/* COMPILADO PDF MODAL PREVIEW */}
       {showPdfModal && selectedRepName && (() => {
@@ -2353,11 +2434,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                           Relatório Faturamento
                         </span>
                         <p className="text-[10px] text-gray-400 font-bold font-mono mt-2">
-                          Referência: {(() => {
-                            if (!filterByDate) return "Todo o Período";
-                            const d = new Date(summaryDate + "T12:00:00");
-                            return d.toLocaleDateString("pt-BR");
-                          })()}
+                          Referência: {formatRangeLabel(summaryStartDate, summaryEndDate, filterByDate)}
                         </p>
                       </div>
                     </div>
@@ -2410,7 +2487,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                         {details.orders.map((o, idx) => {
                           const item = db.items.find((i) => String(i.id) === String(o.itemId));
                           const prodName = item?.name || o.customProductName || `Produto #${o.itemId}`;
-                          const qtyFatToday = getInvoicedQtyOnDay(o, summaryDate);
+                          const qtyFatToday = getInvoicedQtyInDateRange(o, filterByDate ? summaryStartDate : "", filterByDate ? summaryEndDate : "");
                           const accumFat = o.status === "FATURADO" ? (o.totalQuantity || 0) : (o.invoicedQuantity || 0);
                           const totalQty = o.totalQuantity || 0;
                           const val = qtyFatToday * (o.unitPrice || 0);
@@ -2538,10 +2615,10 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                     import("./printUtils").then(({ exportRepresentativeBillingPdf }) => {
                       exportRepresentativeBillingPdf(
                         selectedRepName,
-                        summaryDate,
+                        formatRangeLabel(summaryStartDate, summaryEndDate, filterByDate),
                         details,
                         db.items,
-                        getInvoicedQtyOnDay
+                        (o: any) => getInvoicedQtyInDateRange(o, filterByDate ? summaryStartDate : "", filterByDate ? summaryEndDate : "")
                       );
                     });
                   }}
@@ -3107,6 +3184,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
           </div>
         );
       })()}
+      </ScrollContainer>
 
       {/* COMPILADO WHATSAPP PREVIEW MODAL */}
       {showWaModal && (

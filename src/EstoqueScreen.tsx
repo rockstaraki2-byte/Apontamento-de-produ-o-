@@ -8,6 +8,9 @@ import {
   ChevronUp,
   History,
   X,
+  Plus,
+  Boxes,
+  Check,
 } from "lucide-react";
 import type { StockEntry } from "./types";
 import {
@@ -752,6 +755,7 @@ export function EstoqueScreen({
     }
 
     setItemId("");
+    setProdutoBusca("");
     setColor("");
     setSize("");
     setVariation("");
@@ -763,13 +767,18 @@ export function EstoqueScreen({
 
   const handleEdit = (s: (typeof db.stocks)[0]) => {
     setItemId(s.itemId);
+    const itemObj = db.items.find((i) => i.id === s.itemId);
+    if (itemObj) {
+      setProdutoBusca(`${itemObj.code} - ${itemObj.name}`);
+    } else {
+      setProdutoBusca("");
+    }
     setColor(s.color || "");
     setSize(s.size || "");
     setVariation(s.variation || "");
     setQuantity(s.quantity);
     setStage(s.stage || "ACABADO");
     setIsFormVisible(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const renderGroupedStockItem = (g: GroupedStock) => {
@@ -973,101 +982,172 @@ export function EstoqueScreen({
       <ScrollContainer paddingSize="dense" className="space-y-4">
         {activeTab === "PRODUTOS" && (
           <>
-            <div className="bg-white p-4 rounded-lg shadow-sm border mb-6 transition-all duration-300">
-              <div
-                className="flex justify-between items-center cursor-pointer pointer-events-auto"
-                onClick={() => setIsFormVisible(!isFormVisible)}
-              >
-                <h3 className="font-semibold text-gray-800 font-sans">
-                  Ajuste Manual de Estoque
+            {/* Top Action Header */}
+            <div className="bg-white p-4 rounded-xl shadow-xs border border-gray-200 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="font-extrabold text-gray-800 text-sm sm:text-base font-sans">
+                  Gestão e Ajuste de Estoque
                 </h3>
-                <button className="text-gray-500 hover:text-emerald-600 transition">
-                  {isFormVisible ? (
-                    <ChevronUp size={20} />
-                  ) : (
-                    <ChevronDown size={20} />
-                  )}
-                </button>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Localize itens para ajustar saldos diretamente ou abra a janela de ajuste manual.
+                </p>
               </div>
+              <button
+                onClick={() => {
+                  setItemId("");
+                  setProdutoBusca("");
+                  setColor("");
+                  setSize("");
+                  setVariation("");
+                  setQuantity("");
+                  setStage("ACABADO");
+                  setIsFormVisible(true);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer shrink-0"
+              >
+                <Plus size={16} />
+                Ajuste Manual de Estoque
+              </button>
+            </div>
 
-              {isFormVisible && (
-                <div className="flex flex-col gap-3 mt-4 animate-in slide-in-from-top-4 fade-in duration-200">
-                  <input
-                    type="text"
-                    value={produtoBusca}
-                    onChange={(e) => setProdutoBusca(e.target.value)}
-                    className="border border-gray-300 p-2 rounded bg-white text-gray-800 text-sm w-full"
-                    placeholder="Digite para buscar um produto..."
-                    list="stock-item-list"
-                  />
-                  <datalist id="stock-item-list">
-                    {db.items.map((it) => (
-                      <option key={it.id} value={`${it.code} - ${it.name}`} />
-                    ))}
-                  </datalist>
-                  <div className="flex gap-2">
-                    <input
-                      value={color}
-                      onChange={(e) => setColor(e.target.value)}
-                      placeholder="Cor"
-                      className="border border-gray-300 p-2 rounded w-1/3 text-sm"
-                    />
-                    <input
-                      value={size}
-                      onChange={(e) => setSize(e.target.value)}
-                      placeholder="Tamanho"
-                      className="border border-gray-300 p-2 rounded w-1/3 text-sm"
-                    />
-                    <input
-                      value={variation}
-                      onChange={(e) => setVariation(e.target.value)}
-                      placeholder="Variação"
-                      className="border border-gray-300 p-2 rounded w-1/3 text-sm"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      value={quantity}
-                      onChange={(e) => setQuantity(Number(e.target.value))}
-                      placeholder="Quantidade Total no Estoque"
-                      className="border border-gray-300 p-2 rounded w-1/2 text-sm"
-                    />
-                    <select
-                      value={stage}
-                      onChange={(e) => setStage(e.target.value as any)}
-                      className="border border-gray-300 p-2 rounded w-1/2 bg-white text-sm"
-                    >
-                      <option value="ACABADO">Acabado</option>
-                      <option value="INTERMEDIARIO">Intermediário</option>
-                    </select>
-                  </div>
-
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      onClick={triggerSaveStock}
-                      className="bg-emerald-600 text-white p-2 rounded hover:bg-emerald-700 transition flex-1 font-semibold text-sm"
-                    >
-                      Salvar Estoque
-                    </button>
+            {/* Modal Window Popup for Stock Editing */}
+            {isFormVisible && (
+              <div className="fixed inset-0 z-[120] bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+                <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+                  
+                  {/* Header */}
+                  <div className="bg-slate-900 text-white p-4 px-5 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <Boxes className="text-emerald-400" size={20} />
+                      <div>
+                        <h3 className="font-extrabold text-sm sm:text-base text-white">
+                          Ajuste de Item do Estoque
+                        </h3>
+                        <p className="text-[11px] text-slate-300 font-medium">
+                          Altere o saldo ou variação sem sair do lugar na tela
+                        </p>
+                      </div>
+                    </div>
                     <button
                       onClick={() => {
+                        setIsFormVisible(false);
                         setItemId("");
                         setProdutoBusca("");
                         setColor("");
                         setSize("");
                         setVariation("");
                         setQuantity("");
-                        setIsFormVisible(false);
                       }}
-                      className="bg-gray-200 text-gray-700 p-2 rounded hover:bg-gray-300 transition flex-1 font-semibold text-sm"
+                      className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  {/* Body */}
+                  <div className="p-5 flex flex-col gap-4 max-h-[75vh] overflow-y-auto">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Produto / Item
+                      </label>
+                      <input
+                        type="text"
+                        value={produtoBusca}
+                        onChange={(e) => setProdutoBusca(e.target.value)}
+                        className="border border-slate-300 p-2.5 rounded-lg bg-white text-slate-800 text-xs w-full focus:ring-2 focus:ring-emerald-500 focus:outline-none font-semibold"
+                        placeholder="Digite para buscar um produto..."
+                        list="stock-item-modal-list"
+                      />
+                      <datalist id="stock-item-modal-list">
+                        {db.items.map((it) => (
+                          <option key={it.id} value={`${it.code} - ${it.name}`} />
+                        ))}
+                      </datalist>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Cor</label>
+                        <input
+                          value={color}
+                          onChange={(e) => setColor(e.target.value)}
+                          placeholder="Ex: PRETO"
+                          className="border border-slate-300 p-2 rounded-lg text-xs w-full focus:ring-2 focus:ring-emerald-500 focus:outline-none font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Tamanho</label>
+                        <input
+                          value={size}
+                          onChange={(e) => setSize(e.target.value)}
+                          placeholder="Ex: P / M"
+                          className="border border-slate-300 p-2 rounded-lg text-xs w-full focus:ring-2 focus:ring-emerald-500 focus:outline-none font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Variação</label>
+                        <input
+                          value={variation}
+                          onChange={(e) => setVariation(e.target.value)}
+                          placeholder="Ex: DIREITO"
+                          className="border border-slate-300 p-2 rounded-lg text-xs w-full focus:ring-2 focus:ring-emerald-500 focus:outline-none font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Qtd Total no Estoque</label>
+                        <input
+                          type="number"
+                          value={quantity}
+                          onChange={(e) => setQuantity(e.target.value === "" ? "" : Number(e.target.value))}
+                          placeholder="0"
+                          className="border border-slate-300 p-2.5 rounded-lg text-xs w-full font-extrabold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Estágio do Estoque</label>
+                        <select
+                          value={stage}
+                          onChange={(e) => setStage(e.target.value as any)}
+                          className="border border-slate-300 p-2.5 rounded-lg text-xs w-full bg-white font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        >
+                          <option value="ACABADO">Estoque Acabado</option>
+                          <option value="INTERMEDIARIO">Estoque Intermediário</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="bg-slate-50 border-t border-slate-200 p-4 flex gap-3 justify-end">
+                    <button
+                      onClick={() => {
+                        setIsFormVisible(false);
+                        setItemId("");
+                        setProdutoBusca("");
+                        setColor("");
+                        setSize("");
+                        setVariation("");
+                        setQuantity("");
+                      }}
+                      className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 bg-slate-200 hover:bg-slate-300 rounded-lg transition cursor-pointer"
                     >
                       Cancelar
                     </button>
+                    <button
+                      onClick={triggerSaveStock}
+                      className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition shadow-md cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Check size={14} />
+                      Salvar Estoque
+                    </button>
                   </div>
+
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
               <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 flex items-center gap-2.5 flex-1">

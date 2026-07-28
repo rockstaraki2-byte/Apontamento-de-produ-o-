@@ -14,7 +14,8 @@ import {
   ChevronUp,
   Tag,
   Boxes,
-  CheckCircle
+  CheckCircle,
+  AlertTriangle
 } from "lucide-react";
 import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
@@ -276,7 +277,9 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
                   packageType: "Caixa",
                   splitQuantityMode: "fixed",
                   boxIndexOverride: currentBoxIdx,
-                  totalBoxesOverride: totalBoxesCounter
+                  totalBoxesOverride: totalBoxesCounter,
+                  isFaturado: details.isFaturado,
+                  isFaturadoParcial: details.isFaturadoParcial,
                 });
                 currentBoxIdx++;
             }
@@ -300,6 +303,8 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
             splitCount: 1,
             packageType: "Caixa",
             splitQuantityMode: "divide",
+            isFaturado: details.isFaturado,
+            isFaturadoParcial: details.isFaturadoParcial,
          });
       }
     });
@@ -418,7 +423,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
   // Resolve standard descriptive details for a log
   const getLogDetails = (log: ProductionLog) => {
-    let linkedOrder = log.orderId ? db.orders.find((o) => o.id === log.orderId) : null;
+    let linkedOrder = log.orderId ? db.orders.find((o) => String(o.id) === String(log.orderId)) : null;
     let item = linkedOrder 
       ? db.items.find((i) => i.id === linkedOrder.itemId) 
       : db.items.find((i) => i.id === log.itemId || i.id === log.orderId); // fallback
@@ -426,6 +431,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     let orderCode = linkedOrder?.orderCode || "S/P";
     let customer = linkedOrder?.customerName || log.thirdPartyName || "-";
     let size = linkedOrder?.size || "-";
+    let assignedOrders: typeof db.orders = [];
     
     if (log.type === "CORTE_LASER") {
       // In Corte Laser, log.orderId is the nestTask.id, NOT a real orderId.
@@ -440,7 +446,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
       // Check if this part has active assignments to any orders (ESTOQUE DE PEÇAS CORTADAS)
       if (partName) {
-        const assignedOrders = db.orders.filter(o => 
+        assignedOrders = db.orders.filter(o => 
           o.laserAssignments?.some(la => la.partName === partName)
         );
         if (assignedOrders.length > 0) {
@@ -454,6 +460,17 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           }
         }
       }
+    }
+
+    let isFaturado = false;
+    let isFaturadoParcial = false;
+
+    if (linkedOrder) {
+      isFaturado = linkedOrder.status === "FATURADO" || (linkedOrder.invoicedQuantity || 0) >= (linkedOrder.totalQuantity || 1);
+      isFaturadoParcial = !isFaturado && (linkedOrder.status === "FATURADO_PARCIAL" || (linkedOrder.invoicedQuantity || 0) > 0);
+    } else if (log.type === "CORTE_LASER" && assignedOrders.length > 0) {
+      isFaturado = assignedOrders.every(o => o.status === "FATURADO" || (o.invoicedQuantity || 0) >= (o.totalQuantity || 1));
+      isFaturadoParcial = !isFaturado && assignedOrders.some(o => o.status === "FATURADO" || o.status === "FATURADO_PARCIAL" || (o.invoicedQuantity || 0) > 0);
     }
 
     const name = item?.name || log.nestedPartName || log.customProductName || "Item Avulso/Manual";
@@ -494,7 +511,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
       return match?.tradeName?.trim() || customer;
     })();
 
-    return { name, code, quantity, color, size, variation, orderCode, customer: resolvedCustomer, sectorLabel, imageUrl };
+    return { name, code, quantity, color, size, variation, orderCode, customer: resolvedCustomer, sectorLabel, imageUrl, linkedOrder, isFaturado, isFaturadoParcial };
   };
 
   // Resolved final labels structure (expands split records)
@@ -1327,7 +1344,20 @@ ${barcodeBlock}
                         ) : null}
                       </td>
                       <td className="p-3">
-                        <span className="font-black text-black font-mono block">#{orderCode}</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-black text-black font-mono">#{orderCode}</span>
+                          {details.isFaturado && (
+                            <span className="bg-rose-100 text-rose-800 border border-rose-300 font-extrabold text-[10px] px-1.5 py-0.5 rounded shadow-2xs flex items-center gap-1" title="Atenção: Este pedido já foi faturado!">
+                              <AlertTriangle size={11} className="text-rose-600 shrink-0" />
+                              JÁ FATURADO
+                            </span>
+                          )}
+                          {!details.isFaturado && details.isFaturadoParcial && (
+                            <span className="bg-amber-100 text-amber-800 border border-amber-300 font-extrabold text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1" title="Este pedido possui faturamento parcial">
+                              FATURADO PARCIAL
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[10px] text-black truncate max-w-[150px] block mb-1" title={customer}>
                           {customer}
                         </span>
@@ -1595,6 +1625,17 @@ ${barcodeBlock}
                           {(p.boxIndexOverride !== undefined && p.totalBoxesOverride !== undefined) && (
                             <span className="ml-2 text-[10px] font-mono bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200 inline-block mt-1 font-black">
                               Volume Vinculado: {p.boxIndexOverride} de {p.totalBoxesOverride}
+                            </span>
+                          )}
+                          {p.isFaturado && (
+                            <span className="flex items-center gap-1 text-[10px] bg-rose-100 text-rose-800 border border-rose-300 px-2 py-0.5 rounded font-black w-max mt-1">
+                              <AlertTriangle size={12} className="text-rose-600 shrink-0" />
+                              ⚠️ ATENÇÃO: Pedido #{p.orderCode} JÁ FATURADO
+                            </span>
+                          )}
+                          {!p.isFaturado && p.isFaturadoParcial && (
+                            <span className="flex items-center gap-1 text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded font-black w-max mt-1">
+                              🟡 Pedido #{p.orderCode} FATURADO PARCIAL
                             </span>
                           )}
                           {/* Fetch original log to see if printed */}
