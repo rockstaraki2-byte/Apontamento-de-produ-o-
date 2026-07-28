@@ -28,6 +28,15 @@ import {
   Share2,
   Search,
   Download,
+  Building2,
+  Target,
+  Zap,
+  Settings,
+  AlertCircle,
+  CheckCircle2,
+  Plus,
+  ChevronRight,
+  Info,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -116,9 +125,24 @@ const formatDateObj = (d: Date): string => {
 };
 
 export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
-  const [activeTab, setActiveTab] = useState<"OVERVIEW" | "DRE_ANALYSIS" | "PRODUCTS" | "CUSTOMERS" | "TERMS" | "SECURITY" | "DAILY_SUMMARY">("OVERVIEW");
+  const [activeTab, setActiveTab] = useState<
+    | "OVERVIEW"
+    | "DRE_ANALYSIS"
+    | "PRODUCTS"
+    | "CUSTOMERS"
+    | "TERMS"
+    | "SECURITY"
+    | "DAILY_SUMMARY"
+    | "SECTORS_PERFORMANCE"
+    | "IDEAL_BATCH_SUGGESTION"
+    | "SECTOR_GOALS_CONFIG"
+  >("OVERVIEW");
   const [selectedMonth, setSelectedMonth] = useState<string>("ALL");
   const [passwordRequirements, setPasswordRequirements] = useState(true);
+
+  // Ideal Batch & Sector Financial States
+  const [selectedSectorIdForBatch, setSelectedSectorIdForBatch] = useState<string>("");
+  const [batchCreatedNotice, setBatchCreatedNotice] = useState<string | null>(null);
 
   // Security States
   const [targetUserId, setTargetUserId] = useState<string>("");
@@ -1031,6 +1055,36 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
           }`}
         >
           <FileText size={16} /> Compilado Faturamento
+        </button>
+        <button
+          onClick={() => setActiveTab("SECTORS_PERFORMANCE")}
+          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+            activeTab === "SECTORS_PERFORMANCE"
+              ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
+              : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
+          }`}
+        >
+          <Building2 size={16} /> Desempenho por Setor
+        </button>
+        <button
+          onClick={() => setActiveTab("IDEAL_BATCH_SUGGESTION")}
+          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+            activeTab === "IDEAL_BATCH_SUGGESTION"
+              ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
+              : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
+          }`}
+        >
+          <Zap size={16} /> Sugestão Lote Ideal
+        </button>
+        <button
+          onClick={() => setActiveTab("SECTOR_GOALS_CONFIG")}
+          className={`px-4 py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 max-h-12 cursor-pointer ${
+            activeTab === "SECTOR_GOALS_CONFIG"
+              ? "border-[#00b14f] text-[#00b14f] bg-[#00b14f]/5"
+              : "border-transparent text-gray-500 hover:text-slate-800 hover:bg-gray-50"
+          }`}
+        >
+          <Settings size={16} /> Metas & Custos dos Setores
         </button>
       </div>
 
@@ -2507,6 +2561,548 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                   <Printer size={14} /> Imprimir / Salvar PDF
                 </button>
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* TAB 8: SECTORS_PERFORMANCE (Desempenho e Produtividade por Setor) */}
+      {activeTab === "SECTORS_PERFORMANCE" && (() => {
+        const sectors = db.sectors || [];
+        
+        const sectorData = sectors.map((sec) => {
+          const goalDaily = sec.revenueGoalDaily || 0;
+          const goalWeekly = sec.revenueGoalWeekly || (goalDaily * 5) || 0;
+          const hourlyCost = sec.hourlyCost || 0;
+
+          const batchesInSector = (db.productionBatches || []).filter((b) => Number(b.sectorId) === Number(sec.id) || String(b.sectorId) === String(sec.id));
+          const completedBatches = batchesInSector.filter((b) => b.status === "CONCLUIDO");
+
+          let totalPieces = 0;
+          let realizedRevenue = 0;
+          let totalProductiveCost = 0;
+
+          batchesInSector.forEach((b) => {
+            (b.orderIds || []).forEach((oId) => {
+              const order = (db.orders || []).find((o) => o.id === oId);
+              if (order) {
+                const item = (db.items || []).find((i) => i.id === order.itemId);
+                const qty = order.invoicedQuantity || order.totalQuantity || 0;
+                const unitPrice = order.unitPrice || item?.unitPrice || item?.basePrice || 0;
+                const prodCost = item?.productiveCost || 0;
+                const cycleTimeMin = item?.standardCycles?.[Number(sec.id)] || 10;
+
+                totalPieces += qty;
+                realizedRevenue += qty * unitPrice;
+                totalProductiveCost += (qty * prodCost) + ((qty * cycleTimeMin / 60) * hourlyCost);
+              }
+            });
+          });
+
+          const remainingGap = Math.max(0, goalWeekly - realizedRevenue);
+          const percentWeekly = goalWeekly > 0 ? Math.min(100, Math.round((realizedRevenue / goalWeekly) * 100)) : 0;
+          const grossProfit = realizedRevenue - totalProductiveCost;
+          const marginPct = realizedRevenue > 0 ? ((grossProfit / realizedRevenue) * 100).toFixed(1) : "0.0";
+
+          return {
+            sec,
+            goalDaily,
+            goalWeekly,
+            realizedRevenue,
+            remainingGap,
+            percentWeekly,
+            totalPieces,
+            totalProductiveCost,
+            grossProfit,
+            marginPct,
+            batchesCount: batchesInSector.length,
+            completedBatchesCount: completedBatches.length,
+          };
+        });
+
+        const grandTotalRealized = sectorData.reduce((acc, curr) => acc + curr.realizedRevenue, 0);
+        const grandTotalGoal = sectorData.reduce((acc, curr) => acc + curr.goalWeekly, 0);
+        const grandTotalCost = sectorData.reduce((acc, curr) => acc + curr.totalProductiveCost, 0);
+        const grandGrossProfit = grandTotalRealized - grandTotalCost;
+        const grandMarginPct = grandTotalRealized > 0 ? ((grandGrossProfit / grandTotalRealized) * 100).toFixed(1) : "0.0";
+
+        const barChartData = sectorData.map((d) => ({
+          name: d.sec.name,
+          "Faturamento Real": Math.round(d.realizedRevenue),
+          "Meta Semanal": Math.round(d.goalWeekly),
+        }));
+
+        return (
+          <div className="flex flex-col gap-6 text-left">
+            {/* Top KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Faturamento Real (Setores)</span>
+                <span className="text-2xl font-black text-emerald-600 block">R$ {grandTotalRealized.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                <span className="text-[11px] text-slate-500 font-medium mt-1 block">Contribuído pelos lotes do chão de fábrica</span>
+              </div>
+              <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Meta Semanal Global</span>
+                <span className="text-2xl font-black text-blue-600 block">R$ {grandTotalGoal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                <span className="text-[11px] text-slate-500 font-medium mt-1 block">Soma das metas financeiras dos setores</span>
+              </div>
+              <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Custo Produtivo Estimado</span>
+                <span className="text-2xl font-black text-rose-600 block">R$ {grandTotalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                <span className="text-[11px] text-slate-500 font-medium mt-1 block">Matéria-prima + Operação de Máquina/Setor</span>
+              </div>
+              <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Margem de Rentabilidade</span>
+                <span className="text-2xl font-black text-purple-700 block">{grandMarginPct}%</span>
+                <span className="text-[11px] text-emerald-600 font-bold mt-1 block">Lucro Estimado: R$ {grandGrossProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            {/* Visual Bar Chart: Contribuição Financeira Real vs Meta por Setor */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <Building2 className="text-[#00b14f]" size={20} />
+                    Gráfico de Contribuição Financeira por Setor
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium">Comparativo visual de faturamento faturado real versus meta semanal por setor</p>
+                </div>
+              </div>
+
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barChartData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#64748B" }} />
+                    <YAxis tickFormatter={(val) => `R$${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 11, fill: "#64748B" }} />
+                    <Tooltip formatter={(value: any) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, '']} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Bar dataKey="Faturamento Real" fill="#00b14f" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="Meta Semanal" fill="#3B82F6" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Sector Breakdown Grid */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <Target className="text-emerald-600" size={20} />
+                    Detalhamento de Contribuição & Atingimento de Meta
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium">Acompanhe o valor faturado acumulado e a lacuna restante para bater a meta</p>
+                </div>
+                <button
+                  onClick={() => setActiveTab("SECTOR_GOALS_CONFIG")}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Settings size={14} /> Configurar Metas
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {sectorData.map((d) => (
+                  <div key={String(d.sec.id)} className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 hover:bg-white hover:border-emerald-300 transition duration-150 flex flex-col gap-3">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">{d.sec.icon || "🏭"}</span>
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-800">{d.sec.name}</h4>
+                          <span className="text-[10px] text-slate-400 font-semibold">{d.sec.zone || "Zona Produção"}</span>
+                        </div>
+                      </div>
+                      <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${
+                        d.percentWeekly >= 100 ? "bg-emerald-100 text-emerald-800" : d.percentWeekly >= 50 ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"
+                      }`}>
+                        {d.percentWeekly >= 100 ? "🎯 Meta Concluída" : `${d.percentWeekly}% Atingido`}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs font-bold">
+                        <span className="text-slate-500">Progresso Semanal (Real / Meta):</span>
+                        <span className="text-slate-800">R$ {d.realizedRevenue.toLocaleString('pt-BR')} / R$ {d.goalWeekly.toLocaleString('pt-BR')}</span>
+                      </div>
+                      <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            d.percentWeekly >= 100 ? "bg-emerald-500" : d.percentWeekly >= 50 ? "bg-blue-500" : "bg-amber-500"
+                          }`}
+                          style={{ width: `${Math.min(100, d.percentWeekly)}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400 font-medium">Falta para atingir meta:</span>
+                        <span className={`font-bold ${d.remainingGap > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                          {d.remainingGap > 0 ? `R$ ${d.remainingGap.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : "Meta alcançada! 🎉"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 bg-white p-3 rounded-lg border border-slate-200/80 text-xs">
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Peças Produzidas</span>
+                        <span className="font-bold text-slate-800 block">{d.totalPieces} un</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Custo Produtivo</span>
+                        <span className="font-bold text-rose-600 block">R$ {d.totalProductiveCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Margem Bruta</span>
+                        <span className="font-bold text-purple-700 block">{d.marginPct}%</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* TAB 9: IDEAL_BATCH_SUGGESTION (Sugestão de Lote de Produção Ideal) */}
+      {activeTab === "IDEAL_BATCH_SUGGESTION" && (() => {
+        const sectors = db.sectors || [];
+        const activeSector = sectors.find((s) => String(s.id) === selectedSectorIdForBatch) || sectors[0];
+
+        // Calculate current sector realized revenue
+        let currentSectorRealizedRev = 0;
+        if (activeSector) {
+          const batchesInSector = (db.productionBatches || []).filter((b) => Number(b.sectorId) === Number(activeSector.id) || String(b.sectorId) === String(activeSector.id));
+          batchesInSector.forEach((b) => {
+            (b.orderIds || []).forEach((oId) => {
+              const order = (db.orders || []).find((o) => o.id === oId);
+              if (order) {
+                const item = (db.items || []).find((i) => i.id === order.itemId);
+                const qty = order.invoicedQuantity || order.totalQuantity || 0;
+                const unitPrice = order.unitPrice || item?.unitPrice || item?.basePrice || 0;
+                currentSectorRealizedRev += qty * unitPrice;
+              }
+            });
+          });
+        }
+
+        const targetWeeklyGoal = activeSector?.revenueGoalWeekly || 25000;
+        const financialGapToGoal = Math.max(0, targetWeeklyGoal - currentSectorRealizedRev);
+        const amountToTarget = financialGapToGoal > 0 ? financialGapToGoal : targetWeeklyGoal;
+
+        const productTurnover = (db.items || [])
+          .filter((it) => !it.type || it.type === "PRODUTO")
+          .map((it) => {
+            const totalOrderedQty = (db.orders || [])
+              .filter((o) => Number(o.itemId) === Number(it.id))
+              .reduce((sum, o) => sum + (o.totalQuantity || 0), 0);
+
+            const orderCount = (db.orders || []).filter((o) => Number(o.itemId) === Number(it.id)).length;
+
+            return {
+              item: it,
+              totalOrderedQty,
+              orderCount,
+              price: it.unitPrice || it.basePrice || 0,
+              prodCost: it.productiveCost || 0,
+              cycleTimeMin: activeSector ? (it.standardCycles?.[Number(activeSector.id)] || 0) : 0,
+            };
+          })
+          .sort((a, b) => b.totalOrderedQty - a.totalOrderedQty);
+
+        const missingPrices = productTurnover.filter((p) => !p.price || p.price <= 0);
+        const missingCycles = productTurnover.filter((p) => !p.cycleTimeMin || p.cycleTimeMin <= 0);
+        const missingProdCosts = productTurnover.filter((p) => !p.prodCost || p.prodCost <= 0);
+        const sectorMissingGoal = !activeSector?.revenueGoalWeekly || activeSector.revenueGoalWeekly <= 0;
+
+        const topProducts = productTurnover.slice(0, 5);
+
+        const totalWeight = topProducts.reduce((sum, p) => sum + (p.totalOrderedQty || 1), 0) || 1;
+        
+        const suggestedBatchItems = topProducts.map((p) => {
+          const weightRatio = (p.totalOrderedQty || 1) / totalWeight;
+          const targetProductRev = amountToTarget * weightRatio;
+          const qtyNeeded = p.price > 0 ? Math.ceil(targetProductRev / p.price) : 20;
+          const estRev = qtyNeeded * p.price;
+          const estTimeMin = qtyNeeded * (p.cycleTimeMin || 12);
+          const estCost = (qtyNeeded * p.prodCost) + ((estTimeMin / 60) * (activeSector?.hourlyCost || 0));
+
+          return {
+            ...p,
+            qtyNeeded,
+            estRev,
+            estTimeMin,
+            estCost,
+          };
+        });
+
+        const totalBatchRev = suggestedBatchItems.reduce((acc, curr) => acc + curr.estRev, 0);
+        const totalBatchMin = suggestedBatchItems.reduce((acc, curr) => acc + curr.estTimeMin, 0);
+        const totalBatchCost = suggestedBatchItems.reduce((acc, curr) => acc + curr.estCost, 0);
+        const totalBatchHours = (totalBatchMin / 60).toFixed(1);
+        const totalBatchMargin = totalBatchRev > 0 ? (((totalBatchRev - totalBatchCost) / totalBatchRev) * 100).toFixed(1) : "0.0";
+
+        const handleCreateBatchInPCP = async () => {
+          if (!activeSector) return;
+          try {
+            const batchName = `Lote Sugerido - ${activeSector.name} (Meta R$ ${amountToTarget.toLocaleString('pt-BR')})`;
+            await db.addProductionBatch({
+              name: batchName,
+              sectorId: Number(activeSector.id),
+              orderIds: [],
+              status: "PENDENTE",
+              createdAt: Date.now(),
+              notes: `Lote de Produção sugerido para cobrir o valor restante da meta (R$ ${amountToTarget.toFixed(2)}). Horas estimadas: ${totalBatchHours}h.`,
+            });
+            setBatchCreatedNotice(`⚡ Lote "${batchName}" criado com sucesso e enviado à fila do PCP!`);
+            setTimeout(() => setBatchCreatedNotice(null), 6000);
+          } catch (err: any) {
+            alert("Erro ao criar lote: " + err.message);
+          }
+        };
+
+        return (
+          <div className="flex flex-col gap-6 text-left">
+            {batchCreatedNotice && (
+              <div className="bg-emerald-600 text-white p-4 rounded-xl font-bold text-sm shadow-md flex items-center justify-between animate-in fade-in">
+                <span>{batchCreatedNotice}</span>
+                <CheckCircle2 size={20} />
+              </div>
+            )}
+
+            {/* Sector Selector Header */}
+            <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <Zap className="text-amber-500" size={20} />
+                  Sugestão de Lote de Produção Ideal por Setor
+                </h3>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">Calcula o mix e a quantidade ideal dos produtos de maior giro para atingir a meta financeira semanal do setor</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-bold text-slate-600 whitespace-nowrap">Setor Alvo:</label>
+                <select
+                  value={activeSector ? String(activeSector.id) : ""}
+                  onChange={(e) => setSelectedSectorIdForBatch(e.target.value)}
+                  className="p-2 border border-slate-200 rounded-xl text-xs font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 outline-none"
+                >
+                  {sectors.map((s) => (
+                    <option key={String(s.id)} value={String(s.id)}>
+                      {s.icon || "🏭"} {s.name} (Meta Semanal: R$ {(s.revenueGoalWeekly || 0).toLocaleString('pt-BR')})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Information Gaps Alert Box */}
+            <div className="bg-amber-50/80 border border-amber-200/80 p-5 rounded-2xl flex flex-col gap-3">
+              <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                <AlertCircle size={18} className="text-amber-600 shrink-0" />
+                <span>Auditoria de Dados Faltantes para Cálculo de Precisão</span>
+              </div>
+              <p className="text-xs text-amber-800 font-medium">
+                Para tornar a sugestão 100% fidedigna em termos de prazos e margem de lucro, abasteça os cadastros com as informações abaixo:
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-1">
+                <div className={`p-3 rounded-xl border text-xs font-medium flex flex-col gap-1 ${
+                  sectorMissingGoal ? "bg-rose-50 border-rose-200 text-rose-900" : "bg-emerald-50 border-emerald-200 text-emerald-900"
+                }`}>
+                  <span className="font-bold block">🎯 Meta de Faturamento do Setor</span>
+                  <span>{sectorMissingGoal ? "⚠️ Setor sem meta semanal definida" : `✅ R$ ${targetWeeklyGoal.toLocaleString('pt-BR')} / semana`}</span>
+                </div>
+
+                <div className={`p-3 rounded-xl border text-xs font-medium flex flex-col gap-1 ${
+                  missingPrices.length > 0 ? "bg-rose-50 border-rose-200 text-rose-900" : "bg-emerald-50 border-emerald-200 text-emerald-900"
+                }`}>
+                  <span className="font-bold block">🏷️ Preços de Venda de Produtos</span>
+                  <span>{missingPrices.length > 0 ? `⚠️ ${missingPrices.length} produtos sem preço cadastrado` : "✅ Todos os produtos possuem preço"}</span>
+                </div>
+
+                <div className={`p-3 rounded-xl border text-xs font-medium flex flex-col gap-1 ${
+                  missingCycles.length > 0 ? "bg-rose-50 border-rose-200 text-rose-900" : "bg-emerald-50 border-emerald-200 text-emerald-900"
+                }`}>
+                  <span className="font-bold block">⏱️ Tempos de Ciclo por Setor</span>
+                  <span>{missingCycles.length > 0 ? `⚠️ ${missingCycles.length} produtos sem tempo de ciclo` : "✅ Todos possuem tempo de ciclo"}</span>
+                </div>
+
+                <div className={`p-3 rounded-xl border text-xs font-medium flex flex-col gap-1 ${
+                  missingProdCosts.length > 0 ? "bg-rose-50 border-rose-200 text-rose-900" : "bg-emerald-50 border-emerald-200 text-emerald-900"
+                }`}>
+                  <span className="font-bold block">💲 Custo Produtivo Direto</span>
+                  <span>{missingProdCosts.length > 0 ? `⚠️ ${missingProdCosts.length} produtos sem custo unitário` : "✅ Todos possuem custo produtivo"}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Suggested Batch Breakdown Table & Actions */}
+            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs flex flex-col gap-5">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-800">
+                    Lote Recomendado para {activeSector?.name} (Meta: R$ {targetWeeklyGoal.toLocaleString('pt-BR')})
+                  </h4>
+                  <span className="text-xs text-slate-400 font-medium">Baseado nos 5 produtos de maior movimentação histórica</span>
+                </div>
+
+                <button
+                  onClick={handleCreateBatchInPCP}
+                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer"
+                >
+                  <Zap size={16} /> Gerar Lote no PCP
+                </button>
+              </div>
+
+              {/* Batch Summary Badges */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Faturamento Estimado</span>
+                  <span className="text-base font-black text-emerald-700 block">R$ {totalBatchRev.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Horas de Setor Requeridas</span>
+                  <span className="text-base font-black text-blue-700 block">{totalBatchHours}h de máquina</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Custo Produtivo Total</span>
+                  <span className="text-base font-black text-rose-600 block">R$ {totalBatchCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Margem Bruta Esperada</span>
+                  <span className="text-base font-black text-purple-700 block">{totalBatchMargin}%</span>
+                </div>
+              </div>
+
+              {/* Product Table */}
+              <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                <table className="min-w-full divide-y divide-slate-200 text-xs">
+                  <thead className="bg-slate-50 text-slate-700 font-bold">
+                    <tr>
+                      <th className="py-2.5 px-3 text-left">Código / Produto (Maior Giro)</th>
+                      <th className="py-2.5 px-3 text-center">Giro Histórico</th>
+                      <th className="py-2.5 px-3 text-center">Preço de Venda</th>
+                      <th className="py-2.5 px-3 text-center">Qtd Sugerida</th>
+                      <th className="py-2.5 px-3 text-center">Tempo Est. (Horas)</th>
+                      <th className="py-2.5 px-3 text-right">Faturamento Gerado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {suggestedBatchItems.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="py-2.5 px-3 font-bold text-slate-800">
+                          <span className="font-mono text-slate-500 mr-2">[{item.item.code}]</span>
+                          {item.item.name}
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-bold text-slate-600">{item.totalOrderedQty} un pedidas</td>
+                        <td className="py-2.5 px-3 text-center font-bold text-emerald-700">R$ {item.price.toFixed(2)}</td>
+                        <td className="py-2.5 px-3 text-center font-black text-amber-700 bg-amber-50/50">{item.qtyNeeded} un</td>
+                        <td className="py-2.5 px-3 text-center font-semibold text-slate-700">{(item.estTimeMin / 60).toFixed(1)}h</td>
+                        <td className="py-2.5 px-3 text-right font-black text-emerald-800">R$ {item.estRev.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* TAB 10: SECTOR_GOALS_CONFIG (Configuração de Metas por Setor) */}
+      {activeTab === "SECTOR_GOALS_CONFIG" && (() => {
+        const sectors = db.sectors || [];
+
+        return (
+          <div className="flex flex-col gap-6 text-left">
+            <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <Settings className="text-[#00b14f]" size={20} />
+                  Configurações de Metas e Custos Operacionais dos Setores
+                </h3>
+                <p className="text-xs text-slate-400 font-medium">Defina metas diárias, semanais de faturamento e custos/hora para abastecer o motor de cálculo da fábrica</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {sectors.map((s) => (
+                <div key={String(s.id)} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col gap-4">
+                  <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                    <span className="text-2xl">{s.icon || "🏭"}</span>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800">{s.name}</h4>
+                      <span className="text-[10px] font-bold text-slate-400">{s.zone || "Zona Produção"}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Meta Diária (R$):</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={s.revenueGoalDaily ?? ""}
+                        onChange={async (e) => {
+                          const val = Number(e.target.value);
+                          await db.updateSector({ ...s, revenueGoalDaily: val });
+                        }}
+                        className="w-full border border-slate-200 rounded-xl p-2 text-xs font-bold text-emerald-800 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Meta Semanal (R$):</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={s.revenueGoalWeekly ?? ""}
+                        onChange={async (e) => {
+                          const val = Number(e.target.value);
+                          await db.updateSector({ ...s, revenueGoalWeekly: val });
+                        }}
+                        className="w-full border border-slate-200 rounded-xl p-2 text-xs font-bold text-blue-800 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Custo Operacional / Hora (R$/h):</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={s.hourlyCost ?? ""}
+                        onChange={async (e) => {
+                          const val = Number(e.target.value);
+                          await db.updateSector({ ...s, hourlyCost: val });
+                        }}
+                        className="w-full border border-slate-200 rounded-xl p-2 text-xs font-bold text-rose-800 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-rose-500 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Lotação Recomendada (Pessoas):</label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="1"
+                        value={s.recommendedCount ?? ""}
+                        onChange={async (e) => {
+                          const val = Number(e.target.value);
+                          await db.updateSector({ ...s, recommendedCount: val });
+                        }}
+                        className="w-full border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-slate-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         );

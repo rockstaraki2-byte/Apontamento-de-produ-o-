@@ -241,6 +241,51 @@ export function ComposicaoProdutosTab({ db }: { db: ReturnType<typeof useDatabas
               </button>
             </div>
 
+            {/* Quick Price & Productive Cost Editor */}
+            <div className="mb-4 p-3 bg-white border border-purple-100 rounded-xl grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">
+                  Preço de Venda (R$):
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={selectedParent.unitPrice ?? selectedParent.basePrice ?? ""}
+                  onChange={async (e) => {
+                    const val = Number(e.target.value);
+                    await db.updateItem({
+                      ...selectedParent,
+                      unitPrice: val,
+                      basePrice: val,
+                    });
+                  }}
+                  className="w-full border border-gray-200 rounded-lg p-1.5 text-xs font-bold text-emerald-800 focus:ring-1 focus:ring-purple-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">
+                  Custo Produtivo Direto (R$):
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={selectedParent.productiveCost ?? ""}
+                  onChange={async (e) => {
+                    const val = Number(e.target.value);
+                    await db.updateItem({
+                      ...selectedParent,
+                      productiveCost: val,
+                    });
+                  }}
+                  className="w-full border border-gray-200 rounded-lg p-1.5 text-xs font-bold text-rose-800 focus:ring-1 focus:ring-purple-500 outline-none"
+                />
+              </div>
+            </div>
+
             {/* Existing Linked Components list */}
             <div className="mb-6">
               <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">

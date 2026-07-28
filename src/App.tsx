@@ -1548,6 +1548,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [basePrice, setBasePrice] = useState<number | "">("");
+  const [productiveCost, setProductiveCost] = useState<number | "">("");
   const [productionPoints, setProductionPoints] = useState<number | "">("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [imageUrl, setImageUrl] = useState<string>("");
@@ -1948,10 +1949,13 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           code,
           name,
           basePrice: basePrice === "" ? undefined : basePrice,
+          unitPrice: basePrice === "" ? undefined : basePrice,
+          productiveCost: productiveCost === "" ? undefined : productiveCost,
           productionPoints:
             productionPoints === "" ? undefined : productionPoints,
           type: itemType,
           imageUrl: imageUrl || existing.imageUrl || "",
+          standardCycles,
         });
       }
       setEditingId(null);
@@ -1961,17 +1965,22 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
         name,
         notes: "",
         basePrice: basePrice === "" ? undefined : basePrice,
+        unitPrice: basePrice === "" ? undefined : basePrice,
+        productiveCost: productiveCost === "" ? undefined : productiveCost,
         productionPoints:
           productionPoints === "" ? undefined : productionPoints,
         type: itemType,
         imageUrl: imageUrl || "",
+        standardCycles,
       });
     }
     setCode("");
     setName("");
     setBasePrice("");
+    setProductiveCost("");
     setProductionPoints("");
     setImageUrl("");
+    setStandardCycles({});
   };
 
   const handleEdit = (it: (typeof db.items)[0]) => {
@@ -1979,10 +1988,12 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     setCode(it.code);
     setName(it.name);
     setBasePrice(it.basePrice !== undefined ? it.basePrice : "");
+    setProductiveCost(it.productiveCost !== undefined ? it.productiveCost : "");
     setProductionPoints(
       it.productionPoints !== undefined ? it.productionPoints : "",
     );
     setImageUrl(it.imageUrl || "");
+    setStandardCycles(it.standardCycles || {});
     setActiveTab(
       it.type === "PECA" ? "PECAS" : it.type === "EPI" ? "EPIS" : "PRODUTOS",
     );
@@ -2402,6 +2413,23 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                   className="border border-gray-300 p-2 pl-10 rounded w-full text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
+              <div className="relative">
+                <span className="absolute left-3 top-2 text-rose-500 font-bold text-xs">
+                  Custo R$
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={productiveCost}
+                  onChange={(e) =>
+                    setProductiveCost(
+                      e.target.value ? parseFloat(e.target.value) : "",
+                    )
+                  }
+                  placeholder="Custo Insumo Direto"
+                  className="border border-gray-300 p-2 pl-20 rounded w-full text-sm focus:outline-none focus:ring-1 focus:ring-rose-500"
+                />
+              </div>
             </div>
 
             <div className="mt-2 bg-gray-50 p-3 rounded border border-gray-100 flex flex-col gap-2">
@@ -2410,10 +2438,10 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                 Tempo Padrão de Produção (em minutos)
               </label>
               <p className="text-[10px] text-gray-500 mb-1">
-                Defina o tempo estimado para concluir 1 unidade deste item em cada setor. Usado para previsão de ritmo de fila.
+                Defina o tempo estimado para concluir 1 unidade deste item em cada setor. Usado para previsão de ritmo de fila e cálculo do Custo Produtivo.
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {db.sectors.map((sector) => (
+                {(db.sectors || []).map((sector) => (
                   <div key={sector.id} className="flex flex-col gap-1">
                     <span className="text-[10px] font-bold text-gray-600 truncate">{sector.name}</span>
                     <input
@@ -2434,6 +2462,51 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                   </div>
                 ))}
               </div>
+
+              {/* Dynamic Productive Cost Calculation Card */}
+              {(() => {
+                const rawCost = typeof productiveCost === "number" ? productiveCost : 0;
+                let sectorOpsCost = 0;
+                (db.sectors || []).forEach((sec) => {
+                  const min = standardCycles[sec.id] || 0;
+                  const hCost = sec.hourlyCost || 0;
+                  sectorOpsCost += (min / 60) * hCost;
+                });
+                const totalEstimatedCostUnit = rawCost + sectorOpsCost;
+                const price = typeof basePrice === "number" ? basePrice : 0;
+                const marginAmount = price - totalEstimatedCostUnit;
+                const marginPct = price > 0 ? ((marginAmount / price) * 100).toFixed(1) : "0.0";
+
+                return (
+                  <div className="mt-2 bg-slate-900 text-white p-3 rounded-xl flex flex-col gap-2 text-xs">
+                    <div className="flex items-center justify-between font-bold text-amber-400">
+                      <span>📊 Cálculo do Custo Produtivo Estimado</span>
+                      <span className="text-[10px] text-slate-400 font-normal">Fórmula: Insumos + Σ(Tempo Setor × Custo/h)</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center bg-slate-800/80 p-2 rounded-lg">
+                      <div>
+                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Insumos Diretos</span>
+                        <span className="font-bold text-rose-300">R$ {rawCost.toFixed(2)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Custo Máquinas/Setores</span>
+                        <span className="font-bold text-blue-300">R$ {sectorOpsCost.toFixed(2)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Custo Produtivo Total (Un)</span>
+                        <span className="font-black text-amber-300">R$ {totalEstimatedCostUnit.toFixed(2)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Margem Bruta (Preço R$ {price.toFixed(2)})</span>
+                        <span className={`font-black ${Number(marginPct) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {marginPct}% {price > 0 ? `(R$ ${marginAmount.toFixed(2)})` : ""}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="flex items-center gap-4 mt-1 bg-gray-50 p-2.5 rounded border border-gray-100">

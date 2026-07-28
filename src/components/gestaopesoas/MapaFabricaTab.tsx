@@ -38,6 +38,10 @@ interface SectorAllocation {
   icon: string;
   description: string;
   rolesIncluded: string[];
+  revenueGoalDaily?: number;
+  revenueGoalWeekly?: number;
+  hourlyCost?: number;
+  productiveCost?: number;
 }
 
 const INITIAL_SECTOR_ZONES: SectorAllocation[] = [
@@ -144,7 +148,6 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
   const [hiringQty, setHiringQty] = useState<number>(1);
   const [hiringPriority, setHiringPriority] = useState<"ALTA" | "MEDIA" | "BAIXA">("ALTA");
   const [hiringNotes, setHiringNotes] = useState<string>("");
-  const [editingTargetSectors, setEditingTargetSectors] = useState<{ [secId: string]: number }>({});
 
   const [sectors, setSectors] = useState<SectorAllocation[]>(() => {
     try {
@@ -155,12 +158,32 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
     }
   });
 
-  const saveSectors = (newSectors: SectorAllocation[]) => {
+  const saveSectors = async (newSectors: SectorAllocation[]) => {
     setSectors(newSectors);
     try {
       localStorage.setItem("producao_factory_sectors_v1", JSON.stringify(newSectors));
     } catch (e) {
       console.error(e);
+    }
+
+    if (db) {
+      for (const sec of newSectors) {
+        const dbSec = db.sectors?.find((s) => String(s.id) === String(sec.id) || s.name.toLowerCase() === sec.name.toLowerCase());
+        if (dbSec) {
+          try {
+            await db.updateSector({
+              ...dbSec,
+              recommendedCount: sec.recommendedCount,
+              revenueGoalDaily: sec.revenueGoalDaily,
+              revenueGoalWeekly: sec.revenueGoalWeekly,
+              hourlyCost: sec.hourlyCost,
+              productiveCost: sec.productiveCost,
+            });
+          } catch (err) {
+            console.error("Erro ao sincronizar setor com Firestore:", err);
+          }
+        }
+      }
     }
   };
 
@@ -169,7 +192,7 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
 
   const handleOpenSectorModal = (sec?: SectorAllocation) => {
     if (sec) {
-      setEditingSector(sec);
+      setEditingSector({ ...sec });
     } else {
       setEditingSector({
         id: `sec_${Date.now()}`,
@@ -179,6 +202,10 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
         icon: "🏭",
         description: "",
         rolesIncluded: [],
+        revenueGoalDaily: 0,
+        revenueGoalWeekly: 0,
+        hourlyCost: 0,
+        productiveCost: 0,
       });
     }
     setIsSectorModalOpen(true);
@@ -377,10 +404,10 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
   const sectorTargets = useMemo(() => {
     const map: { [id: string]: number } = {};
     sectors.forEach((s) => {
-      map[s.id] = editingTargetSectors[s.id] ?? s.recommendedCount;
+      map[s.id] = s.recommendedCount;
     });
     return map;
-  }, [editingTargetSectors]);
+  }, [sectors]);
 
   // Map users to factory sectors based on user.role or explicit saved allocation
   const allocatedUsersBySector = useMemo(() => {
@@ -761,8 +788,6 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
               statusText = `${diff} Operador(es) disponível(is) p/ realocação`;
             }
 
-            const isEditingTarget = editingTargetSectors[sec.id] !== undefined;
-
             return (
               <div
                 key={sec.id}
@@ -1104,7 +1129,7 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-700">Meta de Lotação:</label>
+                  <label className="text-xs font-bold text-slate-700">Meta de Lotação (Pessoas):</label>
                   <input
                     type="number"
                     min={1}
@@ -1122,6 +1147,45 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
                     value={editingSector.icon}
                     onChange={(e) => setEditingSector({ ...editingSector, icon: e.target.value })}
                     className="p-2.5 border border-slate-200 rounded-xl text-sm font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 bg-emerald-50/60 p-3 rounded-xl border border-emerald-100">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-bold text-emerald-900">Meta Diária (R$):</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="Ex: 5000"
+                    value={editingSector.revenueGoalDaily || ""}
+                    onChange={(e) => setEditingSector({ ...editingSector, revenueGoalDaily: Number(e.target.value) })}
+                    className="p-2 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-900 bg-white"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-bold text-emerald-900">Meta Semanal (R$):</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="Ex: 25000"
+                    value={editingSector.revenueGoalWeekly || ""}
+                    onChange={(e) => setEditingSector({ ...editingSector, revenueGoalWeekly: Number(e.target.value) })}
+                    className="p-2 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-900 bg-white"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-bold text-emerald-900">Custo Operacional/h (R$):</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="Ex: 120"
+                    value={editingSector.hourlyCost || ""}
+                    onChange={(e) => setEditingSector({ ...editingSector, hourlyCost: Number(e.target.value) })}
+                    className="p-2 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-900 bg-white"
                   />
                 </div>
               </div>

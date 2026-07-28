@@ -98,6 +98,8 @@ export interface Item {
   name: string;
   notes: string;
   basePrice?: number;
+  unitPrice?: number;
+  productiveCost?: number; // Custo produtivo unitário (R$)
   productionPoints?: number;
   type?: "PRODUTO" | "PECA" | "EPI";
   components?: { itemId: number; quantity: number }[];
@@ -297,9 +299,18 @@ export interface Customer {
 }
 
 export interface Sector {
-  id: number;
+  id: number | string;
   name: string;
   dailyCapacity?: number;
+  recommendedCount?: number;
+  hourlyCost?: number;        // Custo de operação/hora (R$/h)
+  productiveCost?: number;    // Custo fixo/direto do setor
+  revenueGoalDaily?: number;  // Meta faturamento diária (R$)
+  revenueGoalWeekly?: number; // Meta faturamento semanal (R$)
+  icon?: string;
+  zone?: string;
+  description?: string;
+  rolesIncluded?: string[];
 }
 
 export interface ProductFlow {
