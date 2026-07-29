@@ -18,6 +18,7 @@ export default defineConfig(() => {
         workbox: {
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          globIgnores: ['**/pdf.worker*', '**/vendor-pdf*'],
           navigateFallback: '/index.html',
           // Removido importScripts — risco de quebrar o registro do SW principal.
           // O firebase-messaging-sw.js agora é registrado separadamente (ver main.tsx).
@@ -66,6 +67,25 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+      },
+    },
+    build: {
+      target: 'esnext',
+      minify: false,
+      reportCompressedSize: false,
+      chunkSizeWarningLimit: 2500,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('firebase')) return 'vendor-firebase';
+              if (id.includes('lucide-react')) return 'vendor-icons';
+              if (id.includes('recharts') || id.includes('d3')) return 'vendor-charts';
+              if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('pdfjs')) return 'vendor-pdf';
+              return 'vendor';
+            }
+          },
+        },
       },
     },
     server: {

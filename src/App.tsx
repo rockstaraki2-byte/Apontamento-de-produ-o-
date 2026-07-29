@@ -109,6 +109,7 @@ import { PrensaRafaelScreen } from "./PrensaRafaelScreen";
 import { InjetoraScreen } from "./InjetoraScreen";
 import { LogisticaScreen } from "./LogisticaScreen";
 import { OrcamentoLaserScreen } from "./OrcamentoLaserScreen";
+import { MontagemRetratilScreen } from "./MontagemRetratilScreen";
 import { normalizeString } from "./searchUtils";
 
 // Custom virtualization and metrics components
@@ -202,10 +203,11 @@ function Welcome({
                   ? "/torno-cnc-henrique"
                   : "/banho-quimico",
         );
+      } else if (role === "MONTAGEM_RETRATIL") {
+        navigate("/montagem-retratil");
       } else if (
         role === "PRODUCAO" ||
         role === "SOLDA" ||
-        role === "MONTAGEM_RETRATIL" ||
         role === "MONTAGEM_RODRIGO" ||
         role === "PINTURA"
       ) {
@@ -14075,6 +14077,16 @@ export default function App() {
                 element={<ProducaoScreen db={db} currentUser={currentUser} />}
               />
             )}
+            <Route
+              path="/montagem-retratil"
+              element={
+                currentUser ? (
+                  <MontagemRetratilScreen db={db} currentUser={currentUser} />
+                ) : (
+                  <Navigate to="/" replace />
+                )
+              }
+            />
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "GERENCIA" ||
               currentUser.role === "CORTE_LASER") && (
