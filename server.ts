@@ -4,6 +4,8 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import nodemailer from "nodemailer";
 
+import crypto from "crypto";
+
 let aiInstance: GoogleGenAI | null = null;
 function getGeminiClient() {
   if (!aiInstance) {
@@ -16,7 +18,6 @@ function getGeminiClient() {
       }
     });
 
-    // Interceptar erros de faturamento (Dunning Decision) para apresentar uma mensagem clara ao usuário
     if (rawAi.models && typeof rawAi.models.generateContent === "function") {
       const originalGenerateContent = rawAi.models.generateContent.bind(rawAi.models);
       rawAi.models.generateContent = async function(...args: any[]) {
@@ -44,6 +45,33 @@ function getGeminiClient() {
     aiInstance = rawAi;
   }
   return aiInstance;
+}
+
+// Server-side response cache for AI queries (Gemini Prompt Caching & Local Result Caching)
+const aiResponseCache = new Map<string, { timestamp: number; data: any }>();
+const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas TTL
+
+function getCachedAiResponse(key: string) {
+  const cached = aiResponseCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.timestamp > CACHE_TTL_MS) {
+    aiResponseCache.delete(key);
+    return null;
+  }
+  return cached.data;
+}
+
+function setCachedAiResponse(key: string, data: any) {
+  if (aiResponseCache.size > 500) {
+    const oldestKey = aiResponseCache.keys().next().value;
+    if (oldestKey) aiResponseCache.delete(oldestKey);
+  }
+  aiResponseCache.set(key, { timestamp: Date.now(), data });
+}
+
+function createAiCacheKey(endpoint: string, payload: any): string {
+  const str = typeof payload === "string" ? payload : JSON.stringify(payload);
+  return endpoint + ":" + crypto.createHash("sha256").update(str).digest("hex");
 }
 import { getApps } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
@@ -1627,6 +1655,14 @@ Atenção: Retorne APENAS o JSON puro. Não inclua texto adicional, formataçõe
         return res.status(400).json({ error: "O prompt é obrigatório." });
       }
 
+      // Check server cache first (Prompt & Data Hash Cache)
+      const cacheKey = createAiCacheKey("ai-search", { prompt, currentDate, orders });
+      const cachedResult = getCachedAiResponse(cacheKey);
+      if (cachedResult) {
+        console.log(`[AI Search Cache Hit] Retornando resposta em cache local para a pergunta: "${prompt}"`);
+        return res.json({ ...cachedResult, fromCache: true });
+      }
+
       console.log(
         `[AI Search] Processando pergunta da produção: "${prompt}" com data de hoje: ${currentDate}`,
       );
@@ -1657,7 +1693,7 @@ Retorne um JSON contendo:
 Não invente IDs de pedido. Retorne somente IDs que estejam presentes na lista enviada. Indique apenas aqueles cujo status não seja FATURADO ou EMBALADO se estiverem perguntando sobre o que produzir (pois estes já estão prontos), a menos que o usuário pergunte explicitamente o histórico geral.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: userMessage,
         config: {
           systemInstruction,
@@ -1682,10 +1718,10 @@ Não invente IDs de pedido. Retorne somente IDs que estejam presentes na lista e
         },
       });
 
-      const textOutput = response.text || "{}";
-      console.log("[AI Search] Resultado gerado pelo Gemini:", textOutput);
-      const parsed = JSON.parse(textOutput);
-      res.json({ success: true, ...parsed });
+      const parsedResult = JSON.parse(cleanJsonText(response.text || "{}"));
+      setCachedAiResponse(cacheKey, parsedResult);
+
+      return res.json({ success: true, ...parsedResult });
     } catch (e: any) {
       console.error("[AI Search error]", e);
       res

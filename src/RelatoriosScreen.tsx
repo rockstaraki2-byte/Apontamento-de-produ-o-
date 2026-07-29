@@ -1349,7 +1349,21 @@ export function RelatoriosScreen({
       titleStr = "Historico de Movimentacoes de Estoque";
     }
 
-    doc.text(titleStr, 14, 15);
+    doc.setFillColor(0, 177, 79); // Império Green #00b14f
+    doc.rect(0, 0, 210, 5, "F");
+
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text("IMPÉRIO JOMARCI - ACESSÓRIOS PARA MÓVEIS", 14, 12);
+
+    doc.setFontSize(14);
+    doc.setTextColor(20, 20, 20);
+    doc.text(titleStr, 14, 19);
+
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    const dateStr = new Date().toLocaleDateString("pt-BR") + " às " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    doc.text(`Relatório gerado em: ${dateStr}`, 14, 24);
 
     if (reportType === "PRODUTIVIDADE") {
       const tableData = sectorProductivityMetrics.map((d) => [
@@ -1376,7 +1390,7 @@ export function RelatoriosScreen({
           ],
         ],
         body: tableData,
-        startY: 25,
+        startY: 28,
       });
     } else if (reportType === "RASTREAMENTO") {
       const tableData = traceLogs.map((d) => [
@@ -1390,7 +1404,7 @@ export function RelatoriosScreen({
       autoTable(doc, {
         head: [["Data", "Pedido", "Produto", "Setor", "Qtd", "Operador"]],
         body: tableData,
-        startY: 25,
+        startY: 28,
       });
     } else if (reportType === "MEDIAS") {
       doc.text("Medias por Operador", 14, 25);

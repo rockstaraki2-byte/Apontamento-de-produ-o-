@@ -3,6 +3,7 @@ import { useDatabase } from "./useDatabase";
 import { Order, ProductionBatch } from "./types";
 import { ClipboardList, Layers, Grid } from "lucide-react";
 import { getItemUnit } from "./utils/unitUtils";
+import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
 
 interface AcompanhamentoPrintSheetProps {
   batch: ProductionBatch;
@@ -229,7 +230,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
                       <div className="shrink-0">
                         <div className="flex justify-between items-start border-b border-slate-200 pb-2 mb-2">
                           <div className="flex items-center gap-2">
-                            <img src={logoUrl} alt="Logo" className="w-8 h-8 object-contain" />
+                            <ReportHeaderLogo logoUrl={logoUrl} className="w-8 h-8 object-contain" alt="Logo" />
                             <div>
                               <span className="text-[10px] font-black tracking-widest text-blue-800 uppercase block leading-none mb-0.5">
                                 {companyName}

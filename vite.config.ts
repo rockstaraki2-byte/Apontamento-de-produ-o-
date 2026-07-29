@@ -10,8 +10,8 @@ export default defineConfig(() => {
       react(), 
       tailwindcss(),
       VitePWA({
-        registerType: 'prompt',
-        injectRegister: null,
+        registerType: 'autoUpdate',
+        injectRegister: 'auto',
         manifestFilename: 'manifest.json',
         includeAssets: ['icon.png', 'icon-192.png', 'icon.svg'],
         strategies: 'generateSW',

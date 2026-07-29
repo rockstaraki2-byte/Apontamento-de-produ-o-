@@ -460,11 +460,27 @@ export function useDatabase(currentUser?: User | null) {
     }
   };
 
-  const [items, setItems] = useState<Item[]>([]);
-  const [orders, setOrdersState] = useState<Order[]>([]);
+  // Fast Local Storage Cache helper for instant app opening and offline performance
+  const loadCache = <T,>(key: string, fallback: T): T => {
+    try {
+      const raw = localStorage.getItem(`producao_cache_${key}`);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const saveCache = (key: string, data: any) => {
+    try {
+      localStorage.setItem(`producao_cache_${key}`, JSON.stringify(data));
+    } catch {}
+  };
+
+  const [items, setItems] = useState<Item[]>(() => loadCache("items", []));
+  const [orders, setOrdersState] = useState<Order[]>(() => loadCache("orders", []));
   const [logs, setLogsState] = useState<ProductionLog[]>([]);
   const [attributes, setAttributes] = useState<ProductAttribute[]>([]);
-  const [activePacks, setActivePacksState] = useState<ActiveTask[]>([]);
+  const [activePacks, setActivePacksState] = useState<ActiveTask[]>(() => loadCache("activePacks", []));
   const [nestTasks, setNestTasksState] = useState<NestTask[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [stocks, setStocks] = useState<StockEntry[]>([]);
@@ -477,11 +493,11 @@ export function useDatabase(currentUser?: User | null) {
   const [uniformDistributions, setUniformDistributions] = useState<
     UniformDistribution[]
   >([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [sectors, setSectors] = useState<Sector[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>(() => loadCache("customers", []));
+  const [sectors, setSectors] = useState<Sector[]>(() => loadCache("sectors", []));
   const [productFlows, setProductFlows] = useState<ProductFlow[]>([]);
   const [productionBatches, setProductionBatches] = useState<ProductionBatch[]>(
-    [],
+    () => loadCache("batches", [])
   );
   const [productionAgendas, setProductionAgendas] = useState<
     ProductionAgenda[]
@@ -573,7 +589,11 @@ export function useDatabase(currentUser?: User | null) {
 
     const unsubItems = onSnapshot(
       collection(db, "items"),
-      (snap) => setItems(snap.docs.map((d) => d.data() as Item)),
+      (snap) => {
+        const list = snap.docs.map((d) => d.data() as Item);
+        setItems(list);
+        saveCache("items", list);
+      },
       (err) => handleSnapshotError("items", err),
     );
     const unsubOrders = onSnapshot(
@@ -594,6 +614,7 @@ export function useDatabase(currentUser?: User | null) {
           return ord;
         });
         setOrdersState(loadedOrders);
+        saveCache("orders", loadedOrders);
       },
       (err) => handleSnapshotError("orders", err),
     );

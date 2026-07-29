@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef } from "react";
 import { useDatabase } from "./useDatabase";
+import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
 import {
   ClipboardList,
   Search,
@@ -1454,13 +1455,16 @@ export function LotesScreen({
                 >
                   {/* Internal A4 elements mimicking real printed layout */}
                   <div className="border-b-2 border-slate-200 pb-4 mb-5 flex justify-between items-start">
-                    <div>
-                      <span className="text-[9px] font-black text-emerald-650 uppercase tracking-widest block mb-0.5">
-                        Metalúrgica - Controle de Produção
-                      </span>
-                      <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                        {previewBatch.name}
-                      </h2>
+                    <div className="flex items-center gap-3">
+                      <ReportHeaderLogo logoUrl={db.activeTenant?.logoUrl} className="w-10 h-10 object-contain" alt="Logo Império" />
+                      <div>
+                        <span className="text-[9px] font-black text-emerald-650 uppercase tracking-widest block mb-0.5">
+                          {db.activeTenant?.name || "Império Jomarci - Metalúrgica"}
+                        </span>
+                        <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                          {previewBatch.name}
+                        </h2>
+                      </div>
                     </div>
                     <span className="text-[8px] bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full font-bold uppercase border border-sky-200 tracking-wider">
                       Lote de Gerência

@@ -2,6 +2,7 @@ import React, { forwardRef } from "react";
 import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
 import { ProductionBatch, Order, User } from "./types";
+import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
 
 interface BatchPrintSheetProps {
   batch: ProductionBatch;
@@ -141,7 +142,7 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
             {/* Header Block exactly like preview */}
             <div className="border-b-2 border-slate-200 pb-4 mb-5 flex justify-between items-start">
               <div className="flex items-center gap-3">
-                <img src={logoUrl} alt="Imperio Logo" className="w-10 h-10 object-contain" />
+                <ReportHeaderLogo logoUrl={logoUrl} className="w-10 h-10 object-contain" alt="Imperio Logo" />
                 <div>
                   <span className="text-[9px] font-black text-emerald-650 uppercase tracking-widest block mb-0.5">
                     {companyName}
@@ -303,7 +304,7 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
              {/* Footnote matching preview */}
              <div className="mt-6 pt-3 border-t border-slate-100 flex justify-between items-center text-[9px] text-slate-400">
                <div className="flex items-center gap-2">
-                 <img src={logoUrl} alt="Imperio Logo" className="w-4 h-4 object-contain opacity-50" />
+                 <ReportHeaderLogo logoUrl={logoUrl} className="w-4 h-4 object-contain opacity-50" alt="Imperio Logo" />
                  <span>Impresso por: {currentUser.name}</span>
                </div>
                <span>Página {pageIndex + 1}/{pages.length} &bull; © PCP Lotes de Gerência</span>

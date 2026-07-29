@@ -28,6 +28,8 @@ function CompanyLogo({ logoUrl }: { logoUrl?: string }) {
     <img
       src={logoUrl}
       alt="logo"
+      crossOrigin="anonymous"
+      loading="eager"
       className="w-4 h-4 object-contain rounded-xs shrink-0"
       onError={() => setHasError(true)}
     />
