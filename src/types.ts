@@ -99,6 +99,7 @@ export interface Item {
   notes: string;
   basePrice?: number;
   unitPrice?: number;
+  unit?: string;
   productiveCost?: number; // Custo produtivo unitário (R$)
   productionPoints?: number;
   type?: "PRODUTO" | "PECA" | "EPI";
@@ -218,6 +219,7 @@ export interface Order {
   status?: OrderStatus;
   statusOriginalPdf?: string;
   unitPrice?: number;
+  unit?: string;
   paintedColor?: string;
   notes?: string;
   _alreadyDeducted?: boolean;

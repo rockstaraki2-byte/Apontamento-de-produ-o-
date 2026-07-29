@@ -45,6 +45,7 @@ import {
 } from "./BatchPrintSheet";
 import { AcompanhamentoPrintSheet } from "./AcompanhamentoPrintSheet";
 import { BatchEtiquetasPrintSheet } from "./BatchEtiquetasPrintSheet";
+import { getItemUnit } from "./utils/unitUtils";
 import html2pdf from "html2pdf.js";
 
 export function LotesScreen({
@@ -369,6 +370,7 @@ export function LotesScreen({
       "Cor",
       "Tamanho",
       "Variação",
+      "Unidade",
       "Quantidade",
       "Checado",
       "Liberado Fábrica",
@@ -381,6 +383,7 @@ export function LotesScreen({
       const item = db.items.find((i) => i.id === o.itemId);
       const isChecked = batch.checkedOrderIds?.includes(o.id) ? "Sim" : "Não";
       const isLiberated = batch.liberatedOrderIds?.includes(o.id) ? "Sim" : "Não";
+      const unit = getItemUnit(item, o);
 
       const r = [
         `#${o.orderCode || ""}`,
@@ -390,6 +393,7 @@ export function LotesScreen({
         o.color || "-",
         o.size || "-",
         o.variation || "-",
+        unit,
         o.totalQuantity,
         isChecked,
         isLiberated,
@@ -637,6 +641,7 @@ export function LotesScreen({
       "Item",
       "Cor",
       "Tamanho",
+      "Unidade",
       "Qtd. Solicitada",
       "Qtd. Produzida",
       "Faltante",
@@ -651,6 +656,7 @@ export function LotesScreen({
       o.item?.name || "Desconhecido",
       o.order.color || "-",
       o.order.size || "-",
+      getItemUnit(o.item, o.order),
       o.order.totalQuantity,
       o.produced,
       o.missing,
@@ -1057,7 +1063,7 @@ export function LotesScreen({
 
                               {/* Total Quantity */}
                               <td className="p-3.5 text-center font-mono font-bold text-slate-800">
-                                {o.totalQuantity} pçs
+                                {o.totalQuantity} {getItemUnit(item, o) === "PAR" ? "PAR" : "pçs"}
                               </td>
 
                               {/* Action statuses */}
@@ -1891,7 +1897,7 @@ export function LotesScreen({
                               <div className="flex justify-between items-center gap-1">
                                 <strong className="font-mono text-indigo-700 text-xs font-extrabold">#{o.orderCode}</strong>
                                 <span className="font-bold text-[11px] text-slate-800 bg-white border px-1.5 py-0.5 rounded shadow-2xs">
-                                  {o.totalQuantity} un
+                                  {o.totalQuantity} {getItemUnit(it, o)}
                                 </span>
                               </div>
                               <div className="text-slate-900 font-bold truncate mt-0.5">{o.customerName}</div>
@@ -2186,7 +2192,7 @@ export function LotesScreen({
                                 <div className="flex justify-between items-center gap-1">
                                   <strong className="font-mono text-amber-800 text-xs font-extrabold">#{o.orderCode}</strong>
                                   <span className="font-bold text-[11px] text-slate-800 bg-white border px-1.5 py-0.5 rounded shadow-2xs">
-                                    {o.totalQuantity} un
+                                    {o.totalQuantity} {getItemUnit(it, o)}
                                   </span>
                                 </div>
                                 <div className="text-slate-900 font-bold truncate mt-0.5">{o.customerName}</div>

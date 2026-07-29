@@ -1,6 +1,7 @@
 import React, { forwardRef } from "react";
 import { ProductionBatch, Order } from "./types";
 import { useDatabase } from "./useDatabase";
+import { getItemUnit } from "./utils/unitUtils";
 
 interface BatchEtiquetasPrintSheetProps {
   batch: ProductionBatch;
@@ -101,6 +102,7 @@ export interface LabelItemData {
   size: string;
   variation: string;
   quantity: number;
+  unitLabel?: string;
   imageUrl?: string | null;
   barcodeData: string;
   dateStr: string;
@@ -150,6 +152,7 @@ export const BatchEtiquetasPrintSheet = forwardRef<
             size: order.size || "-",
             variation: order.variation || "-",
             quantity: order.totalQuantity,
+            unitLabel: getItemUnit(item, order),
             imageUrl: item?.imageUrl || null,
             barcodeData: `${item?.code || 'ITEM'}|${order.orderCode || order.id}|${order.totalQuantity}`,
             dateStr: dateToday,
@@ -171,6 +174,7 @@ export const BatchEtiquetasPrintSheet = forwardRef<
             size: order.size || "-",
             variation: order.variation || "-",
             quantity: compQty,
+            unitLabel: getItemUnit(compItem, order),
             imageUrl: compItem?.imageUrl || null,
             barcodeData: `${compItem?.code || 'COMP'}|${order.orderCode || order.id}|${compQty}`,
             dateStr: dateToday,
@@ -188,6 +192,7 @@ export const BatchEtiquetasPrintSheet = forwardRef<
           size: order.size || "-",
           variation: order.variation || "-",
           quantity: order.totalQuantity,
+          unitLabel: getItemUnit(item, order),
           imageUrl: item?.imageUrl || null,
           barcodeData: `${item?.code || 'ITEM'}|${order.orderCode || order.id}|${order.totalQuantity}`,
           dateStr: dateToday,
@@ -259,7 +264,7 @@ export const BatchEtiquetasPrintSheet = forwardRef<
             <div className="text-right shrink-0 pl-1">
               <span className="text-[6.5px] block font-black text-slate-500 uppercase leading-none">Qtd Total</span>
               <strong className="text-[12px] font-black tracking-tight text-black block leading-none bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded mt-0.5">
-                {label.quantity} <span className="text-[7.5px]">UN</span>
+                {label.quantity} <span className="text-[7.5px]">{label.unitLabel || "UN"}</span>
               </strong>
             </div>
           </div>

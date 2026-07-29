@@ -2,6 +2,7 @@ import React, { forwardRef } from "react";
 import { useDatabase } from "./useDatabase";
 import { Order, ProductionBatch } from "./types";
 import { ClipboardList, Layers, Grid } from "lucide-react";
+import { getItemUnit } from "./utils/unitUtils";
 
 interface AcompanhamentoPrintSheetProps {
   batch: ProductionBatch;
@@ -323,7 +324,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
                                         </div>
                                       </div>
                                       <span className="font-extrabold text-slate-900 border-l pl-2 border-slate-200 shrink-0 leading-none">
-                                        {o.totalQuantity} un
+                                        {o.totalQuantity} {getItemUnit(item, o) === "PAR" ? "PAR" : "un"}
                                       </span>
                                     </div>
                                   );
@@ -358,7 +359,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
                             <div>
                               <span className="text-[7.5px] uppercase text-slate-400 font-extrabold block">Total Produzir</span>
                               <span className="text-blue-800 font-black">
-                                {p.totalQuantity} <span className="text-[8px] font-bold">un</span>
+                                {p.totalQuantity} <span className="text-[8px] font-bold">{getItemUnit(item, p.orders[0])}</span>
                               </span>
                             </div>
                             <div className="col-span-2 border-t border-dashed border-slate-200 pt-1 mt-1">
@@ -376,7 +377,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
                                   </span>
                                 </div>
                                 <span className="text-[7px] text-slate-400 font-semibold mb-0.5 leading-none">
-                                  ({item.productionPoints} pts/un)
+                                  ({item.productionPoints} pts/{getItemUnit(item, p.orders[0])})
                                 </span>
                               </div>
                             )}

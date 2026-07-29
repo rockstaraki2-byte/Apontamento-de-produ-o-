@@ -76,6 +76,7 @@ import {
 import { useDatabase } from "./useDatabase";
 import type { User, OrderStatus, Role, Order, AppNotification } from "./types";
 import { calculateWorkingMillis } from "./timeUtils";
+import { getItemUnit } from "./utils/unitUtils";
 
 import { ProducaoScreen } from "./ProducaoScreen";
 import { PinturaScreen } from "./PinturaScreen";
@@ -1547,6 +1548,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [isFormCollapsed, setIsFormCollapsed] = useState(false);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  const [unit, setUnit] = useState("UN");
   const [basePrice, setBasePrice] = useState<number | "">("");
   const [productiveCost, setProductiveCost] = useState<number | "">("");
   const [productionPoints, setProductionPoints] = useState<number | "">("");
@@ -1948,6 +1950,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           ...existing,
           code,
           name,
+          unit: unit || "UN",
           basePrice: basePrice === "" ? undefined : basePrice,
           unitPrice: basePrice === "" ? undefined : basePrice,
           productiveCost: productiveCost === "" ? undefined : productiveCost,
@@ -1964,6 +1967,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
         code,
         name,
         notes: "",
+        unit: unit || "UN",
         basePrice: basePrice === "" ? undefined : basePrice,
         unitPrice: basePrice === "" ? undefined : basePrice,
         productiveCost: productiveCost === "" ? undefined : productiveCost,
@@ -1976,6 +1980,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     }
     setCode("");
     setName("");
+    setUnit("UN");
     setBasePrice("");
     setProductiveCost("");
     setProductionPoints("");
@@ -1987,6 +1992,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     setEditingId(it.id);
     setCode(it.code);
     setName(it.name);
+    setUnit(it.unit || (getItemUnit(it) === "PAR" ? "PAR" : "UN"));
     setBasePrice(it.basePrice !== undefined ? it.basePrice : "");
     setProductiveCost(it.productiveCost !== undefined ? it.productiveCost : "");
     setProductionPoints(
@@ -2358,7 +2364,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
 
         {!isFormCollapsed && (
           <div className="p-4 flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <input
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
@@ -2371,6 +2377,19 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                 placeholder="Nome"
                 className="border border-gray-300 p-2 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
+              <select
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                className="border border-gray-300 p-2 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white font-semibold"
+              >
+                <option value="UN">UN (Unidade)</option>
+                <option value="PAR">PAR (Par)</option>
+                <option value="KG">KG (Quilograma)</option>
+                <option value="M">M (Metro)</option>
+                <option value="CX">CX (Caixa)</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div className="relative">
                 <span className="absolute left-3 top-2 text-gray-400 font-semibold text-sm">
                   R$
