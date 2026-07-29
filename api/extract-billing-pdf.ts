@@ -3,6 +3,11 @@ import { GoogleGenAI, Type } from '@google/genai';
 
 export const config = {
   maxDuration: 60,
+  api: {
+    bodyParser: {
+      sizeLimit: '20mb',
+    },
+  },
 };
 
 const responseSchema = {
@@ -32,7 +37,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { pdfText, fileBase64, mimeType } = req.body;
+    const body = req.body ?? {};
+    const { pdfText, fileBase64, mimeType } = body;
 
     if (!pdfText && !fileBase64) {
       return res.status(400).json({ error: 'pdfText ou fileBase64 é obrigatório' });
@@ -61,7 +67,7 @@ Para cada item / produto faturado encontrado, extraia:
 4. 'quantity' (Quantidade faturada do produto).
 5. 'billingDate' (Data de faturamento em YYYY-MM-DD, se referenciada).
 
-Retorne SOMENTE um OBJETO JSON estritamente dentro do request Schema abaixo. Não retorne mais nada além do JSON.`;
+Retorne SOMENTE um OBJETO JSON estritamente dentro do request Schema. Não retorne mais nada além do JSON.`;
 
     const parts: any[] = [{ text: prompt }];
 

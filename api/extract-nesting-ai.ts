@@ -3,6 +3,11 @@ import { GoogleGenAI, Type } from '@google/genai';
 
 export const config = {
   maxDuration: 60,
+  api: {
+    bodyParser: {
+      sizeLimit: '20mb',
+    },
+  },
 };
 
 const responseSchema = {
@@ -25,7 +30,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { fileBase64, mimeType, pdfText } = req.body;
+    const body = req.body ?? {};
+    const { fileBase64, mimeType, pdfText } = body;
 
     if (!fileBase64 && !pdfText) {
       return res.status(400).json({ error: 'fileBase64 ou pdfText é obrigatório' });
@@ -38,14 +44,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const ai = new GoogleGenAI({ apiKey });
 
-    const prompt = `Você é um leitor especialista em arquivos e planos de nesting de corte a laser (ex: arquivos gerados no SigmaNEST, Lantek, Pronest).
+    const prompt = `Você é um leitor especialista em arquivos e planos de nesting de corte a laser (ex: SigmaNEST, Lantek, Pronest).
 Analise o arquivo ou imagem enviado e extraia a tabela de peças (itens de nesting).
 Ignore as chapas inteiras ("Plates", "Chapas", "Sobras de chapa") e extraia apenas as peças ("Parts", "Sub-peças", "Peças cortadas").
-Para cada item do nesting, extraia os seguintes atributos obrigatórios:
-1. "partName": o nome do item ou código da peça (ex: "FIXADOR PROTEÇÃO", "MESA", "SUPORTE-A1", etc.).
-2. "size": dimensões/tamanho da peça se houver (ex: "250 x 300 mm" ou "30,00 x 40,00" ou similar). Se não encontrar, retorne "-".
-3. "totalQuantity": quantidade total de peças a ser cortada no plano (retorne como valor numérico inteiro maior que 0).
-4. "thumbnailBase64" (Opcional): Uma representação vetorial SVG extremamente simplificada da geometria da peça em formato Data URI. Retorne null se não conseguir gerar.`;
+Para cada item do nesting, extraia:
+1. "partName": nome do item ou código da peça.
+2. "size": dimensões/tamanho da peça. Se não encontrar, retorne "-".
+3. "totalQuantity": quantidade total de peças (inteiro maior que 0).
+4. "thumbnailBase64" (Opcional): SVG simplificado da geometria da peça como Data URI. Retorne null se não conseguir.`;
 
     const parts: any[] = [{ text: prompt }];
 

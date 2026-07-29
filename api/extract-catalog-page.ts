@@ -3,6 +3,11 @@ import { GoogleGenAI, Type } from '@google/genai';
 
 export const config = {
   maxDuration: 60,
+  api: {
+    bodyParser: {
+      sizeLimit: '20mb',
+    },
+  },
 };
 
 const responseSchema = {
@@ -27,7 +32,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { fileBase64, mimeType } = req.body;
+    const body = req.body ?? {};
+    const { fileBase64, mimeType } = body;
 
     if (!fileBase64) {
       return res.status(400).json({ error: 'fileBase64 é obrigatório' });
@@ -45,13 +51,9 @@ Sua tarefa é identificar todos os produtos apresentados nesta página.
 Para cada produto, extraia:
 - 'code': O código do produto (SKU/referência).
 - 'name': O nome ou descrição do produto.
-- 'box2d': As coordenadas da caixa delimitadora APENAS DA IMAGEM/FOTO espacial do produto correspondente.
- O formato deve ser um array com 4 números inteiros entre 0 e 1000 na seguinte ordem: [ymin, xmin, ymax, xmax].
- 0,0 é o canto superior esquerdo e 1000,1000 é o canto inferior direito.
- Exemplo de box2d: [120, 300, 250, 450].
- Se o produto não possuir imagem/foto ilustrativa na página, omita este campo ou retorne nulo.
+- 'box2d': Coordenadas da caixa delimitadora APENAS DA IMAGEM/FOTO do produto: array [ymin, xmin, ymax, xmax] com valores inteiros entre 0 e 1000. Omita se não houver foto.
 
-Atenção: A caixa delimitadora (box2d) deve englobar RIGOROSAMENTE apenas a foto ilustrativa do produto, e NÃO o texto da descrição ou o código.
+A caixa delimitadora deve englobar RIGOROSAMENTE apenas a foto ilustrativa, NÃO o texto ou código.
 
 Retorne obrigatoriamente um array de produtos no formato JSON.`;
 

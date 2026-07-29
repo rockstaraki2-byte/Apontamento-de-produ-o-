@@ -3,6 +3,11 @@ import { GoogleGenAI, Type } from '@google/genai';
 
 export const config = {
   maxDuration: 60,
+  api: {
+    bodyParser: {
+      sizeLimit: '20mb',
+    },
+  },
 };
 
 const responseSchema = {
@@ -53,7 +58,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { pdfText, fileBase64, mimeType } = req.body;
+    const body = req.body ?? {};
+    const { pdfText, fileBase64, mimeType } = body;
 
     if (!pdfText && !fileBase64) {
       return res.status(400).json({ error: 'pdfText ou fileBase64 é obrigatório' });
@@ -83,15 +89,11 @@ Instruções cruciais de Extração e Regras de Negócio:
 4. SITUAÇÃO / FORMA DE PAGAMENTO: O campo "SITUAÇÃO" ou "situação" ou "Forma de Pagamento" equivale à condição de pagamento do pedido. Mapeie este valor para 'paymentCondition'.
 5. PRAZOS DE PAGAMENTO: Extraia do campo "Prazos" ou "Condição de Pgto" de faturamento e guarde em 'paymentTerm'.
 6. DATA DE EMISSÃO: Extraia a data de emissão do pedido e guarde em 'emissionDate' no formato YYYY-MM-DD.
-7. DATA DE ENTREGA: Analise os campos "Prom.Ent." (Promessa de Entrega) e "Previsão" no PDF. A regra consistente adotada é: prefira a data de "Prom.Ent." por ser uma promessa firme; caso esteja em branco ou inválida, use a data de "Previsão". Preencha 'deliveryDate' no formato YYYY-MM-DD.
-8. VALOR TOTAL DO PEDIDO: Use a regra consistente de preferir o "Total Líquido" ou "Total Geral" (valor final descontado que o cliente paga) e guarde em 'totalValue'. Guarde também o "Total Bruto" em 'totalGrossValue'.
-9. STATUS DO PEDIDO: Mapeie o status do pedido obtido do texto para uma das seguintes chaves padrão:
-   - "AGUARDANDO_APROVACAO" (caso seja orçamento, rascunho ou aguardando aprovação financeira/comercial)
-   - "PENDENTE" (pedido firme, aprovado, pronto para faturamento, programado ou pendente de produção)
-   - "EM_PRODUCAO" (se indicar explicitamente estar em andamento produtivo ou corte)
-   Como padrão geral caso não esteja especificado, utilize "AGUARDANDO_APROVACAO".
-10. STATUS ORIGINAL NO PDF: Procure e extraia o campo bruto que indica o status ou situação do documento. Guarde esse texto original EXATAMENTE como encontrado no campo "statusOriginalPdf".
-11. ITENS DO PEDIDO: Para cada item listado no pedido extraia: itemCode, itemName, unit, quantity, unitPrice, totalPrice, color, size.
+7. DATA DE ENTREGA: Analise os campos "Prom.Ent." (Promessa de Entrega) e "Previsão" no PDF. Prefira a data de "Prom.Ent."; caso inválida, use "Previsão". Formato YYYY-MM-DD.
+8. VALOR TOTAL DO PEDIDO: Prefira "Total Líquido" ou "Total Geral" em 'totalValue'. Guarde "Total Bruto" em 'totalGrossValue'.
+9. STATUS DO PEDIDO: Mapeie para: "AGUARDANDO_APROVACAO", "PENDENTE" ou "EM_PRODUCAO". Padrão: "AGUARDANDO_APROVACAO".
+10. STATUS ORIGINAL NO PDF: Extraia o campo bruto de status/situação exatamente como encontrado em 'statusOriginalPdf'.
+11. ITENS DO PEDIDO: Para cada item extraia: itemCode, itemName, unit, quantity, unitPrice, totalPrice, color, size.
 
 Retorne obrigatoriamente um array de pedidos de acordo com o esquema JSON especificado.`;
 
