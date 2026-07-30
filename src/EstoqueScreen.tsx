@@ -201,6 +201,7 @@ export function EstoqueScreen({
   const [quantity, setQuantity] = useState<number | "">("");
   const [produtoBusca, setProdutoBusca] = useState("");
   const [stage, setStage] = useState<"INTERMEDIARIO" | "ACABADO">("ACABADO");
+  const [editingStockId, setEditingStockId] = useState<string | null>(null);
   const [selectedStockHistory, setSelectedStockHistory] =
     useState<StockEntry | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -700,10 +701,17 @@ export function EstoqueScreen({
   const triggerSaveStock = () => {
     let matchedItemId: number | "" = itemId;
     if (produtoBusca) {
-      const searchStrLower = produtoBusca.toLowerCase();
-      const mItem = db.items.find(
-        (i) => `${i.code} - ${i.name}`.toLowerCase() === searchStrLower,
-      );
+      const searchStrLower = produtoBusca.trim().toLowerCase();
+      const mItem = db.items.find((i) => {
+        const fullStr = `${i.code} - ${i.name}`.toLowerCase();
+        return (
+          fullStr === searchStrLower ||
+          i.name.toLowerCase() === searchStrLower ||
+          i.code.toLowerCase() === searchStrLower ||
+          searchStrLower.includes(i.code.toLowerCase()) ||
+          fullStr.includes(searchStrLower)
+        );
+      });
       if (mItem) matchedItemId = mItem.id;
     }
 
@@ -717,37 +725,69 @@ export function EstoqueScreen({
     setShowConfirmModal(true);
   };
 
-  const handleConfirmSaveStock = () => {
-    if (!itemId || quantity === "") {
+  const handleConfirmSaveStock = async () => {
+    let targetItemId: number | "" = itemId;
+    if (!targetItemId && produtoBusca) {
+      const searchStrLower = produtoBusca.trim().toLowerCase();
+      const mItem = db.items.find((i) => {
+        const fullStr = `${i.code} - ${i.name}`.toLowerCase();
+        return (
+          fullStr === searchStrLower ||
+          i.name.toLowerCase() === searchStrLower ||
+          i.code.toLowerCase() === searchStrLower ||
+          searchStrLower.includes(i.code.toLowerCase()) ||
+          fullStr.includes(searchStrLower)
+        );
+      });
+      if (mItem) targetItemId = mItem.id;
+    }
+
+    if (!targetItemId || quantity === "") {
       setShowConfirmModal(false);
       return;
     }
 
-    const stockId = `${itemId}|${color}|${size}|${variation}|${stage}`;
+    const targetColor = color || "";
+    const targetSize = size || "";
+    const targetVariation = variation || "";
+    const targetStage = stage || "ACABADO";
     const numQuantity = Number(quantity);
 
-    const existing = db.stocks.find((s) => s.id === stockId);
+    const generatedStockId = `${targetItemId}|${targetColor}|${targetSize}|${targetVariation}|${targetStage}`;
+    const stockId = editingStockId || generatedStockId;
+
+    const existing = db.stocks.find(
+      (s) =>
+        s.id === stockId ||
+        (s.itemId === Number(targetItemId) &&
+          (s.color || "") === targetColor &&
+          (s.size || "") === targetSize &&
+          (s.variation || "") === targetVariation &&
+          (s.stage || "ACABADO") === targetStage),
+    );
+
+    const actualStockId = existing ? existing.id : generatedStockId;
     const prevQty = existing?.quantity || 0;
     const diff = numQuantity - prevQty;
 
-    db.updateStocks([
+    await db.updateStocks([
       {
-        id: stockId,
-        itemId: Number(itemId),
-        color,
-        size,
-        variation,
+        id: actualStockId,
+        itemId: Number(targetItemId),
+        color: targetColor,
+        size: targetSize,
+        variation: targetVariation,
         quantity: Math.max(0, numQuantity),
-        stage,
+        stage: targetStage,
       },
     ]);
 
     if (diff !== 0) {
-      db.addStockMovement?.({
-        itemId: Number(itemId),
-        color,
-        size,
-        variation,
+      await db.addStockMovement?.({
+        itemId: Number(targetItemId),
+        color: targetColor,
+        size: targetSize,
+        variation: targetVariation,
         quantity: Math.abs(diff),
         type: diff > 0 ? "ENTRADA" : "SAIDA",
         description: `Ajuste manual de estoque (Anterior: ${prevQty} -> Novo: ${numQuantity})`,
@@ -761,11 +801,13 @@ export function EstoqueScreen({
     setVariation("");
     setQuantity("");
     setStage("ACABADO");
+    setEditingStockId(null);
     setIsFormVisible(false);
     setShowConfirmModal(false);
   };
 
   const handleEdit = (s: (typeof db.stocks)[0]) => {
+    setEditingStockId(s.id);
     setItemId(s.itemId);
     const itemObj = db.items.find((i) => i.id === s.itemId);
     if (itemObj) {
@@ -994,6 +1036,7 @@ export function EstoqueScreen({
               </div>
               <button
                 onClick={() => {
+                  setEditingStockId(null);
                   setItemId("");
                   setProdutoBusca("");
                   setColor("");
@@ -1190,46 +1233,62 @@ export function EstoqueScreen({
             </div>
 
             {showConfirmModal && (
-              <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full overflow-hidden flex flex-col">
-                  <div className="bg-blue-600 p-4">
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                      Confirmar Ajuste
+              <div className="fixed inset-0 bg-black/70 z-[250] flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-150">
+                <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-sm w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-150">
+                  <div className="bg-slate-900 text-white p-4 px-5 flex items-center justify-between">
+                    <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                      <Boxes className="text-emerald-400" size={18} />
+                      Confirmar Ajuste de Estoque
                     </h3>
-                  </div>
-                  <div className="p-4 flex flex-col gap-3 text-gray-800">
-                    <p className="font-semibold">
-                      {db.items.find((i) => i.id === Number(itemId))?.name}
-                    </p>
-                    <div className="flex justify-between border-b pb-2">
-                      <span className="text-gray-600">Quantidade Atual:</span>
-                      <span className="font-bold">
-                        {db.stocks.find(
-                          (s) =>
-                            s.id ===
-                            `${itemId}|${color}|${size}|${variation}|${stage}`,
-                        )?.quantity || 0}
-                      </span>
-                    </div>
-                    <div className="flex justify-between pb-2">
-                      <span className="text-gray-600">Nova Quantidade:</span>
-                      <span className="font-bold text-blue-600">
-                        {quantity}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="bg-gray-50 p-3 border-t flex justify-end gap-2">
                     <button
                       onClick={() => setShowConfirmModal(false)}
-                      className="px-4 py-2 bg-white border border-gray-200 text-gray-700 font-bold rounded-lg hover:bg-gray-50 transition text-sm shadow-xs"
+                      className="text-slate-400 hover:text-white p-1 rounded transition cursor-pointer"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <div className="p-5 flex flex-col gap-3 text-slate-800 text-xs font-sans">
+                    <p className="font-bold text-sm text-slate-900 border-b border-slate-100 pb-2">
+                      {db.items.find((i) => i.id === Number(itemId))?.name || produtoBusca || "Produto Selecionado"}
+                    </p>
+                    {(color || size || variation) && (
+                      <div className="text-[11px] text-slate-500 font-mono">
+                        Variação: {color || "-"} / {size || "-"} / {variation || "-"}
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-200/80 mt-1">
+                      <span className="text-slate-600 font-semibold">Quantidade Atual:</span>
+                      <span className="font-extrabold text-slate-900 text-sm">
+                        {db.stocks.find(
+                          (s) =>
+                            s.id === editingStockId ||
+                            s.id === `${itemId}|${color}|${size}|${variation}|${stage}`
+                        )?.quantity || 0} pçs
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center bg-emerald-50 p-2.5 rounded-lg border border-emerald-200/80">
+                      <span className="text-emerald-800 font-semibold">Nova Quantidade:</span>
+                      <span className="font-extrabold text-emerald-700 text-base">
+                        {quantity} pçs
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Tem certeza que deseja atualizar o saldo em estoque para este item?
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end gap-2.5">
+                    <button
+                      onClick={() => setShowConfirmModal(false)}
+                      className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg transition text-xs cursor-pointer"
                     >
                       Cancelar
                     </button>
                     <button
                       onClick={handleConfirmSaveStock}
-                      className="px-4 py-2 bg-blue-600 border border-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition text-sm shadow-xs"
+                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg transition text-xs shadow-md cursor-pointer flex items-center gap-1.5"
                     >
-                      Confirmar
+                      <Check size={14} />
+                      Confirmar Ajuste
                     </button>
                   </div>
                 </div>

@@ -898,6 +898,20 @@ export function useDatabase(currentUser?: User | null) {
       tenantId: activeTenantId,
       ...s,
     }));
+
+    setStocks((prev) => {
+      const copy = [...prev];
+      changedWithTenant.forEach((upd) => {
+        const idx = copy.findIndex((s) => s.id === upd.id);
+        if (idx >= 0) {
+          copy[idx] = { ...copy[idx], ...upd };
+        } else {
+          copy.push(upd as StockEntry);
+        }
+      });
+      return copy;
+    });
+
     await enqueueAction("UPDATE_STOCKS", { stocks: changedWithTenant });
     runSync();
   };
