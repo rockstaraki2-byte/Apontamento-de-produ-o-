@@ -14358,7 +14358,6 @@ export default function App() {
             currentUser.role === "MONTAGEM_RODRIGO" ||
             currentUser.role === "PRODUCAO" ||
             currentUser.role === "SOLDA" ||
-            currentUser.role === "MONTAGEM_RETRATIL" ||
             currentUser.role === "ENCARREGADO") && (
             <NavLink
               to="/producao"

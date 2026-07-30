@@ -327,6 +327,7 @@ export function HistoricoProducaoScreen({
     | "TORNO_CNC_WILLIAN"
     | "TORNO_CNC_HENRIQUE"
     | "INJETORA"
+    | "MONTAGEM_RETRATIL"
   >("PRODUCAO");
   const [manualItemSearch, setManualItemSearch] = useState("");
   const [manualItemId, setManualItemId] = useState("");
@@ -491,7 +492,8 @@ export function HistoricoProducaoScreen({
         | "PRENSA_EDUARDO"
         | "TORNO_CNC_WILLIAN"
         | "TORNO_CNC_HENRIQUE"
-        | "INJETORA" = "PRODUCAO";
+        | "INJETORA"
+        | "MONTAGEM_RETRATIL" = "PRODUCAO";
       const secUpper = (sectorStr || process || "").toUpperCase();
       const respUpper = (responsibleName || "").toUpperCase();
 
@@ -526,9 +528,12 @@ export function HistoricoProducaoScreen({
       } else if (secUpper.includes("INJETORA")) {
         logType = "INJETORA";
       } else if (
-        secUpper.includes("EMBALA") ||
         secUpper.includes("RETRÁTIL") ||
-        secUpper.includes("RETRATIL") ||
+        secUpper.includes("RETRATIL")
+      ) {
+        logType = "MONTAGEM_RETRATIL";
+      } else if (
+        secUpper.includes("EMBALA") ||
         secUpper.includes("ACABAMENTO")
       ) {
         logType = "EMBALAGEM";
@@ -887,6 +892,30 @@ export function HistoricoProducaoScreen({
         if (l.type === "CORTE_LASER" && l.orderId && !name) {
           const nest = db.nestTasks?.find((t) => t.id === l.orderId);
           name = nest ? nest.partName : "Peça Desconhecida";
+        } else if (l.type === "MONTAGEM_RETRATIL") {
+          const plan = (l.coilPlanId || l.taskId)
+            ? db.coilCuttingPlans?.find((p) => p.id === (l.coilPlanId || l.taskId))
+            : null;
+          const order = l.orderId ? db.orders.find((o) => o.id === l.orderId) : null;
+          const item = l.itemId ? db.items.find((i) => i.id === l.itemId) : null;
+          const orderItem = order ? db.items.find((i) => i.id === order.itemId) : null;
+          const planItem = plan?.targetItemIds?.[0]
+            ? db.items.find((i) => i.id === plan.targetItemIds[0])
+            : null;
+
+          name =
+            l.customProductName ||
+            planItem?.name ||
+            item?.name ||
+            orderItem?.name ||
+            plan?.name ||
+            l.partName ||
+            l.thirdPartyName ||
+            "Montagem Retrátil";
+          code = item?.code || orderItem?.code || planItem?.code || "";
+          client = order?.customerName || "";
+          orderCode = order?.orderCode || "";
+          status = order?.status || "";
         } else if (l.orderId) {
           const order = db.orders.find((o) => o.id === l.orderId);
           if (order) {
@@ -1199,6 +1228,7 @@ export function HistoricoProducaoScreen({
                     TORNO CNC ( Henrique )
                   </option>
                   <option value="INJETORA">MOLDAGEM INJETORA</option>
+                  <option value="MONTAGEM_RETRATIL">MONTAGEM RETRÁTIL</option>
                 </select>
               </div>
 
@@ -2005,6 +2035,37 @@ export function HistoricoProducaoScreen({
                   title = l.customProductName || "Injeção Plástica Manual";
                   subtitle = l.thirdPartyName ? `Piloto / Amostra (Cliente: ${l.thirdPartyName})` : "Injeção Avulsa/Piloto";
                 }
+              } else if (l.type === "MONTAGEM_RETRATIL") {
+                const plan = (l.coilPlanId || l.taskId)
+                  ? db.coilCuttingPlans?.find((p) => p.id === (l.coilPlanId || l.taskId))
+                  : null;
+                const order = l.orderId ? db.orders.find((o) => o.id === l.orderId) : null;
+                const item = l.itemId ? db.items.find((i) => i.id === l.itemId) : null;
+                const orderItem = order ? db.items.find((i) => i.id === order.itemId) : null;
+                const planItem = plan?.targetItemIds?.[0]
+                  ? db.items.find((i) => i.id === plan.targetItemIds[0])
+                  : null;
+
+                title =
+                  l.customProductName ||
+                  planItem?.name ||
+                  item?.name ||
+                  orderItem?.name ||
+                  (order as any)?.customProductName ||
+                  plan?.name ||
+                  l.partName ||
+                  l.thirdPartyName ||
+                  "Montagem Retrátil";
+
+                if (plan) {
+                  subtitle = `Lote PCP: ${plan.name} | Montagem Retrátil`;
+                } else if (order) {
+                  subtitle = `Pedido: ${order.orderCode} | Cli: ${order.customerName} | Status: ${order.status}`;
+                } else if (item) {
+                  subtitle = `Item: ${item.code || item.name} | Montagem Retrátil`;
+                } else {
+                  subtitle = "Montagem Retrátil";
+                }
               } else if (l.orderId) {
                 const order = db.orders.find((o) => o.id === l.orderId);
                 if (order) {
@@ -2016,11 +2077,18 @@ export function HistoricoProducaoScreen({
                   }
                   subtitle = `Pedido: ${order.orderCode} | Cli: ${order.customerName} | Status: ${order.status}`;
                 } else if (!title) {
-                  title = "Registro Desconhecido";
+                  title = l.customProductName || l.partName || l.thirdPartyName || l.processName || "Item de Produção";
                 }
               }
 
-              if (!title || title === "Corte Avulso Especial" || title === "Item Especial Avulso" || title === "Item Desconhecido" || title === l.processName) {
+              if (
+                !title ||
+                title === "Corte Avulso Especial" ||
+                title === "Item Especial Avulso" ||
+                title === "Item Desconhecido" ||
+                title === "Registro Desconhecido" ||
+                title === l.processName
+              ) {
                 const targetId = (l as any).itemId || l.parentItemId;
                 if (targetId) {
                   const item = db.items?.find((i) => i.id === targetId);
@@ -2028,6 +2096,15 @@ export function HistoricoProducaoScreen({
                     title = item.name;
                   }
                 }
+              }
+
+              if (!title || title === "Registro Desconhecido") {
+                if (l.customProductName) title = l.customProductName;
+                else if (l.partName) title = l.partName;
+                else if (l.thirdPartyName) title = l.thirdPartyName;
+                else if (l.processName) title = l.processName;
+                else if (l.type === "MONTAGEM_RETRATIL") title = "Montagem Retrátil";
+                else title = "Apontamento de Produção";
               }
 
               const operator = db.users.find((u) => u.id === l.operatorId);
@@ -2231,6 +2308,29 @@ export function HistoricoProducaoScreen({
             } else if (selectedLog.customProductName) {
               itemTitle = selectedLog.customProductName;
             }
+          } else if (selectedLog.type === "MONTAGEM_RETRATIL") {
+            const plan = (selectedLog.coilPlanId || selectedLog.taskId)
+              ? db.coilCuttingPlans?.find((p) => p.id === (selectedLog.coilPlanId || selectedLog.taskId))
+              : null;
+            const order = selectedLog.orderId ? db.orders.find((o) => o.id === selectedLog.orderId) : null;
+            const item = selectedLog.itemId ? db.items.find((i) => i.id === selectedLog.itemId) : null;
+            const orderItem = order ? db.items.find((i) => i.id === order.itemId) : null;
+            const planItem = plan?.targetItemIds?.[0]
+              ? db.items.find((i) => i.id === plan.targetItemIds[0])
+              : null;
+
+            itemTitle =
+              selectedLog.customProductName ||
+              planItem?.name ||
+              item?.name ||
+              orderItem?.name ||
+              (order as any)?.customProductName ||
+              plan?.name ||
+              selectedLog.partName ||
+              selectedLog.thirdPartyName ||
+              "Montagem Retrátil";
+            itemCode = item?.code || orderItem?.code || planItem?.code;
+            if (order) orderInfo = order;
           } else if (selectedLog.orderId) {
             const order = db.orders.find((o) => o.id === selectedLog.orderId);
             if (order) {
@@ -2242,10 +2342,19 @@ export function HistoricoProducaoScreen({
                 itemTitle = item ? item.name : "Item Desconhecido";
               }
               orderInfo = order;
+            } else if (!itemTitle) {
+              itemTitle = selectedLog.customProductName || selectedLog.partName || selectedLog.thirdPartyName || selectedLog.processName || "Item de Produção";
             }
           }
 
-          if (!itemTitle || itemTitle === "Corte Avulso Especial" || itemTitle === "Item Especial Avulso" || itemTitle === "Item Desconhecido" || itemTitle === selectedLog.processName) {
+          if (
+            !itemTitle ||
+            itemTitle === "Corte Avulso Especial" ||
+            itemTitle === "Item Especial Avulso" ||
+            itemTitle === "Item Desconhecido" ||
+            itemTitle === "Registro Desconhecido" ||
+            itemTitle === selectedLog.processName
+          ) {
             const targetId = (selectedLog as any).itemId || selectedLog.parentItemId;
             if (targetId) {
               const item = db.items?.find((i) => i.id === targetId);
@@ -2254,6 +2363,15 @@ export function HistoricoProducaoScreen({
                 itemCode = item.code;
               }
             }
+          }
+
+          if (!itemTitle || itemTitle === "Registro Desconhecido") {
+            if (selectedLog.customProductName) itemTitle = selectedLog.customProductName;
+            else if (selectedLog.partName) itemTitle = selectedLog.partName;
+            else if (selectedLog.thirdPartyName) itemTitle = selectedLog.thirdPartyName;
+            else if (selectedLog.processName) itemTitle = selectedLog.processName;
+            else if (selectedLog.type === "MONTAGEM_RETRATIL") itemTitle = "Montagem Retrátil";
+            else itemTitle = "Apontamento de Produção";
           }
 
           const operator = db.users.find(
@@ -2314,6 +2432,10 @@ export function HistoricoProducaoScreen({
             case "INJETORA":
               qtyLabel = "Qtd. Injetada";
               colorTheme = "purple";
+              break;
+            case "MONTAGEM_RETRATIL":
+              qtyLabel = "Qtd. Montada (Retrátil)";
+              colorTheme = "indigo";
               break;
           }
 
