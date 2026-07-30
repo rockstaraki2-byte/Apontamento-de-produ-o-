@@ -14468,6 +14468,17 @@ export default function App() {
 
           {(currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
+            currentUser.role === "MONTAGEM_RETRATIL") && 
+            (currentUser.id === "raul" || hasSector("retratil") || hasSector("montagem")) && (
+            <NavLink
+              to="/montagem-retratil"
+              icon={<Hammer size={24} />}
+              label="Montagem Retrátil"
+            />
+          )}
+
+          {(currentUser.role === "ADMIN" ||
+            currentUser.role === "GERENCIA" ||
             currentUser.role === "PCP") && (
             <NavLink
               to="/logistica"

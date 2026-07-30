@@ -33,7 +33,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [newPlanOrderSearch, setNewPlanOrderSearch] = React.useState("");
   const [newPlanTargetQuantity, setNewPlanTargetQuantity] = React.useState<number | "">("");
   const [newPlanType, setNewPlanType] = React.useState<
-    "PRENSA_RAFAEL" | "PRENSA_EDUARDO" | "BANHO_QUIMICO" | "INJETORA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE"
+    "PRENSA_RAFAEL" | "PRENSA_EDUARDO" | "BANHO_QUIMICO" | "INJETORA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE" | "MONTAGEM_RETRATIL"
   >("PRENSA_RAFAEL");
   const [newPlanDate, setNewPlanDate] = React.useState("");
   const [newPlanMold, setNewPlanMold] = React.useState(false);
@@ -206,7 +206,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [editingPlan, setEditingPlan] = React.useState<any | null>(null);
   const [editPlanName, setEditPlanName] = React.useState("");
   const [editPlanType, setEditPlanType] = React.useState<
-    "PRENSA_RAFAEL" | "PRENSA_EDUARDO" | "BANHO_QUIMICO" | "INJETORA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE"
+    "PRENSA_RAFAEL" | "PRENSA_EDUARDO" | "BANHO_QUIMICO" | "INJETORA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE" | "MONTAGEM_RETRATIL"
   >("PRENSA_RAFAEL");
   const [editPlanTargetSearch, setEditPlanTargetSearch] = React.useState("");
   const [editPlanStatus, setEditPlanStatus] = React.useState<
@@ -353,6 +353,9 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
             </option>
             <option value="TORNO_CNC_HENRIQUE">
               Torno CNC Henrique
+            </option>
+            <option value="MONTAGEM_RETRATIL">
+              Montagem Retrátil
             </option>
           </select>
         </div>
@@ -692,6 +695,8 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                         ? "Torno CNC Willian"
                         : p.type === "TORNO_CNC_HENRIQUE"
                         ? "Torno CNC Henrique"
+                        : p.type === "MONTAGEM_RETRATIL"
+                        ? "Montagem Retrátil"
                         : "Outro"}
                     </strong>
                   </div>
@@ -840,6 +845,9 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                   </option>
                   <option value="TORNO_CNC_HENRIQUE">
                     Torno CNC Henrique
+                  </option>
+                  <option value="MONTAGEM_RETRATIL">
+                    Montagem Retrátil
                   </option>
                 </select>
               </div>

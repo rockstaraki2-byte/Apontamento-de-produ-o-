@@ -238,7 +238,7 @@ export interface ProductionLog {
   quantityPainted?: number;
   quantityCut?: number;
   quantityInvoiced?: number;
-  type?: "EMBALAGEM" | "PRODUCAO" | "PINTURA" | "CORTE_LASER" | "FATURAMENTO" | "BANHO_QUIMICO" | "PRENSA_RAFAEL" | "PRENSA_EDUARDO" | "INJETORA" | "RESERVA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE";
+  type?: "EMBALAGEM" | "PRODUCAO" | "PINTURA" | "CORTE_LASER" | "FATURAMENTO" | "BANHO_QUIMICO" | "PRENSA_RAFAEL" | "PRENSA_EDUARDO" | "INJETORA" | "RESERVA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE" | "MONTAGEM_RETRATIL";
   timestamp: number;
   durationMillis: number;
   skipInventoryUpdate?: boolean;
@@ -276,7 +276,7 @@ export interface ActiveTask {
   variation: string;
   operatorId: string;
   startTime: number;
-  type?: "EMBALAGEM" | "PRODUCAO" | "PINTURA" | "CORTE_LASER" | "PRENSA_RAFAEL" | "PRENSA_EDUARDO" | "BANHO_QUIMICO" | "INJETORA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE";
+  type?: "EMBALAGEM" | "PRODUCAO" | "PINTURA" | "CORTE_LASER" | "PRENSA_RAFAEL" | "PRENSA_EDUARDO" | "BANHO_QUIMICO" | "INJETORA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE" | "MONTAGEM_RETRATIL";
   processName?: string;
   partName?: string;
   taskId?: number;
@@ -367,7 +367,7 @@ export interface CoilCuttingPlan {
   targetItemIds: number[]; // Intermediate pieces produced
   status: "PENDENTE" | "EM_PRODUCAO" | "CONCLUIDO";
   createdAt: number;
-  type?: "PRENSA_RAFAEL" | "INJETORA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE";
+  type?: "PRENSA_RAFAEL" | "INJETORA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE" | "MONTAGEM_RETRATIL" | "PRENSA_EDUARDO" | "BANHO_QUIMICO";
   plannedExecutionDate?: string; // Formatted date YYYY-MM-DD
   requiresMoldChange?: boolean; // Specific for Injetora
   targetQuantity?: number; // Qtd. a ser produzida

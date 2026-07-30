@@ -13,6 +13,7 @@ import {
   Users,
   User as UserIcon,
   ChevronRight,
+  Play,
 } from "lucide-react";
 import { useDatabase } from "./useDatabase";
 import type { User, OrderStatus } from "./types";
@@ -174,9 +175,40 @@ export function ProducaoScreen({
   const [retratilModalOpen, setRetratilModalOpen] = useState(false);
   const [selectedOperator, setSelectedOperator] = useState<string>("");
 
+  const retratilPcpPlans = React.useMemo(() => {
+    return (db.coilCuttingPlans || []).filter(
+      (p) => p.type === "MONTAGEM_RETRATIL" && p.status !== "CONCLUIDO"
+    );
+  }, [db.coilCuttingPlans]);
+
+  const startPcpPlan = (plan: any) => {
+    if (!plan) return;
+    const targetItemId = plan.targetItemIds?.[0] || 0;
+    const targetItem = db.items.find((i) => i.id === targetItemId);
+
+    db.addActivePack({
+      id: Date.now(),
+      itemId: targetItemId,
+      color: "-",
+      size: "-",
+      variation: "-",
+      operatorId: currentUser.id,
+      startTime: Date.now(),
+      type: "MONTAGEM_RETRATIL",
+      partName: plan.name,
+      taskId: plan.id,
+      processName: "Montar",
+      thirdPartyName: plan.name,
+      customProductName: targetItem?.name || plan.name,
+    });
+
+    db.updateCoilCuttingPlan({ ...plan, status: "EM_PRODUCAO" });
+    setView("LIST_ACTIVE");
+  };
+
   const activePacksList = db.activePacks.filter(
     (p) =>
-      p.type === "PRODUCAO" &&
+      (p.type === "PRODUCAO" || p.type === "MONTAGEM_RETRATIL") &&
       (currentUser.role === "ADMIN" || currentUser.role === "GERENCIA"
         ? true
         : p.operatorId === currentUser.id ||
@@ -230,7 +262,9 @@ export function ProducaoScreen({
       const item = db.items.find((i) => i.id === o.itemId);
       if (!item) return false;
       const lowerName = item.name.toLowerCase();
-      if (!lowerName.includes("retrátil") && !lowerName.includes("retratil")) {
+      const isRetratilItem = lowerName.includes("retrátil") || lowerName.includes("retratil");
+      const isPlanItem = retratilPcpPlans.some((p) => p.targetItemIds?.includes(o.itemId));
+      if (!isRetratilItem && !isPlanItem) {
         return false;
       }
     }
@@ -541,7 +575,7 @@ export function ProducaoScreen({
           itemId: activePack.itemId,
           operatorId: activePack.operatorId,
           quantityProcessed: allocate,
-          type: "PRODUCAO",
+          type: isRetratil || activePack.type === "MONTAGEM_RETRATIL" ? "MONTAGEM_RETRATIL" : "PRODUCAO",
           timestamp: endTime,
           durationMillis: 0,
           processName: activePack.processName,
@@ -746,6 +780,12 @@ export function ProducaoScreen({
       setNextProcess("");
     } else {
       db.removeActivePack(activePack.id);
+      if (activePack.taskId && activePack.taskId > 0) {
+        const associatedPlan = db.coilCuttingPlans?.find((p) => p.id === activePack.taskId);
+        if (associatedPlan) {
+          db.updateCoilCuttingPlan({ ...associatedPlan, status: "CONCLUIDO" });
+        }
+      }
     }
 
     setSelectedPackId(null);
@@ -1745,6 +1785,101 @@ export function ProducaoScreen({
         <div className="space-y-6 pr-1">
           {/* RESUMO DIÁRIO */}
           <DailySummaryWidget db={db} currentUser={currentUser} />
+
+          {/* SEÇÃO DE LOTES PCP DO SETOR MONTAGEM RETRÁTIL */}
+          {(isRetratil || currentUser.role === "MONTAGEM_RETRATIL" || retratilPcpPlans.length > 0) && (
+            <div className="bg-slate-900 text-white rounded-2xl p-4 md:p-5 shadow-lg border border-slate-800">
+              <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">📦</span>
+                  <div>
+                    <h3 className="font-extrabold text-sm md:text-base text-white tracking-tight">
+                      Lotes & Programações PCP — Montagem Retrátil
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Lotes autorizados pelo PCP/Gerência para execução neste setor
+                    </p>
+                  </div>
+                </div>
+                <span className="text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded-full">
+                  {retratilPcpPlans.length} lote(s)
+                </span>
+              </div>
+
+              {retratilPcpPlans.length === 0 ? (
+                <p className="text-xs text-slate-400 py-3 text-center italic">
+                  Nenhum lote do PCP pendente para Montagem Retrátil neste momento.
+                </p>
+              ) : (
+                <div className="grid gap-3">
+                  {retratilPcpPlans.map((plan) => {
+                    const targetItemId = plan.targetItemIds?.[0] || 0;
+                    const targetItem = db.items.find((i) => i.id === targetItemId);
+                    const isExecuting = plan.status === "EM_PRODUCAO";
+
+                    return (
+                      <div
+                        key={plan.id}
+                        className="bg-slate-800/90 border border-slate-700/80 rounded-xl p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-indigo-500/50 transition"
+                      >
+                        <div className="flex items-start gap-3">
+                          {targetItem?.imageUrl ? (
+                            <img
+                              src={targetItem.imageUrl}
+                              alt={targetItem.name}
+                              className="w-12 h-12 object-cover rounded-lg border border-slate-700 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 bg-slate-700/60 rounded-lg flex items-center justify-center text-slate-400 shrink-0">
+                              <Package size={22} />
+                            </div>
+                          )}
+                          <div className="flex flex-col text-left">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-sm text-slate-100">
+                                {plan.name}
+                              </span>
+                              <span
+                                className={`text-[10px] font-extrabold px-2 py-0.5 rounded uppercase tracking-wider ${
+                                  isExecuting
+                                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                                    : "bg-blue-500/20 text-blue-300 border border-blue-500/40"
+                                }`}
+                              >
+                                {isExecuting ? "Em Execução" : "Pendente"}
+                              </span>
+                            </div>
+                            <span className="text-xs text-slate-300 mt-0.5 font-medium">
+                              Peça: <strong className="text-white">{targetItem?.name || "Peça não identificada"}</strong>
+                            </span>
+                            <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
+                              {plan.targetQuantity && (
+                                <span>
+                                  Qtd. Alvo: <strong className="text-emerald-400">{plan.targetQuantity} pçs</strong>
+                                </span>
+                              )}
+                              {plan.plannedExecutionDate && (
+                                <span>Data: {plan.plannedExecutionDate}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                          <button
+                            onClick={() => startPcpPlan(plan)}
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow-md cursor-pointer"
+                          >
+                            <Play size={14} /> {isExecuting ? "Retomar Lote" : "Iniciar Lote"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
 
 

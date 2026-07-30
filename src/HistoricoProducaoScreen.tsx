@@ -58,7 +58,8 @@ interface ParsedSpreadsheetRow {
     | "PRENSA_EDUARDO"
     | "TORNO_CNC_WILLIAN"
     | "TORNO_CNC_HENRIQUE"
-    | "INJETORA";
+    | "INJETORA"
+    | "MONTAGEM_RETRATIL";
   isValid: boolean;
 }
 
