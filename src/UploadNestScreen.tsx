@@ -290,29 +290,39 @@ export function UploadNestScreen({
       let responseText = "";
       try {
         responseText = await response.text();
-        data = responseText ? JSON.parse(responseText) : {};
-      } catch (jsonErr) {
-        console.error("Erro ao decodificar JSON de nesting:", jsonErr);
-        if (
-          response.status === 504 ||
-          response.status === 502 ||
-          response.status === 503 ||
-          (responseText &&
-            (responseText.toLowerCase().includes("timeout") ||
-              responseText.toLowerCase().includes("<html") ||
-              responseText.toLowerCase().includes("service unavailable") ||
-              responseText.toLowerCase().includes("indisponível")))
-        ) {
-          data = {
-            success: false,
-            error: "Limite de tempo excedido (Timeout) ou Servidor Temporariamente Indisponível. O arquivo PDF ou imagem é muito pesado ou o servidor levou mais de 10 segundos para responder. Por favor, tente novamente com uma imagem menor ou utilize a Adição Manual para cadastrar as peças sem bloqueio.",
-          };
+        const trimmed = (responseText || "").trim();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+          data = JSON.parse(trimmed);
         } else {
-          data = {
-            success: false,
-            error: "Resposta em formato inválido recebida da IA.",
-          };
+          const lower = trimmed.toLowerCase();
+          if (
+            response.status === 504 ||
+            response.status === 502 ||
+            response.status === 503 ||
+            response.status === 404 ||
+            lower.includes("timeout") ||
+            lower.includes("the page") ||
+            lower.includes("<html") ||
+            lower.includes("service unavailable") ||
+            lower.includes("indisponível")
+          ) {
+            data = {
+              success: false,
+              error: "Limite de tempo excedido (Timeout na Vercel/Servidor) ou Servidor Indisponível. O arquivo PDF ou imagem é muito pesado ou o servidor levou mais de 10 segundos para responder. Por favor, tente novamente com uma imagem menor ou utilize a Adição Manual para cadastrar as peças sem bloqueio.",
+            };
+          } else {
+            data = {
+              success: false,
+              error: "Resposta em formato inválido recebida da IA (não é um JSON válido).",
+            };
+          }
         }
+      } catch (jsonErr) {
+        console.warn("Aviso ao decodificar JSON de nesting:", jsonErr);
+        data = {
+          success: false,
+          error: "Erro ao processar a resposta da IA.",
+        };
       }
 
       if (!response.ok || !data.success) {

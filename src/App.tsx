@@ -3631,28 +3631,39 @@ function PedidosScreen({
       let data: any = {};
       try {
         responseText = await resp.text();
-        data = responseText ? JSON.parse(responseText) : {};
-      } catch (jsonErr) {
-        console.error("Erro ao decodificar JSON de faturamento:", jsonErr);
-        if (
-          resp.status === 504 ||
-          resp.status === 502 ||
-          resp.status === 503 ||
-          (responseText &&
-            (responseText.toLowerCase().includes("timeout") ||
-              responseText.toLowerCase().includes("<html")))
-        ) {
-          data = {
-            success: false,
-            error:
-              "Limite de tempo excedido (Timeout). O arquivo PDF enviado é muito grande, pesado ou o servidor levou muito tempo para processar os dados por IA. Por favor, divida o PDF em partes menores ou utilize a Adição Manual/Planilha.",
-          };
+        const trimmed = (responseText || "").trim();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+          data = JSON.parse(trimmed);
         } else {
-          data = {
-            success: false,
-            error: "Resposta em formato inválido recebida do servidor (não é um JSON válido).",
-          };
+          const lower = trimmed.toLowerCase();
+          if (
+            resp.status === 504 ||
+            resp.status === 502 ||
+            resp.status === 503 ||
+            resp.status === 404 ||
+            lower.includes("timeout") ||
+            lower.includes("the page") ||
+            lower.includes("<html") ||
+            lower.includes("service unavailable")
+          ) {
+            data = {
+              success: false,
+              error:
+                "Limite de tempo excedido (Timeout na Vercel/Servidor) ou rota do backend não encontrada. O PDF enviado é pesado ou o servidor levou mais tempo do que o limite da plataforma para processar. Por favor, divida o PDF em partes menores ou utilize a Adição Manual/Planilha.",
+            };
+          } else {
+            data = {
+              success: false,
+              error: "Resposta em formato inválido recebida do servidor (não é um JSON válido).",
+            };
+          }
         }
+      } catch (jsonErr) {
+        console.warn("Aviso ao decodificar resposta de faturamento:", jsonErr);
+        data = {
+          success: false,
+          error: "Erro ao processar a resposta do servidor.",
+        };
       }
 
       if (!resp.ok || !data.success) {
@@ -3754,28 +3765,39 @@ function PedidosScreen({
       let data: any = {};
       try {
         responseText = await resp.text();
-        data = responseText ? JSON.parse(responseText) : {};
-      } catch (jsonErr) {
-        console.error("Erro ao decodificar JSON de extração de pedidos:", jsonErr);
-        if (
-          resp.status === 504 ||
-          resp.status === 502 ||
-          resp.status === 503 ||
-          (responseText &&
-            (responseText.toLowerCase().includes("timeout") ||
-              responseText.toLowerCase().includes("<html")))
-        ) {
-          data = {
-            success: false,
-            error:
-              "Limite de tempo excedido (Timeout). O arquivo PDF enviado é muito grande, pesado ou o servidor levou muito tempo para processar os dados por IA. Por favor, tente enviar um PDF menor (menos páginas) ou utilize a Adição Manual/Planilha para cadastrar sem bloqueio.",
-          };
+        const trimmed = (responseText || "").trim();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+          data = JSON.parse(trimmed);
         } else {
-          data = {
-            success: false,
-            error: "Resposta em formato inválido recebida do servidor (não é um JSON válido).",
-          };
+          const lower = trimmed.toLowerCase();
+          if (
+            resp.status === 504 ||
+            resp.status === 502 ||
+            resp.status === 503 ||
+            resp.status === 404 ||
+            lower.includes("timeout") ||
+            lower.includes("the page") ||
+            lower.includes("<html") ||
+            lower.includes("service unavailable")
+          ) {
+            data = {
+              success: false,
+              error:
+                "Limite de tempo excedido (Timeout na Vercel/Servidor) ou rota de API não conectada. O arquivo PDF enviado é muito grande, pesado ou o servidor levou muito tempo para processar os dados por IA. Por favor, tente enviar um PDF menor (menos páginas) ou utilize a Adição Manual/Planilha para cadastrar sem bloqueio.",
+            };
+          } else {
+            data = {
+              success: false,
+              error: "Resposta em formato inválido recebida do servidor (não é um JSON válido).",
+            };
+          }
         }
+      } catch (jsonErr) {
+        console.warn("Aviso ao decodificar resposta de extração de pedidos:", jsonErr);
+        data = {
+          success: false,
+          error: "Erro ao processar a resposta do servidor.",
+        };
       }
 
       if (!resp.ok || !data.success) {

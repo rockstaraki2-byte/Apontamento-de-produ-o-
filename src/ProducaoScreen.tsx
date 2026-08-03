@@ -206,14 +206,22 @@ export function ProducaoScreen({
     setView("LIST_ACTIVE");
   };
 
-  const activePacksList = db.activePacks.filter(
-    (p) =>
+  const activePacksList = db.activePacks.filter((p) => {
+    if (isRetratil || currentUser.role === "MONTAGEM_RETRATIL") {
+      if (p.type !== "MONTAGEM_RETRATIL") return false;
+      return (
+        p.operatorId === currentUser.id ||
+        p.operatorId.startsWith(currentUser.id + " - ")
+      );
+    }
+    return (
       (p.type === "PRODUCAO" || p.type === "MONTAGEM_RETRATIL") &&
       (currentUser.role === "ADMIN" || currentUser.role === "GERENCIA"
         ? true
         : p.operatorId === currentUser.id ||
-          p.operatorId.startsWith(currentUser.id + " - ")),
-  );
+          p.operatorId.startsWith(currentUser.id + " - "))
+    );
+  });
 
   const getPackProgress = (pack: any) => {
     if (pack.itemId === 0) return null;
@@ -364,7 +372,7 @@ export function ProducaoScreen({
         variation: group.variation,
         operatorId,
         startTime: Date.now(),
-        type: "PRODUCAO",
+        type: isRetratil || currentUser.role === "MONTAGEM_RETRATIL" ? "MONTAGEM_RETRATIL" : "PRODUCAO",
         processName: selectedProcess || undefined,
       });
 
@@ -1785,101 +1793,6 @@ export function ProducaoScreen({
         <div className="space-y-6 pr-1">
           {/* RESUMO DIÁRIO */}
           <DailySummaryWidget db={db} currentUser={currentUser} />
-
-          {/* SEÇÃO DE LOTES PCP DO SETOR MONTAGEM RETRÁTIL */}
-          {(isRetratil || currentUser.role === "MONTAGEM_RETRATIL" || retratilPcpPlans.length > 0) && (
-            <div className="bg-slate-900 text-white rounded-2xl p-4 md:p-5 shadow-lg border border-slate-800">
-              <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">📦</span>
-                  <div>
-                    <h3 className="font-extrabold text-sm md:text-base text-white tracking-tight">
-                      Lotes & Programações PCP — Montagem Retrátil
-                    </h3>
-                    <p className="text-xs text-slate-400">
-                      Lotes autorizados pelo PCP/Gerência para execução neste setor
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded-full">
-                  {retratilPcpPlans.length} lote(s)
-                </span>
-              </div>
-
-              {retratilPcpPlans.length === 0 ? (
-                <p className="text-xs text-slate-400 py-3 text-center italic">
-                  Nenhum lote do PCP pendente para Montagem Retrátil neste momento.
-                </p>
-              ) : (
-                <div className="grid gap-3">
-                  {retratilPcpPlans.map((plan) => {
-                    const targetItemId = plan.targetItemIds?.[0] || 0;
-                    const targetItem = db.items.find((i) => i.id === targetItemId);
-                    const isExecuting = plan.status === "EM_PRODUCAO";
-
-                    return (
-                      <div
-                        key={plan.id}
-                        className="bg-slate-800/90 border border-slate-700/80 rounded-xl p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-indigo-500/50 transition"
-                      >
-                        <div className="flex items-start gap-3">
-                          {targetItem?.imageUrl ? (
-                            <img
-                              src={targetItem.imageUrl}
-                              alt={targetItem.name}
-                              className="w-12 h-12 object-cover rounded-lg border border-slate-700 shrink-0"
-                            />
-                          ) : (
-                            <div className="w-12 h-12 bg-slate-700/60 rounded-lg flex items-center justify-center text-slate-400 shrink-0">
-                              <Package size={22} />
-                            </div>
-                          )}
-                          <div className="flex flex-col text-left">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-bold text-sm text-slate-100">
-                                {plan.name}
-                              </span>
-                              <span
-                                className={`text-[10px] font-extrabold px-2 py-0.5 rounded uppercase tracking-wider ${
-                                  isExecuting
-                                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                                    : "bg-blue-500/20 text-blue-300 border border-blue-500/40"
-                                }`}
-                              >
-                                {isExecuting ? "Em Execução" : "Pendente"}
-                              </span>
-                            </div>
-                            <span className="text-xs text-slate-300 mt-0.5 font-medium">
-                              Peça: <strong className="text-white">{targetItem?.name || "Peça não identificada"}</strong>
-                            </span>
-                            <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
-                              {plan.targetQuantity && (
-                                <span>
-                                  Qtd. Alvo: <strong className="text-emerald-400">{plan.targetQuantity} pçs</strong>
-                                </span>
-                              )}
-                              {plan.plannedExecutionDate && (
-                                <span>Data: {plan.plannedExecutionDate}</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 self-end md:self-center shrink-0">
-                          <button
-                            onClick={() => startPcpPlan(plan)}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow-md cursor-pointer"
-                          >
-                            <Play size={14} /> {isExecuting ? "Retomar Lote" : "Iniciar Lote"}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
 
 
 

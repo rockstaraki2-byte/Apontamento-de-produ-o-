@@ -45,6 +45,69 @@ export function StatusScreen({
     representativeName: string;
   } | null>(null);
 
+  const [linkModalOrderGroup, setLinkModalOrderGroup] = useState<{
+    code: string;
+    orders: Order[];
+  } | null>(null);
+  const [selectedBatchToLink, setSelectedBatchToLink] = useState<string>("");
+  const [newBatchNameInput, setNewBatchNameInput] = useState<string>("");
+
+  const handleLinkOrdersToBatch = async (batchId: number, orderIds: number[]) => {
+    const targetBatch = db.productionBatches.find((b) => b.id === batchId);
+    if (!targetBatch) return;
+
+    const currentOrderIds = targetBatch.orderIds || [];
+    const merged = Array.from(new Set([...currentOrderIds, ...orderIds]));
+
+    await db.updateProductionBatch({
+      ...targetBatch,
+      orderIds: merged,
+    });
+
+    alert(`Pedido vinculado com sucesso ao Lote "${targetBatch.name || targetBatch.code}"!`);
+    setLinkModalOrderGroup(null);
+    setSelectedBatchToLink("");
+    setNewBatchNameInput("");
+  };
+
+  const handleCreateAndLinkBatch = async (batchName: string, orderIds: number[]) => {
+    if (!batchName.trim()) {
+      alert("Por favor, informe um nome ou código para o novo lote.");
+      return;
+    }
+
+    const newBatchId = Date.now();
+    await db.addProductionBatch({
+      id: newBatchId,
+      code: batchName.trim(),
+      name: batchName.trim(),
+      orderIds,
+      status: "PLANEJADO",
+      createdAt: Date.now(),
+    });
+
+    alert(`Novo lote "${batchName.trim()}" criado e pedido vinculado com sucesso!`);
+    setLinkModalOrderGroup(null);
+    setSelectedBatchToLink("");
+    setNewBatchNameInput("");
+  };
+
+  const handleUnlinkOrdersFromBatch = async (batchId: number, orderIds: number[]) => {
+    const targetBatch = db.productionBatches.find((b) => b.id === batchId);
+    if (!targetBatch) return;
+
+    const updatedOrderIds = (targetBatch.orderIds || []).filter(
+      (id) => !orderIds.includes(id)
+    );
+
+    await db.updateProductionBatch({
+      ...targetBatch,
+      orderIds: updatedOrderIds,
+    });
+
+    alert(`Pedido desvinculado do Lote com sucesso!`);
+  };
+
   const handleDeleteOrder = (orderId: number, orderCode: string) => {
     if (currentUser.role === "LEITURA" || currentUser.role === "REPRESENTANTE") return;
     if (confirm(`Tem certeza que deseja excluir este item do pedido #${orderCode}?`)) {
@@ -928,6 +991,37 @@ export function StatusScreen({
                     </button>
                   )}
                   {currentUser.role !== "LEITURA" && (
+                    (() => {
+                      const orderItemIds = orders.map((o) => o.id);
+                      const linkedBatches = db.productionBatches.filter((b) =>
+                        (b.orderIds || []).some((id) => orderItemIds.includes(id))
+                      );
+
+                      if (linkedBatches.length > 0) {
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => setLinkModalOrderGroup({ code, orders })}
+                            className="px-2.5 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-900 border border-indigo-300 font-extrabold text-[10px] rounded-lg transition active:scale-95 flex items-center gap-1 cursor-pointer"
+                            title="Gerenciar vínculo com lote"
+                          >
+                            🏷️ Lote: {linkedBatches.map((b) => b.code || b.name).join(", ")}
+                          </button>
+                        );
+                      }
+
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setLinkModalOrderGroup({ code, orders })}
+                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-bold text-[10px] rounded-lg transition active:scale-95 flex items-center gap-1 cursor-pointer border border-slate-200 hover:border-indigo-300"
+                        >
+                          🏷️ Vincular a Lote
+                        </button>
+                      );
+                    })()
+                  )}
+                  {currentUser.role !== "LEITURA" && (
                     <button
                       type="button"
                       onClick={() => handleReplicateGroup(code, orders)}
@@ -1318,6 +1412,161 @@ _Mensagem do Sistema Império Jomarci_`;
                   className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded text-xs font-bold transition disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
                 >
                   <Phone size={14} className="text-white" /> Abrir WhatsApp
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL VINCULAR PEDIDO A LOTE */}
+      {linkModalOrderGroup && (() => {
+        const orderItemIds = linkModalOrderGroup.orders.map((o) => o.id);
+        const currentLinked = db.productionBatches.filter((b) =>
+          (b.orderIds || []).some((id) => orderItemIds.includes(id))
+        );
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[120] flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 flex flex-col gap-5 animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                    🏷️ Vincular Pedido #{linkModalOrderGroup.code} a um Lote
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                    Associe os itens deste pedido a um Lote de Produção existente ou crie um novo lote
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLinkModalOrderGroup(null);
+                    setSelectedBatchToLink("");
+                    setNewBatchNameInput("");
+                  }}
+                  className="text-slate-400 hover:text-slate-700 p-1 rounded-lg transition cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Batches currently linked */}
+              {currentLinked.length > 0 && (
+                <div className="bg-indigo-50/80 border border-indigo-200 p-3.5 rounded-xl flex flex-col gap-2">
+                  <span className="text-xs font-bold text-indigo-900">
+                    Lote(s) atualmente vinculado(s):
+                  </span>
+                  <div className="flex flex-col gap-2">
+                    {currentLinked.map((b) => (
+                      <div
+                        key={b.id}
+                        className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-indigo-100 shadow-2xs"
+                      >
+                        <div>
+                          <span className="font-extrabold text-xs text-indigo-950 block">
+                            {b.code} - {b.name}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            Status: {b.status} | Total Itens no Lote: {(b.orderIds || []).length}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleUnlinkOrdersFromBatch(b.id, orderItemIds)}
+                          className="text-[11px] font-bold text-rose-600 hover:bg-rose-50 px-2.5 py-1 rounded transition border border-rose-200 cursor-pointer"
+                        >
+                          Desvincular
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Option 1: Select existing batch */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-bold text-slate-700">
+                  1. Selecionar um Lote Existente:
+                </label>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedBatchToLink}
+                    onChange={(e) => setSelectedBatchToLink(e.target.value)}
+                    className="flex-1 p-2.5 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 bg-white focus:outline-indigo-500"
+                  >
+                    <option value="">-- Selecione um Lote --</option>
+                    {db.productionBatches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.code} - {b.name} ({(b.orderIds || []).length} itens)
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!selectedBatchToLink}
+                    onClick={() =>
+                      handleLinkOrdersToBatch(
+                        Number(selectedBatchToLink),
+                        orderItemIds
+                      )
+                    }
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-extrabold rounded-xl transition cursor-pointer shadow-xs"
+                  >
+                    Vincular
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative my-1">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-200" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-white px-2 text-slate-400 font-bold text-[10px]">ou</span>
+                </div>
+              </div>
+
+              {/* Option 2: Create new batch */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-bold text-slate-700">
+                  2. Criar um Novo Lote e Vincular:
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder={`Ex: LOTE-${linkModalOrderGroup.code}`}
+                    value={newBatchNameInput}
+                    onChange={(e) => setNewBatchNameInput(e.target.value)}
+                    className="flex-1 p-2.5 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    disabled={!newBatchNameInput.trim()}
+                    onClick={() =>
+                      handleCreateAndLinkBatch(
+                        newBatchNameInput,
+                        orderItemIds
+                      )
+                    }
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-extrabold rounded-xl transition cursor-pointer shadow-xs whitespace-nowrap"
+                  >
+                    + Criar e Vincular
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLinkModalOrderGroup(null);
+                    setSelectedBatchToLink("");
+                    setNewBatchNameInput("");
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                >
+                  Fechar
                 </button>
               </div>
             </div>

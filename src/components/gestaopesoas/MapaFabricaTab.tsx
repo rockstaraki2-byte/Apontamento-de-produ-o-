@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import type { useDatabase } from "../../useDatabase";
 import type { User } from "../../types";
 import jsPDF from "jspdf";
@@ -23,7 +23,23 @@ import {
   Plus,
   Trash2,
   Download,
+  Printer,
+  FileText,
+  Eye,
 } from "lucide-react";
+
+export interface HiringRequest {
+  id: string;
+  sectorId: string;
+  sectorName: string;
+  role: string;
+  quantity: number;
+  priority: "ALTA" | "MEDIA" | "BAIXA";
+  notes?: string;
+  createdAt: string;
+  status: "EM_ABERTO" | "EM_SELECAO" | "PREENCHIDA" | "CANCELADA";
+  requesterName?: string;
+}
 
 interface MapaFabricaTabProps {
   db: ReturnType<typeof useDatabase>;
@@ -143,11 +159,55 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
   const [reallocateUser, setReallocateUser] = useState<any | null>(null);
   const [newTargetSectorId, setNewTargetSectorId] = useState<string>("");
   const [showHiringModal, setShowHiringModal] = useState(false);
+  const [showVacanciesModal, setShowVacanciesModal] = useState(false);
   const [hiringSector, setHiringSector] = useState<string>("");
   const [hiringRole, setHiringRole] = useState<string>("");
   const [hiringQty, setHiringQty] = useState<number>(1);
   const [hiringPriority, setHiringPriority] = useState<"ALTA" | "MEDIA" | "BAIXA">("ALTA");
   const [hiringNotes, setHiringNotes] = useState<string>("");
+
+  const [hiringRequests, setHiringRequests] = useState<HiringRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem("producao_hiring_requests_v1");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return [
+      {
+        id: "HR-101",
+        sectorId: "S02",
+        sectorName: "Solda / Caldeiraria",
+        role: "Soldador MIG/TIG",
+        quantity: 2,
+        priority: "ALTA",
+        notes: "Experiência comprovada em estrutura metálica e leitura de desenho técnico.",
+        createdAt: new Date().toLocaleDateString("pt-BR"),
+        status: "EM_ABERTO",
+        requesterName: currentUser.name || "Gestão PCP",
+      },
+      {
+        id: "HR-102",
+        sectorId: "S05",
+        sectorName: "Montagem Retrátil",
+        role: "Operador de Montagem",
+        quantity: 1,
+        priority: "MEDIA",
+        notes: "Montagem de kits e peças de estofado retrátil com ferramentas pneumáticas.",
+        createdAt: new Date().toLocaleDateString("pt-BR"),
+        status: "EM_ABERTO",
+        requesterName: currentUser.name || "Gestão PCP",
+      },
+    ];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("producao_hiring_requests_v1", JSON.stringify(hiringRequests));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [hiringRequests]);
 
   const [sectors, setSectors] = useState<SectorAllocation[]>(() => {
     try {
@@ -567,11 +627,162 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
     const secObj = sectors.find((s) => s.id === hiringSector);
     const secName = secObj ? secObj.name : hiringSector;
 
-    alert(`Solicitação de contratação enviada com sucesso!\n\nSetor: ${secName}\nCargo: ${hiringRole}\nQuantidade: ${hiringQty}\nPrioridade: ${hiringPriority}`);
+    const newReq: HiringRequest = {
+      id: `HR-${Math.floor(100 + Math.random() * 900)}`,
+      sectorId: hiringSector,
+      sectorName: secName,
+      role: hiringRole,
+      quantity: hiringQty,
+      priority: hiringPriority,
+      notes: hiringNotes,
+      createdAt: new Date().toLocaleDateString("pt-BR"),
+      status: "EM_ABERTO",
+      requesterName: currentUser.name || "Gestor",
+    };
+
+    setHiringRequests((prev) => [newReq, ...prev]);
+
     setShowHiringModal(false);
     setHiringSector("");
     setHiringRole("");
     setHiringNotes("");
+    setHiringQty(1);
+
+    if (confirm(`Solicitação de contratação #${newReq.id} gerada com sucesso!\n\nDeseja visualizar a lista de Vagas em Aberto para imprimir ou exportar em PDF?`)) {
+      setShowVacanciesModal(true);
+    }
+  };
+
+  const handleExportVacanciesPDF = (filterStatus?: string) => {
+    const doc = new jsPDF("landscape");
+    doc.setFontSize(16);
+    doc.text("Relatório de Vagas em Aberto e Solicitações de Contratação", 14, 18);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(
+      `Fábrica / Gestão de Pessoas - Data: ${new Date().toLocaleDateString("pt-BR")} | Emissor: ${currentUser.name}`,
+      14,
+      25,
+    );
+
+    doc.setTextColor(0);
+
+    const list = hiringRequests.filter((r) =>
+      filterStatus ? r.status === filterStatus : true
+    );
+
+    const tableData = list.map((r) => [
+      r.id,
+      r.sectorName,
+      r.role,
+      `${r.quantity} vaga(s)`,
+      r.priority,
+      r.status.replace("_", " "),
+      r.createdAt,
+      r.notes || "-",
+    ]);
+
+    autoTable(doc, {
+      startY: 30,
+      head: [["ID", "Setor Solicitante", "Cargo / Função", "Qtd", "Prioridade", "Status", "Data", "Requisitos / Obs"]],
+      body: tableData,
+      theme: "grid",
+      headStyles: { fillColor: [79, 70, 229] },
+      styles: { fontSize: 8, cellPadding: 3 },
+      columnStyles: {
+        0: { cellWidth: 20 },
+        1: { cellWidth: 40 },
+        2: { cellWidth: 45 },
+        3: { cellWidth: 20 },
+        4: { cellWidth: 25 },
+        5: { cellWidth: 25 },
+        6: { cellWidth: 25 },
+        7: { cellWidth: "auto" },
+      },
+    });
+
+    const finalY = (doc as any).lastAutoTable?.finalY || 150;
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text("_________________________", 40, finalY + 25);
+    doc.text("Solicitante PCP / Fábrica", 40, finalY + 30);
+
+    doc.text("_________________________", 180, finalY + 25);
+    doc.text("Aprovação RH / Diretoria", 180, finalY + 30);
+
+    doc.save(`Vagas_em_Aberto_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const handlePrintSingleVacancy = (req: HiringRequest) => {
+    const doc = new jsPDF("portrait");
+    doc.setFontSize(18);
+    doc.setTextColor(30, 41, 59);
+    doc.text("SOLICITAÇÃO DE CONTRATAÇÃO / VAGA RH", 14, 20);
+
+    doc.setLineWidth(0.5);
+    doc.setDrawColor(200, 200, 200);
+    doc.line(14, 24, 196, 24);
+
+    doc.setFontSize(10);
+    doc.setTextColor(70, 80, 95);
+    doc.text(`Código da Solicitação: ${req.id}`, 14, 34);
+    doc.text(`Data da Abertura: ${req.createdAt}`, 14, 42);
+    doc.text(`Solicitante: ${req.requesterName || currentUser.name}`, 14, 50);
+
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text("DETALHES DA VAGA", 14, 62);
+
+    autoTable(doc, {
+      startY: 66,
+      body: [
+        ["Setor Solicitante:", req.sectorName],
+        ["Cargo / Função:", req.role],
+        ["Quantidade de Vagas:", `${req.quantity} vaga(s)`],
+        ["Prioridade:", req.priority],
+        ["Status Atual:", req.status.replace("_", " ")],
+        ["Requisitos / Observações:", req.notes || "Nenhum requisito adicional informado."],
+      ],
+      theme: "plain",
+      styles: { fontSize: 10, cellPadding: 4 },
+      columnStyles: {
+        0: { fontStyle: "bold", cellWidth: 55 },
+        1: { cellWidth: 125 },
+      },
+    });
+
+    const finalY = (doc as any).lastAutoTable?.finalY || 140;
+    doc.setFontSize(10);
+    doc.setTextColor(30, 41, 59);
+    doc.text("PARECER E APROVAÇÃO DO RECRUTAMENTO", 14, finalY + 15);
+
+    doc.rect(14, finalY + 20, 182, 35);
+    doc.setFontSize(9);
+    doc.setTextColor(120, 120, 120);
+    doc.text("[  ] Aprovado para recrutamento      [  ] Reprovado      [  ] Aguardar orçamento", 18, finalY + 28);
+    doc.text("Parecer do RH: ___________________________________________________________", 18, finalY + 40);
+
+    doc.setTextColor(0, 0, 0);
+    doc.text("__________________________________", 20, finalY + 75);
+    doc.text("Assinatura Solicitante", 35, finalY + 80);
+
+    doc.text("__________________________________", 120, finalY + 75);
+    doc.text("Assinatura RH / Gerência", 135, finalY + 80);
+
+    doc.save(`Ficha_Vaga_${req.id}.pdf`);
+  };
+
+  const handleUpdateVacancyStatus = (id: string, newStatus: HiringRequest["status"]) => {
+    setHiringRequests((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r))
+    );
+  };
+
+  const handleDeleteVacancy = (id: string) => {
+    if (confirm("Tem certeza que deseja remover esta solicitação de contratação?")) {
+      setHiringRequests((prev) => prev.filter((r) => r.id !== id));
+    }
   };
 
   // Zones for filter dropdown
@@ -679,6 +890,12 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition shadow-xs cursor-pointer"
           >
             <Download size={16} /> Exportar PDF
+          </button>
+          <button
+            onClick={() => setShowVacanciesModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm rounded-xl transition shadow-xs cursor-pointer"
+          >
+            <FileText size={16} /> Vagas em Aberto ({hiringRequests.filter((r) => r.status !== "PREENCHIDA" && r.status !== "CANCELADA").length})
           </button>
           <button
             onClick={() => setShowHiringModal(true)}
@@ -1242,6 +1459,154 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Visualizar e Imprimir Vagas em Aberto */}
+      {showVacanciesModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full p-6 flex flex-col gap-5 animate-in zoom-in-95 duration-200 max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                  <Briefcase size={22} className="text-indigo-600" />
+                  Quadro de Vagas em Aberto & Solicitações de Contratação
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                  Gerencie, imprima fichas individuais e exporte o relatório de recrutamento da fábrica
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowVacanciesModal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg transition cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 flex-wrap bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+              <span className="text-xs font-bold text-slate-700">
+                Total Registrado: <strong>{hiringRequests.length} solicitações</strong> ({hiringRequests.filter(r => r.status === "EM_ABERTO").length} em aberto)
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleExportVacanciesPDF()}
+                  className="px-3.5 py-1.5 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Printer size={14} /> Imprimir / Exportar PDF Geral
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowVacanciesModal(false);
+                    setShowHiringModal(true);
+                  }}
+                  className="px-3.5 py-1.5 text-xs font-extrabold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus size={14} /> Nova Solicitação
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto max-h-[50vh] pr-1">
+              {hiringRequests.length === 0 ? (
+                <div className="text-center py-10 text-slate-400">
+                  <Briefcase size={36} className="mx-auto mb-2 opacity-50" />
+                  <p className="font-bold text-sm">Nenhuma solicitação de contratação registrada.</p>
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {hiringRequests.map((req) => (
+                    <div
+                      key={req.id}
+                      className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-indigo-300 transition"
+                    >
+                      <div className="flex flex-col gap-1 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-slate-100 text-slate-700 font-mono">
+                            {req.id}
+                          </span>
+                          <span className="font-bold text-slate-900 text-sm">
+                            {req.role}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                              req.priority === "ALTA"
+                                ? "bg-rose-100 text-rose-800 border border-rose-200"
+                                : req.priority === "MEDIA"
+                                ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                            }`}
+                          >
+                            Prioridade {req.priority}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-slate-600 flex items-center gap-3 flex-wrap mt-0.5">
+                          <span>Setor: <strong>{req.sectorName}</strong></span>
+                          <span>•</span>
+                          <span>Vagas: <strong>{req.quantity}</strong></span>
+                          <span>•</span>
+                          <span>Aberto em: <strong>{req.createdAt}</strong></span>
+                        </div>
+
+                        {req.notes && (
+                          <p className="text-xs text-slate-500 italic mt-1 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                            "{req.notes}"
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                        <select
+                          value={req.status}
+                          onChange={(e) =>
+                            handleUpdateVacancyStatus(req.id, e.target.value as any)
+                          }
+                          className="text-xs font-bold p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 cursor-pointer"
+                        >
+                          <option value="EM_ABERTO">🟢 Em Aberto</option>
+                          <option value="EM_SELECAO">⚡ Em Seleção / RH</option>
+                          <option value="PREENCHIDA">✓ Preenchida</option>
+                          <option value="CANCELADA">❌ Cancelada</option>
+                        </select>
+
+                        <button
+                          type="button"
+                          onClick={() => handlePrintSingleVacancy(req)}
+                          className="p-2 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition font-bold text-xs flex items-center gap-1 cursor-pointer"
+                          title="Imprimir Ficha desta Vaga"
+                        >
+                          <Printer size={14} /> Ficha
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteVacancy(req.id)}
+                          className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                          title="Excluir Vaga"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowVacanciesModal(false)}
+                className="px-5 py-2 text-sm font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}
