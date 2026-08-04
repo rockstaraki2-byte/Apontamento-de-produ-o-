@@ -383,11 +383,26 @@ export function StatusScreen({
 
       // 4. Batch filter match
       if (selectedBatchFilter !== "TODOS") {
-        const isLinkedToAnyBatch = db.productionBatches.some((b) => b.orderIds.includes(o.id));
+        const isLinkedToAnyBatch = db.productionBatches.some((b) =>
+          (b.orderIds || []).some(
+            (id) =>
+              Number(id) === Number(o.id) ||
+              String(id) === String(o.id) ||
+              (o.orderCode && String(id) === String(o.orderCode))
+          )
+        );
         if (selectedBatchFilter === "COM_LOTE" && !isLinkedToAnyBatch) return false;
         if (selectedBatchFilter === "SEM_LOTE" && isLinkedToAnyBatch) return false;
-        if (typeof selectedBatchFilter === "number") {
-          const isLinkedToSpecific = db.productionBatches.find((b) => b.id === selectedBatchFilter)?.orderIds.includes(o.id);
+        if (selectedBatchFilter !== "COM_LOTE" && selectedBatchFilter !== "SEM_LOTE") {
+          const targetBatchId = Number(selectedBatchFilter);
+          const isLinkedToSpecific = db.productionBatches
+            .find((b) => Number(b.id) === targetBatchId)
+            ?.orderIds?.some(
+              (id) =>
+                Number(id) === Number(o.id) ||
+                String(id) === String(o.id) ||
+                (o.orderCode && String(id) === String(o.orderCode))
+            );
           if (!isLinkedToSpecific) return false;
         }
       }
@@ -993,8 +1008,13 @@ export function StatusScreen({
                   {currentUser.role !== "LEITURA" && (
                     (() => {
                       const orderItemIds = orders.map((o) => o.id);
+                      const orderCodes = Array.from(new Set(orders.map((o) => o.orderCode).filter(Boolean)));
                       const linkedBatches = db.productionBatches.filter((b) =>
-                        (b.orderIds || []).some((id) => orderItemIds.includes(id))
+                        (b.orderIds || []).some(
+                          (id) =>
+                            orderItemIds.some((oid) => Number(id) === Number(oid) || String(id) === String(oid)) ||
+                            orderCodes.some((code) => String(id) === String(code))
+                        )
                       );
 
                       if (linkedBatches.length > 0) {
@@ -1152,7 +1172,14 @@ export function StatusScreen({
                                 );
                               })()}
                               {(() => {
-                                const batch = db.productionBatches.find(b => b.orderIds.includes(o.id));
+                                const batch = db.productionBatches.find((b) =>
+                                  (b.orderIds || []).some(
+                                    (id) =>
+                                      Number(id) === Number(o.id) ||
+                                      String(id) === String(o.id) ||
+                                      (o.orderCode && String(id) === String(o.orderCode))
+                                  )
+                                );
                                 if (batch) {
                                   return (
                                     <span className="text-[10px] font-bold text-amber-900 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded mt-1 w-max">

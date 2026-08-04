@@ -700,22 +700,30 @@ export function EstoqueScreen({
 
   const triggerSaveStock = () => {
     let matchedItemId: number | "" = itemId;
-    if (produtoBusca) {
+
+    // Only attempt lookup if itemId is not already specified
+    if ((matchedItemId === "" || matchedItemId === undefined || matchedItemId === null) && produtoBusca) {
       const searchStrLower = produtoBusca.trim().toLowerCase();
-      const mItem = db.items.find((i) => {
+      let mItem = db.items.find((i) => {
         const fullStr = `${i.code} - ${i.name}`.toLowerCase();
         return (
           fullStr === searchStrLower ||
-          i.name.toLowerCase() === searchStrLower ||
           i.code.toLowerCase() === searchStrLower ||
-          searchStrLower.includes(i.code.toLowerCase()) ||
-          fullStr.includes(searchStrLower)
+          i.name.toLowerCase() === searchStrLower
         );
       });
+
+      if (!mItem) {
+        mItem = db.items.find((i) =>
+          i.name.toLowerCase().includes(searchStrLower) ||
+          searchStrLower.includes(i.name.toLowerCase())
+        );
+      }
+
       if (mItem) matchedItemId = mItem.id;
     }
 
-    if (!matchedItemId || quantity === "") {
+    if ((matchedItemId === "" || matchedItemId === undefined || matchedItemId === null) || quantity === "") {
       alert(
         "Preencha corretamente o produto (selecionando na lista) e a quantidade.",
       );
@@ -727,22 +735,29 @@ export function EstoqueScreen({
 
   const handleConfirmSaveStock = async () => {
     let targetItemId: number | "" = itemId;
-    if (!targetItemId && produtoBusca) {
+
+    if ((targetItemId === "" || targetItemId === undefined || targetItemId === null) && produtoBusca) {
       const searchStrLower = produtoBusca.trim().toLowerCase();
-      const mItem = db.items.find((i) => {
+      let mItem = db.items.find((i) => {
         const fullStr = `${i.code} - ${i.name}`.toLowerCase();
         return (
           fullStr === searchStrLower ||
-          i.name.toLowerCase() === searchStrLower ||
           i.code.toLowerCase() === searchStrLower ||
-          searchStrLower.includes(i.code.toLowerCase()) ||
-          fullStr.includes(searchStrLower)
+          i.name.toLowerCase() === searchStrLower
         );
       });
+
+      if (!mItem) {
+        mItem = db.items.find((i) =>
+          i.name.toLowerCase().includes(searchStrLower) ||
+          searchStrLower.includes(i.name.toLowerCase())
+        );
+      }
+
       if (mItem) targetItemId = mItem.id;
     }
 
-    if (!targetItemId || quantity === "") {
+    if ((targetItemId === "" || targetItemId === undefined || targetItemId === null) || quantity === "") {
       setShowConfirmModal(false);
       return;
     }
@@ -1090,13 +1105,33 @@ export function EstoqueScreen({
                   {/* Body */}
                   <div className="p-5 flex flex-col gap-4 max-h-[75vh] overflow-y-auto">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                        Produto / Item
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                          Produto / Item
+                        </label>
+                        {itemId !== "" && itemId !== null && (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            ✓ {db.items.find((i) => i.id === itemId)?.name || `ID: ${itemId}`}
+                          </span>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={produtoBusca}
-                        onChange={(e) => setProdutoBusca(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setProdutoBusca(val);
+                          const searchStrLower = val.trim().toLowerCase();
+                          const found = db.items.find(
+                            (it) =>
+                              `${it.code} - ${it.name}`.toLowerCase() === searchStrLower ||
+                              it.name.toLowerCase() === searchStrLower ||
+                              it.code.toLowerCase() === searchStrLower
+                          );
+                          if (found) {
+                            setItemId(found.id);
+                          }
+                        }}
                         className="border border-slate-300 p-2.5 rounded-lg bg-white text-slate-800 text-xs w-full focus:ring-2 focus:ring-emerald-500 focus:outline-none font-semibold"
                         placeholder="Digite para buscar um produto..."
                         list="stock-item-modal-list"
