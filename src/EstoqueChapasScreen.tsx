@@ -162,7 +162,7 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
   }, [db.sheetStockMovements]);
 
   return (
-    <div className="w-full p-3 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-24">
+    <div className="flex-1 overflow-y-auto w-full h-full min-h-0 p-3 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-32 scrollbar-thin">
       {/* Top Header */}
       <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3 sm:gap-4">

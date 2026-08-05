@@ -200,7 +200,7 @@ export function EstoqueNestingScreen({
     currentUser.id === "projetista_marcos";
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 p-4">
+    <div className="flex flex-col h-full flex-1 min-h-0 overflow-hidden bg-slate-50 p-3 sm:p-4">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <Layers size={28} className="text-indigo-600" />
@@ -277,7 +277,7 @@ export function EstoqueNestingScreen({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto w-full">
+      <div className="flex-1 overflow-y-auto w-full pb-28 scrollbar-thin">
         {sortedFiltered.length === 0 ? (
           <p className="text-gray-500 text-center mt-6 text-sm italic">
             Nenhuma peça correspondente encontrada.
