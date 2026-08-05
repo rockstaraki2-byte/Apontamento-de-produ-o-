@@ -162,7 +162,7 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
   }, [db.sheetStockMovements]);
 
   return (
-    <div className="p-3 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-20">
+    <div className="w-full p-3 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-24">
       {/* Top Header */}
       <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3 sm:gap-4">
@@ -236,10 +236,10 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
       </div>
 
       {/* Main Content Area with Navigation Tabs */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 w-full overflow-hidden">
         <div className="border-b border-slate-200 bg-slate-50/50 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           {/* Tabs - Scrollable on mobile */}
-          <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-200/70 p-1 rounded-xl w-full sm:w-fit overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-200/70 p-1 rounded-xl w-full sm:w-fit overflow-x-auto touch-pan-x">
             <button
               onClick={() => setActiveTab("ESTOQUE")}
               className={`px-3 sm:px-4 py-2 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 shrink-0 cursor-pointer ${
@@ -279,18 +279,18 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
 
         {/* TAB 1: ESTOQUE ATUAL DE CHAPAS */}
         {activeTab === "ESTOQUE" && (
-          <>
+          <div className="w-full">
             {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden md:block w-full overflow-x-auto touch-pan-x">
               <table className="w-full text-left border-collapse min-w-[850px] text-xs">
                 <thead>
-                  <tr className="bg-slate-100/80 text-[10px] uppercase tracking-widest text-slate-500 font-extrabold border-b border-slate-200">
+                  <tr className="bg-slate-100/90 backdrop-blur-xs text-[10px] uppercase tracking-widest text-slate-500 font-extrabold border-b border-slate-200 sticky top-0 z-10">
                     <th className="p-3.5">Nota Fiscal (NF)</th>
                     <th className="p-3.5">Fornecedor</th>
                     <th className="p-3.5">Descrição da Chapa / Material</th>
                     <th className="p-3.5 text-center">Dimensões</th>
                     <th className="p-3.5 text-center">Qtd. Inicial</th>
-                    <th className="p-3.5 text-center bg-indigo-50/50 text-indigo-900">Qtd. Atual Disponível</th>
+                    <th className="p-3.5 text-center bg-indigo-50/80 text-indigo-900">Qtd. Atual Disponível</th>
                     <th className="p-3.5 text-center">Data e Hora de Entrada</th>
                     <th className="p-3.5 text-right">Ações</th>
                   </tr>
@@ -358,14 +358,14 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
             </div>
 
             {/* Mobile Cards View */}
-            <div className="block md:hidden divide-y divide-slate-100">
+            <div className="block md:hidden divide-y divide-slate-100 p-2 sm:p-4">
               {filteredStocks.length === 0 ? (
                 <div className="p-6 text-center text-slate-400 text-xs font-medium">
                   Nenhum registro de chapa em estoque.
                 </div>
               ) : (
                 filteredStocks.map((s) => (
-                  <div key={s.id} className="p-4 space-y-3 bg-white">
+                  <div key={s.id} className="p-4 space-y-3 bg-white rounded-xl border border-slate-100 my-2 shadow-2xs">
                     <div className="flex items-center justify-between gap-2">
                       <span className="bg-slate-100 text-slate-900 px-2.5 py-1 rounded-lg text-xs font-mono font-extrabold border border-slate-200">
                         NF #{s.invoiceNumber}
@@ -378,13 +378,13 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
                                 setEditingSheet(s);
                                 setEditCurrentQuantity(s.currentQuantity);
                               }}
-                              className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg font-bold text-[11px] flex items-center gap-1"
+                              className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer"
                             >
                               <Edit3 size={12} /> Ajustar
                             </button>
                             <button
                               onClick={() => handleDeleteSheet(s.id, s.description)}
-                              className="p-1 bg-rose-50 text-rose-600 rounded-lg"
+                              className="p-1 bg-rose-50 text-rose-600 rounded-lg cursor-pointer"
                             >
                               <Trash2 size={14} />
                             </button>
@@ -426,14 +426,14 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
                 ))
               )}
             </div>
-          </>
+          </div>
         )}
 
         {/* TAB 2: HISTÓRICO DE MOVIMENTAÇÕES (ENTRADAS E SAÍDAS) */}
         {activeTab === "HISTORICO" && (
-          <div className="space-y-4 p-3 sm:p-4">
+          <div className="space-y-4 p-3 sm:p-4 w-full">
             {/* Filter Pill Options - Scrollable on mobile */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            <div className="flex items-center gap-1.5 overflow-x-auto touch-pan-x pb-1">
               <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1 shrink-0">
                 <Filter size={14} /> Filtrar:
               </span>
@@ -453,10 +453,10 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
             </div>
 
             {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto border border-slate-200 rounded-xl">
+            <div className="hidden md:block w-full overflow-x-auto touch-pan-x border border-slate-200 rounded-xl">
               <table className="w-full text-left border-collapse min-w-[850px] text-xs">
                 <thead>
-                  <tr className="bg-slate-100/80 text-[10px] uppercase tracking-widest text-slate-500 font-extrabold border-b border-slate-200">
+                  <tr className="bg-slate-100/90 backdrop-blur-xs text-[10px] uppercase tracking-widest text-slate-500 font-extrabold border-b border-slate-200 sticky top-0 z-10">
                     <th className="p-3.5">Data e Hora Automática</th>
                     <th className="p-3.5 text-center">Tipo</th>
                     <th className="p-3.5">Descrição da Movimentação</th>
