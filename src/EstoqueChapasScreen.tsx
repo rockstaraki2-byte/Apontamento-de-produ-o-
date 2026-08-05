@@ -43,7 +43,6 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
   // Modal de Edição/Ajuste de Estoque
   const [editingSheet, setEditingSheet] = useState<SheetStockEntry | null>(null);
   const [editCurrentQuantity, setEditCurrentQuantity] = useState<number | "">("");
-  const [editNotes, setEditNotes] = useState("");
 
   // Handler para Salvar Entrada via NF
   const handleSaveEntry = async (e: React.FormEvent) => {
@@ -163,19 +162,19 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
   }, [db.sheetStockMovements]);
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-20">
       {/* Top Header */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-700 text-white rounded-2xl shadow-md">
-            <Layers size={28} />
+      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <div className="p-3 bg-gradient-to-br from-indigo-500 to-indigo-700 text-white rounded-2xl shadow-md shrink-0">
+            <Layers size={26} />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight">
               Controle de Estoque de Chapas
             </h1>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Entradas por Nota Fiscal (NF), saldos em estoque e abatimentos automáticos por corte a laser
+              Entradas por NF, saldos em estoque e abatimentos por corte a laser
             </p>
           </div>
         </div>
@@ -183,7 +182,7 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
         {(currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.role === "PCP") && (
           <button
             onClick={() => setIsEntryModalOpen(true)}
-            className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full md:w-auto px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
           >
             <Plus size={18} />
             <span>Entrada de Chapas (Nota Fiscal)</span>
@@ -192,8 +191,8 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">
               Saldo em Estoque
@@ -207,10 +206,10 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">
-              Notas Fiscais Cadastradas
+              Notas Fiscais
             </span>
             <span className="text-2xl font-black text-emerald-600 mt-1 block">
               {totalNFs} <span className="text-xs font-semibold text-slate-500">NFs</span>
@@ -221,13 +220,13 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">
-              Total Utilizado no Corte
+              Utilizado no Corte
             </span>
             <span className="text-2xl font-black text-amber-600 mt-1 block">
-              {totalSaidasCorte} <span className="text-xs font-semibold text-slate-500">chapas cortadas</span>
+              {totalSaidasCorte} <span className="text-xs font-semibold text-slate-500">chapas</span>
             </span>
           </div>
           <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
@@ -238,30 +237,30 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
 
       {/* Main Content Area with Navigation Tabs */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="border-b border-slate-200 bg-slate-50/50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          {/* Tabs */}
-          <div className="flex items-center gap-2 bg-slate-200/70 p-1 rounded-xl w-fit">
+        <div className="border-b border-slate-200 bg-slate-50/50 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+          {/* Tabs - Scrollable on mobile */}
+          <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-200/70 p-1 rounded-xl w-full sm:w-fit overflow-x-auto scrollbar-none">
             <button
               onClick={() => setActiveTab("ESTOQUE")}
-              className={`px-4 py-2 rounded-lg text-xs font-extrabold transition flex items-center gap-2 cursor-pointer ${
+              className={`px-3 sm:px-4 py-2 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 activeTab === "ESTOQUE"
                   ? "bg-white text-indigo-600 shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
               <PackageCheck size={16} />
-              <span>Estoque Atual de Chapas ({filteredStocks.length})</span>
+              <span>Estoque Atual ({filteredStocks.length})</span>
             </button>
             <button
               onClick={() => setActiveTab("HISTORICO")}
-              className={`px-4 py-2 rounded-lg text-xs font-extrabold transition flex items-center gap-2 cursor-pointer ${
+              className={`px-3 sm:px-4 py-2 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 shrink-0 cursor-pointer ${
                 activeTab === "HISTORICO"
                   ? "bg-white text-indigo-600 shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
               <History size={16} />
-              <span>Histórico de Movimentações ({filteredMovements.length})</span>
+              <span>Histórico ({filteredMovements.length})</span>
             </button>
           </div>
 
@@ -280,108 +279,181 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
 
         {/* TAB 1: ESTOQUE ATUAL DE CHAPAS */}
         {activeTab === "ESTOQUE" && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[850px] text-xs">
-              <thead>
-                <tr className="bg-slate-100/80 text-[10px] uppercase tracking-widest text-slate-500 font-extrabold border-b border-slate-200">
-                  <th className="p-3.5">Nota Fiscal (NF)</th>
-                  <th className="p-3.5">Fornecedor</th>
-                  <th className="p-3.5">Descrição da Chapa / Material</th>
-                  <th className="p-3.5 text-center">Dimensões</th>
-                  <th className="p-3.5 text-center">Qtd. Inicial</th>
-                  <th className="p-3.5 text-center bg-indigo-50/50 text-indigo-900">Qtd. Atual Disponível</th>
-                  <th className="p-3.5 text-center">Data e Hora de Entrada</th>
-                  <th className="p-3.5 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredStocks.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="text-center py-10 text-slate-400 font-medium">
-                      Nenhum registro de chapa em estoque. Clique em "+ Entrada de Chapas (Nota Fiscal)" para cadastrar.
-                    </td>
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[850px] text-xs">
+                <thead>
+                  <tr className="bg-slate-100/80 text-[10px] uppercase tracking-widest text-slate-500 font-extrabold border-b border-slate-200">
+                    <th className="p-3.5">Nota Fiscal (NF)</th>
+                    <th className="p-3.5">Fornecedor</th>
+                    <th className="p-3.5">Descrição da Chapa / Material</th>
+                    <th className="p-3.5 text-center">Dimensões</th>
+                    <th className="p-3.5 text-center">Qtd. Inicial</th>
+                    <th className="p-3.5 text-center bg-indigo-50/50 text-indigo-900">Qtd. Atual Disponível</th>
+                    <th className="p-3.5 text-center">Data e Hora de Entrada</th>
+                    <th className="p-3.5 text-right">Ações</th>
                   </tr>
-                ) : (
-                  filteredStocks.map((s) => (
-                    <tr key={s.id} className="hover:bg-slate-50/80 transition">
-                      <td className="p-3.5 font-mono font-bold text-slate-900">
-                        <span className="bg-slate-100 text-slate-800 px-2 py-1 rounded-md border border-slate-200">
-                          NF #{s.invoiceNumber}
-                        </span>
-                      </td>
-                      <td className="p-3.5 font-bold text-slate-800">{s.supplier}</td>
-                      <td className="p-3.5 font-medium text-slate-700">
-                        {s.description}
-                        {s.notes && <span className="block text-[10px] text-slate-400 italic mt-0.5">{s.notes}</span>}
-                      </td>
-                      <td className="p-3.5 text-center font-mono font-semibold text-slate-600 bg-slate-50 rounded-lg">
-                        {s.dimensions}
-                      </td>
-                      <td className="p-3.5 text-center font-bold text-slate-500">{s.initialQuantity}</td>
-                      <td className="p-3.5 text-center font-extrabold font-mono text-indigo-700 bg-indigo-50/40 text-sm">
-                        {s.currentQuantity} chapas
-                      </td>
-                      <td className="p-3.5 text-center text-slate-500 font-medium">
-                        {new Date(s.entryDate).toLocaleDateString("pt-BR")} às {new Date(s.entryDate).toLocaleTimeString("pt-BR").substring(0, 5)}
-                      </td>
-                      <td className="p-3.5 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {(currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.role === "PCP") && (
-                            <>
-                              <button
-                                onClick={() => {
-                                  setEditingSheet(s);
-                                  setEditCurrentQuantity(s.currentQuantity);
-                                  setEditNotes(s.notes || "");
-                                }}
-                                title="Ajustar Estoque"
-                                className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition cursor-pointer flex items-center gap-1 font-bold text-[10px]"
-                              >
-                                <Edit3 size={14} /> Ajustar
-                              </button>
-                              <button
-                                onClick={() => handleDeleteSheet(s.id, s.description)}
-                                title="Excluir Registro"
-                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition cursor-pointer"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </>
-                          )}
-                        </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredStocks.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-10 text-slate-400 font-medium">
+                        Nenhum registro de chapa em estoque. Clique em "+ Entrada de Chapas (Nota Fiscal)" para cadastrar.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    filteredStocks.map((s) => (
+                      <tr key={s.id} className="hover:bg-slate-50/80 transition">
+                        <td className="p-3.5 font-mono font-bold text-slate-900">
+                          <span className="bg-slate-100 text-slate-800 px-2 py-1 rounded-md border border-slate-200">
+                            NF #{s.invoiceNumber}
+                          </span>
+                        </td>
+                        <td className="p-3.5 font-bold text-slate-800">{s.supplier}</td>
+                        <td className="p-3.5 font-medium text-slate-700">
+                          {s.description}
+                          {s.notes && <span className="block text-[10px] text-slate-400 italic mt-0.5">{s.notes}</span>}
+                        </td>
+                        <td className="p-3.5 text-center font-mono font-semibold text-slate-600 bg-slate-50 rounded-lg">
+                          {s.dimensions}
+                        </td>
+                        <td className="p-3.5 text-center font-bold text-slate-500">{s.initialQuantity}</td>
+                        <td className="p-3.5 text-center font-extrabold font-mono text-indigo-700 bg-indigo-50/40 text-sm">
+                          {s.currentQuantity} chapas
+                        </td>
+                        <td className="p-3.5 text-center text-slate-500 font-medium">
+                          {new Date(s.entryDate).toLocaleDateString("pt-BR")} às {new Date(s.entryDate).toLocaleTimeString("pt-BR").substring(0, 5)}
+                        </td>
+                        <td className="p-3.5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {(currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.role === "PCP") && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setEditingSheet(s);
+                                    setEditCurrentQuantity(s.currentQuantity);
+                                  }}
+                                  title="Ajustar Estoque"
+                                  className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition cursor-pointer flex items-center gap-1 font-bold text-[10px]"
+                                >
+                                  <Edit3 size={14} /> Ajustar
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteSheet(s.id, s.description)}
+                                  title="Excluir Registro"
+                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition cursor-pointer"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards View */}
+            <div className="block md:hidden divide-y divide-slate-100">
+              {filteredStocks.length === 0 ? (
+                <div className="p-6 text-center text-slate-400 text-xs font-medium">
+                  Nenhum registro de chapa em estoque.
+                </div>
+              ) : (
+                filteredStocks.map((s) => (
+                  <div key={s.id} className="p-4 space-y-3 bg-white">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="bg-slate-100 text-slate-900 px-2.5 py-1 rounded-lg text-xs font-mono font-extrabold border border-slate-200">
+                        NF #{s.invoiceNumber}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {(currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.role === "PCP") && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setEditingSheet(s);
+                                setEditCurrentQuantity(s.currentQuantity);
+                              }}
+                              className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg font-bold text-[11px] flex items-center gap-1"
+                            >
+                              <Edit3 size={12} /> Ajustar
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSheet(s.id, s.description)}
+                              className="p-1 bg-rose-50 text-rose-600 rounded-lg"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-800 leading-snug">
+                        {s.description}
+                      </h4>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        Fornecedor: <strong className="text-slate-700">{s.supplier}</strong>
+                      </p>
+                      {s.notes && (
+                        <p className="text-[11px] text-slate-400 italic mt-1 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                          {s.notes}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase block">Dimensão</span>
+                        <span className="font-mono font-extrabold text-slate-700 mt-0.5 block">{s.dimensions}</span>
+                      </div>
+                      <div className="bg-indigo-50/60 p-2.5 rounded-xl border border-indigo-100">
+                        <span className="text-[10px] font-bold text-indigo-500 uppercase block">Disponível</span>
+                        <span className="font-mono font-black text-indigo-700 text-sm mt-0.5 block">{s.currentQuantity} chapas</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 font-mono">
+                      <span>Qtd Inicial: {s.initialQuantity}</span>
+                      <span>{new Date(s.entryDate).toLocaleDateString("pt-BR")}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
         )}
 
         {/* TAB 2: HISTÓRICO DE MOVIMENTAÇÕES (ENTRADAS E SAÍDAS) */}
         {activeTab === "HISTORICO" && (
-          <div className="space-y-4 p-4">
-            {/* Filter Pill Options */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+          <div className="space-y-4 p-3 sm:p-4">
+            {/* Filter Pill Options - Scrollable on mobile */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1 shrink-0">
                 <Filter size={14} /> Filtrar:
               </span>
               {(["TODOS", "ENTRADA", "SAIDA"] as const).map((f) => (
                 <button
                   key={f}
                   onClick={() => setMovementFilter(f)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer shrink-0 ${
                     movementFilter === f
                       ? "bg-slate-900 text-white shadow-xs"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                 >
-                  {f === "TODOS" ? "TODAS AS MOVIMENTAÇÕES" : f === "ENTRADA" ? "ENTRADAS (NF)" : "SAÍDAS (CORTE LASER)"}
+                  {f === "TODOS" ? "TODAS" : f === "ENTRADA" ? "ENTRADAS (NF)" : "SAÍDAS (CORTE)"}
                 </button>
               ))}
             </div>
 
-            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto border border-slate-200 rounded-xl">
               <table className="w-full text-left border-collapse min-w-[850px] text-xs">
                 <thead>
                   <tr className="bg-slate-100/80 text-[10px] uppercase tracking-widest text-slate-500 font-extrabold border-b border-slate-200">
@@ -442,38 +514,92 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile History Cards View */}
+            <div className="block md:hidden space-y-3">
+              {filteredMovements.length === 0 ? (
+                <div className="p-6 text-center text-slate-400 text-xs font-medium">
+                  Nenhuma movimentação registrada no sistema.
+                </div>
+              ) : (
+                filteredMovements.map((m) => (
+                  <div key={m.id} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      {m.type === "ENTRADA" ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          <ArrowUpRight size={12} /> ENTRADA
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-300">
+                          <ArrowDownRight size={12} /> SAÍDA
+                        </span>
+                      )}
+                      <span className="text-[11px] font-mono text-slate-400">
+                        {new Date(m.timestamp).toLocaleDateString("pt-BR")} {new Date(m.timestamp).toLocaleTimeString("pt-BR").substring(0, 5)}
+                      </span>
+                    </div>
+
+                    <div>
+                      <h4 className="font-extrabold text-xs text-slate-800">
+                        {m.description}
+                      </h4>
+                      {m.invoiceNumber && (
+                        <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                          NF: #{m.invoiceNumber} ({m.supplier})
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
+                      <span className={`font-black font-mono ${m.type === "ENTRADA" ? "text-emerald-700" : "text-rose-700"}`}>
+                        {m.type === "ENTRADA" ? `+${m.quantity}` : `-${m.quantity}`} chapas
+                      </span>
+                      <span className="text-slate-500 font-medium">
+                        {m.operatorName || "Operador"}
+                      </span>
+                    </div>
+
+                    {m.hasLeftover && m.leftoverDimensions && (
+                      <div className="bg-amber-50 p-2 rounded-lg border border-amber-200 text-[11px] font-bold text-amber-900">
+                        Sobrou: {m.leftoverDimensions}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
       </div>
 
       {/* MODAL DE ENTRADA POR NOTA FISCAL */}
       {isEntryModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg my-auto overflow-hidden animate-in zoom-in-95">
-            <div className="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800">
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg my-auto overflow-hidden animate-in zoom-in-95 max-h-[92vh] flex flex-col">
+            <div className="bg-slate-900 text-white p-4 sm:p-5 flex items-center justify-between border-b border-slate-800 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
                   <FileText size={20} />
                 </div>
                 <div>
-                  <h3 className="font-bold text-base text-white">
+                  <h3 className="font-bold text-sm sm:text-base text-white">
                     Dar Entrada em Chapas (Nota Fiscal)
                   </h3>
-                  <span className="text-xs text-slate-400 block">
+                  <span className="text-[11px] text-slate-400 block">
                     Data e hora registradas automaticamente
                   </span>
                 </div>
               </div>
               <button
                 onClick={() => setIsEntryModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg"
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleSaveEntry} className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={handleSaveEntry} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
                     Número da NF *
@@ -517,7 +643,7 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
                     Dimensão da Chapa *
@@ -561,7 +687,7 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
                 />
               </div>
 
-              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsEntryModalOpen(false)}
@@ -581,10 +707,10 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
         </div>
       )}
 
-      {/* MODAL DE EDICÃO / AJUSTE DE ESTOQUE */}
+      {/* MODAL DE EDIÇÃO / AJUSTE DE ESTOQUE */}
       {editingSheet && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md my-auto p-6 space-y-4">
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md my-auto p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="font-extrabold text-base text-slate-800 border-b pb-2">
               Ajustar Estoque de Chapa - NF #{editingSheet.invoiceNumber}
             </h3>
@@ -610,13 +736,13 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 onClick={() => setEditingSheet(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSaveEditSheet}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md"
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
               >
                 Confirmar Ajuste
               </button>

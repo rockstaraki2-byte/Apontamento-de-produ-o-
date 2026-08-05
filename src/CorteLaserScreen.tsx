@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ArrowLeft, Activity, Pencil, X, Clock, Trash } from "lucide-react";
+import { ArrowLeft, Activity, Pencil, X, Clock, Trash, Search } from "lucide-react";
 import { useDatabase } from "./useDatabase";
 import type { User, NestTask } from "./types";
 import { calculateWorkingMillis } from "./timeUtils";
@@ -91,6 +91,8 @@ export function CorteLaserScreen({
   const [selectedSheetStockId, setSelectedSheetStockId] = useState<string>("");
   const [hasLeftover, setHasLeftover] = useState(false);
   const [leftoverDimensions, setLeftoverDimensions] = useState("");
+  const [sheetStockSearchTerm, setSheetStockSearchTerm] = useState("");
+  const [isSheetStockDropdownOpen, setIsSheetStockDropdownOpen] = useState(false);
 
   // Funcionalidade 4: Popup de Caixas e Impressão de Etiqueta 10x5
   const [showPopupCaixas, setShowPopupCaixas] = useState(false);
@@ -803,8 +805,8 @@ export function CorteLaserScreen({
     const task = db.nestTasks?.find((t) => t.id === (pack as any).taskId);
 
     return (
-      <div className="p-4 flex flex-col h-full bg-slate-50">
-        <div className="flex items-center gap-3 mb-6">
+      <div className="p-4 sm:p-6 flex flex-col min-h-screen bg-slate-50 overflow-y-auto pb-32">
+        <div className="flex items-center gap-3 mb-6 max-w-2xl mx-auto w-full">
           <button
             onClick={() => {
               setView("LIST_ACTIVE");
@@ -818,7 +820,7 @@ export function CorteLaserScreen({
           <h2 className="text-2xl font-bold text-gray-800">Finalizar Corte</h2>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+        <div className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border border-gray-200 max-w-2xl mx-auto w-full">
           <div className="mb-4">
             <span className="text-sm text-gray-500 block mb-1">
               Peça sendo cortada
@@ -872,24 +874,105 @@ export function CorteLaserScreen({
               />
             </div>
 
+            {/* Pesquisa e Seleção de Chapa do Estoque */}
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">
                 Chapa Utilizada do Estoque (Dedução Automática)
               </label>
-              <select
-                value={selectedSheetStockId}
-                onChange={(e) => setSelectedSheetStockId(e.target.value)}
-                className="border border-gray-300 p-2.5 rounded-lg w-full text-xs font-bold bg-white focus:outline-blue-500 text-slate-800"
-              >
-                <option value="">-- Não Abater de Nenhuma Chapa Específica --</option>
-                {(db.sheetStocks || [])
-                  .filter((s) => s.currentQuantity > 0)
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.description} ({s.dimensions}) - Disp: {s.currentQuantity} chapas | NF #{s.invoiceNumber}
-                    </option>
-                  ))}
-              </select>
+
+              {selectedSheetStockId ? (
+                (() => {
+                  const selectedSheet = (db.sheetStocks || []).find((s) => s.id === selectedSheetStockId);
+                  return (
+                    <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between gap-2 animate-in fade-in">
+                      <div className="min-w-0">
+                        <span className="text-xs font-extrabold text-indigo-950 block truncate">
+                          {selectedSheet ? selectedSheet.description : "Chapa Selecionada"}
+                        </span>
+                        {selectedSheet && (
+                          <span className="text-[11px] text-indigo-700 font-mono block mt-0.5 truncate">
+                            {selectedSheet.dimensions} | Disp: <strong>{selectedSheet.currentQuantity} chapas</strong> | NF #{selectedSheet.invoiceNumber}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedSheetStockId("");
+                          setSheetStockSearchTerm("");
+                        }}
+                        className="px-3 py-1.5 text-xs bg-indigo-200 hover:bg-indigo-300 text-indigo-950 rounded-lg font-bold shrink-0 cursor-pointer transition"
+                      >
+                        Trocar Chapa
+                      </button>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="relative">
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-3 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Pesquisar chapa por NF, material, dimensão ou fornecedor..."
+                      value={sheetStockSearchTerm}
+                      onChange={(e) => {
+                        setSheetStockSearchTerm(e.target.value);
+                        setIsSheetStockDropdownOpen(true);
+                      }}
+                      onFocus={() => setIsSheetStockDropdownOpen(true)}
+                      className="w-full pl-8 pr-3 py-2.5 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 bg-white focus:ring-2 focus:ring-indigo-500 shadow-xs"
+                    />
+                  </div>
+
+                  {isSheetStockDropdownOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-30 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedSheetStockId("");
+                          setIsSheetStockDropdownOpen(false);
+                        }}
+                        className="w-full text-left p-2.5 text-xs text-slate-500 hover:bg-slate-50 font-medium cursor-pointer"
+                      >
+                        -- Não Abater de Nenhuma Chapa Específica --
+                      </button>
+                      {(db.sheetStocks || [])
+                        .filter((s) => s.currentQuantity > 0)
+                        .filter((s) => {
+                          if (!sheetStockSearchTerm.trim()) return true;
+                          const term = sheetStockSearchTerm.toLowerCase();
+                          return (
+                            s.description.toLowerCase().includes(term) ||
+                            s.invoiceNumber.toLowerCase().includes(term) ||
+                            s.dimensions.toLowerCase().includes(term) ||
+                            s.supplier.toLowerCase().includes(term)
+                          );
+                        })
+                        .map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedSheetStockId(s.id);
+                              setIsSheetStockDropdownOpen(false);
+                            }}
+                            className="w-full text-left p-2.5 hover:bg-indigo-50 transition cursor-pointer flex flex-col gap-0.5"
+                          >
+                            <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                              <span className="truncate pr-2">{s.description}</span>
+                              <span className="text-indigo-600 font-mono font-extrabold shrink-0">{s.currentQuantity} disp.</span>
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-mono flex items-center justify-between">
+                              <span>Dim: {s.dimensions}</span>
+                              <span>NF #{s.invoiceNumber} ({s.supplier})</span>
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="pt-1">
