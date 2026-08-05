@@ -76,13 +76,11 @@ export function StatusScreen({
       return;
     }
 
-    const newBatchId = Date.now();
     await db.addProductionBatch({
-      id: newBatchId,
-      code: batchName.trim(),
       name: batchName.trim(),
+      sectorId: 1,
       orderIds,
-      status: "PLANEJADO",
+      status: "PENDENTE",
       createdAt: Date.now(),
     });
 

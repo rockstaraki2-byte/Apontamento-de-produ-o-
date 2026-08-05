@@ -86,6 +86,12 @@ export function CorteLaserScreen({
   const [packQuantity, setPackQuantity] = useState<number | "">("");
   const [searchTerm, setSearchTerm] = useState("");
 
+  // Corte a Laser - Chapas Cortadas e Sobras
+  const [platesCutQuantity, setPlatesCutQuantity] = useState<number | "">(1);
+  const [selectedSheetStockId, setSelectedSheetStockId] = useState<string>("");
+  const [hasLeftover, setHasLeftover] = useState(false);
+  const [leftoverDimensions, setLeftoverDimensions] = useState("");
+
   // Funcionalidade 4: Popup de Caixas e Impressão de Etiqueta 10x5
   const [showPopupCaixas, setShowPopupCaixas] = useState(false);
   const [qtdCaixas, setQtdCaixas] = useState<number | "">("");
@@ -270,6 +276,42 @@ export function CorteLaserScreen({
       opRole,
     );
 
+    const platesQty = Number(platesCutQuantity) || 1;
+
+    // Dedução do estoque de chapas e log de movimentação de saída
+    if (selectedSheetStockId) {
+      const sheet = db.sheetStocks?.find((s) => s.id === selectedSheetStockId);
+      if (sheet) {
+        const newQty = Math.max(0, sheet.currentQuantity - platesQty);
+        db.updateSheetStock(sheet.id, { currentQuantity: newQty });
+
+        db.addSheetStockMovement({
+          sheetStockId: sheet.id,
+          invoiceNumber: sheet.invoiceNumber,
+          supplier: sheet.supplier,
+          description: `Saída por Corte Laser - ${pack.customProductName || "Corte"} (${platesQty} chapa(s) cortada(s))`,
+          type: "SAIDA",
+          quantity: platesQty,
+          dimensions: sheet.dimensions,
+          operatorName: currentUser.name,
+          platesCutQuantity: platesQty,
+          hasLeftover,
+          leftoverDimensions: hasLeftover ? leftoverDimensions : undefined,
+        });
+      }
+    } else if (platesQty > 0) {
+      db.addSheetStockMovement({
+        description: `Saída Avulsa Corte Laser - ${pack.customProductName || "Corte"} (${platesQty} chapa(s) cortada(s))`,
+        type: "SAIDA",
+        quantity: platesQty,
+        dimensions: leftoverDimensions || "-",
+        operatorName: currentUser.name,
+        platesCutQuantity: platesQty,
+        hasLeftover,
+        leftoverDimensions: hasLeftover ? leftoverDimensions : undefined,
+      });
+    }
+
     if (pack.itemId === 0 && !pack.taskId) {
       db.addLogs([
         {
@@ -282,11 +324,19 @@ export function CorteLaserScreen({
           thirdPartyName: pack.thirdPartyName,
           customProductName: pack.customProductName,
           nestedPartName: pack.customProductName,
+          platesCutQuantity: platesQty,
+          sheetStockId: selectedSheetStockId || undefined,
+          hasLeftover,
+          leftoverDimensions: hasLeftover ? leftoverDimensions : undefined,
         } as any,
       ]);
       db.removeActivePack(pack.id);
       setSelectedPackId(null);
       setPackQuantity("");
+      setPlatesCutQuantity(1);
+      setSelectedSheetStockId("");
+      setHasLeftover(false);
+      setLeftoverDimensions("");
       setView("LIST_ACTIVE");
       return;
     }
@@ -322,6 +372,10 @@ export function CorteLaserScreen({
         timestamp: endTime,
         durationMillis,
         nestedPartName: task.partName,
+        platesCutQuantity: platesQty,
+        sheetStockId: selectedSheetStockId || undefined,
+        hasLeftover,
+        leftoverDimensions: hasLeftover ? leftoverDimensions : undefined,
       } as any,
     ]);
 
@@ -779,9 +833,9 @@ export function CorteLaserScreen({
             )}
           </div>
 
-          <div className="mb-6">
+          <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Quantidade Cortada NESTA SESSÃO
+              Quantidade Cortada NESTA SESSÃO (Peças)
             </label>
             <input
               type="number"
@@ -791,10 +845,94 @@ export function CorteLaserScreen({
               className="border border-gray-300 p-3 rounded-lg w-full text-lg focus:outline-blue-500 bg-white"
             />
             {task && (
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-gray-500 mt-1">
                 Máximo permitido para completar a tarefa:{" "}
                 {task.totalQuantity - task.cutQuantity}
               </p>
+            )}
+          </div>
+
+          {/* CHAPAS CORTADAS E ESTOQUE */}
+          <div className="mb-4 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3">
+            <h4 className="font-extrabold text-xs text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+              <span>✂️</span> Informações das Chapas e Sobras
+            </h4>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Quantidade de Chapas Cortadas
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={platesCutQuantity}
+                onChange={(e) => setPlatesCutQuantity(e.target.value ? Number(e.target.value) : "")}
+                placeholder="Ex: 1 ou 2"
+                className="border border-gray-300 p-2.5 rounded-lg w-full text-sm font-bold bg-white focus:outline-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Chapa Utilizada do Estoque (Dedução Automática)
+              </label>
+              <select
+                value={selectedSheetStockId}
+                onChange={(e) => setSelectedSheetStockId(e.target.value)}
+                className="border border-gray-300 p-2.5 rounded-lg w-full text-xs font-bold bg-white focus:outline-blue-500 text-slate-800"
+              >
+                <option value="">-- Não Abater de Nenhuma Chapa Específica --</option>
+                {(db.sheetStocks || [])
+                  .filter((s) => s.currentQuantity > 0)
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.description} ({s.dimensions}) - Disp: {s.currentQuantity} chapas | NF #{s.invoiceNumber}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div className="pt-1">
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Teve alguma sobra de chapa?
+              </label>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="hasLeftoverRadio"
+                    checked={!hasLeftover}
+                    onChange={() => setHasLeftover(false)}
+                    className="w-4 h-4 text-blue-600"
+                  />
+                  Não teve sobra
+                </label>
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="hasLeftoverRadio"
+                    checked={hasLeftover}
+                    onChange={() => setHasLeftover(true)}
+                    className="w-4 h-4 text-amber-600"
+                  />
+                  Sim, sobrou um retalho/chapa
+                </label>
+              </div>
+            </div>
+
+            {hasLeftover && (
+              <div className="bg-amber-50/80 p-3 rounded-lg border border-amber-200 animate-in fade-in">
+                <label className="block text-xs font-bold text-amber-900 mb-1">
+                  Dimensão da Sobra (Ex: 500x1200mm ou Chapa 1/2 retalho 300x400)
+                </label>
+                <input
+                  type="text"
+                  value={leftoverDimensions}
+                  onChange={(e) => setLeftoverDimensions(e.target.value)}
+                  placeholder="Informe a dimensão da sobra..."
+                  className="border border-amber-300 p-2.5 rounded-lg w-full text-xs font-bold bg-white focus:outline-amber-500 text-amber-950"
+                />
+              </div>
             )}
           </div>
 

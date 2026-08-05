@@ -22,7 +22,9 @@ import {
   ChevronDown,
   ChevronUp,
   Eye,
-  Percent
+  Percent,
+  Scissors,
+  Check
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -133,7 +135,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     new Date().toISOString().split("T")[0]
   );
   const [validityDays, setValidityDays] = useState<number>(10);
-  const [quoteStatus, setQuoteStatus] = useState<"RASCUNHO" | "ENVIADO" | "APROVADO" | "APROVADO_COM_MATERIAL" | "APROVADO_SEM_MATERIAL" | "REJEITADO">("RASCUNHO");
+  const [quoteStatus, setQuoteStatus] = useState<"RASCUNHO" | "ENVIADO" | "APROVADO" | "APROVADO_COM_MATERIAL" | "APROVADO_SEM_MATERIAL" | "REJEITADO" | "CORTADO" | "FINALIZADO">("RASCUNHO");
   const [notes, setNotes] = useState("");
   const [additionPercent, setAdditionPercent] = useState<number>(0);
   const [extraCosts, setExtraCosts] = useState<number>(0);
@@ -146,6 +148,9 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
   // Status badge styling helper
   const getStatusBadge = (st: string) => {
     switch (st) {
+      case "CORTADO":
+      case "FINALIZADO":
+        return { label: "✂️ CORTADO / FINALIZADO", bg: "bg-purple-100 text-purple-800 border-purple-300" };
       case "APROVADO_COM_MATERIAL":
         return { label: "APROVADO C/ MAT.", bg: "bg-emerald-100 text-emerald-800 border-emerald-300" };
       case "APROVADO_SEM_MATERIAL":
@@ -158,6 +163,16 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
         return { label: "REJEITADO", bg: "bg-rose-100 text-rose-800 border-rose-300" };
       default:
         return { label: "RASCUNHO", bg: "bg-amber-100 text-amber-800 border-amber-300" };
+    }
+  };
+
+  const handleFinishQuote = async (quote: LaserQuote) => {
+    if (window.confirm(`Deseja finalizar o orçamento #${quote.quoteCode} (${quote.customerName})?\nO status será alterado para CORTADO / FINALIZADO.`)) {
+      await db.updateLaserQuote(quote.id, { status: "CORTADO" });
+      if (viewingQuote && viewingQuote.id === quote.id) {
+        setViewingQuote({ ...viewingQuote, status: "CORTADO" });
+      }
+      alert(`Orçamento #${quote.quoteCode} finalizado com sucesso! Status alterado para CORTADO / FINALIZADO.`);
     }
   };
 
@@ -958,6 +973,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
               { id: "ENVIADO", label: "ENVIADO" },
               { id: "APROVADO_COM_MATERIAL", label: "APROVADO C/ MAT." },
               { id: "APROVADO_SEM_MATERIAL", label: "APROVADO S/ MAT." },
+              { id: "CORTADO", label: "✂️ CORTADO" },
               { id: "REJEITADO", label: "REJEITADO" },
             ].map((st) => (
               <button
@@ -1035,6 +1051,15 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                         >
                           <Eye size={14} />
                         </button>
+                        {q.status !== "CORTADO" && q.status !== "FINALIZADO" && (
+                          <button
+                            onClick={() => handleFinishQuote(q)}
+                            title="Finalizar Orçamento (Marcar como Cortado)"
+                            className="p-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg transition cursor-pointer flex items-center gap-1 font-bold text-[11px]"
+                          >
+                            <Scissors size={14} />
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             setSelectedReportMode("AMBOS");
@@ -1730,6 +1755,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                     <option value="APROVADO_COM_MATERIAL">APROVADO C/ MATERIAL</option>
                     <option value="APROVADO_SEM_MATERIAL">APROVADO S/ MATERIAL</option>
                     <option value="APROVADO">APROVADO (GERAL)</option>
+                    <option value="CORTADO">CORTADO / FINALIZADO</option>
                     <option value="REJEITADO">REJEITADO</option>
                   </select>
                 </div>
@@ -1945,6 +1971,14 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
               </button>
 
               <div className="flex items-center gap-2">
+                {viewingQuote.status !== "CORTADO" && viewingQuote.status !== "FINALIZADO" && (
+                  <button
+                    onClick={() => handleFinishQuote(viewingQuote)}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Scissors size={14} /> Finalizar Orçamento (Cortado)
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     const q = viewingQuote;

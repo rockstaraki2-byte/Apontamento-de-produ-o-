@@ -30,6 +30,8 @@ import type {
   PerformanceQuestion,
   PerformanceReview,
   Tenant,
+  SheetStockEntry,
+  SheetStockMovement,
 } from "./types";
 import { db } from "./firebase";
 import {
@@ -525,6 +527,8 @@ export function useDatabase(currentUser?: User | null) {
   >([]);
   const [attendances, setAttendances] = useState<import("./types").AttendanceRecord[]>([]);
   const [laserQuotes, setLaserQuotes] = useState<import("./types").LaserQuote[]>([]);
+  const [sheetStocks, setSheetStocks] = useState<SheetStockEntry[]>([]);
+  const [sheetStockMovements, setSheetStockMovements] = useState<SheetStockMovement[]>([]);
 
   useEffect(() => {
     updateQueueCount();
@@ -828,6 +832,24 @@ export function useDatabase(currentUser?: User | null) {
         setLaserQuotes(list);
       },
       (err) => handleSnapshotError("laserQuotes", err),
+    );
+
+    const unsubSheetStocks = onSnapshot(
+      collection(db, "sheetStocks"),
+      (snap) => {
+        const list = snap.docs.map((d) => d.data() as SheetStockEntry);
+        setSheetStocks(list);
+      },
+      (err) => handleSnapshotError("sheetStocks", err),
+    );
+
+    const unsubSheetStockMovements = onSnapshot(
+      collection(db, "sheetStockMovements"),
+      (snap) => {
+        const list = snap.docs.map((d) => d.data() as SheetStockMovement);
+        setSheetStockMovements(list);
+      },
+      (err) => handleSnapshotError("sheetStockMovements", err),
     );
 
     let unsubPriceHistories = () => {};
@@ -1791,6 +1813,8 @@ export function useDatabase(currentUser?: User | null) {
   const filteredPerformanceReviews = useMemo(() => performanceReviews.filter((x) => (x.tenantId || "imperio") === activeTenantId), [performanceReviews, activeTenantId]);
   const filteredAttendances = useMemo(() => attendances.filter((x) => (x.tenantId || "imperio") === activeTenantId), [attendances, activeTenantId]);
   const filteredLaserQuotes = useMemo(() => laserQuotes.filter((x) => (x.tenantId || "imperio") === activeTenantId), [laserQuotes, activeTenantId]);
+  const filteredSheetStocks = useMemo(() => sheetStocks.filter((x) => (x.tenantId || "imperio") === activeTenantId), [sheetStocks, activeTenantId]);
+  const filteredSheetStockMovements = useMemo(() => sheetStockMovements.filter((x) => (x.tenantId || "imperio") === activeTenantId), [sheetStockMovements, activeTenantId]);
 
   const activeTenant = useMemo(() => {
     return tenants.find((t) => t.id === activeTenantId) || tenants.find((t) => t.id === "imperio") || { id: "imperio", name: "Império Jomarci", logoUrl: "/icon.png", primaryColor: "#00b14f", systemName: "Apontador de Produção" };
@@ -2170,6 +2194,57 @@ export function useDatabase(currentUser?: User | null) {
     },
     deleteLaserQuote: async (id: string) => {
       await deleteDoc(doc(db, "laserQuotes", id));
+    },
+
+    sheetStocks: filteredSheetStocks,
+    sheetStockMovements: filteredSheetStockMovements,
+    addSheetStock: async (entry: Omit<SheetStockEntry, "id" | "entryDate" | "currentQuantity"> & { initialQuantity: number; currentQuantity?: number; id?: string }) => {
+      const id = entry.id || Date.now().toString();
+      const entryDate = Date.now();
+      const currentQuantity = entry.currentQuantity !== undefined ? entry.currentQuantity : entry.initialQuantity;
+      const newEntry: SheetStockEntry = {
+        ...entry,
+        id,
+        currentQuantity,
+        entryDate,
+        tenantId: entry.tenantId || activeTenantId,
+      };
+      await setDoc(doc(db, "sheetStocks", id), cleanUndefined(newEntry));
+
+      // Also create an automatic ENTRADA movement log
+      const movId = (Date.now() + 1).toString();
+      const mov: SheetStockMovement = {
+        id: movId,
+        sheetStockId: id,
+        invoiceNumber: entry.invoiceNumber,
+        supplier: entry.supplier,
+        description: `Entrada NF #${entry.invoiceNumber} - ${entry.description} (${entry.dimensions})`,
+        type: "ENTRADA",
+        quantity: entry.initialQuantity,
+        dimensions: entry.dimensions,
+        timestamp: entryDate,
+        operatorName: entry.createdBy || "PCP/Gerência",
+        tenantId: entry.tenantId || activeTenantId,
+      };
+      await setDoc(doc(db, "sheetStockMovements", movId), cleanUndefined(mov));
+      return id;
+    },
+    updateSheetStock: async (id: string, updates: Partial<SheetStockEntry>) => {
+      await setDoc(doc(db, "sheetStocks", id), cleanUndefined(updates), { merge: true });
+    },
+    deleteSheetStock: async (id: string) => {
+      await deleteDoc(doc(db, "sheetStocks", id));
+    },
+    addSheetStockMovement: async (mov: Omit<SheetStockMovement, "id" | "timestamp"> & { id?: string; timestamp?: number }) => {
+      const id = mov.id || Date.now().toString();
+      const timestamp = mov.timestamp || Date.now();
+      const newMov: SheetStockMovement = {
+        ...mov,
+        id,
+        timestamp,
+        tenantId: mov.tenantId || activeTenantId,
+      };
+      await setDoc(doc(db, "sheetStockMovements", id), cleanUndefined(newMov));
     },
 
     tenants,

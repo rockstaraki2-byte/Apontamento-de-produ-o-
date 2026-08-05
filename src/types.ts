@@ -266,6 +266,47 @@ export interface ProductionLog {
   consumedCoilQty?: number;
   associatedBatchId?: number;
   associatedBatchName?: string;
+
+  // Laser Cut Sheet Usage
+  platesCutQuantity?: number;
+  sheetStockId?: string;
+  hasLeftover?: boolean;
+  leftoverDimensions?: string;
+}
+
+export interface SheetStockEntry {
+  id: string;
+  invoiceNumber: string;         // Número da Nota Fiscal (NF)
+  supplier: string;              // Fornecedor
+  dimensions: string;            // Dimensão da chapa (ex: 1200x3000x3.17mm)
+  description: string;           // Descrição da chapa / Tipo de Material
+  materialType?: string;         // ex: "Aço Carbono", "Aço Inox"
+  thicknessMm?: number;          // Espessura em mm
+  initialQuantity: number;       // Qtd inicial na NF
+  currentQuantity: number;       // Qtd atual disponível no estoque
+  entryDate: number;             // Data e hora da entrada (timestamp automático)
+  createdBy?: string;            // Usuário que deu entrada (PCP / Gerência)
+  tenantId?: string;
+  notes?: string;
+}
+
+export interface SheetStockMovement {
+  id: string;
+  sheetStockId?: string;
+  invoiceNumber?: string;
+  supplier?: string;
+  description: string;           // Descrição da movimentação
+  type: "ENTRADA" | "SAIDA";
+  quantity: number;              // Qtd de chapas movimentadas
+  dimensions?: string;
+  timestamp: number;             // Timestamp automático (data/hora entrada ou saída)
+  operatorName?: string;         // Nome do operador ou usuário PCP/Gerência
+  taskId?: number;
+  taskName?: string;
+  platesCutQuantity?: number;    // Qtd de chapas cortadas no laser
+  hasLeftover?: boolean;         // Se teve sobra
+  leftoverDimensions?: string;   // Dimensão da sobra (se houver)
+  tenantId?: string;
 }
 
 export interface ActiveTask {
@@ -540,7 +581,7 @@ export interface LaserQuote {
   extraCosts?: number;          // Custos adicionais fixos (mão de obra, frete, etc.) em R$ rateados nos unitários
   additionPercent?: number;     // Porcentagem adicional aplicada nos valores unitários (padrão 0%)
   notes?: string;
-  status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "APROVADO_COM_MATERIAL" | "APROVADO_SEM_MATERIAL" | "REJEITADO";
+  status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "APROVADO_COM_MATERIAL" | "APROVADO_SEM_MATERIAL" | "REJEITADO" | "CORTADO" | "FINALIZADO";
   tenantId?: string;
 }
 

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { useDatabase } from "./useDatabase";
-import { Layers, Link } from "lucide-react";
+import { Layers, FileText } from "lucide-react";
 import type { User, Order } from "./types";
 
 export function EstoqueNestingScreen({
@@ -200,10 +201,19 @@ export function EstoqueNestingScreen({
 
   return (
     <div className="flex flex-col h-full bg-slate-50 p-4">
-      <h2 className="text-2xl font-bold mb-4 text-gray-800 flex items-center gap-2">
-        <Layers size={28} className="text-indigo-600" />
-        Estoque (Nesting & Corte a Laser)
-      </h2>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+          <Layers size={28} className="text-indigo-600" />
+          Estoque de Peças Cortadas (Laser)
+        </h2>
+        <Link
+          to="/estoque-chapas"
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center gap-2"
+        >
+          <Layers size={16} />
+          <span>Ir para Controle de Estoque de Chapas</span>
+        </Link>
+      </div>
 
       <div className="flex gap-2 mb-4 border-b border-gray-200">
         <button

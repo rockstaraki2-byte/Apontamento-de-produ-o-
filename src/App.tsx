@@ -88,6 +88,7 @@ import { LoteGeralWidget } from "./components/LoteGeralWidget";
 import { usePushNotifications } from "./usePushNotifications";
 import { EstoqueScreen } from "./EstoqueScreen";
 import { EstoqueNestingScreen } from "./EstoqueNestingScreen";
+import { EstoqueChapasScreen } from "./EstoqueChapasScreen";
 import { RepresentanteScreen } from "./RepresentanteScreen";
 import { UploadNestScreen } from "./UploadNestScreen";
 import { HistoricoProducaoScreen } from "./HistoricoProducaoScreen";
@@ -13995,12 +13996,20 @@ export default function App() {
               currentUser.role === "PCP" ||
               currentUser.role === "GERENCIA" ||
               currentUser.role === "PROJETISTA") && (
-              <Route
-                path="/estoque-laser"
-                element={
-                  <EstoqueNestingScreen db={db} currentUser={currentUser} />
-                }
-              />
+              <>
+                <Route
+                  path="/estoque-laser"
+                  element={
+                    <EstoqueNestingScreen db={db} currentUser={currentUser} />
+                  }
+                />
+                <Route
+                  path="/estoque-chapas"
+                  element={
+                    <EstoqueChapasScreen db={db} currentUser={currentUser} />
+                  }
+                />
+              </>
             )}
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "PCP" ||
@@ -14346,11 +14355,18 @@ export default function App() {
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "PROJETISTA") && (
-            <NavLink
-              to="/estoque-laser"
-              icon={<Layers size={24} />}
-              label="Estoque Pç Cortadas"
-            />
+            <>
+              <NavLink
+                to="/estoque-chapas"
+                icon={<Layers size={24} />}
+                label="Estoque de Chapas"
+              />
+              <NavLink
+                to="/estoque-laser"
+                icon={<Layers size={24} />}
+                label="Estoque Pç Cortadas"
+              />
+            </>
           )}
 
           {(currentUser.role === "ADMIN" ||
