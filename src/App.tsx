@@ -135,6 +135,8 @@ import { EvolucaoEmbalagemTab } from "./EvolucaoEmbalagemTab";
 import { GestaoPessoasTab } from "./components/GestaoPessoasTab";
 import { COLOR_MAP } from "./types";
 
+const BottomNavContext = React.createContext<{ isCollapsed: boolean }>({ isCollapsed: false });
+
 function NavLink({
   to,
   icon,
@@ -144,6 +146,24 @@ function NavLink({
   icon: React.ReactNode;
   label: string;
 }) {
+  const { isCollapsed } = React.useContext(BottomNavContext);
+
+  if (isCollapsed) {
+    return (
+      <Link
+        to={to}
+        title={label}
+        className="flex items-center justify-center p-1.5 min-w-[38px] h-[36px] text-gray-500 hover:text-blue-600 active:bg-blue-50 active:text-blue-700 rounded-lg transition-colors shrink-0"
+      >
+        <div className="flex items-center justify-center text-slate-600 hover:text-blue-600">
+          {React.isValidElement(icon)
+            ? React.cloneElement(icon as React.ReactElement<any>, { size: 18 })
+            : icon}
+        </div>
+      </Link>
+    );
+  }
+
   return (
     <Link
       to={to}
@@ -945,18 +965,12 @@ function Welcome({
                 <span className="bg-indigo-100 text-indigo-700 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-semibold">
                   <List size={16} />
                 </span>
-                Fila de Produção & PCP IA
+                Fila de Produção
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                Pedidos aguardando inserção em Lotes de Produção.
+                Pedidos em acompanhamento PCP.
               </p>
             </div>
-            <button
-              onClick={() => navigate("/fila-producao")}
-              className="bg-indigo-50 text-indigo-700 text-xs font-bold px-4 py-2 rounded-lg border border-indigo-150 shadow-sm hover:bg-indigo-100 transition whitespace-nowrap"
-            >
-              Abrir Gestor de Fila ↗
-            </button>
           </div>
           <p className="text-sm font-medium text-slate-600 mb-2">
             Acompanhe pedidos abertos sem lote gerado, verifique urgências
@@ -5885,16 +5899,6 @@ function PedidosScreen({
                         className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1 px-2.5 rounded shadow-xs transition text-[10px] md:text-xs flex items-center gap-1 leading-none"
                       >
                         <FileText size={12} /> Faturamento PDF
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsPdfModalOpen(true);
-                        }}
-                        className="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-2.5 rounded shadow-xs transition text-[10px] md:text-xs flex items-center gap-1 leading-none"
-                      >
-                        <FileDown size={12} /> Importar PDF
                       </button>
                       <button
                         type="button"
@@ -11950,16 +11954,6 @@ function AdminScreen({
           )}
           {(currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA") && (
-            <button
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "SUGESTAO" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-              onClick={() => setActiveTab("SUGESTAO")}
-            >
-              📊 Sugestão de Faturamento
-            </button>
-          )}
-          {(currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
             currentUser.name.toLowerCase().includes("romario") ||
             currentUser.name.toLowerCase().includes("alessandra")) && (
@@ -11997,7 +11991,7 @@ function AdminScreen({
         </div>
       </div>
 
-      {["PAINEL", "MONITORAMENTO", "SUGESTAO"].includes(activeTab) ? (
+      {["PAINEL", "MONITORAMENTO"].includes(activeTab) ? (
         <ScrollContainer paddingSize="dense" className="space-y-4">
           {activeTab === "PAINEL" ? (
             <>
@@ -12627,13 +12621,6 @@ function AdminScreen({
                 )}
               </div>
             </>
-          ) : activeTab === "SUGESTAO" ? (
-            <InvoiceSuggestionsTab
-              db={db}
-              setSelectedOrder={setSelectedOrder}
-              setInvoiceModalData={setInvoiceModalData}
-              setInvoiceInput={setInvoiceInput}
-            />
           ) : activeTab === "MONITORAMENTO" ? (
             <div className="flex-1 overflow-y-auto w-full flex flex-col gap-6">
               <MonitoramentoMetricsSummary logs={db.logs} />
@@ -13323,6 +13310,17 @@ export default function App() {
   const [isIOS, setIsIOS] = useState(false);
   const [isInIframe, setIsInIframe] = useState(false);
   const [showPWAModal, setShowPWAModal] = useState(false);
+  const [isBottomNavCollapsed, setIsBottomNavCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem("bottom_nav_collapsed") === "true";
+  });
+
+  const toggleBottomNav = () => {
+    setIsBottomNavCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("bottom_nav_collapsed", String(next));
+      return next;
+    });
+  };
 
   useEffect(() => {
     const checkStandalone = () => {
@@ -14175,14 +14173,6 @@ export default function App() {
               />
             )}
             {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "PCP") && (
-              <Route
-                path="/logistica"
-                element={<LogisticaScreen db={db} currentUser={currentUser} />}
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
               currentUser.role === "PCP" ||
               currentUser.role === "GERENCIA" ||
               currentUser.role === "ENCARREGADO" ||
@@ -14194,22 +14184,6 @@ export default function App() {
                 element={<LotesScreen db={db} currentUser={currentUser} />}
               />
             )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "PCP") && (
-              <Route
-                path="/fila-producao"
-                element={
-                  <PedidosSemLoteScreen db={db} currentUser={currentUser} />
-                }
-              />
-            )}
-            <Route
-              path="/fila-ritmo"
-              element={
-                <FilaRitmoScreen db={db} currentUser={currentUser} />
-              }
-            />
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "GERENCIA") && (
               <Route
@@ -14227,7 +14201,27 @@ export default function App() {
         </main>
 
         {/* Bottom Navigation */}
-        <nav className="bg-white border-t border-gray-200 flex justify-around p-3 pb-safe shrink-0 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] overflow-x-auto">
+        <BottomNavContext.Provider value={{ isCollapsed: isBottomNavCollapsed }}>
+          <nav className={`bg-white border-t border-gray-200 flex items-center justify-around pb-safe shrink-0 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] overflow-x-auto transition-all duration-300 ${isBottomNavCollapsed ? "py-1 px-2 gap-1" : "p-2 sm:p-3 gap-1"}`}>
+            {/* Collapse / Expand Toggle Button */}
+            <button
+              onClick={toggleBottomNav}
+              title={isBottomNavCollapsed ? "Expandir Menu de Navegação" : "Recolher Menu (Modo Compacto)"}
+              className={`flex flex-col items-center justify-center border rounded-lg transition-all shrink-0 cursor-pointer ${
+                isBottomNavCollapsed
+                  ? "p-1 min-w-[34px] h-[34px] bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+                  : "p-2 min-w-[56px] min-h-[48px] bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              {isBottomNavCollapsed ? (
+                <ChevronUp size={18} className="text-indigo-600" />
+              ) : (
+                <ChevronDown size={20} className="text-slate-700" />
+              )}
+              <span className={`${isBottomNavCollapsed ? "hidden" : "text-[10px] mt-1 font-bold text-slate-600 whitespace-nowrap"}`}>
+                Recolher
+              </span>
+            </button>
           {currentUser.id === "raul" && (
             <NavLink
               to="/superadmin"
@@ -14263,27 +14257,6 @@ export default function App() {
               to="/admin"
               icon={<BarChart2 size={24} />}
               label="Monitor"
-            />
-          )}
-
-          {(currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA") && (
-            <NavLink
-              to="/fila-producao"
-              icon={<List size={24} />}
-              label="Fila Prod."
-            />
-          )}
-
-          {(currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "ENCARREGADO") && (
-            <NavLink
-              to="/fila-ritmo"
-              icon={<Gauge size={24} />}
-              label="Ritmo & Fila"
             />
           )}
 
@@ -14514,16 +14487,6 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "PCP") && (
-            <NavLink
-              to="/logistica"
-              icon={<Truck size={24} />}
-              label="Logística"
-            />
-          )}
-
           {currentUser.role === "REPRESENTANTE" && (
             <NavLink
               to="/representante"
@@ -14552,7 +14515,8 @@ export default function App() {
             label="Histórico"
           />
         </nav>
-      </div>
+      </BottomNavContext.Provider>
+    </div>
 
       {orderToPrint &&
         (() => {

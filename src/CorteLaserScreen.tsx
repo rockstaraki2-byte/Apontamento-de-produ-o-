@@ -3,7 +3,6 @@ import { ArrowLeft, Activity, Pencil, X, Clock, Trash, Search } from "lucide-rea
 import { useDatabase } from "./useDatabase";
 import type { User, NestTask } from "./types";
 import { calculateWorkingMillis } from "./timeUtils";
-import { LoteGeralWidget } from "./components/LoteGeralWidget";
 import { DailySummaryWidget } from "./components/DailySummaryWidget";
 import { normalizeString } from "./searchUtils";
 import { ProductivityCard } from "./components/ProductivityCard";
@@ -805,7 +804,7 @@ export function CorteLaserScreen({
     const task = db.nestTasks?.find((t) => t.id === (pack as any).taskId);
 
     return (
-      <div className="p-4 sm:p-6 flex flex-col min-h-screen bg-slate-50 overflow-y-auto pb-32">
+      <div className="p-4 sm:p-6 flex flex-col h-full flex-1 overflow-y-auto bg-slate-50 pb-32 w-full">
         <div className="flex items-center gap-3 mb-6 max-w-2xl mx-auto w-full">
           <button
             onClick={() => {

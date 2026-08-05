@@ -902,7 +902,7 @@ export function UploadNestScreen({
           >
             <span className="flex items-center gap-2">
               <Upload size={18} className="text-indigo-600" />
-              Importar Arquivos de Nesting (PDF / Prints IA)
+              Importar Arquivos de Nesting (PDF / Imagens)
             </span>
             {isUploadBoxOpen ? (
               <ChevronUp size={20} className="text-indigo-600" />
@@ -976,7 +976,7 @@ export function UploadNestScreen({
                     <strong className="text-indigo-600 font-semibold underline">
                       pressione Ctrl+V
                     </strong>{" "}
-                    para extrair as peças por Inteligência Artificial!
+                    para carregar as peças do plano de corte.
                   </p>
 
                   <input
@@ -1649,7 +1649,7 @@ export function UploadNestScreen({
                       size={10}
                       className="text-amber-400 animate-pulse"
                     />
-                    Validação do Nesting por IA
+                    Validação do Nesting
                   </span>
                   {currentUser?.name && (
                     <span className="text-[10px] bg-emerald-800 text-emerald-50 px-2 py-0.5 rounded font-medium">
@@ -1658,10 +1658,10 @@ export function UploadNestScreen({
                   )}
                 </div>
                 <h3 className="font-extrabold text-xl leading-snug mt-1">
-                  Revisar Extração de Peças
+                  Revisar Peças do Nesting
                 </h3>
                 <span className="text-xs text-indigo-100/90 font-medium">
-                  Marcos, valide e ajuste as informações detectadas pela IA
+                  Marcos, valide e ajuste as informações do nesting
                   antes de salvar na produção.
                 </span>
               </div>
