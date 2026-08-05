@@ -16,7 +16,6 @@ const updateSW = registerSW({
   immediate: true,
 });
 
-// SW do Firebase Messaging separado do SW principal do PWA
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
