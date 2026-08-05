@@ -12,17 +12,53 @@ export default defineConfig(() => {
       VitePWA({
         registerType: 'autoUpdate',
         injectRegister: 'auto',
-        strategies: 'injectManifest',
-        srcDir: 'src',
-        filename: 'sw.ts',
+        strategies: 'generateSW',
         manifestFilename: 'manifest.webmanifest',
         includeAssets: ['icon.png', 'icon-192.png', 'icon.svg', 'favicon.ico'],
-        injectManifest: {
-          swSrc: 'src/sw.ts',
+        workbox: {
+          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,webmanifest}'],
+          globIgnores: ['**/pdf.worker*', '**/vendor-pdf*'],
+          navigateFallback: '/index.html',
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts-cache',
+                expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+                cacheableResponse: { statuses: [0, 200] },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
+              handler: 'NetworkFirst',
+              options: { cacheName: 'firebase-cache' },
+            },
+          ],
         },
         devOptions: {
           enabled: false,
           type: 'module',
+        },
+        manifest: {
+          id: '/',
+          name: 'Apontador de Produção',
+          short_name: 'Apontador',
+          description: 'Sistema de apontamento e acompanhamento de produção e PCP',
+          start_url: '/',
+          scope: '/',
+          display: 'standalone',
+          orientation: 'portrait',
+          theme_color: '#1e1b4b',
+          background_color: '#ffffff',
+          lang: 'pt-BR',
+          icons: [
+            { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+            { src: '/icon.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: '/icon.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          ],
         },
       }),
     ],
