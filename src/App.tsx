@@ -3477,10 +3477,38 @@ function PedidosScreen({
   const [editingOrderGroupCode, setEditingOrderGroupCode] = useState<string | null>(null);
   const [editingGroupOrderCodeInput, setEditingGroupOrderCodeInput] = useState<string>("");
   const [editingGroupCustomerName, setEditingGroupCustomerName] = useState<string>("");
+  const [editingGroupCustomerSelected, setEditingGroupCustomerSelected] = useState<boolean>(true);
   const [editingGroupRepresentative, setEditingGroupRepresentative] = useState<string>("");
   const [editingGroupDeliveryDate, setEditingGroupDeliveryDate] = useState<string>("");
   const [editingGroupStatus, setEditingGroupStatus] = useState<string>("PENDENTE");
   const [editingGroupNotes, setEditingGroupNotes] = useState<string>("");
+  const [editingGroupLineItems, setEditingGroupLineItems] = useState<
+    {
+      id?: number;
+      itemId: number;
+      color: string;
+      size: string;
+      variation: string;
+      totalQuantity: number;
+      unitPrice?: number;
+      isThirdPartyLaser?: boolean;
+      isUrgent?: boolean;
+      isProgramacao?: boolean;
+    }[]
+  >([]);
+
+  // Product form states inside Order Group Edit Modal
+  const [editingGroupCartIndex, setEditingGroupCartIndex] = useState<number | null>(null);
+  const [editingGroupOrderItemSearch, setEditingGroupOrderItemSearch] = useState<string>("");
+  const [editingGroupItemId, setEditingGroupItemId] = useState<number | string>("");
+  const [editingGroupColor, setEditingGroupColor] = useState<string>("");
+  const [editingGroupSize, setEditingGroupSize] = useState<string>("");
+  const [editingGroupVariation, setEditingGroupVariation] = useState<string>("");
+  const [editingGroupTotalQuantity, setEditingGroupTotalQuantity] = useState<number | string>("");
+  const [editingGroupUnitPrice, setEditingGroupUnitPrice] = useState<number | string>("");
+  const [editingGroupIsThirdPartyLaser, setEditingGroupIsThirdPartyLaser] = useState<boolean>(false);
+  const [editingGroupIsUrgent, setEditingGroupIsUrgent] = useState<boolean>(false);
+  const [editingGroupIsProgramacao, setEditingGroupIsProgramacao] = useState<boolean>(false);
 
   const [activeSubTab, setActiveSubTab] = useState<
     "ABERTOS" | "APROVACAO" | "FATURADOS"
@@ -5348,10 +5376,145 @@ function PedidosScreen({
     setEditingOrderGroupCode(orderCode);
     setEditingGroupOrderCodeInput(orderCode);
     setEditingGroupCustomerName(first.customerName || "");
+    setEditingGroupCustomerSelected(true);
     setEditingGroupRepresentative(first.representativeName || "");
     setEditingGroupDeliveryDate(first.deliveryDate || "");
     setEditingGroupStatus(first.status || "PENDENTE");
     setEditingGroupNotes(first.notes || "");
+
+    setEditingGroupLineItems(
+      group.map((o) => ({
+        id: o.id,
+        itemId: o.itemId,
+        color: o.color || "",
+        size: o.size || "",
+        variation: o.variation || "",
+        totalQuantity: o.totalQuantity || 0,
+        unitPrice: o.unitPrice,
+        isThirdPartyLaser: !!o.isThirdPartyLaser,
+        isUrgent: !!o.isUrgent,
+        isProgramacao: !!o.isProgramacao,
+      }))
+    );
+
+    setEditingGroupCartIndex(null);
+    setEditingGroupItemId("");
+    setEditingGroupOrderItemSearch("");
+    setEditingGroupColor("");
+    setEditingGroupSize("");
+    setEditingGroupVariation("");
+    setEditingGroupTotalQuantity("");
+    setEditingGroupUnitPrice("");
+    setEditingGroupIsThirdPartyLaser(false);
+    setEditingGroupIsUrgent(false);
+    setEditingGroupIsProgramacao(false);
+  };
+
+  const handleAddProductToEditingGroup = () => {
+    if (!editingGroupItemId || !editingGroupTotalQuantity) return;
+    setEditingGroupLineItems((prev) => [
+      ...prev,
+      {
+        itemId: Number(editingGroupItemId),
+        color: editingGroupColor,
+        size: editingGroupSize,
+        variation: editingGroupVariation,
+        totalQuantity: Number(editingGroupTotalQuantity),
+        unitPrice: editingGroupUnitPrice === "" ? undefined : Number(editingGroupUnitPrice),
+        isThirdPartyLaser: editingGroupIsThirdPartyLaser,
+        isUrgent: editingGroupIsUrgent,
+        isProgramacao: editingGroupIsProgramacao,
+      },
+    ]);
+    setEditingGroupItemId("");
+    setEditingGroupOrderItemSearch("");
+    setEditingGroupColor("");
+    setEditingGroupSize("");
+    setEditingGroupVariation("");
+    setEditingGroupTotalQuantity("");
+    setEditingGroupUnitPrice("");
+    setEditingGroupIsThirdPartyLaser(false);
+    setEditingGroupIsUrgent(false);
+    setEditingGroupIsProgramacao(false);
+  };
+
+  const handleEditEditingGroupCartItem = (idx: number) => {
+    const li = editingGroupLineItems[idx];
+    if (!li) return;
+    setEditingGroupCartIndex(idx);
+    setEditingGroupItemId(li.itemId);
+    const itemObj = db.items.find((i) => i.id === li.itemId);
+    setEditingGroupOrderItemSearch(itemObj ? `${itemObj.code} - ${itemObj.name}` : "");
+    setEditingGroupColor(li.color || "");
+    setEditingGroupSize(li.size || "");
+    setEditingGroupVariation(li.variation || "");
+    setEditingGroupTotalQuantity(li.totalQuantity);
+    setEditingGroupUnitPrice(li.unitPrice ?? "");
+    setEditingGroupIsThirdPartyLaser(!!li.isThirdPartyLaser);
+    setEditingGroupIsUrgent(!!li.isUrgent);
+    setEditingGroupIsProgramacao(!!li.isProgramacao);
+  };
+
+  const handleSaveEditingGroupCartItem = () => {
+    if (editingGroupCartIndex === null || !editingGroupItemId || !editingGroupTotalQuantity) return;
+    const updated = [...editingGroupLineItems];
+    updated[editingGroupCartIndex] = {
+      ...updated[editingGroupCartIndex],
+      itemId: Number(editingGroupItemId),
+      color: editingGroupColor,
+      size: editingGroupSize,
+      variation: editingGroupVariation,
+      totalQuantity: Number(editingGroupTotalQuantity),
+      unitPrice: editingGroupUnitPrice === "" ? undefined : Number(editingGroupUnitPrice),
+      isThirdPartyLaser: editingGroupIsThirdPartyLaser,
+      isUrgent: editingGroupIsUrgent,
+      isProgramacao: editingGroupIsProgramacao,
+    };
+    setEditingGroupLineItems(updated);
+    setEditingGroupCartIndex(null);
+    setEditingGroupItemId("");
+    setEditingGroupOrderItemSearch("");
+    setEditingGroupColor("");
+    setEditingGroupSize("");
+    setEditingGroupVariation("");
+    setEditingGroupTotalQuantity("");
+    setEditingGroupUnitPrice("");
+    setEditingGroupIsThirdPartyLaser(false);
+    setEditingGroupIsUrgent(false);
+    setEditingGroupIsProgramacao(false);
+  };
+
+  const handleRemoveEditingGroupCartItem = (idx: number) => {
+    setEditingGroupLineItems((prev) => prev.filter((_, i) => i !== idx));
+    if (editingGroupCartIndex === idx) {
+      setEditingGroupCartIndex(null);
+      setEditingGroupItemId("");
+      setEditingGroupOrderItemSearch("");
+      setEditingGroupColor("");
+      setEditingGroupSize("");
+      setEditingGroupVariation("");
+      setEditingGroupTotalQuantity("");
+      setEditingGroupUnitPrice("");
+      setEditingGroupIsThirdPartyLaser(false);
+      setEditingGroupIsUrgent(false);
+      setEditingGroupIsProgramacao(false);
+    } else if (editingGroupCartIndex !== null && editingGroupCartIndex > idx) {
+      setEditingGroupCartIndex(editingGroupCartIndex - 1);
+    }
+  };
+
+  const handleCancelEditEditingGroupCartItem = () => {
+    setEditingGroupCartIndex(null);
+    setEditingGroupItemId("");
+    setEditingGroupOrderItemSearch("");
+    setEditingGroupColor("");
+    setEditingGroupSize("");
+    setEditingGroupVariation("");
+    setEditingGroupTotalQuantity("");
+    setEditingGroupUnitPrice("");
+    setEditingGroupIsThirdPartyLaser(false);
+    setEditingGroupIsUrgent(false);
+    setEditingGroupIsProgramacao(false);
   };
 
   const handleSaveOrderGroupEdit = async () => {
@@ -5359,19 +5522,91 @@ function PedidosScreen({
     const group = db.orders.filter((o) => o.orderCode === editingOrderGroupCode && o.isActive !== false);
     if (group.length === 0) return;
 
+    if (editingGroupLineItems.length === 0) {
+      alert("O pedido deve possuir pelo menos 1 produto no carrinho.");
+      return;
+    }
+
     const newCode = editingGroupOrderCodeInput.trim() || editingOrderGroupCode;
+    const newCustomerName = editingGroupCustomerName.trim() || group[0].customerName;
+    const newRepresentative = editingGroupRepresentative.trim() || "";
+    const newDeliveryDate = editingGroupDeliveryDate || group[0].deliveryDate;
+    const newStatus = (editingGroupStatus as OrderStatus) || group[0].status || "PENDENTE";
+    const newNotes = editingGroupNotes;
 
-    const updatedOrders = group.map((o) => ({
-      ...o,
-      orderCode: newCode,
-      customerName: editingGroupCustomerName.trim() || o.customerName,
-      representativeName: editingGroupRepresentative.trim() || o.representativeName,
-      deliveryDate: editingGroupDeliveryDate || o.deliveryDate,
-      status: (editingGroupStatus as OrderStatus) || o.status,
-      notes: editingGroupNotes,
-    }));
+    const existingIdsInGroup = new Set(group.map((g) => g.id));
+    const keepIds = new Set(
+      editingGroupLineItems.filter((li) => li.id !== undefined).map((li) => li.id!)
+    );
 
-    await db.updateOrders(updatedOrders);
+    // Items removed during edit: deactivate in DB
+    const ordersToDeactivate: Order[] = group
+      .filter((o) => !keepIds.has(o.id))
+      .map((o) => ({ ...o, isActive: false }));
+
+    const ordersToUpdate: Order[] = [];
+    const newOrdersToCreate: Omit<Order, "id">[] = [];
+
+    for (const li of editingGroupLineItems) {
+      if (li.id && existingIdsInGroup.has(li.id)) {
+        const existing = group.find((g) => g.id === li.id)!;
+        ordersToUpdate.push({
+          ...existing,
+          orderCode: newCode,
+          customerName: newCustomerName,
+          representativeName: newRepresentative,
+          deliveryDate: newDeliveryDate,
+          status: newStatus,
+          notes: newNotes,
+          itemId: li.itemId,
+          color: li.color,
+          size: li.size,
+          variation: li.variation,
+          totalQuantity: li.totalQuantity,
+          unitPrice: li.unitPrice,
+          isThirdPartyLaser: li.isThirdPartyLaser,
+          isUrgent: li.isUrgent,
+          isProgramacao: li.isProgramacao,
+        });
+      } else {
+        newOrdersToCreate.push({
+          orderCode: newCode,
+          customerName: newCustomerName,
+          representativeName: newRepresentative,
+          deliveryDate: newDeliveryDate,
+          status: newStatus,
+          notes: newNotes,
+          itemId: li.itemId,
+          color: li.color,
+          size: li.size,
+          variation: li.variation,
+          totalQuantity: li.totalQuantity,
+          packedQuantity: 0,
+          producedQuantity: 0,
+          paintedQuantity: 0,
+          cutQuantity: 0,
+          invoicedQuantity: 0,
+          unitPrice: li.unitPrice,
+          isThirdPartyLaser: li.isThirdPartyLaser,
+          isUrgent: li.isUrgent,
+          isProgramacao: li.isProgramacao,
+          isActive: true,
+          createdAt: group[0].createdAt || Date.now(),
+        });
+      }
+    }
+
+    const allUpdated = [...ordersToDeactivate, ...ordersToUpdate];
+    if (allUpdated.length > 0) {
+      await db.updateOrders(allUpdated);
+    }
+
+    if (newOrdersToCreate.length > 0) {
+      for (const no of newOrdersToCreate) {
+        await db.addOrder(no);
+      }
+    }
+
     db.addLogs([
       {
         message: `Pedido #${editingOrderGroupCode} editado por ${currentUser.name}.${newCode !== editingOrderGroupCode ? ` Código alterado para #${newCode}.` : ""}`,
@@ -5379,6 +5614,7 @@ function PedidosScreen({
         role: currentUser.role,
       },
     ]);
+
     setOrderToastMessage(`Pedido #${newCode} atualizado com sucesso!`);
     setTimeout(() => setOrderToastMessage(""), 4000);
     setEditingOrderGroupCode(null);
@@ -9906,105 +10142,493 @@ function PedidosScreen({
       {/* Order Group Edit Modal */}
       {editingOrderGroupCode && (
         <div className="fixed inset-0 z-[220] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white p-5 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col gap-4 border border-slate-200 animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-black text-slate-800 text-base flex items-center gap-2">
-                ✏️ Editar Pedido #{editingOrderGroupCode}
-              </h3>
+          <div className="bg-white p-5 sm:p-6 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto flex flex-col gap-5 border border-slate-200 animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center border-b pb-3.5">
+              <div>
+                <h3 className="font-black text-slate-800 text-lg flex items-center gap-2">
+                  <span>📑</span> Edição Completa do Pedido #{editingOrderGroupCode}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Altere as informações do pedido e gerencie a lista de produtos.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => setEditingOrderGroupCode(null)}
                 className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition cursor-pointer"
               >
-                <X size={20} />
+                <X size={22} />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div className="flex flex-col gap-1">
-                <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                  Número / Código do Pedido (Acompanhamento)
-                </label>
-                <input
-                  type="text"
-                  value={editingGroupOrderCodeInput}
-                  onChange={(e) => setEditingGroupOrderCodeInput(e.target.value)}
-                  className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800"
-                  placeholder="Ex: PED-1002"
-                />
-              </div>
+            {/* SEÇÃO 1: INFORMAÇÕES DO PEDIDO */}
+            <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 flex flex-col gap-3">
+              <h4 className="font-black text-xs uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                <span>👤</span> 1. Dados Gerais do Pedido
+              </h4>
 
-              <div className="flex flex-col gap-1">
-                <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                  Cliente
-                </label>
-                <input
-                  type="text"
-                  value={editingGroupCustomerName}
-                  onChange={(e) => setEditingGroupCustomerName(e.target.value)}
-                  className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
-                  placeholder="Nome do Cliente"
-                />
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                {/* Número do Pedido */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                    Número / Código (Acompanhamento)
+                  </label>
+                  <input
+                    type="text"
+                    value={editingGroupOrderCodeInput}
+                    onChange={(e) => setEditingGroupOrderCodeInput(e.target.value)}
+                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800 bg-white"
+                    placeholder="Ex: PED-1002"
+                  />
+                </div>
 
-              <div className="flex flex-col gap-1">
-                <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                  Representante
-                </label>
-                <input
-                  type="text"
-                  value={editingGroupRepresentative}
-                  onChange={(e) => setEditingGroupRepresentative(e.target.value)}
-                  className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800"
-                  placeholder="Nome do Representante"
-                />
-              </div>
+                {/* Cliente */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                    Cliente
+                  </label>
+                  <input
+                    type="text"
+                    value={editingGroupCustomerName}
+                    onChange={(e) => setEditingGroupCustomerName(e.target.value)}
+                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800 bg-white"
+                    placeholder="Nome do Cliente"
+                  />
+                </div>
 
-              <div className="flex flex-col gap-1">
-                <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                  Data Limite de Entrega
-                </label>
-                <input
-                  type="date"
-                  value={editingGroupDeliveryDate}
-                  onChange={(e) => setEditingGroupDeliveryDate(e.target.value)}
-                  className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800"
-                />
-              </div>
+                {/* Representante */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                    Representante
+                  </label>
+                  <select
+                    value={editingGroupRepresentative}
+                    onChange={(e) => setEditingGroupRepresentative(e.target.value)}
+                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800 bg-white"
+                  >
+                    <option value="">Nenhum Representante</option>
+                    {(db.users || []).map((u) => (
+                      <option key={u.id} value={u.name}>
+                        {u.name}
+                      </option>
+                    ))}
+                    <option value="Lilian Representante">Lilian Representante</option>
+                    <option value="Angelo Representante">Angelo Representante</option>
+                    <option value="Danilo Representante">Danilo Representante</option>
+                    <option value="Pedidos LOJA Imperio">Pedidos LOJA Imperio</option>
+                  </select>
+                </div>
 
-              <div className="flex flex-col gap-1 sm:col-span-2">
-                <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                  Status dos Itens do Pedido
-                </label>
-                <select
-                  value={editingGroupStatus}
-                  onChange={(e) => setEditingGroupStatus(e.target.value)}
-                  className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800 bg-white"
-                >
-                  <option value="AGUARDANDO_APROVACAO">AGUARDANDO APROVAÇÃO</option>
-                  <option value="PENDENTE">PENDENTE (Aprovado)</option>
-                  <option value="EM_PRODUCAO">EM PRODUÇÃO</option>
-                  <option value="PRODUZIDO">PRODUZIDO</option>
-                  <option value="EMBALADO">EMBALADO</option>
-                  <option value="FATURADO">FATURADO</option>
-                  <option value="CANCELADO">CANCELADO</option>
-                </select>
-              </div>
+                {/* Data de Entrega */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                    Data Limite de Entrega
+                  </label>
+                  <input
+                    type="date"
+                    value={editingGroupDeliveryDate}
+                    onChange={(e) => setEditingGroupDeliveryDate(e.target.value)}
+                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800 bg-white"
+                  />
+                </div>
 
-              <div className="flex flex-col gap-1 sm:col-span-2">
-                <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                  Observações / Notas do Pedido
-                </label>
-                <textarea
-                  value={editingGroupNotes}
-                  onChange={(e) => setEditingGroupNotes(e.target.value)}
-                  rows={2}
-                  className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800"
-                  placeholder="Observações do PCP / Gerência..."
-                />
+                {/* Status do Pedido */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                    Status do Pedido
+                  </label>
+                  <select
+                    value={editingGroupStatus}
+                    onChange={(e) => setEditingGroupStatus(e.target.value)}
+                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800 bg-white"
+                  >
+                    <option value="AGUARDANDO_APROVACAO font-bold text-amber-600">
+                      AGUARDANDO APROVAÇÃO
+                    </option>
+                    <option value="PENDENTE font-bold text-indigo-600">
+                      PENDENTE (Aprovado)
+                    </option>
+                    <option value="EM_PRODUCAO font-bold text-blue-600">
+                      EM PRODUÇÃO
+                    </option>
+                    <option value="PRODUZIDO font-bold text-emerald-600">
+                      PRODUZIDO
+                    </option>
+                    <option value="EMBALADO font-bold text-emerald-700">
+                      EMBALADO
+                    </option>
+                    <option value="FATURADO font-bold text-purple-600">
+                      FATURADO
+                    </option>
+                    <option value="CANCELADO font-bold text-rose-600">
+                      CANCELADO
+                    </option>
+                  </select>
+                </div>
+
+                {/* Observações */}
+                <div className="flex flex-col gap-1 sm:col-span-2 lg:col-span-1">
+                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                    Observações / Notas
+                  </label>
+                  <input
+                    type="text"
+                    value={editingGroupNotes}
+                    onChange={(e) => setEditingGroupNotes(e.target.value)}
+                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800 bg-white"
+                    placeholder="Instruções Especiais ou Notas..."
+                  />
+                </div>
               </div>
             </div>
 
+            {/* SEÇÃO 2: ADICIONAR / EDITAR PRODUTO NO PEDIDO */}
+            <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <h4 className="font-black text-xs uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+                  <span>📦</span> 2.{" "}
+                  {editingGroupCartIndex !== null
+                    ? "Editar Produto Selecionado"
+                    : "Adicionar Produto ao Pedido"}
+                </h4>
+                {editingGroupCartIndex !== null && (
+                  <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200 animate-pulse">
+                    Modo de Edição de Item #{editingGroupCartIndex + 1}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                {/* Produto / Item Search */}
+                <div className="flex flex-col gap-1 sm:col-span-2 relative">
+                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                    Item / Produto <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editingGroupOrderItemSearch}
+                    onChange={(e) => {
+                      setEditingGroupOrderItemSearch(e.target.value);
+                      setEditingGroupItemId("");
+                    }}
+                    placeholder="Digite código ou nome da peça..."
+                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800 bg-white"
+                  />
+                  {/* Suggestions Dropdown */}
+                  {!editingGroupItemId && editingGroupOrderItemSearch.trim().length > 0 && (
+                    <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+                      {db.items
+                        .filter(
+                          (it) =>
+                            it.code
+                              .toLowerCase()
+                              .includes(editingGroupOrderItemSearch.toLowerCase()) ||
+                            it.name
+                              .toLowerCase()
+                              .includes(editingGroupOrderItemSearch.toLowerCase())
+                        )
+                        .slice(0, 10)
+                        .map((it) => (
+                          <div
+                            key={it.id}
+                            onClick={() => {
+                              setEditingGroupItemId(it.id);
+                              setEditingGroupOrderItemSearch(`${it.code} - ${it.name}`);
+                              if (it.unitPrice !== undefined) {
+                                setEditingGroupUnitPrice(it.unitPrice);
+                              }
+                            }}
+                            className="p-2.5 hover:bg-indigo-50 cursor-pointer border-b border-slate-100 last:border-0 flex justify-between items-center text-xs"
+                          >
+                            <div>
+                              <span className="font-extrabold text-indigo-700 mr-2">
+                                {it.code}
+                              </span>
+                              <span className="font-medium text-slate-800">
+                                {it.name}
+                              </span>
+                            </div>
+                            {it.unitPrice !== undefined && (
+                              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
+                                R$ {it.unitPrice.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Cor */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                    Cor
+                  </label>
+                  <select
+                    value={editingGroupColor}
+                    onChange={(e) => setEditingGroupColor(e.target.value)}
+                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800 bg-white"
+                  >
+                    <option value="">Nenhuma / Padrão</option>
+                    {Object.values(COLOR_MAP).map((cName) => (
+                      <option key={cName} value={cName}>
+                        {cName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Tamanho */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                    Tamanho
+                  </label>
+                  <input
+                    type="text"
+                    value={editingGroupSize}
+                    onChange={(e) => setEditingGroupSize(e.target.value)}
+                    placeholder="Ex: M, 42, G"
+                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800 bg-white"
+                  />
+                </div>
+
+                {/* Variação */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                    Variação
+                  </label>
+                  <input
+                    type="text"
+                    value={editingGroupVariation}
+                    onChange={(e) => setEditingGroupVariation(e.target.value)}
+                    placeholder="Ex: Especial"
+                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800 bg-white"
+                  />
+                </div>
+
+                {/* Quantidade Total */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                    Qtd. Total <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={editingGroupTotalQuantity}
+                    onChange={(e) => setEditingGroupTotalQuantity(e.target.value)}
+                    placeholder="Ex: 100"
+                    min="1"
+                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800 bg-white"
+                  />
+                </div>
+
+                {/* Preço Unitário */}
+                <div className="flex flex-col gap-1">
+                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                    Preço Unitário (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editingGroupUnitPrice}
+                    onChange={(e) => setEditingGroupUnitPrice(e.target.value)}
+                    placeholder="0,00"
+                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800 bg-white"
+                  />
+                </div>
+
+                {/* Checkboxes de Opções */}
+                <div className="flex items-center gap-4 sm:col-span-2 pt-2">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={editingGroupIsUrgent}
+                      onChange={(e) => setEditingGroupIsUrgent(e.target.checked)}
+                      className="rounded text-rose-600 focus:ring-rose-500 h-4 w-4"
+                    />
+                    <span>🔥 Urgente</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={editingGroupIsProgramacao}
+                      onChange={(e) => setEditingGroupIsProgramacao(e.target.checked)}
+                      className="rounded text-amber-600 focus:ring-amber-500 h-4 w-4"
+                    />
+                    <span>📅 Programação</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={editingGroupIsThirdPartyLaser}
+                      onChange={(e) => setEditingGroupIsThirdPartyLaser(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                    />
+                    <span>⚡ Laser Terceirizado</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Botões do Formulário do Produto */}
+              <div className="flex justify-end gap-2 pt-2">
+                {editingGroupCartIndex !== null ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleCancelEditEditingGroupCartItem}
+                      className="px-3 py-1.5 border border-slate-300 rounded-lg text-slate-600 font-bold hover:bg-slate-100 transition text-xs cursor-pointer"
+                    >
+                      Cancelar Edição do Item
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveEditingGroupCartItem}
+                      className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-lg shadow-sm transition text-xs cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Check size={14} /> Salvar Alteração do Item
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleAddProductToEditingGroup}
+                    disabled={!editingGroupItemId || !editingGroupTotalQuantity}
+                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-extrabold rounded-lg shadow-sm transition text-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Plus size={14} /> Adicionar Produto ao Pedido
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* SEÇÃO 3: LISTA / CARRINHO DE PRODUTOS DO PEDIDO */}
+            <div className="flex flex-col gap-2">
+              <div className="flex justify-between items-center">
+                <h4 className="font-black text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <span>🛒</span> Produtos no Pedido ({editingGroupLineItems.length})
+                </h4>
+                {editingGroupLineItems.length > 0 && (
+                  <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
+                    Total do Pedido:{" "}
+                    <strong className="text-indigo-700 font-black">
+                      {editingGroupLineItems.reduce(
+                        (sum, li) => sum + (li.totalQuantity || 0),
+                        0
+                      )}{" "}
+                      peças
+                    </strong>
+                  </span>
+                )}
+              </div>
+
+              {editingGroupLineItems.length === 0 ? (
+                <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
+                  Nenhum produto adicionado ao pedido ainda. Utilize o formulário acima para adicionar peças.
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                  <div className="max-h-60 overflow-y-auto divide-y divide-slate-100">
+                    {editingGroupLineItems.map((li, idx) => {
+                      const itemObj = db.items.find((i) => i.id === li.itemId);
+                      const isEditingThis = editingGroupCartIndex === idx;
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`p-3 flex items-center justify-between gap-3 text-xs transition ${
+                            isEditingThis
+                              ? "bg-amber-50 border-l-4 border-l-amber-500"
+                              : "hover:bg-slate-50/80 bg-white"
+                          }`}
+                        >
+                          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded text-[11px]">
+                                #{itemObj?.code || "CÓD"}
+                              </span>
+                              <span className="font-bold text-slate-800 truncate">
+                                {itemObj?.name || `Item ID #${li.itemId}`}
+                              </span>
+                              {li.isUrgent && (
+                                <span className="text-[9px] font-black bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded">
+                                  🔥 URGENTE
+                                </span>
+                              )}
+                              {li.isProgramacao && (
+                                <span className="text-[9px] font-black bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
+                                  📅 PROG
+                                </span>
+                              )}
+                              {li.isThirdPartyLaser && (
+                                <span className="text-[9px] font-black bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
+                                  ⚡ LASER
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap mt-0.5">
+                              {li.color && (
+                                <span>
+                                  Cor: <strong>{li.color}</strong>
+                                </span>
+                              )}
+                              {li.size && (
+                                <span>
+                                  Tam: <strong>{li.size}</strong>
+                                </span>
+                              )}
+                              {li.variation && (
+                                <span>
+                                  Var: <strong>{li.variation}</strong>
+                                </span>
+                              )}
+                              {li.unitPrice !== undefined && (
+                                <span>
+                                  Unit: <strong>R$ {li.unitPrice.toFixed(2)}</strong>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="text-right">
+                              <span className="font-extrabold text-slate-800 text-sm block">
+                                {li.totalQuantity} un
+                              </span>
+                              {li.unitPrice !== undefined && (
+                                <span className="text-[10px] font-bold text-emerald-600 block">
+                                  R$ {(li.totalQuantity * li.unitPrice).toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleEditEditingGroupCartItem(idx)}
+                                className="p-1.5 text-slate-500 hover:text-amber-700 hover:bg-amber-100 rounded-lg transition cursor-pointer"
+                                title="Editar este produto"
+                              >
+                                <Edit3 size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveEditingGroupCartItem(idx)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                title="Excluir este produto do pedido"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
             <div className="flex justify-end gap-2 pt-3 border-t mt-2">
               <button
                 type="button"
@@ -10016,9 +10640,9 @@ function PedidosScreen({
               <button
                 type="button"
                 onClick={handleSaveOrderGroupEdit}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl shadow-md transition text-xs cursor-pointer"
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl shadow-md hover:shadow-indigo-200 transition text-xs cursor-pointer flex items-center gap-2"
               >
-                Salvar Alterações
+                <span>💾</span> Salvar Todas as Alterações do Pedido
               </button>
             </div>
           </div>
