@@ -81,7 +81,6 @@ import { getItemUnit } from "./utils/unitUtils";
 import { ProducaoScreen } from "./ProducaoScreen";
 import { PinturaScreen } from "./PinturaScreen";
 import { CorteLaserScreen } from "./CorteLaserScreen";
-import { StatusScreen } from "./StatusScreen";
 import { RelatoriosScreen } from "./RelatoriosScreen";
 import { EmbalagemScreen } from "./EmbalagemScreen";
 import { LoteGeralWidget } from "./components/LoteGeralWidget";
@@ -198,7 +197,7 @@ function Welcome({
     if (!alreadyRedirected) {
       sessionStorage.setItem(hasRedirectedKey, "true");
       if (role === "PCP" || role === "ADMIN" || currentUser.id === "romario" || currentUser.name.toLowerCase().includes("romario") || currentUser.id === "dinei" || currentUser.name.toLowerCase().includes("dinei")) {
-        navigate("/status");
+        navigate("/pedidos");
       } else if (role === "GERENCIA") {
         navigate("/relatorios");
       } else if (role === "EMBALAGEM") {
@@ -2818,35 +2817,12 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
 function PedidosScreen({
   db,
   currentUser,
-  defaultViewMode,
 }: {
   db: ReturnType<typeof useDatabase>;
   currentUser: User;
-  defaultViewMode?: "ITENS" | "STATUS_PEDIDOS";
 }) {
-  const [viewMode, setViewMode] = useState<"ITENS" | "STATUS_PEDIDOS">(
-    defaultViewMode || "ITENS",
-  );
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
-
-  React.useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, 300);
-    return () => clearTimeout(handler);
-  }, [searchTerm]);
-
-  // Deduplication system states
-  const [isDeduplicateModalOpen, setIsDeduplicateModalOpen] = useState(false);
-  const [isCleaningUp, setIsCleaningUp] = useState(false);
-  const [cleanupResult, setCleanupResult] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (defaultViewMode) {
-      setViewMode(defaultViewMode);
-    }
-  }, [defaultViewMode]);
 
   // Status Screen Mode States
   const [selectedOrderCode, setSelectedOrderCode] = useState<string | null>(
@@ -2870,6 +2846,7 @@ function PedidosScreen({
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const [filterCustomer, setFilterCustomer] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [filterUrgentOnly, setFilterUrgentOnly] = useState<boolean>(false);
 
   const getDeliveryStatus = React.useCallback((o: any) => {
@@ -3053,6 +3030,15 @@ function PedidosScreen({
         return false;
       }
 
+      if (selectedStatuses.length > 0) {
+        const effSt = isFaturado
+          ? "FATURADO"
+          : isFaturadoParcial
+          ? "FATURADO_PARCIAL"
+          : o.status || "PENDENTE";
+        if (!selectedStatuses.includes(effSt)) return false;
+      }
+
       return true;
     });
 
@@ -3068,6 +3054,7 @@ function PedidosScreen({
     db.orders,
     debouncedSearchTerm,
     filterDeadlines,
+    selectedStatuses,
     filterBatchState,
     filterNotInvoicedOnly,
     deliveryDateStart,
@@ -3413,6 +3400,10 @@ function PedidosScreen({
     limit: number;
   } | null>(null);
   const [invoiceInput, setInvoiceInput] = useState("");
+  const [showInvoiceConfirmStep, setShowInvoiceConfirmStep] = useState(false);
+  const [isDeduplicateModalOpen, setIsDeduplicateModalOpen] = useState(false);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<string | null>(null);
 
   const [faturamentoWhatsAppShareData, setFaturamentoWhatsAppShareData] =
     useState<{
@@ -5776,80 +5767,12 @@ function PedidosScreen({
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg shadow-sm w-full mx-auto border overflow-hidden p-4">
-      {/* Unified Screen Mode Selector Toggle */}
-      <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/60 lg:max-w-md shrink-0 mb-4 shadow-inner">
-        <button
-          type="button"
-          onClick={() => setViewMode("ITENS")}
-          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-200 ${
-            viewMode === "ITENS"
-              ? "bg-white text-indigo-700 shadow-sm"
-              : "text-slate-600 hover:text-indigo-605"
-          }`}
-        >
-          📋 Modo Operacional (Itens)
-        </button>
-        <button
-          type="button"
-          onClick={() => setViewMode("STATUS_PEDIDOS")}
-          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-200 ${
-            viewMode === "STATUS_PEDIDOS"
-              ? "bg-white text-indigo-700 shadow-sm"
-              : "text-slate-600 hover:text-indigo-650"
-          }`}
-        >
-          🔍 Modo Status e Prazos (Pedidos)
-        </button>
-      </div>
-
-      {viewMode === "ITENS" ? (
-        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto w-full pr-1 px-0.5 scrollbar-thin">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold text-gray-800">
-              Pedidos {currentUser.role === "PCP" && "(PCP)"}
-            </h2>
-
-            {piecesByStatus.length > 0 && (
-              <button
-                onClick={() => setIsStatusBarOpen(!isStatusBarOpen)}
-                className="flex items-center gap-2 text-sm font-semibold bg-white border border-gray-200 text-gray-700 rounded-full px-4 py-1.5 shadow-sm hover:bg-gray-50 transition"
-              >
-                <Layers size={16} className="text-indigo-600" />
-                Visão Geral de Peças
-                {isStatusBarOpen ? (
-                  <ChevronUp size={16} />
-                ) : (
-                  <ChevronDown size={16} />
-                )}
-              </button>
-            )}
-          </div>
-
-          {isStatusBarOpen && piecesByStatus.length > 0 && (
-            <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-4 rounded-xl shadow-inner border border-indigo-100 mb-6 flex flex-wrap gap-3 animate-in slide-in-from-top-4 fade-in duration-200">
-              <div className="w-full mb-1">
-                <h3 className="text-xs uppercase font-bold text-indigo-800 tracking-wider">
-                  Total de Peças por Status (Pedidos Abertos)
-                </h3>
-              </div>
-              {piecesByStatus.map((st) => (
-                <div
-                  key={st.status}
-                  className="bg-white border border-indigo-100/60 shadow-sm rounded-lg px-3 py-2 flex flex-col min-w-[120px]"
-                >
-                  <span className="text-[10px] text-gray-500 font-bold uppercase truncate">
-                    {st.label}
-                  </span>
-                  <span className="text-lg font-black text-indigo-700">
-                    {st.qty}{" "}
-                    <span className="text-xs text-gray-400 font-medium">
-                      peças
-                    </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto w-full pr-1 px-0.5 scrollbar-thin">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold text-gray-800">
+            Pedidos {currentUser.role === "PCP" && "(PCP)"}
+          </h2>
+        </div>
 
           {(currentUser.role === "PCP" ||
             currentUser.role === "ADMIN" ||
@@ -8649,440 +8572,7 @@ function PedidosScreen({
                 )
               </button>
             </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                  <span>⚙️ Filtros de Exportação & Compilação</span>
-                </div>
-                {(searchTerm || deliveryDateStart || deliveryDateEnd || filterCustomer || filterStatus || filterUrgentOnly || filterLaserOnly) && (
-                  <button
-                    onClick={() => {
-                      setSearchTerm("");
-                      setDeliveryDateStart("");
-                      setDeliveryDateEnd("");
-                      setFilterCustomer("");
-                      setFilterStatus("");
-                      setFilterUrgentOnly(false);
-                      setFilterLaserOnly(false);
-                    }}
-                    className="text-[10px] font-bold text-red-600 hover:text-red-700 hover:underline flex items-center gap-0.5"
-                  >
-                    Limpar Filtros
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                {/* Campo de Busca Geral */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Busca Geral</label>
-                  <input
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Código ou Cliente..."
-                    className="border border-slate-200 bg-white px-2.5 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500 transition text-slate-700 placeholder-slate-400"
-                  />
-                </div>
-
-                {/* Campo de Cliente Específico */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Cliente</label>
-                  <input
-                    value={filterCustomer}
-                    onChange={(e) => setFilterCustomer(e.target.value)}
-                    placeholder="Filtrar por cliente..."
-                    className="border border-slate-200 bg-white px-2.5 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500 transition text-slate-700 placeholder-slate-400"
-                  />
-                </div>
-
-                {/* Filtro de Status */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Status do Item</label>
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="border border-slate-200 bg-white px-2.5 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500 transition text-slate-700"
-                  >
-                    <option value="">Todos os Status</option>
-                    <option value="PENDENTE">Pendente</option>
-                    <option value="EM_PRODUCAO">Em Produção</option>
-                    <option value="PRODUZIDO">Produzido</option>
-                    <option value="EM_CORTE">Em Corte</option>
-                    <option value="CORTADO">Cortado</option>
-                    <option value="EM_PINTURA">Em Pintura</option>
-                    <option value="PINTADO">Pintado</option>
-                    <option value="EMBALANDO">Embalando</option>
-                    <option value="EMBALADO">Embalado</option>
-                    <option value="FATURADO_PARCIAL">Faturado Parcial</option>
-                    <option value="FATURADO">Faturado</option>
-                  </select>
-                </div>
-
-                {/* Filtro de Período de Entrega */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Prazo de Entrega (De / Até)</label>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="date"
-                      value={deliveryDateStart}
-                      onChange={(e) => setDeliveryDateStart(e.target.value)}
-                      className="border border-slate-200 bg-white px-1.5 py-1 rounded-lg text-[11px] outline-none focus:ring-2 focus:ring-indigo-500 transition text-slate-700 w-full"
-                    />
-                    <span className="text-[10px] font-bold text-slate-400">à</span>
-                    <input
-                      type="date"
-                      value={deliveryDateEnd}
-                      onChange={(e) => setDeliveryDateEnd(e.target.value)}
-                      className="border border-slate-200 bg-white px-1.5 py-1 rounded-lg text-[11px] outline-none focus:ring-2 focus:ring-indigo-500 transition text-slate-700 w-full"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-4 mt-1 pt-2 border-t border-slate-200/60">
-                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={filterUrgentOnly}
-                    onChange={(e) => setFilterUrgentOnly(e.target.checked)}
-                    className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 transition cursor-pointer"
-                  />
-                  🚨 Apenas Urgentes
-                </label>
-
-                {(currentUser.id === "projetista_marcos" ||
-                  currentUser.role === "PROJETISTA" ||
-                  currentUser.role === "ADMIN") && (
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={filterLaserOnly}
-                      onChange={(e) => setFilterLaserOnly(e.target.checked)}
-                      className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 transition cursor-pointer"
-                    />
-                    🎯 Apenas Laser (Pés, Chapas, Cortes)
-                  </label>
-                )}
-              </div>
-            </div>
-
-            {/* Faturamento em Lote Panel */}
-            {filteredOrders.some((o) => o.status === "EMBALADO") && (
-              <div className="bg-indigo-50 border border-indigo-200 p-3 rounded-lg mb-4 flex items-center justify-between shadow-xs">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="batch-select-all"
-                    className="w-4 h-4 text-indigo-600 border-gray-200 rounded cursor-pointer"
-                    checked={
-                      filteredOrders.filter((o) => o.status === "EMBALADO")
-                        .length > 0 &&
-                      filteredOrders
-                        .filter((o) => o.status === "EMBALADO")
-                        .every((o) => selectedBatchInvoiceIds.includes(o.id))
-                    }
-                    onChange={(e) => {
-                      const embalados = filteredOrders.filter(
-                        (o) => o.status === "EMBALADO",
-                      );
-                      if (e.target.checked) {
-                        setSelectedBatchInvoiceIds((prev) => [
-                          ...prev,
-                          ...embalados
-                            .map((o) => o.id)
-                            .filter((id) => !prev.includes(id)),
-                        ]);
-                      } else {
-                        setSelectedBatchInvoiceIds((prev) =>
-                          prev.filter(
-                            (id) => !embalados.some((o) => o.id === id),
-                          ),
-                        );
-                      }
-                    }}
-                  />
-                  <label
-                    htmlFor="batch-select-all"
-                    className="text-xs font-bold text-indigo-950 uppercase cursor-pointer select-none"
-                  >
-                    Selecionar todos os Embalados (
-                    {
-                      filteredOrders.filter((o) => o.status === "EMBALADO")
-                        .length
-                    }
-                    )
-                  </label>
-                </div>
-                {selectedBatchInvoiceIds.length > 0 && (
-                  <div className="flex items-center gap-2.5">
-                    <div className="bg-emerald-100 border border-emerald-350 px-3 py-1.5 rounded-xl text-center shadow-xs">
-                      <span className="text-[9px] font-extrabold text-emerald-800 uppercase tracking-wider block leading-none">
-                        Soma de Peças
-                      </span>
-                      <span className="text-xs font-black text-emerald-950 block mt-0.5 leading-none">
-                        {batchTotalQty} un.
-                      </span>
-                    </div>
-                    <motion.button
-                      type="button"
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={handleBatchInvoice}
-                      className="bg-emerald-600 text-white font-extrabold text-xs px-3 py-1.5 rounded-lg shadow-sm hover:bg-emerald-700 transition"
-                    >
-                      💰 Faturar em Lote ({selectedBatchInvoiceIds.length})
-                    </motion.button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {filteredOrders.length === 0 ? (
-              <p className="text-gray-500 text-center mt-4">
-                Nenhum pedido encontrado nesta aba.
-              </p>
-            ) : (
-              <div 
-                ref={listContainerRef} 
-                className="relative w-full"
-                style={{ height: `${filteredOrders.length * 160}px` }}
-              >
-                {filteredOrders.slice(startIndex, endIndex).map((o, relativeIdx) => {
-                  const absoluteIdx = startIndex + relativeIdx;
-                  const item = db.items.find((i) => i.id === o.itemId);
-                  const absoluteStyle = {
-                    position: "absolute" as const,
-                    top: `${absoluteIdx * 160}px`,
-                    height: "152px",
-                    left: 0,
-                    right: 0,
-                  };
-                  return (
-                    <div
-                      key={o.id}
-                      onClick={() => setSelectedOrder(o)}
-                      style={absoluteStyle}
-                      className={`cursor-pointer p-4 border flex flex-col rounded shadow-sm gap-2 relative group transition-colors ${o.isUrgent ? "bg-red-50/90 hover:bg-red-100/90 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.25)] ring-2 ring-red-500/10 animate-[pulse_3s_infinite] border-2" : "bg-white hover:bg-gray-50 border-gray-100 border-b-gray-200"}`}
-                    >
-                      {o.isUrgent && (
-                        <div className="absolute top-0 right-0 transform translate-x-1/4 -translate-y-1/4">
-                          <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md animate-pulse">
-                            URGENTE
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex justify-between items-center">
-                        <span
-                          className={`font-bold ${o.isUrgent ? "text-red-900" : "text-gray-800"}`}
-                        >
-                          <span className="inline-flex items-center gap-1.5">
-                            {o.status === "EMBALADO" && (
-                              <input
-                                type="checkbox"
-                                checked={selectedBatchInvoiceIds.includes(o.id)}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedBatchInvoiceIds([
-                                      ...selectedBatchInvoiceIds,
-                                      o.id,
-                                    ]);
-                                  } else {
-                                    setSelectedBatchInvoiceIds(
-                                      selectedBatchInvoiceIds.filter(
-                                        (id) => id !== o.id,
-                                      ),
-                                    );
-                                  }
-                                }}
-                                className="w-4.5 h-4.5 mr-2 border-gray-300 rounded cursor-pointer shrink-0"
-                              />
-                            )}
-                            {o.isUrgent && (
-                              <AlertCircle
-                                className="text-red-600 shrink-0"
-                                size={18}
-                              />
-                            )}
-                            {o.orderCode} - {item?.name || "Desconhecido"}
-                          </span>
-                          {o.representativeName && (
-                            <span className="text-[10px] font-normal text-slate-500 block">
-                              Representante: {o.representativeName}
-                            </span>
-                          )}
-                        </span>
-                        <div className="flex items-center gap-4">
-                          <span className="px-2 py-1 rounded text-xs font-semibold bg-indigo-50 text-indigo-700">
-                            {o.status || "PENDENTE"}
-                          </span>
-                          <div className="flex gap-2">
-                            <span
-                              className={`px-2 py-1 rounded text-xs font-semibold ${(o.packedQuantity || 0) >= (o.totalQuantity || 0) ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}`}
-                              title="Embalado / Total"
-                            >
-                              Emb: {o.packedQuantity || 0}/
-                              {o.totalQuantity || 0}
-                            </span>
-                            <span
-                              className={`px-2 py-1 rounded text-xs font-semibold ${(o.invoicedQuantity || 0) >= (o.totalQuantity || 0) ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"}`}
-                              title={`Faturado: ${o.invoicedQuantity || 0}, Falta: ${o.totalQuantity - (o.invoicedQuantity || 0)}`}
-                            >
-                              Fat: {o.invoicedQuantity || 0}/
-                              {o.totalQuantity || 0}
-                            </span>
-                          </div>
-                          {o.status === "AGUARDANDO_APROVACAO" ? (
-                            <div className="flex items-center gap-2">
-                              {(currentUser.role === "ADMIN" ||
-                                currentUser.role === "PCP") && (
-                                <div className="flex gap-2 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleApproveOrder(o);
-                                    }}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold px-3 py-1.5 rounded-lg shadow-sm transition"
-                                  >
-                                    ✓ Aprovar
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRejectOrder(o.id);
-                                    }}
-                                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold px-3 py-1.5 rounded-lg shadow-sm transition"
-                                  >
-                                    𐄂 Recusar
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            (currentUser.role === "ADMIN" ||
-                              currentUser.role === "PCP") && (
-                              <div className="flex items-center gap-2">
-                                {(Math.max(
-                                  o.packedQuantity || 0,
-                                  o.producedQuantity || 0,
-                                ) -
-                                  (o.invoicedQuantity || 0) >
-                                  0 ||
-                                  ((o.status === "EMBALADO" ||
-                                    o.status === "EM_PRODUCAO") &&
-                                    (o.invoicedQuantity || 0) <
-                                      o.totalQuantity)) && (
-                                  <motion.button
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const availableToInvoice =
-                                        o.status === "EMBALADO" ||
-                                        o.status === "EM_PRODUCAO"
-                                          ? o.totalQuantity -
-                                            (o.invoicedQuantity || 0)
-                                          : Math.max(
-                                              o.packedQuantity || 0,
-                                              o.producedQuantity || 0,
-                                            ) - (o.invoicedQuantity || 0);
-                                      const maxToInvoice =
-                                        o.totalQuantity -
-                                        (o.invoicedQuantity || 0);
-
-                                      const stockId = `${o.itemId}|${o.color}|${o.size}|${o.variation}|ACABADO`;
-                                      const physicalStock =
-                                        db.stocks.find((s) => s.id === stockId)
-                                          ?.quantity || 0;
-
-                                      const defaultLimit = Math.min(
-                                        availableToInvoice,
-                                        maxToInvoice,
-                                      );
-                                      const limit = Math.max(
-                                        defaultLimit,
-                                        physicalStock,
-                                      );
-                                      setInvoiceModalData({ order: o, limit });
-                                      setInvoiceInput(String(limit));
-                                    }}
-                                    className="bg-emerald-600 text-white font-bold text-xs px-2 py-1 rounded hover:bg-emerald-700 mr-2 transition-colors"
-                                    title="Faturar Pedido"
-                                  >
-                                    Faturar
-                                  </motion.button>
-                                )}
-                                {(currentUser.role === "PCP" ||
-                                  currentUser.role === "ADMIN" ||
-                                  currentUser.role === "GERENCIA") && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleEdit(o);
-                                    }}
-                                    className="text-blue-500 hover:text-blue-700"
-                                    title="Editar"
-                                  >
-                                    <Pencil size={18} />
-                                  </button>
-                                )}
-                                {(currentUser.role === "PCP" ||
-                                  currentUser.role === "ADMIN" ||
-                                  currentUser.role === "GERENCIA") && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDelete(o.id);
-                                    }}
-                                    className="text-red-500 hover:text-red-700"
-                                    title="Excluir"
-                                  >
-                                    <Trash2 size={18} />
-                                  </button>
-                                )}
-                              </div>
-                            )
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-sm text-gray-600 flex flex-col gap-1">
-                        <div className="flex justify-between">
-                          <span>Cliente: {o.customerName}</span>
-                          <span>
-                            Entrega:{" "}
-                            {o.deliveryDate
-                              ? new Date(o.deliveryDate).toLocaleDateString(
-                                  "pt-BR",
-                                  {
-                                    timeZone: "UTC",
-                                  },
-                                )
-                              : "-"}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center mt-1">
-                          <span>
-                            Cor: {o.color || "-"} | Tamanho: {o.size || "-"} |
-                            Var: {o.variation || "-"}
-                          </span>
-                        </div>
-                        {o.isThirdPartyLaser && (
-                          <span className="text-pink-600 font-semibold text-xs bg-pink-50 px-2 py-1 rounded inline-block w-fit mt-1">
-                            Corte a Laser Terceirizado
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
-        </div>
-      ) : (
         <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/50 rounded-xl border border-slate-200/50 p-2 sm:p-3 mt-1 text-slate-800">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2.5 mb-3 shrink-0">
             <div>
@@ -9403,6 +8893,63 @@ function PedidosScreen({
             </div>
           </div>
 
+          {/* Multi-Status Pill Filter */}
+          <div className="mb-2.5 bg-white p-2 sm:p-2.5 rounded-xl border border-slate-200 shadow-2xs shrink-0">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                🏷️ Filtro por Status dos Itens:
+              </span>
+              {selectedStatuses.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatuses([])}
+                  className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 uppercase tracking-wider cursor-pointer transition"
+                >
+                  Limpar Status ({selectedStatuses.length})
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                "PENDENTE",
+                "EM_PRODUCAO",
+                "PRODUZIDO",
+                "EM_CORTE",
+                "CORTADO",
+                "EM_PINTURA",
+                "PINTADO",
+                "EMBALANDO",
+                "EMBALADO",
+                "FATURADO_PARCIAL",
+                "FATURADO",
+              ].map((st) => {
+                const isSel = selectedStatuses.includes(st);
+                return (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => {
+                      if (isSel) {
+                        setSelectedStatuses(
+                          selectedStatuses.filter((s) => s !== st),
+                        );
+                      } else {
+                        setSelectedStatuses([...selectedStatuses, st]);
+                      }
+                    }}
+                    className={`px-2 py-0.5 text-[9px] font-bold rounded-lg transition duration-150 border cursor-pointer select-none ${
+                      isSel
+                        ? "bg-indigo-600 text-white border-indigo-700 shadow-2xs font-extrabold"
+                        : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {st.replace(/_/g, " ")}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Active Filter Badges */}
           {(filterDeadlines.length < 6 ? 1 : 0) +
             (filterBatchState !== "TODOS" ? 1 : 0) +
@@ -9658,7 +9205,7 @@ function PedidosScreen({
             )}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Selected Order Grouped Items Drawer / Modal */}
       {selectedOrderCode && (
@@ -10270,57 +9817,126 @@ function PedidosScreen({
 
       {invoiceModalData && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 min-h-screen">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
-            <div className="bg-emerald-600 p-4 shrink-0">
-              <h3 className="text-white font-bold text-lg">
-                Confirmar Faturamento
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+            <div className="bg-emerald-600 p-4 shrink-0 flex justify-between items-center">
+              <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                {showInvoiceConfirmStep ? "⚠️ Confirmar Faturamento Definitivo" : "💰 Faturar Pedido"}
               </h3>
-            </div>
-            <div className="p-5 flex flex-col gap-4">
-              <p className="text-sm text-gray-700">
-                O faturamento irá deduzir peças do seu{" "}
-                <strong className="text-gray-900 bg-gray-100 px-1 rounded">
-                  estoque de itens acabados
-                </strong>
-                .
-              </p>
-              <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col gap-1">
-                <span className="text-xs text-gray-500 font-bold uppercase tracking-wide">
-                  Pedido
-                </span>
-                <span className="font-bold text-gray-900">
-                  {invoiceModalData.order.orderCode} -{" "}
-                  {invoiceModalData.order.customerName}
-                </span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-600 font-bold uppercase">
-                  Quantidade a Faturar (Máximo: {invoiceModalData.limit})
-                </label>
-                <input
-                  type="number"
-                  value={invoiceInput}
-                  onChange={(e) => setInvoiceInput(e.target.value)}
-                  className="border-2 border-emerald-500 rounded p-2 text-xl font-bold bg-emerald-50 focus:outline-none w-full"
-                  max={invoiceModalData.limit}
-                  min={1}
-                />
-              </div>
-            </div>
-            <div className="bg-gray-50 p-4 border-t border-gray-100 flex justify-end gap-3 shrink-0">
-              <button
-                onClick={() => setInvoiceModalData(null)}
-                className="px-4 py-2 font-bold text-gray-600 hover:bg-gray-200 rounded transition hidden sm:block"
+              <button 
+                onClick={() => { setInvoiceModalData(null); setShowInvoiceConfirmStep(false); }}
+                className="text-white/80 hover:text-white font-bold text-sm"
               >
-                Cancelar
-              </button>
-              <button
-                onClick={handleConfirmInvoice}
-                className="flex-1 sm:flex-none px-6 py-2 font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded shadow-md transition"
-              >
-                Confirmar
+                ✕
               </button>
             </div>
+
+            {!showInvoiceConfirmStep ? (
+              <>
+                <div className="p-5 flex flex-col gap-4">
+                  <p className="text-sm text-gray-700">
+                    O faturamento irá deduzir peças do seu{" "}
+                    <strong className="text-gray-900 bg-gray-100 px-1 rounded">
+                      estoque de itens acabados
+                    </strong>
+                    .
+                  </p>
+                  <div className="bg-gray-50 border border-gray-200 p-3.5 rounded-lg flex flex-col gap-1">
+                    <span className="text-xs text-gray-500 font-bold uppercase tracking-wide">
+                      Pedido
+                    </span>
+                    <span className="font-bold text-gray-900">
+                      {invoiceModalData.order.orderCode} -{" "}
+                      {invoiceModalData.order.customerName}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-gray-600 font-bold uppercase">
+                      Quantidade a Faturar (Máximo: {invoiceModalData.limit})
+                    </label>
+                    <input
+                      type="number"
+                      value={invoiceInput}
+                      onChange={(e) => setInvoiceInput(e.target.value)}
+                      className="border-2 border-emerald-500 rounded-lg p-2.5 text-2xl font-black bg-emerald-50 focus:outline-none w-full text-center text-emerald-900"
+                      max={invoiceModalData.limit}
+                      min={1}
+                    />
+                  </div>
+                </div>
+                <div className="bg-gray-50 p-4 border-t border-gray-100 flex justify-end gap-3 shrink-0">
+                  <button
+                    onClick={() => { setInvoiceModalData(null); setShowInvoiceConfirmStep(false); }}
+                    className="px-4 py-2 font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      const qty = parseInt(invoiceInput, 10);
+                      if (isNaN(qty) || qty <= 0 || qty > invoiceModalData.limit) {
+                        alert("Quantidade inválida. Deve ser maior que 0 e no máximo " + invoiceModalData.limit);
+                        return;
+                      }
+                      setShowInvoiceConfirmStep(true);
+                    }}
+                    className="flex-1 sm:flex-none px-6 py-2.5 font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-md transition"
+                  >
+                    Faturar →
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="p-5 flex flex-col gap-4">
+                  {/* Total Selected Pieces Banner */}
+                  <div className="bg-emerald-50 border-2 border-emerald-500/40 p-4 rounded-xl text-center shadow-xs">
+                    <span className="text-xs text-emerald-800 font-bold uppercase tracking-wider block mb-1">
+                      Total de Peças Selecionadas
+                    </span>
+                    <span className="text-3xl font-black text-emerald-900 block tracking-tight">
+                      {parseInt(invoiceInput, 10) || 0} PEÇA(S)
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-lg flex flex-col gap-1 text-xs text-slate-700">
+                    <div className="flex justify-between border-b pb-1">
+                      <span className="font-semibold text-slate-500">Código do Pedido:</span>
+                      <strong className="text-slate-900 font-bold">{invoiceModalData.order.orderCode}</strong>
+                    </div>
+                    <div className="flex justify-between border-b py-1">
+                      <span className="font-semibold text-slate-500">Cliente:</span>
+                      <strong className="text-slate-900 font-bold">{invoiceModalData.order.customerName}</strong>
+                    </div>
+                    <div className="flex justify-between pt-1">
+                      <span className="font-semibold text-slate-500">Item:</span>
+                      <strong className="text-slate-900 font-bold truncate max-w-[200px]">{invoiceModalData.order.itemId} ({invoiceModalData.order.color || '-'})</strong>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs leading-relaxed font-medium">
+                    ⚠️ <strong>Atenção:</strong> Confirme para processar o faturamento definitivo de <strong>{parseInt(invoiceInput, 10) || 0} peças</strong>. Esta ação atualizará o status do pedido e dará baixa automática no estoque.
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 p-4 border-t border-gray-100 flex justify-between items-center gap-3 shrink-0">
+                  <button
+                    onClick={() => setShowInvoiceConfirmStep(false)}
+                    className="px-4 py-2 font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition text-xs"
+                  >
+                    ← Voltar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowInvoiceConfirmStep(false);
+                      handleConfirmInvoice();
+                    }}
+                    className="px-5 py-2.5 font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-lg transition text-xs flex items-center gap-1.5"
+                  >
+                    ✅ Confirmar Definitivo
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -11137,6 +10753,7 @@ function AdminScreen({
     limit: number;
   } | null>(null);
   const [invoiceInput, setInvoiceInput] = useState("");
+  const [showInvoiceConfirmStep, setShowInvoiceConfirmStep] = useState(false);
 
   const [adminWhatsAppShareData, setAdminWhatsAppShareData] = useState<{
     orderCode: string;
@@ -12921,61 +12538,128 @@ function AdminScreen({
       {invoiceModalData && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 min-h-screen">
           <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-sm flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200"
+            className="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-emerald-600 p-4 shrink-0">
-              <h3 className="text-white font-bold text-lg">
-                Confirmar Faturamento
+            <div className="bg-emerald-600 p-4 shrink-0 flex justify-between items-center">
+              <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                {showInvoiceConfirmStep ? "⚠️ Confirmar Faturamento Definitivo" : "💰 Faturar Pedido"}
               </h3>
-            </div>
-            <div className="p-5 flex flex-col gap-4">
-              <p className="text-sm text-gray-700">
-                O faturamento irá deduzir peças do seu{" "}
-                <strong className="text-gray-900 bg-gray-100 px-1 rounded">
-                  estoque de itens acabados
-                </strong>
-                .
-              </p>
-              <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col gap-1">
-                <span className="text-xs text-gray-500 font-bold uppercase tracking-wide">
-                  Pedido
-                </span>
-                <span className="font-bold text-gray-900">
-                  {invoiceModalData.order.orderCode} -{" "}
-                  {invoiceModalData.order.customerName}
-                </span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-600 font-bold uppercase">
-                  Quantidade a Faturar (Máximo: {invoiceModalData.limit})
-                </label>
-                <input
-                  type="number"
-                  value={invoiceInput}
-                  onChange={(e) => setInvoiceInput(e.target.value)}
-                  className="border-2 border-emerald-500 rounded p-2 text-xl font-bold bg-emerald-50 focus:outline-none w-full"
-                  max={invoiceModalData.limit}
-                  min={1}
-                />
-              </div>
-            </div>
-            <div className="bg-gray-50 p-4 border-t border-gray-100 flex justify-end gap-3 shrink-0">
-              <button
-                onClick={() => setInvoiceModalData(null)}
-                className="px-4 py-2 font-bold text-gray-600 hover:bg-gray-200 rounded transition"
+              <button 
+                onClick={() => { setInvoiceModalData(null); setShowInvoiceConfirmStep(false); }}
+                className="text-white/80 hover:text-white font-bold text-sm"
               >
-                Cancelar
+                ✕
               </button>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleConfirmInvoice}
-                className="flex-1 sm:flex-none px-6 py-2 font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded shadow-md transition"
-              >
-                Confirmar
-              </motion.button>
             </div>
+
+            {!showInvoiceConfirmStep ? (
+              <>
+                <div className="p-5 flex flex-col gap-4">
+                  <p className="text-sm text-gray-700">
+                    O faturamento irá deduzir peças do seu{" "}
+                    <strong className="text-gray-900 bg-gray-100 px-1 rounded">
+                      estoque de itens acabados
+                    </strong>
+                    .
+                  </p>
+                  <div className="bg-gray-50 border border-gray-200 p-3.5 rounded-lg flex flex-col gap-1">
+                    <span className="text-xs text-gray-500 font-bold uppercase tracking-wide">
+                      Pedido
+                    </span>
+                    <span className="font-bold text-gray-900">
+                      {invoiceModalData.order.orderCode} -{" "}
+                      {invoiceModalData.order.customerName}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-gray-600 font-bold uppercase">
+                      Quantidade a Faturar (Máximo: {invoiceModalData.limit})
+                    </label>
+                    <input
+                      type="number"
+                      value={invoiceInput}
+                      onChange={(e) => setInvoiceInput(e.target.value)}
+                      className="border-2 border-emerald-500 rounded-lg p-2.5 text-2xl font-black bg-emerald-50 focus:outline-none w-full text-center text-emerald-900"
+                      max={invoiceModalData.limit}
+                      min={1}
+                    />
+                  </div>
+                </div>
+                <div className="bg-gray-50 p-4 border-t border-gray-100 flex justify-end gap-3 shrink-0">
+                  <button
+                    onClick={() => { setInvoiceModalData(null); setShowInvoiceConfirmStep(false); }}
+                    className="px-4 py-2 font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      const qty = parseInt(invoiceInput, 10);
+                      if (isNaN(qty) || qty <= 0 || qty > invoiceModalData.limit) {
+                        alert("Quantidade inválida. Deve ser maior que 0 e no máximo " + invoiceModalData.limit);
+                        return;
+                      }
+                      setShowInvoiceConfirmStep(true);
+                    }}
+                    className="flex-1 sm:flex-none px-6 py-2.5 font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-md transition"
+                  >
+                    Faturar →
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="p-5 flex flex-col gap-4">
+                  {/* Total Selected Pieces Banner */}
+                  <div className="bg-emerald-50 border-2 border-emerald-500/40 p-4 rounded-xl text-center shadow-xs">
+                    <span className="text-xs text-emerald-800 font-bold uppercase tracking-wider block mb-1">
+                      Total de Peças Selecionadas
+                    </span>
+                    <span className="text-3xl font-black text-emerald-900 block tracking-tight">
+                      {parseInt(invoiceInput, 10) || 0} PEÇA(S)
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-lg flex flex-col gap-1 text-xs text-slate-700">
+                    <div className="flex justify-between border-b pb-1">
+                      <span className="font-semibold text-slate-500">Código do Pedido:</span>
+                      <strong className="text-slate-900 font-bold">{invoiceModalData.order.orderCode}</strong>
+                    </div>
+                    <div className="flex justify-between border-b py-1">
+                      <span className="font-semibold text-slate-500">Cliente:</span>
+                      <strong className="text-slate-900 font-bold">{invoiceModalData.order.customerName}</strong>
+                    </div>
+                    <div className="flex justify-between pt-1">
+                      <span className="font-semibold text-slate-500">Item:</span>
+                      <strong className="text-slate-900 font-bold truncate max-w-[200px]">{invoiceModalData.order.itemId} ({invoiceModalData.order.color || '-'})</strong>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs leading-relaxed font-medium">
+                    ⚠️ <strong>Atenção:</strong> Confirme para processar o faturamento definitivo de <strong>{parseInt(invoiceInput, 10) || 0} peças</strong>. Esta ação atualizará o status do pedido e dará baixa automática no estoque.
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 p-4 border-t border-gray-100 flex justify-between items-center gap-3 shrink-0">
+                  <button
+                    onClick={() => setShowInvoiceConfirmStep(false)}
+                    className="px-4 py-2 font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition text-xs"
+                  >
+                    ← Voltar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowInvoiceConfirmStep(false);
+                      handleConfirmInvoice();
+                    }}
+                    className="px-5 py-2.5 font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-lg transition text-xs flex items-center gap-1.5"
+                  >
+                    ✅ Confirmar Definitivo
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -13778,13 +13462,7 @@ export default function App() {
               <>
                 <Route
                   path="/status"
-                  element={
-                    <PedidosScreen
-                      db={db}
-                      currentUser={currentUser}
-                      defaultViewMode="STATUS_PEDIDOS"
-                    />
-                  }
+                  element={<Navigate to="/pedidos" replace />}
                 />
                 <Route path="/itens" element={<ItensScreen db={db} />} />
               </>
@@ -13792,8 +13470,11 @@ export default function App() {
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "PCP" ||
               currentUser.role === "GERENCIA" ||
-              (currentUser.role === "LEITURA" && currentUser.id !== "romario" && !currentUser.name.toLowerCase().includes("romario")) ||
-              currentUser.role === "PROJETISTA") && (
+              currentUser.role === "ENCARREGADO" ||
+              currentUser.role === "PROJETISTA" ||
+              currentUser.id === "dinei" ||
+              currentUser.name.toLowerCase().includes("dinei") ||
+              (currentUser.role === "LEITURA" && currentUser.id !== "romario" && !currentUser.name.toLowerCase().includes("romario"))) && (
               <>
                 <Route
                   path="/pedidos"
@@ -13801,7 +13482,6 @@ export default function App() {
                     <PedidosScreen
                       db={db}
                       currentUser={currentUser}
-                      defaultViewMode="ITENS"
                     />
                   }
                 />
@@ -14122,22 +13802,11 @@ export default function App() {
           {(currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
-            currentUser.role === "LEITURA" ||
             currentUser.role === "ENCARREGADO" ||
+            currentUser.role === "PROJETISTA" ||
             currentUser.id === "dinei" ||
-            currentUser.name.toLowerCase().includes("dinei")) && (
-            <NavLink
-              to="/status"
-              icon={<ClipboardList size={24} />}
-              label="Status"
-            />
-          )}
-
-          {(currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA" ||
-            (currentUser.role === "LEITURA" && currentUser.id !== "romario" && !currentUser.name.toLowerCase().includes("romario")) ||
-            currentUser.role === "PROJETISTA") && (
+            currentUser.name.toLowerCase().includes("dinei") ||
+            (currentUser.role === "LEITURA" && currentUser.id !== "romario" && !currentUser.name.toLowerCase().includes("romario"))) && (
             <NavLink
               to="/pedidos"
               icon={<ShoppingCart size={24} />}

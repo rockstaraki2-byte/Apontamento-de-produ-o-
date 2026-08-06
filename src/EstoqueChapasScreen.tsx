@@ -162,7 +162,7 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
   }, [db.sheetStockMovements]);
 
   return (
-    <div className="flex-1 overflow-y-auto w-full h-full min-h-0 p-3 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-32 scrollbar-thin">
+    <div className="flex-1 overflow-y-auto min-h-0 w-full p-3 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-32 scrollbar-thin">
       {/* Top Header */}
       <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3 sm:gap-4">
@@ -239,7 +239,7 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 w-full overflow-hidden">
         <div className="border-b border-slate-200 bg-slate-50/50 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           {/* Tabs - Scrollable on mobile */}
-          <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-200/70 p-1 rounded-xl w-full sm:w-fit overflow-x-auto touch-pan-x">
+          <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-200/70 p-1 rounded-xl w-full sm:w-fit overflow-x-auto">
             <button
               onClick={() => setActiveTab("ESTOQUE")}
               className={`px-3 sm:px-4 py-2 rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 shrink-0 cursor-pointer ${
@@ -281,7 +281,7 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
         {activeTab === "ESTOQUE" && (
           <div className="w-full">
             {/* Desktop Table View */}
-            <div className="hidden md:block w-full overflow-x-auto touch-pan-x">
+            <div className="hidden md:block w-full overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[850px] text-xs">
                 <thead>
                   <tr className="bg-slate-100/90 backdrop-blur-xs text-[10px] uppercase tracking-widest text-slate-500 font-extrabold border-b border-slate-200 sticky top-0 z-10">
@@ -433,7 +433,7 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
         {activeTab === "HISTORICO" && (
           <div className="space-y-4 p-3 sm:p-4 w-full">
             {/* Filter Pill Options - Scrollable on mobile */}
-            <div className="flex items-center gap-1.5 overflow-x-auto touch-pan-x pb-1">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
               <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1 shrink-0">
                 <Filter size={14} /> Filtrar:
               </span>
@@ -453,7 +453,7 @@ export function EstoqueChapasScreen({ db, currentUser }: Props) {
             </div>
 
             {/* Desktop Table View */}
-            <div className="hidden md:block w-full overflow-x-auto touch-pan-x border border-slate-200 rounded-xl">
+            <div className="hidden md:block w-full overflow-x-auto border border-slate-200 rounded-xl">
               <table className="w-full text-left border-collapse min-w-[850px] text-xs">
                 <thead>
                   <tr className="bg-slate-100/90 backdrop-blur-xs text-[10px] uppercase tracking-widest text-slate-500 font-extrabold border-b border-slate-200 sticky top-0 z-10">

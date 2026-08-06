@@ -56,8 +56,8 @@ export const imageToZPLHex = (
             const lum = 0.299 * r + 0.587 * g + 0.114 * b;
             luminanceMap[pIdx] = lum;
 
-            // Object pixel if alpha > 30 and not pure white background
-            if (a > 30 && !(r > 242 && g > 242 && b > 242)) {
+            // Object pixel if alpha > 20 and not pure white background
+            if (a > 20 && !(r > 248 && g > 248 && b > 248)) {
               isObjectPixel[pIdx] = 1;
             } else {
               isObjectPixel[pIdx] = 0;
@@ -65,7 +65,7 @@ export const imageToZPLHex = (
           }
         }
 
-        // Step 2: Detect object boundary contour & dilate to create a solid black stroke
+        // Step 2: Detect object boundary contour & dilate to create a solid 2px black stroke
         const isOutlinePixel = new Uint8Array(width * height);
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
@@ -91,15 +91,14 @@ export const imageToZPLHex = (
           }
         }
 
-        // Dilate contour by 1 pixel for a crisp, solid black border
+        // Dilate contour by 2 pixels for a strong, crisp, solid black border
         const isDilatedOutline = new Uint8Array(width * height);
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
             const pIdx = y * width + x;
             if (isOutlinePixel[pIdx]) {
-              isDilatedOutline[pIdx] = 1;
-              for (let dy = -1; dy <= 1; dy++) {
-                for (let dx = -1; dx <= 1; dx++) {
+              for (let dy = -2; dy <= 2; dy++) {
+                for (let dx = -2; dx <= 2; dx++) {
                   const ny = y + dy;
                   const nx = x + dx;
                   if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
@@ -111,7 +110,7 @@ export const imageToZPLHex = (
           }
         }
 
-        // Step 3: Binarize with high contrast, preserving grays and black outlines
+        // Step 3: Binarize with high contrast, preserving grays (darkened) and black outlines
         const bytesPerRow = Math.ceil(width / 8);
         const byteCount = bytesPerRow * height;
 
@@ -131,11 +130,11 @@ export const imageToZPLHex = (
             if (isDilatedOutline[pIdx]) {
               isBlack = true;
             } else if (isObjectPixel[pIdx]) {
-              // Preserve interior object details including gray shades
-              if (lum < 205) {
+              // Darken gray tones so small and light items print crisply (lum < 235)
+              if (lum < 235) {
                 isBlack = true;
               }
-            } else if (lum < 160) {
+            } else if (lum < 180) {
               isBlack = true;
             }
 

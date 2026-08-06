@@ -602,22 +602,35 @@ export function RealTimeFactoryMonitoring({
                                 </div>
                               )}
 
-                              <h4 className="font-black text-slate-900 text-sm leading-snug group-hover:text-blue-600 transition">
-                                {pack.partName || pack.customProductName || item?.name || "Peça não identificada"}
-                              </h4>
-
-                              <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                <span className="bg-white/80 border border-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">
-                                  {pack.color || "-"}
-                                </span>
-                                <span className="bg-white/80 border border-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">
-                                  {pack.size || "-"}
-                                </span>
-                                {pack.variation && (
-                                  <span className="bg-white/80 border border-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded">
-                                    {pack.variation}
-                                  </span>
+                              {/* Header row with Product Thumbnail and Titles */}
+                              <div className="flex items-start gap-3">
+                                {item?.imageUrl && (
+                                  <img 
+                                    src={item.imageUrl} 
+                                    alt="thumb" 
+                                    className="w-12 h-12 object-contain bg-white rounded-xl border border-slate-200 p-1 shrink-0 shadow-2xs" 
+                                    crossOrigin="anonymous"
+                                  />
                                 )}
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-black text-slate-900 text-sm leading-snug group-hover:text-blue-600 transition truncate">
+                                    {pack.partName || pack.customProductName || item?.name || "Peça não identificada"}
+                                  </h4>
+
+                                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                    <span className="bg-white/90 border border-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded shadow-2xs">
+                                      Cor: {pack.color || "-"}
+                                    </span>
+                                    <span className="bg-white/90 border border-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded shadow-2xs">
+                                      Tam: {pack.size || "-"}
+                                    </span>
+                                    {pack.variation && (
+                                      <span className="bg-white/90 border border-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded shadow-2xs">
+                                        Var: {pack.variation}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                             </div>
 

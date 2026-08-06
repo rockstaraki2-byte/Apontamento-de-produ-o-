@@ -301,7 +301,8 @@ export const BatchEtiquetasPrintSheet = forwardRef<
               <img 
                 src={label.imageUrl} 
                 alt="img" 
-                className="w-full h-full object-contain filter contrast-[145%] brightness-90 drop-shadow-[0_0_1px_rgba(0,0,0,0.95)]" 
+                className="w-full h-full object-contain filter contrast-[200%] brightness-80 drop-shadow-[0_0_1.5px_rgba(0,0,0,1)] drop-shadow-[0_0_0.5px_rgba(0,0,0,1)]" 
+                style={{ filter: "contrast(200%) brightness(80%) drop-shadow(0 0 1.5px #000) drop-shadow(0 0 0.5px #000)", imageRendering: "crisp-edges" }}
                 crossOrigin="anonymous" 
               />
             </div>
