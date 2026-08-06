@@ -2824,6 +2824,13 @@ function PedidosScreen({
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
 
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 200);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
   // Status Screen Mode States
   const [selectedOrderCode, setSelectedOrderCode] = useState<string | null>(
     null,
@@ -8511,65 +8518,63 @@ function PedidosScreen({
             </div>
           )}
 
-          <div className="w-full flex-1 mt-6">
+          <div className="w-full flex-1 mt-4 mb-2">
             <div className="flex justify-between items-center mb-2">
-              <h3 className="font-semibold text-gray-700">Fluxo de Pedidos</h3>
+              <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                ⚡ Fluxo de Pedidos
+              </h3>
               <button
                 onClick={handleExportPDF}
-                className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs py-1 px-3 rounded shadow transition"
+                className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-2xs transition cursor-pointer flex items-center gap-1"
               >
-                Exportar PDF
+                📄 Exportar PDF
               </button>
             </div>
 
-            {/* SUB-ABAS DE STATUS DOS PEDIDOS */}
-            <div className="flex rounded-lg overflow-hidden border border-indigo-600 mb-4 shrink-0 shadow-sm">
+            {/* BLOCO EXCLUSIVO: PEDIDOS PARA APROVAÇÃO */}
+            <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-3 sm:p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-800 font-black text-base shrink-0">
+                  ⏳
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-xs sm:text-sm text-amber-950">
+                      Pedidos Aguardando Aprovação
+                    </span>
+                    <span className="bg-amber-500 text-white font-black text-[10px] sm:text-xs px-2 py-0.5 rounded-full shadow-2xs">
+                      {db.orders.filter((o) => o.status === "AGUARDANDO_APROVACAO").length}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-800/80 font-medium mt-0.5">
+                    Pedidos em análise/liberação comercial antes da entrada na produção.
+                  </p>
+                </div>
+              </div>
+
               <button
                 type="button"
-                className={`flex-1 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold transition flex items-center justify-center gap-1 ${activeSubTab === "ABERTOS" ? "bg-indigo-600 text-white" : "bg-white text-indigo-600 hover:bg-indigo-50/20"}`}
-                onClick={() => setActiveSubTab("ABERTOS")}
-              >
-                📋 Ativos (
-                {
-                  db.orders.filter(
-                    (o) =>
-                      o.status !== "FATURADO" &&
-                      o.status !== "AGUARDANDO_APROVACAO",
-                  ).length
-                }
-                )
-              </button>
-              <button
-                type="button"
-                className={`flex-1 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold transition flex items-center justify-center gap-1 ${activeSubTab === "APROVACAO" ? "bg-indigo-600 text-white animate-pulse" : "bg-white text-indigo-100 hover:bg-indigo-50/20"}`}
-                onClick={() => setActiveSubTab("APROVACAO")}
-                style={{
-                  color: activeSubTab === "APROVACAO" ? "#fff" : "#4f46e5",
+                onClick={() => {
+                  if (
+                    selectedStatuses.includes("AGUARDANDO_APROVACAO") &&
+                    selectedStatuses.length === 1
+                  ) {
+                    setSelectedStatuses([]);
+                  } else {
+                    setSelectedStatuses(["AGUARDANDO_APROVACAO"]);
+                  }
                 }}
+                className={`px-3 py-1.5 rounded-lg font-extrabold text-xs transition duration-150 shrink-0 cursor-pointer shadow-xs border ${
+                  selectedStatuses.includes("AGUARDANDO_APROVACAO") &&
+                  selectedStatuses.length === 1
+                    ? "bg-amber-600 text-white border-amber-700 shadow-sm"
+                    : "bg-white text-amber-900 border-amber-300 hover:bg-amber-100/60"
+                }`}
               >
-                ⏳ Aprovação (
-                {
-                  db.orders.filter((o) => o.status === "AGUARDANDO_APROVACAO")
-                    .length
-                }
-                )
-              </button>
-              <button
-                type="button"
-                className={`flex-1 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold transition flex items-center justify-center gap-1 ${activeSubTab === "FATURADOS" ? "bg-indigo-600 text-white" : "bg-white text-indigo-600 hover:bg-indigo-50/20"}`}
-                onClick={() => setActiveSubTab("FATURADOS")}
-              >
-                ✅ Faturados (
-                <motion.span
-                  key={`faturados-count-${db.orders.filter((o) => o.status === "FATURADO").length}`}
-                  initial={{ scale: 1.5, color: "#10b981" }}
-                  animate={{ scale: 1, color: "inherit" }}
-                  transition={{ duration: 0.5 }}
-                  className="inline-block"
-                >
-                  {db.orders.filter((o) => o.status === "FATURADO").length}
-                </motion.span>
-                )
+                {selectedStatuses.includes("AGUARDANDO_APROVACAO") &&
+                selectedStatuses.length === 1
+                  ? "✓ Filtrando Aprovação (Mostrar Todos)"
+                  : "Filtrar Pedidos p/ Aprovação →"}
               </button>
             </div>
           </div>
@@ -8912,6 +8917,7 @@ function PedidosScreen({
             <div className="flex flex-wrap gap-1.5">
               {[
                 "PENDENTE",
+                "AGUARDANDO_APROVACAO",
                 "EM_PRODUCAO",
                 "PRODUZIDO",
                 "EM_CORTE",
