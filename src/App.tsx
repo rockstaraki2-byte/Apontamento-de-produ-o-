@@ -61,6 +61,7 @@ import {
   Printer,
   Truck,
   Copy,
+  Edit3,
 } from "lucide-react";
 import {
   BarChart,
