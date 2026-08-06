@@ -298,7 +298,12 @@ export const BatchEtiquetasPrintSheet = forwardRef<
         <div className="w-[105px] flex flex-col items-center shrink-0 border-l border-slate-200 pl-2 justify-center h-full overflow-hidden">
           {label.imageUrl ? (
             <div className="w-full h-full bg-white flex flex-col items-center justify-center min-h-0 p-1">
-              <img src={label.imageUrl} alt="img" className="w-full h-full object-contain" />
+              <img 
+                src={label.imageUrl} 
+                alt="img" 
+                className="w-full h-full object-contain filter contrast-[145%] brightness-90 drop-shadow-[0_0_1px_rgba(0,0,0,0.95)]" 
+                crossOrigin="anonymous" 
+              />
             </div>
           ) : (
             <div className="w-full flex flex-col justify-center items-center">

@@ -52,6 +52,14 @@ export function StatusScreen({
   const [selectedBatchToLink, setSelectedBatchToLink] = useState<string>("");
   const [newBatchNameInput, setNewBatchNameInput] = useState<string>("");
 
+  const [confirmInvoiceData, setConfirmInvoiceData] = useState<{
+    order: Order;
+    quantity: number;
+    itemName?: string;
+    source: "quick" | "status";
+    newStatus?: OrderStatus;
+  } | null>(null);
+
   const handleLinkOrdersToBatch = async (batchId: number, orderIds: number[]) => {
     const targetBatch = db.productionBatches.find((b) => b.id === batchId);
     if (!targetBatch) return;
@@ -971,7 +979,15 @@ export function StatusScreen({
                                 <button
                                   type="button"
                                   disabled={currentInput === "" || currentInput <= 0 || currentInput > limit}
-                                  onClick={() => handleQuickInvoice(o, Number(currentInput))}
+                                  onClick={() => {
+                                    const itemObj = db.items.find((i) => i.id === o.itemId);
+                                    setConfirmInvoiceData({
+                                      order: o,
+                                      quantity: Number(currentInput),
+                                      itemName: itemObj?.name,
+                                      source: "quick"
+                                    });
+                                  }}
                                   className="px-2 py-1 bg-emerald-600 font-bold text-[9px] text-white rounded hover:bg-emerald-700 disabled:opacity-40 transition cursor-pointer"
                                 >
                                   Faturar
@@ -1214,12 +1230,23 @@ export function StatusScreen({
                             <select
                               value={o.status || "PENDENTE"}
                               disabled={currentUser.role === "LEITURA" || currentUser.role === "REPRESENTANTE"}
-                              onChange={(e) =>
-                                handleStatusChange(
-                                  o.id,
-                                  e.target.value as OrderStatus,
-                                )
-                              }
+                              onChange={(e) => {
+                                const val = e.target.value as OrderStatus;
+                                if (val === "FATURADO") {
+                                  const remaining = o.totalQuantity - (o.invoicedQuantity || 0);
+                                  const qtyToInvoice = remaining > 0 ? remaining : o.totalQuantity;
+                                  const itemObj = db.items.find((i) => i.id === o.itemId);
+                                  setConfirmInvoiceData({
+                                    order: o,
+                                    quantity: qtyToInvoice,
+                                    itemName: itemObj?.name,
+                                    source: "status",
+                                    newStatus: "FATURADO"
+                                  });
+                                } else {
+                                  handleStatusChange(o.id, val);
+                                }
+                              }}
                               className="border border-gray-300 rounded text-xs p-1.5 text-gray-700 bg-white focus:outline-indigo-500 cursor-pointer disabled:opacity-50 disabled:bg-gray-100"
                             >
                               <option value="PENDENTE">Pendente</option>
@@ -1598,6 +1625,90 @@ _Mensagem do Sistema Império Jomarci_`;
           </div>
         );
       })()}
+
+      {/* Confirmation Modal for Faturar / Invoicing */}
+      {confirmInvoiceData && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[99999] animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border border-slate-100 flex flex-col gap-4 animate-in zoom-in-95 select-none">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xl shrink-0">
+                💰
+              </div>
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base">
+                  Confirmar Faturamento Definitivo
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  Verifique os dados antes de dar baixa no estoque
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex flex-col gap-3 text-xs">
+              {/* Highlighted Total Pieces Badge */}
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-center flex flex-col items-center justify-center">
+                <span className="text-[10px] uppercase font-extrabold tracking-wider text-emerald-800">
+                  Total de Peças Selecionadas para Faturar
+                </span>
+                <span className="text-2xl font-black text-emerald-700 mt-0.5">
+                  {confirmInvoiceData.quantity} {confirmInvoiceData.quantity === 1 ? "Peça" : "Peças"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                <div>
+                  <span className="text-slate-400 font-semibold block uppercase text-[9px]">Pedido</span>
+                  <span className="font-extrabold text-slate-800">#{confirmInvoiceData.order.orderCode || confirmInvoiceData.order.id}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block uppercase text-[9px]">Cliente</span>
+                  <span className="font-extrabold text-slate-800 truncate block" title={confirmInvoiceData.order.customerName}>
+                    {confirmInvoiceData.order.customerName}
+                  </span>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-slate-400 font-semibold block uppercase text-[9px]">Produto</span>
+                  <span className="font-bold text-slate-800 block">
+                    {confirmInvoiceData.itemName || "Produto"}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-mono block">
+                    Cor: {confirmInvoiceData.order.color || "-"} | Tam: {confirmInvoiceData.order.size || "-"} | Var: {confirmInvoiceData.order.variation || "-"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-600 bg-amber-50 border border-amber-200 p-2.5 rounded-lg leading-relaxed">
+              ⚠️ <strong>Atenção:</strong> O faturamento definitivo atualizará o status do pedido e dará baixa automática de <strong>{confirmInvoiceData.quantity} peças</strong> no estoque.
+            </p>
+
+            <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setConfirmInvoiceData(null)}
+                className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { order, quantity, source, newStatus } = confirmInvoiceData;
+                  setConfirmInvoiceData(null);
+                  if (source === "quick") {
+                    handleQuickInvoice(order, quantity);
+                  } else if (source === "status" && newStatus) {
+                    handleStatusChange(order.id, newStatus);
+                  }
+                }}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl transition shadow-lg shadow-emerald-600/20 active:scale-95 cursor-pointer flex items-center gap-1.5"
+              >
+                ✓ Confirmar e Faturar ({confirmInvoiceData.quantity} Peças)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
