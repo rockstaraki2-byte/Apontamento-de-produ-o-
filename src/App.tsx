@@ -115,6 +115,7 @@ import { normalizeString } from "./searchUtils";
 
 // Custom virtualization and metrics components
 import { MonitoramentoMetricsSummary } from "./components/MonitoramentoMetricsSummary";
+import { RealTimeFactoryMonitoring } from "./components/RealTimeFactoryMonitoring";
 import { useVirtualScroll } from "./hooks/useVirtualScroll";
 import {
   ScreenLayout,
@@ -12622,185 +12623,16 @@ function AdminScreen({
               </div>
             </>
           ) : activeTab === "MONITORAMENTO" ? (
-            <div className="flex-1 overflow-y-auto w-full flex flex-col gap-6">
-              <MonitoramentoMetricsSummary logs={db.logs} />
-              <div>
-                <h3 className="font-semibold text-gray-700 mb-3 border-b pb-2">
-                  Em Produção
-                </h3>
-                {producaoActive.length === 0 ? (
-                  <p className="text-gray-500 text-sm">
-                    Nenhuma produção em andamento.
-                  </p>
-                ) : (
-                  <div className="grid gap-3">
-                    {producaoActive.map((pack) => {
-                      const item = db.items.find((i) => i.id === pack.itemId);
-                      return (
-                        <div
-                          key={pack.id}
-                          onClick={() => handleOpenMonitoringModal(pack)}
-                          className="bg-blue-50 border border-blue-200 p-4 rounded-lg shadow-sm cursor-pointer hover:shadow-md hover:border-blue-300 transition"
-                        >
-                          <div className="flex justify-between items-start">
-                            <div className="flex flex-col">
-                              <span className="font-bold text-gray-800">
-                                {pack.partName || item?.name}
-                              </span>
-                              <span className="text-xs text-gray-600 mt-1">
-                                {pack.color || "-"} | {pack.size || "-"} |{" "}
-                                {pack.variation || "-"}
-                              </span>
-                              <span className="text-xs font-semibold text-gray-500 mt-1">
-                                Operador: {pack.operatorId}
-                              </span>
-                              <span className="text-[10px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded w-fit mt-1">
-                                {pack.type.replace("_", " ")}
-                              </span>
-                            </div>
-                            <div className="flex flex-col items-end gap-1 text-blue-700 text-xs font-semibold">
-                              <div className="flex items-center gap-1">
-                                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                                Em andamento
-                              </div>
-                              <span>({formatDuration(pack.startTime)})</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h3 className="font-semibold text-gray-700 mb-3 border-b pb-2">
-                  Em Corte Laser
-                </h3>
-                {corteLaserActive.length === 0 ? (
-                  <p className="text-gray-500 text-sm">
-                    Nenhum corte em andamento.
-                  </p>
-                ) : (
-                  <div className="grid gap-3">
-                    {corteLaserActive.map((pack) => {
-                      const item = db.items.find((i) => i.id === pack.itemId);
-                      return (
-                        <div
-                          key={pack.id}
-                          onClick={() => handleOpenMonitoringModal(pack)}
-                          className="bg-teal-50 border border-teal-200 p-4 rounded-lg shadow-sm cursor-pointer hover:shadow-md hover:border-teal-300 transition"
-                        >
-                          <div className="flex justify-between items-start">
-                            <div className="flex flex-col">
-                              <span className="font-bold text-gray-800">
-                                {pack.partName || item?.name}
-                              </span>
-                              <span className="text-xs text-gray-600 mt-1">
-                                {pack.color || "-"} | {pack.size || "-"} |{" "}
-                                {pack.variation || "-"}
-                              </span>
-                              <span className="text-xs font-semibold text-gray-500 mt-1">
-                                Operador: {pack.operatorId}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1 text-teal-700 text-xs font-semibold">
-                              <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
-                              Cortando... ({formatDuration(pack.startTime)})
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h3 className="font-semibold text-gray-700 mb-3 border-b pb-2">
-                  Em Pintura
-                </h3>
-                {pinturaActive.length === 0 ? (
-                  <p className="text-gray-500 text-sm">
-                    Nenhuma pintura em andamento.
-                  </p>
-                ) : (
-                  <div className="grid gap-3">
-                    {pinturaActive.map((pack) => {
-                      const item = db.items.find((i) => i.id === pack.itemId);
-                      return (
-                        <div
-                          key={pack.id}
-                          onClick={() => handleOpenMonitoringModal(pack)}
-                          className="bg-pink-50 border border-pink-200 p-4 rounded-lg shadow-sm cursor-pointer hover:shadow-md hover:border-pink-300 transition"
-                        >
-                          <div className="flex justify-between items-start">
-                            <div className="flex flex-col">
-                              <span className="font-bold text-gray-800">
-                                {pack.partName || item?.name}
-                              </span>
-                              <span className="text-xs text-gray-600 mt-1">
-                                {pack.color || "-"} | {pack.size || "-"} |{" "}
-                                {pack.variation || "-"}
-                              </span>
-                              <span className="text-xs font-semibold text-gray-500 mt-1">
-                                Operador: {pack.operatorId}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1 text-pink-700 text-xs font-semibold">
-                              <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
-                              Pintando há... ({formatDuration(pack.startTime)})
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h3 className="font-semibold text-gray-700 mb-3 border-b pb-2">
-                  Em Embalagem
-                </h3>
-                {embalagemActive.length === 0 ? (
-                  <p className="text-gray-500 text-sm">
-                    Nenhuma embalagem em andamento.
-                  </p>
-                ) : (
-                  <div className="grid gap-3">
-                    {embalagemActive.map((pack) => {
-                      const item = db.items.find((i) => i.id === pack.itemId);
-                      return (
-                        <div
-                          key={pack.id}
-                          onClick={() => handleOpenMonitoringModal(pack)}
-                          className="bg-green-50 border border-green-200 p-4 rounded-lg shadow-sm cursor-pointer hover:shadow-md hover:border-green-300 transition"
-                        >
-                          <div className="flex justify-between items-start">
-                            <div className="flex flex-col">
-                              <span className="font-bold text-gray-800">
-                                {pack.partName || item?.name}
-                              </span>
-                              <span className="text-xs text-gray-600 mt-1">
-                                {pack.color || "-"} | {pack.size || "-"} |{" "}
-                                {pack.variation || "-"}
-                              </span>
-                              <span className="text-xs font-semibold text-gray-500 mt-1">
-                                Operador: {pack.operatorId}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1 text-green-700 text-xs font-semibold">
-                              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                              Embalando... ({formatDuration(pack.startTime)})
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+            <div className="flex-1 overflow-y-auto w-full pb-20">
+              <RealTimeFactoryMonitoring
+                activePacks={db.activePacks}
+                logs={db.logs}
+                items={db.items}
+                sectors={db.sectors}
+                employees={db.employees}
+                productionBatches={db.productionBatches}
+                onOpenModal={handleOpenMonitoringModal}
+              />
             </div>
           ) : null}
         </ScrollContainer>

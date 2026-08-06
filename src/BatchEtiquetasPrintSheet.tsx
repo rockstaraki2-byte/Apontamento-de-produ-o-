@@ -110,81 +110,44 @@ export interface LabelItemData {
   dateStr: string;
 }
 
-export const BatchEtiquetasPrintSheet = forwardRef<
-  HTMLDivElement,
-  BatchEtiquetasPrintSheetProps
->(({ batch, orderIds = [], db, layoutFormat = "thermal", destrincharComposicoes = false, ocultarPaiComposicao = false }, ref) => {
-  const systemSettings = db.systemSettings?.[0] || {};
-  const logoUrl = systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png";
-  const companyName = systemSettings.companyName || db.activeTenant?.name || "IMPÉRIO JOMARCI";
+export function buildBatchLabelItemsData({
+  batch,
+  orderIds = [],
+  db,
+  destrincharComposicoes = false,
+  ocultarPaiComposicao = false,
+}: {
+  batch: ProductionBatch;
+  orderIds: number[];
+  db: ReturnType<typeof useDatabase>;
+  destrincharComposicoes?: boolean;
+  ocultarPaiComposicao?: boolean;
+}): LabelItemData[] {
+  const list: LabelItemData[] = [];
+  const dateToday = new Date().toLocaleDateString("pt-BR");
 
-  // Build the list of labels to render for the selected orders in the batch
-  const labelItems = React.useMemo(() => {
-    const list: LabelItemData[] = [];
-    const dateToday = new Date().toLocaleDateString("pt-BR");
+  (orderIds || []).forEach((oid) => {
+    const order = db.orders.find((o) => o.id === oid);
+    if (!order) return;
 
-    (orderIds || []).forEach((oid) => {
-      const order = db.orders.find((o) => o.id === oid);
-      if (!order) return;
+    const item = db.items.find((i) => i.id === order.itemId);
 
-      const item = db.items.find((i) => i.id === order.itemId);
+    const resolvedCustomerName = (() => {
+      if (!order.customerName) return "CLIENTE NÃO INFORMADO";
+      const foundCust = db.customers?.find(
+        (c) =>
+          c.name.toLowerCase().trim() === order.customerName.toLowerCase().trim() ||
+          (c.tradeName && c.tradeName.toLowerCase().trim() === order.customerName.toLowerCase().trim())
+      );
+      return foundCust?.tradeName || order.customerName;
+    })();
 
-      const resolvedCustomerName = (() => {
-        if (!order.customerName) return "CLIENTE NÃO INFORMADO";
-        const foundCust = db.customers?.find(
-          (c) =>
-            c.name.toLowerCase().trim() === order.customerName.toLowerCase().trim() ||
-            (c.tradeName && c.tradeName.toLowerCase().trim() === order.customerName.toLowerCase().trim())
-        );
-        return foundCust?.tradeName || order.customerName;
-      })();
+    const hasComponents = item?.components && item.components.length > 0;
 
-      const hasComponents = item?.components && item.components.length > 0;
-
-      if (destrincharComposicoes && hasComponents) {
-        if (!ocultarPaiComposicao) {
-          list.push({
-            id: `ord-${order.id}-parent`,
-            orderCode: order.orderCode || `${order.id}`,
-            batchName: batch.name || `LOTE #${batch.id}`,
-            customerName: resolvedCustomerName,
-            itemName: item?.name || "Produto Sem Nome",
-            itemCode: item?.code || "S/C",
-            color: order.color || "-",
-            size: order.size || "-",
-            variation: order.variation || "-",
-            quantity: order.totalQuantity,
-            unitLabel: getItemUnit(item, order),
-            imageUrl: item?.imageUrl || null,
-            barcodeData: `${item?.code || 'ITEM'}|${order.orderCode || order.id}|${order.totalQuantity}`,
-            dateStr: dateToday,
-          });
-        }
-
-        item.components!.forEach((comp, idx) => {
-          const compItem = db.items.find((i) => i.id === comp.itemId);
-          const compQty = order.totalQuantity * comp.quantity;
-
-          list.push({
-            id: `ord-${order.id}-comp-${comp.itemId}-${idx}`,
-            orderCode: order.orderCode || `${order.id}`,
-            batchName: batch.name || `LOTE #${batch.id}`,
-            customerName: resolvedCustomerName,
-            itemName: compItem?.name ? `[COMP] ${compItem.name}` : `Componente #${comp.itemId}`,
-            itemCode: compItem?.code || "S/C",
-            color: order.color || "-",
-            size: order.size || "-",
-            variation: order.variation || "-",
-            quantity: compQty,
-            unitLabel: getItemUnit(compItem, order),
-            imageUrl: compItem?.imageUrl || null,
-            barcodeData: `${compItem?.code || 'COMP'}|${order.orderCode || order.id}|${compQty}`,
-            dateStr: dateToday,
-          });
-        });
-      } else {
+    if (destrincharComposicoes && hasComponents) {
+      if (!ocultarPaiComposicao) {
         list.push({
-          id: `ord-${order.id}`,
+          id: `ord-${order.id}-parent`,
           orderCode: order.orderCode || `${order.id}`,
           batchName: batch.name || `LOTE #${batch.id}`,
           customerName: resolvedCustomerName,
@@ -200,10 +163,69 @@ export const BatchEtiquetasPrintSheet = forwardRef<
           dateStr: dateToday,
         });
       }
-    });
 
-    return list;
-  }, [batch, orderIds, db.orders, db.items, db.customers, destrincharComposicoes, ocultarPaiComposicao]);
+      item.components!.forEach((comp, idx) => {
+        const compItem = db.items.find((i) => i.id === comp.itemId);
+        const compQty = order.totalQuantity * comp.quantity;
+
+        list.push({
+          id: `ord-${order.id}-comp-${comp.itemId}-${idx}`,
+          orderCode: order.orderCode || `${order.id}`,
+          batchName: batch.name || `LOTE #${batch.id}`,
+          customerName: resolvedCustomerName,
+          itemName: compItem?.name ? `[COMP] ${compItem.name}` : `Componente #${comp.itemId}`,
+          itemCode: compItem?.code || "S/C",
+          color: order.color || "-",
+          size: order.size || "-",
+          variation: order.variation || "-",
+          quantity: compQty,
+          unitLabel: getItemUnit(compItem, order),
+          imageUrl: compItem?.imageUrl || null,
+          barcodeData: `${compItem?.code || 'COMP'}|${order.orderCode || order.id}|${compQty}`,
+          dateStr: dateToday,
+        });
+      });
+    } else {
+      list.push({
+        id: `ord-${order.id}`,
+        orderCode: order.orderCode || `${order.id}`,
+        batchName: batch.name || `LOTE #${batch.id}`,
+        customerName: resolvedCustomerName,
+        itemName: item?.name || "Produto Sem Nome",
+        itemCode: item?.code || "S/C",
+        color: order.color || "-",
+        size: order.size || "-",
+        variation: order.variation || "-",
+        quantity: order.totalQuantity,
+        unitLabel: getItemUnit(item, order),
+        imageUrl: item?.imageUrl || null,
+        barcodeData: `${item?.code || 'ITEM'}|${order.orderCode || order.id}|${order.totalQuantity}`,
+        dateStr: dateToday,
+      });
+    }
+  });
+
+  return list;
+}
+
+export const BatchEtiquetasPrintSheet = forwardRef<
+  HTMLDivElement,
+  BatchEtiquetasPrintSheetProps
+>(({ batch, orderIds = [], db, layoutFormat = "thermal", destrincharComposicoes = false, ocultarPaiComposicao = false }, ref) => {
+  const systemSettings = db.systemSettings?.[0] || {};
+  const logoUrl = systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png";
+  const companyName = systemSettings.companyName || db.activeTenant?.name || "IMPÉRIO JOMARCI";
+
+  // Build the list of labels to render for the selected orders in the batch
+  const labelItems = React.useMemo(() => {
+    return buildBatchLabelItemsData({
+      batch,
+      orderIds,
+      db,
+      destrincharComposicoes,
+      ocultarPaiComposicao,
+    });
+  }, [batch, orderIds, db, destrincharComposicoes, ocultarPaiComposicao]);
 
   // Render Single Label Component (100mm x 50mm landscape)
   const renderSingleLabel = (label: LabelItemData, index: number) => {

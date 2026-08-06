@@ -16,15 +16,13 @@ const updateSW = registerSW({
   immediate: true,
 });
 
+// Registro isolado do Service Worker do Firebase Messaging,
+// separado do sw.js gerado pelo vite-plugin-pwa, evitando conflito de registro.
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("/firebase-messaging-sw.js", {
-        scope: "/firebase-cloud-messaging-push-scope",
-      })
-      .then((reg) => console.log("Firebase Messaging SW registrado:", reg))
-      .catch((err) => console.error("Erro ao registrar Firebase Messaging SW:", err));
-  });
+  navigator.serviceWorker
+    .register("/firebase-messaging-sw.js", { scope: "/firebase-cloud-messaging-push-scope" })
+    .then((reg) => console.log("Firebase Messaging SW registrado:", reg))
+    .catch((err) => console.error("Erro ao registrar Firebase Messaging SW:", err));
 }
 
 createRoot(document.getElementById("root")!).render(

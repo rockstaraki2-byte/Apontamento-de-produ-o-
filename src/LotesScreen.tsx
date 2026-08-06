@@ -24,7 +24,8 @@ import {
   FileSpreadsheet,
   ChevronDown,
   ChevronUp,
-  Tag
+  Tag,
+  Copy
 } from "lucide-react";
 import { printHtml, printElementById } from "./printUtils";
 import {
@@ -45,7 +46,8 @@ import {
   assertPrintableElement
 } from "./BatchPrintSheet";
 import { AcompanhamentoPrintSheet } from "./AcompanhamentoPrintSheet";
-import { BatchEtiquetasPrintSheet } from "./BatchEtiquetasPrintSheet";
+import { BatchEtiquetasPrintSheet, buildBatchLabelItemsData } from "./BatchEtiquetasPrintSheet";
+import { generateZPLFromBatchLabels } from "./utils/zplUtils";
 import { getItemUnit } from "./utils/unitUtils";
 import html2pdf from "html2pdf.js";
 
@@ -88,6 +90,8 @@ export function LotesScreen({
   const [etiquetasOcultarPai, setEtiquetasOcultarPai] = useState(false);
   const [isDirectPrintingEtiquetas, setIsDirectPrintingEtiquetas] = useState(false);
   const [isGeneratingEtiquetasPdf, setIsGeneratingEtiquetasPdf] = useState(false);
+  const [isGeneratingEtiquetasZPL, setIsGeneratingEtiquetasZPL] = useState(false);
+  const [modalZPL, setModalZPL] = useState<string | null>(null);
   const [etiquetasSearchTerm, setEtiquetasSearchTerm] = useState("");
 
   // Pagination for batch list: show 10 batches by default
@@ -586,6 +590,50 @@ export function LotesScreen({
     } finally {
       setIsGeneratingEtiquetasPdf(false);
     }
+  };
+
+  const handleGenerateEtiquetasZPL = async () => {
+    if (!previewEtiquetasBatch || etiquetasSelectedOrderIds.length === 0) {
+      alert("Nenhum pedido selecionado para gerar código ZPL.");
+      return;
+    }
+
+    setIsGeneratingEtiquetasZPL(true);
+
+    try {
+      const labelItems = buildBatchLabelItemsData({
+        batch: previewEtiquetasBatch,
+        orderIds: etiquetasSelectedOrderIds,
+        db,
+        destrincharComposicoes: etiquetasDestrinchar,
+        ocultarPaiComposicao: etiquetasOcultarPai,
+      });
+
+      const systemSettings = db.systemSettings?.[0] || {};
+      const logoUrl = systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png";
+      const companyName = systemSettings.companyName || db.activeTenant?.name || "IMPÉRIO JOMARCI";
+
+      const zplString = await generateZPLFromBatchLabels(labelItems, logoUrl, companyName);
+
+      if (!zplString) {
+        alert("Não foi possível gerar código ZPL para os itens selecionados.");
+        return;
+      }
+
+      setModalZPL(zplString);
+    } catch (err: any) {
+      console.error("Erro ao gerar código ZPL do lote:", err);
+      alert(`Erro ao gerar comandos ZPL das etiquetas: ${err.message || err}`);
+    } finally {
+      setIsGeneratingEtiquetasZPL(false);
+    }
+  };
+
+  const handleCopyZPL = () => {
+    if (!modalZPL) return;
+    navigator.clipboard.writeText(modalZPL);
+    alert("Código ZPL do lote copiado para a área de transferência com sucesso!");
+    setModalZPL(null);
   };
 
   const handleGenerateReport = () => {
@@ -2254,7 +2302,7 @@ export function LotesScreen({
               <span className="text-xs text-slate-600 font-bold uppercase tracking-wide">
                 IMPÉRIO ACESSÓRIOS · {etiquetasSelectedOrderIds.length} {etiquetasSelectedOrderIds.length === 1 ? "pedido selecionado" : "pedidos selecionados"}
               </span>
-              <div className="flex gap-3 justify-end">
+              <div className="flex gap-3 justify-end flex-wrap">
                 <button
                   onClick={() => {
                     setIsPreviewEtiquetasOpen(false);
@@ -2266,12 +2314,25 @@ export function LotesScreen({
                 </button>
 
                 <button
+                  disabled={isGeneratingEtiquetasZPL || etiquetasSelectedOrderIds.length === 0}
+                  onClick={handleGenerateEtiquetasZPL}
+                  className={`px-5 py-2.5 text-xs font-black text-white rounded-xl cursor-pointer flex items-center gap-1.5 transition active:scale-95 shadow-lg ${
+                    isGeneratingEtiquetasZPL || etiquetasSelectedOrderIds.length === 0
+                      ? "bg-slate-300 cursor-not-allowed text-slate-500"
+                      : "bg-amber-600 hover:bg-amber-500 shadow-amber-700/20"
+                  }`}
+                >
+                  <Copy size={14} className={isGeneratingEtiquetasZPL ? "animate-spin" : ""} />
+                  {isGeneratingEtiquetasZPL ? "Gerando ZPL c/ Imagens..." : "Copiar Comandos ZPL (Zebra)"}
+                </button>
+
+                <button
                   disabled={isDirectPrintingEtiquetas || etiquetasSelectedOrderIds.length === 0}
                   onClick={handleDirectPrintEtiquetas}
                   className={`px-5 py-2.5 text-xs font-black text-white rounded-xl cursor-pointer flex items-center gap-1.5 transition active:scale-95 shadow-lg ${
                     isDirectPrintingEtiquetas || etiquetasSelectedOrderIds.length === 0
                       ? "bg-slate-300 cursor-not-allowed text-slate-500"
-                      : "bg-amber-600 hover:bg-amber-500 shadow-amber-700/20"
+                      : "bg-blue-600 hover:bg-blue-500 shadow-blue-700/20"
                   }`}
                 >
                   <Printer size={14} className={isDirectPrintingEtiquetas ? "animate-spin" : ""} />
@@ -2408,6 +2469,51 @@ export function LotesScreen({
                 className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer"
               >
                 Gerar {exportFormat === "EXCEL" ? "Excel" : "PDF"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL DISPLAY FOR RAW ZEBRA ZPL --- */}
+      {modalZPL && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[9999] backdrop-blur-xs">
+          <div className="bg-slate-900 text-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl border border-slate-800 flex flex-col gap-4 animate-in zoom-in-95">
+            <div className="flex justify-between items-start border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="font-black text-white text-base tracking-tight">🦓 Código de Impressão Zebra ZPL (Lote de Produção)</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Copie e envie este fluxo diretamente para impressoras térmicas Zebra em portas RAW TCP 9100 ou utilitários.
+                </p>
+              </div>
+              <button 
+                onClick={() => setModalZPL(null)}
+                className="text-slate-400 hover:text-white font-black text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <textarea
+              readOnly
+              value={modalZPL}
+              className="bg-black/80 font-mono text-[11px] text-green-400 p-4 rounded-xl h-64 border border-zinc-800 focus:outline-none focus:ring-1 focus:ring-green-500 overflow-y-auto select-all"
+              onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+            />
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setModalZPL(null)}
+                className="px-4 py-2 text-xs font-black text-slate-400 hover:text-white transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCopyZPL}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-900/30"
+              >
+                <Copy size={14} />
+                Copiar Todos os Comandos ZPL
               </button>
             </div>
           </div>
