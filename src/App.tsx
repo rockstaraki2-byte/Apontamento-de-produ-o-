@@ -62,6 +62,7 @@ import {
   Truck,
   Copy,
   Edit3,
+  Plus,
 } from "lucide-react";
 import {
   BarChart,
