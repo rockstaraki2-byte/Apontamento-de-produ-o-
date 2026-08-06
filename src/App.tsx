@@ -3470,6 +3470,17 @@ function PedidosScreen({
     }[]
   >([]);
 
+  const [editingCartIndex, setEditingCartIndex] = useState<number | null>(null);
+
+  // States for Order Group editing & approval
+  const [editingOrderGroupCode, setEditingOrderGroupCode] = useState<string | null>(null);
+  const [editingGroupOrderCodeInput, setEditingGroupOrderCodeInput] = useState<string>("");
+  const [editingGroupCustomerName, setEditingGroupCustomerName] = useState<string>("");
+  const [editingGroupRepresentative, setEditingGroupRepresentative] = useState<string>("");
+  const [editingGroupDeliveryDate, setEditingGroupDeliveryDate] = useState<string>("");
+  const [editingGroupStatus, setEditingGroupStatus] = useState<string>("PENDENTE");
+  const [editingGroupNotes, setEditingGroupNotes] = useState<string>("");
+
   const [activeSubTab, setActiveSubTab] = useState<
     "ABERTOS" | "APROVACAO" | "FATURADOS"
   >("ABERTOS");
@@ -5203,6 +5214,176 @@ function PedidosScreen({
     setIsThirdPartyLaser(false);
     setIsUrgent(false);
     setIsProgramacao(false);
+  };
+
+  const handleEditCartItem = (idx: number) => {
+    const li = lineItems[idx];
+    if (!li) return;
+    setEditingCartIndex(idx);
+    setItemId(li.itemId);
+    const itemObj = db.items.find((i) => i.id === li.itemId);
+    setOrderItemSearch(itemObj ? `${itemObj.code} - ${itemObj.name}` : "");
+    setColor(li.color || "");
+    setSize(li.size || "");
+    setVariation(li.variation || "");
+    setTotalQuantity(li.totalQuantity);
+    setUnitPrice(li.unitPrice ?? "");
+    setIsThirdPartyLaser(!!li.isThirdPartyLaser);
+    setIsUrgent(!!li.isUrgent);
+    setIsProgramacao(!!li.isProgramacao);
+  };
+
+  const handleSaveCartItem = () => {
+    if (editingCartIndex === null || !itemId || !totalQuantity) return;
+    const updated = [...lineItems];
+    updated[editingCartIndex] = {
+      itemId: Number(itemId),
+      color,
+      size,
+      variation,
+      totalQuantity: Number(totalQuantity),
+      unitPrice: unitPrice === "" ? undefined : Number(unitPrice),
+      isThirdPartyLaser,
+      isUrgent,
+      isProgramacao,
+    };
+    setLineItems(updated);
+    setEditingCartIndex(null);
+    setItemId("");
+    setOrderItemSearch("");
+    setColor("");
+    setSize("");
+    setVariation("");
+    setTotalQuantity("");
+    setUnitPrice("");
+    setIsThirdPartyLaser(false);
+    setIsUrgent(false);
+    setIsProgramacao(false);
+  };
+
+  const handleRemoveCartItem = (idx: number) => {
+    setLineItems((prev) => prev.filter((_, i) => i !== idx));
+    if (editingCartIndex === idx) {
+      setEditingCartIndex(null);
+      setItemId("");
+      setOrderItemSearch("");
+      setColor("");
+      setSize("");
+      setVariation("");
+      setTotalQuantity("");
+      setUnitPrice("");
+      setIsThirdPartyLaser(false);
+      setIsUrgent(false);
+      setIsProgramacao(false);
+    } else if (editingCartIndex !== null && editingCartIndex > idx) {
+      setEditingCartIndex(editingCartIndex - 1);
+    }
+  };
+
+  const handleCancelEditCartItem = () => {
+    setEditingCartIndex(null);
+    setItemId("");
+    setOrderItemSearch("");
+    setColor("");
+    setSize("");
+    setVariation("");
+    setTotalQuantity("");
+    setUnitPrice("");
+    setIsThirdPartyLaser(false);
+    setIsUrgent(false);
+    setIsProgramacao(false);
+  };
+
+  const handleApproveOrderGroup = async (orderCode: string) => {
+    const group = db.orders.filter((o) => o.orderCode === orderCode && o.isActive !== false);
+    if (group.length === 0) return;
+
+    const updatedOrders = group.map((o) => {
+      if (o.status === "AGUARDANDO_APROVACAO") {
+        return { ...o, status: "PENDENTE" as OrderStatus };
+      }
+      return o;
+    });
+
+    await db.updateOrders(updatedOrders);
+    db.addLogs([
+      {
+        message: `Pedido #${orderCode} (${group[0]?.customerName || ""}) foi APROVADO.`,
+        userName: currentUser.name,
+        role: currentUser.role,
+      },
+    ]);
+    setOrderToastMessage(`Pedido #${orderCode} APROVADO com sucesso!`);
+    setTimeout(() => setOrderToastMessage(""), 4000);
+  };
+
+  const handleRejectOrderGroup = async (orderCode: string) => {
+    if (!window.confirm(`Tem certeza que deseja REPROVAR / CANCELAR o pedido #${orderCode}?`)) return;
+    const group = db.orders.filter((o) => o.orderCode === orderCode && o.isActive !== false);
+    if (group.length === 0) return;
+
+    const updatedOrders = group.map((o) => ({
+      ...o,
+      status: "CANCELADO" as OrderStatus,
+      isActive: false,
+    }));
+
+    await db.updateOrders(updatedOrders);
+    db.addLogs([
+      {
+        message: `Pedido #${orderCode} (${group[0]?.customerName || ""}) foi REPROVADO.`,
+        userName: currentUser.name,
+        role: currentUser.role,
+      },
+    ]);
+    setOrderToastMessage(`Pedido #${orderCode} REPROVADO.`);
+    setTimeout(() => setOrderToastMessage(""), 4000);
+  };
+
+  const handleOpenOrderGroupEditModal = (orderCode: string) => {
+    const group = db.orders.filter((o) => o.orderCode === orderCode && o.isActive !== false);
+    if (group.length === 0) return;
+    const first = group[0];
+    setEditingOrderGroupCode(orderCode);
+    setEditingGroupOrderCodeInput(orderCode);
+    setEditingGroupCustomerName(first.customerName || "");
+    setEditingGroupRepresentative(first.representativeName || "");
+    setEditingGroupDeliveryDate(first.deliveryDate || "");
+    setEditingGroupStatus(first.status || "PENDENTE");
+    setEditingGroupNotes(first.notes || "");
+  };
+
+  const handleSaveOrderGroupEdit = async () => {
+    if (!editingOrderGroupCode) return;
+    const group = db.orders.filter((o) => o.orderCode === editingOrderGroupCode && o.isActive !== false);
+    if (group.length === 0) return;
+
+    const newCode = editingGroupOrderCodeInput.trim() || editingOrderGroupCode;
+
+    const updatedOrders = group.map((o) => ({
+      ...o,
+      orderCode: newCode,
+      customerName: editingGroupCustomerName.trim() || o.customerName,
+      representativeName: editingGroupRepresentative.trim() || o.representativeName,
+      deliveryDate: editingGroupDeliveryDate || o.deliveryDate,
+      status: (editingGroupStatus as OrderStatus) || o.status,
+      notes: editingGroupNotes,
+    }));
+
+    await db.updateOrders(updatedOrders);
+    db.addLogs([
+      {
+        message: `Pedido #${editingOrderGroupCode} editado por ${currentUser.name}.${newCode !== editingOrderGroupCode ? ` Código alterado para #${newCode}.` : ""}`,
+        userName: currentUser.name,
+        role: currentUser.role,
+      },
+    ]);
+    setOrderToastMessage(`Pedido #${newCode} atualizado com sucesso!`);
+    setTimeout(() => setOrderToastMessage(""), 4000);
+    setEditingOrderGroupCode(null);
+    if (selectedOrderCode === editingOrderGroupCode) {
+      setSelectedOrderCode(newCode);
+    }
   };
 
   const [orderToastMessage, setOrderToastMessage] = useState("");
@@ -8412,77 +8593,122 @@ function PedidosScreen({
                         <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block border-b border-slate-200 pb-1">
                           Produtos neste Pedido ({lineItems.length}):
                         </span>
-                        <div className="flex flex-col gap-1 max-h-24 overflow-y-auto">
-                          {lineItems.map((li, idx) => (
-                            <div
-                              key={idx}
-                              className="flex justify-between items-center text-xs border-b border-slate-100 last:border-0 pb-1 pt-0.5 text-slate-700"
-                            >
-                              <span className="truncate pr-2">
-                                <strong className="text-slate-800">
-                                  {
-                                    db.items.find((i) => i.id === li.itemId)
-                                      ?.name
-                                  }
-                                </strong>{" "}
-                                <span className="text-slate-500 font-mono text-[10px]">
-                                  ({li.color} | {li.size} | {li.variation})
-                                </span>{" "}
-                                -{" "}
-                                <span className="font-extrabold text-indigo-600">
-                                  {li.totalQuantity} un
+                        <div className="flex flex-col gap-1 max-h-36 overflow-y-auto">
+                          {lineItems.map((li, idx) => {
+                            const isBeingEdited = editingCartIndex === idx;
+                            return (
+                              <div
+                                key={idx}
+                                className={`flex justify-between items-center text-xs border rounded p-1.5 transition ${
+                                  isBeingEdited
+                                    ? "bg-amber-50 border-amber-300 ring-2 ring-amber-400/50"
+                                    : "bg-white border-slate-200 text-slate-700 hover:border-indigo-200"
+                                }`}
+                              >
+                                <span className="truncate pr-2">
+                                  <strong className="text-slate-800">
+                                    {
+                                      db.items.find((i) => i.id === li.itemId)
+                                        ?.name || `Item #${li.itemId}`
+                                    }
+                                  </strong>{" "}
+                                  <span className="text-slate-500 font-mono text-[10px]">
+                                    ({li.color || "-"} | {li.size || "-"} | {li.variation || "-"})
+                                  </span>{" "}
+                                  -{" "}
+                                  <span className="font-extrabold text-indigo-600">
+                                    {li.totalQuantity} un
+                                  </span>
                                 </span>
-                              </span>
-                              <div className="flex gap-1 shrink-0 items-center">
-                                {li.unitPrice !== undefined && (
-                                  <span className="text-indigo-700 font-semibold bg-indigo-50 px-1 py-0.5 rounded text-[9px] mr-1 border border-indigo-150">
-                                    R$ {li.unitPrice.toFixed(2)} / un
-                                  </span>
-                                )}
-                                {li.isUrgent && (
-                                  <span className="bg-red-50 text-red-700 text-[9px] px-1 rounded font-bold border border-red-200">
-                                    URG
-                                  </span>
-                                )}
-                                {li.isProgramacao && (
-                                  <span className="bg-indigo-50 text-indigo-700 text-[9px] px-1 rounded font-bold border border-indigo-150">
-                                    PROG
-                                  </span>
-                                )}
-                                {li.isThirdPartyLaser && (
-                                  <span className="bg-blue-50 text-blue-700 text-[9px] px-1 rounded font-bold border border-blue-150">
-                                    LASER
-                                  </span>
-                                )}
+                                <div className="flex gap-1 shrink-0 items-center">
+                                  {li.unitPrice !== undefined && (
+                                    <span className="text-indigo-700 font-semibold bg-indigo-50 px-1 py-0.5 rounded text-[9px] mr-1 border border-indigo-150">
+                                      R$ {li.unitPrice.toFixed(2)} / un
+                                    </span>
+                                  )}
+                                  {li.isUrgent && (
+                                    <span className="bg-red-50 text-red-700 text-[9px] px-1 rounded font-bold border border-red-200">
+                                      URG
+                                    </span>
+                                  )}
+                                  {li.isProgramacao && (
+                                    <span className="bg-indigo-50 text-indigo-700 text-[9px] px-1 rounded font-bold border border-indigo-150">
+                                      PROG
+                                    </span>
+                                  )}
+                                  {li.isThirdPartyLaser && (
+                                    <span className="bg-blue-50 text-blue-700 text-[9px] px-1 rounded font-bold border border-blue-150">
+                                      LASER
+                                    </span>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditCartItem(idx)}
+                                    className="p-1 text-amber-700 hover:bg-amber-100 rounded transition ml-1"
+                                    title="Editar este item do carrinho"
+                                  >
+                                    <Edit3 size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveCartItem(idx)}
+                                    className="p-1 text-rose-600 hover:bg-rose-100 rounded transition"
+                                    title="Remover este item do carrinho"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
 
                     <div className="flex flex-row gap-2.5 mt-1 shrink-0">
-                      {!editingId && (
-                        <button
-                          type="button"
-                          onClick={handleAddProductToOrder}
-                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded shadow-xs transition text-xs disabled:opacity-40 leading-none"
-                          disabled={!itemId || !totalQuantity}
-                        >
-                          + Outro Produto
-                        </button>
+                      {!editingId && editingCartIndex !== null ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleSaveCartItem}
+                            className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded shadow-xs transition text-xs leading-none"
+                          >
+                            ✓ Salvar Item do Carrinho
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelEditCartItem}
+                            className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2 px-3 rounded shadow-xs transition text-xs leading-none"
+                          >
+                            Cancelar
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {!editingId && (
+                            <button
+                              type="button"
+                              onClick={handleAddProductToOrder}
+                              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded shadow-xs transition text-xs disabled:opacity-40 leading-none"
+                              disabled={!itemId || !totalQuantity}
+                            >
+                              + Outro Produto
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleCadastrar}
+                            className={`flex-1 ${
+                              editingId
+                                ? "bg-blue-600 hover:bg-blue-700"
+                                : "bg-indigo-600 hover:bg-indigo-700"
+                            } font-bold text-white py-2 rounded shadow-xs transition text-xs leading-none`}
+                          >
+                            {editingId ? "Salvar Alterações" : "Gerar Pedido"}
+                          </button>
+                        </>
                       )}
-                      <button
-                        type="button"
-                        onClick={handleCadastrar}
-                        className={`flex-1 ${
-                          editingId
-                            ? "bg-blue-600 hover:bg-blue-700"
-                            : "bg-indigo-600 hover:bg-indigo-700"
-                        } font-bold text-white py-2 rounded shadow-xs transition text-xs leading-none`}
-                      >
-                        {editingId ? "Salvar Alterações" : "Gerar Pedido"}
-                      </button>
                     </div>
                   </div>
 
@@ -9190,17 +9416,56 @@ function PedidosScreen({
                             </>
                           )}
                           {currentUser.role !== "LEITURA" && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteOrderGroup(code);
-                              }}
-                              className="p-1 px-1.5 bg-rose-50 hover:bg-rose-100 text-rose-650 rounded-lg hover:text-rose-700 transition"
-                              title="Excluir pedido completo"
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            <div className="flex flex-wrap items-center justify-end gap-1 mt-1">
+                              {orders.some((o) => o.status === "AGUARDANDO_APROVACAO") && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleApproveOrderGroup(code);
+                                    }}
+                                    className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition flex items-center gap-1 cursor-pointer"
+                                    title="Aprovar Pedido"
+                                  >
+                                    ✓ Aprovar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRejectOrderGroup(code);
+                                    }}
+                                    className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition flex items-center gap-1 cursor-pointer"
+                                    title="Reprovar Pedido"
+                                  >
+                                    ✕ Reprovar
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenOrderGroupEditModal(code);
+                                }}
+                                className="p-1 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] rounded-lg border border-indigo-200 transition flex items-center gap-1 cursor-pointer"
+                                title="Editar dados do pedido (número, cliente, data, status)"
+                              >
+                                <Edit3 size={11} /> Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteOrderGroup(code);
+                                }}
+                                className="p-1 px-1.5 bg-rose-50 hover:bg-rose-100 text-rose-650 rounded-lg hover:text-rose-700 transition cursor-pointer"
+                                title="Excluir pedido completo"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -9247,13 +9512,53 @@ function PedidosScreen({
               <div className="flex items-center gap-2 sm:gap-3">
                 {currentUser.role !== "LEITURA" && (
                   <>
+                    {(() => {
+                      const currentGroupOrders = db.orders.filter(
+                        (o) => o.orderCode === selectedOrderCode && o.isActive !== false
+                      );
+                      const needsApproval = currentGroupOrders.some(
+                        (o) => o.status === "AGUARDANDO_APROVACAO"
+                      );
+                      return (
+                        <>
+                          {needsApproval && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleApproveOrderGroup(selectedOrderCode)}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl shadow-xs hover:shadow-sm transition-all flex items-center gap-1 leading-none cursor-pointer"
+                                title="Aprovar Pedido"
+                              >
+                                ✓ Aprovar Pedido
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRejectOrderGroup(selectedOrderCode)}
+                                className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl shadow-xs hover:shadow-sm transition-all flex items-center gap-1 leading-none cursor-pointer"
+                                title="Reprovar Pedido"
+                              >
+                                ✕ Reprovar
+                              </button>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenOrderGroupEditModal(selectedOrderCode)}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl shadow-xs hover:shadow-sm transition-all flex items-center gap-1 leading-none cursor-pointer"
+                            title="Editar Pedido (Número de Acompanhamento, Cliente, Data, Status)"
+                          >
+                            <Edit3 size={13} /> Editar Pedido
+                          </button>
+                        </>
+                      );
+                    })()}
                     <button
                       type="button"
                       onClick={() => handleReplicateGroup(selectedOrderCode)}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl shadow-xs hover:shadow-sm active:scale-95 transition-all flex items-center gap-1 leading-none cursor-pointer"
+                      className="bg-slate-700 hover:bg-slate-800 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl shadow-xs hover:shadow-sm active:scale-95 transition-all flex items-center gap-1 leading-none cursor-pointer"
                       title="Replicar todos os itens deste pedido"
                     >
-                      <Copy size={13} /> Replicar Pedido
+                      <Copy size={13} /> Replicar
                     </button>
                     <button
                       type="button"
@@ -9261,7 +9566,7 @@ function PedidosScreen({
                       className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-rose-550 shadow-xs hover:shadow-sm active:scale-95 transition-all flex items-center gap-1 leading-none cursor-pointer"
                       title="Excluir todos os itens deste pedido"
                     >
-                      <Trash2 size={13} /> Excluir Pedido Completo
+                      <Trash2 size={13} /> Excluir
                     </button>
                   </>
                 )}
@@ -9592,6 +9897,128 @@ function PedidosScreen({
                     </div>
                   );
                 })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Order Group Edit Modal */}
+      {editingOrderGroupCode && (
+        <div className="fixed inset-0 z-[220] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white p-5 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col gap-4 border border-slate-200 animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-black text-slate-800 text-base flex items-center gap-2">
+                ✏️ Editar Pedido #{editingOrderGroupCode}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingOrderGroupCode(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="flex flex-col gap-1">
+                <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                  Número / Código do Pedido (Acompanhamento)
+                </label>
+                <input
+                  type="text"
+                  value={editingGroupOrderCodeInput}
+                  onChange={(e) => setEditingGroupOrderCodeInput(e.target.value)}
+                  className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800"
+                  placeholder="Ex: PED-1002"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                  Cliente
+                </label>
+                <input
+                  type="text"
+                  value={editingGroupCustomerName}
+                  onChange={(e) => setEditingGroupCustomerName(e.target.value)}
+                  className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                  placeholder="Nome do Cliente"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                  Representante
+                </label>
+                <input
+                  type="text"
+                  value={editingGroupRepresentative}
+                  onChange={(e) => setEditingGroupRepresentative(e.target.value)}
+                  className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                  placeholder="Nome do Representante"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                  Data Limite de Entrega
+                </label>
+                <input
+                  type="date"
+                  value={editingGroupDeliveryDate}
+                  onChange={(e) => setEditingGroupDeliveryDate(e.target.value)}
+                  className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1 sm:col-span-2">
+                <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                  Status dos Itens do Pedido
+                </label>
+                <select
+                  value={editingGroupStatus}
+                  onChange={(e) => setEditingGroupStatus(e.target.value)}
+                  className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800 bg-white"
+                >
+                  <option value="AGUARDANDO_APROVACAO">AGUARDANDO APROVAÇÃO</option>
+                  <option value="PENDENTE">PENDENTE (Aprovado)</option>
+                  <option value="EM_PRODUCAO">EM PRODUÇÃO</option>
+                  <option value="PRODUZIDO">PRODUZIDO</option>
+                  <option value="EMBALADO">EMBALADO</option>
+                  <option value="FATURADO">FATURADO</option>
+                  <option value="CANCELADO">CANCELADO</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1 sm:col-span-2">
+                <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
+                  Observações / Notas do Pedido
+                </label>
+                <textarea
+                  value={editingGroupNotes}
+                  onChange={(e) => setEditingGroupNotes(e.target.value)}
+                  rows={2}
+                  className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                  placeholder="Observações do PCP / Gerência..."
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t mt-2">
+              <button
+                type="button"
+                onClick={() => setEditingOrderGroupCode(null)}
+                className="px-4 py-2 border border-slate-300 rounded-xl text-slate-600 font-bold hover:bg-slate-50 transition text-xs cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveOrderGroupEdit}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl shadow-md transition text-xs cursor-pointer"
+              >
+                Salvar Alterações
+              </button>
             </div>
           </div>
         </div>
