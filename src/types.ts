@@ -336,6 +336,8 @@ export interface Customer {
   email?: string;
   phone?: string;
   address?: string;
+  neighborhood?: string;
+  bairro?: string;
   tradeName?: string;
   fiscalType?: "COM_NF" | "SEM_NF" | "MEIA_NOTA";
   defaultPaymentTerms?: string;

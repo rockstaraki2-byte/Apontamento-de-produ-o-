@@ -58,6 +58,7 @@ export function GestaoClientesScreen({
   const [newCustomerTradeName, setNewCustomerTradeName] = useState("");
   const [newCustomerCity, setNewCustomerCity] = useState("");
   const [newCustomerUF, setNewCustomerUF] = useState("");
+  const [newCustomerNeighborhood, setNewCustomerNeighborhood] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [newCustomerEmail, setNewCustomerEmail] = useState("");
   const [newCustomerFiscalType, setNewCustomerFiscalType] = useState<
@@ -98,6 +99,8 @@ export function GestaoClientesScreen({
       name: newCustomerName.trim(),
       tradeName: finalTradeName,
       address,
+      neighborhood: newCustomerNeighborhood.trim(),
+      bairro: newCustomerNeighborhood.trim(),
       phone: newCustomerPhone.trim(),
       email: newCustomerEmail.trim().toLowerCase(),
       fiscalType: newCustomerFiscalType,
@@ -110,6 +113,7 @@ export function GestaoClientesScreen({
     setNewCustomerTradeName("");
     setNewCustomerCity("");
     setNewCustomerUF("");
+    setNewCustomerNeighborhood("");
     setNewCustomerPhone("");
     setNewCustomerEmail("");
     setNewCustomerFiscalType("COM_NF");
@@ -123,6 +127,7 @@ export function GestaoClientesScreen({
   const [inlineEditTradeName, setInlineEditTradeName] = useState("");
   const [inlineEditCity, setInlineEditCity] = useState("");
   const [inlineEditUF, setInlineEditUF] = useState("");
+  const [inlineEditNeighborhood, setInlineEditNeighborhood] = useState("");
   const [inlineEditPhone, setInlineEditPhone] = useState("");
   const [inlineEditEmail, setInlineEditEmail] = useState("");
   const [inlineEditFiscalType, setInlineEditFiscalType] = useState<
@@ -315,6 +320,7 @@ export function GestaoClientesScreen({
 
     setInlineEditCity(city);
     setInlineEditUF(uf);
+    setInlineEditNeighborhood(c.neighborhood || c.bairro || "");
     setInlineEditPhone(c.phone || "");
     setInlineEditEmail(c.email || "");
     setInlineEditFiscalType(c.fiscalType || "COM_NF");
@@ -351,6 +357,8 @@ export function GestaoClientesScreen({
       name: inlineEditName.trim(),
       tradeName: finalTradeName,
       address,
+      neighborhood: inlineEditNeighborhood.trim(),
+      bairro: inlineEditNeighborhood.trim(),
       phone: inlineEditPhone.trim(),
       email: inlineEditEmail.trim().toLowerCase(),
       fiscalType: inlineEditFiscalType,
@@ -713,42 +721,60 @@ export function GestaoClientesScreen({
                           <td className="py-3 px-4">
                             {isEditing ? (
                               <div
-                                className="flex gap-1"
+                                className="flex flex-col gap-1"
                                 onClick={(e) => e.stopPropagation()}
                               >
+                                <div className="flex gap-1">
+                                  <input
+                                    type="text"
+                                    placeholder="Cidade"
+                                    value={inlineEditCity}
+                                    onChange={(e) =>
+                                      setInlineEditCity(e.target.value)
+                                    }
+                                    className="w-2/3 border border-blue-400 rounded px-2 py-1 outline-none text-[11px]"
+                                  />
+                                  <input
+                                    type="text"
+                                    placeholder="UF"
+                                    maxLength={2}
+                                    value={inlineEditUF}
+                                    onChange={(e) =>
+                                      setInlineEditUF(e.target.value)
+                                    }
+                                    className="w-1/3 border border-blue-400 rounded px-1 py-1 text-center uppercase outline-none text-[11px]"
+                                  />
+                                </div>
                                 <input
                                   type="text"
-                                  placeholder="Cidade"
-                                  value={inlineEditCity}
+                                  placeholder="Bairro"
+                                  value={inlineEditNeighborhood}
                                   onChange={(e) =>
-                                    setInlineEditCity(e.target.value)
+                                    setInlineEditNeighborhood(e.target.value)
                                   }
-                                  className="w-2/3 border border-blue-400 rounded px-2 py-1 outline-none text-[11px]"
-                                />
-                                <input
-                                  type="text"
-                                  placeholder="UF"
-                                  maxLength={2}
-                                  value={inlineEditUF}
-                                  onChange={(e) =>
-                                    setInlineEditUF(e.target.value)
-                                  }
-                                  className="w-1/3 border border-blue-400 rounded px-1 py-1 text-center uppercase outline-none text-[11px]"
+                                  className="w-full border border-blue-400 rounded px-2 py-0.5 outline-none text-[10px]"
                                 />
                               </div>
-                            ) : pCity ? (
-                              <span className="flex items-center gap-1.5 text-gray-600">
-                                <MapPin
-                                  size={13}
-                                  className="text-gray-400 shrink-0"
-                                />
-                                <span>{pCity}</span>
-                                {pUF && (
-                                  <span className="bg-blue-50 border border-blue-100 text-[9px] font-bold text-blue-600 px-1.5 py-0.5 rounded-sm">
-                                    {pUF.toUpperCase()}
+                            ) : pCity || c.neighborhood || c.bairro ? (
+                              <div className="flex flex-col gap-0.5">
+                                <span className="flex items-center gap-1.5 text-gray-600">
+                                  <MapPin
+                                    size={13}
+                                    className="text-gray-400 shrink-0"
+                                  />
+                                  <span>{pCity}</span>
+                                  {pUF && (
+                                    <span className="bg-blue-50 border border-blue-100 text-[9px] font-bold text-blue-600 px-1.5 py-0.5 rounded-sm">
+                                      {pUF.toUpperCase()}
+                                    </span>
+                                  )}
+                                </span>
+                                {(c.neighborhood || c.bairro) && (
+                                  <span className="text-[10px] text-gray-500 font-medium pl-4">
+                                    Bairro: {c.neighborhood || c.bairro}
                                   </span>
                                 )}
-                              </span>
+                              </div>
                             ) : (
                               <span className="text-gray-300 italic">
                                 Preenchimento indefinido
@@ -1085,11 +1111,18 @@ export function GestaoClientesScreen({
                           Nome Fantasia: {selectedCustomer.tradeName}
                         </span>
                       )}
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                      <MapPin size={13} className="text-slate-400 shrink-0" />
-                      <span className="truncate">
-                        {selectedCustomer.address || "Sem endereço cadastrado"}
-                      </span>
+                    <div className="flex flex-col gap-0.5 text-xs text-slate-500">
+                      <div className="flex items-center gap-1.5">
+                        <MapPin size={13} className="text-slate-400 shrink-0" />
+                        <span className="truncate">
+                          {selectedCustomer.address || "Sem endereço cadastrado"}
+                        </span>
+                      </div>
+                      {(selectedCustomer.neighborhood || selectedCustomer.bairro) && (
+                        <div className="pl-5 text-[11px] font-semibold text-slate-700">
+                          Bairro: {selectedCustomer.neighborhood || selectedCustomer.bairro}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1354,7 +1387,7 @@ export function GestaoClientesScreen({
                   placeholder="Ex: Moveis Aliança"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-gray-600 mb-1">
                     Cidade
@@ -1378,6 +1411,18 @@ export function GestaoClientesScreen({
                     onChange={(e) => setNewCustomerUF(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                     placeholder="Ex: MG"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">
+                    Bairro
+                  </label>
+                  <input
+                    type="text"
+                    value={newCustomerNeighborhood}
+                    onChange={(e) => setNewCustomerNeighborhood(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    placeholder="Ex: Centro"
                   />
                 </div>
               </div>

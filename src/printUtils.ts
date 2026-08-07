@@ -188,9 +188,50 @@ export function printElementById(elementId: string, docTitle: string = "Document
         break-inside: avoid !important;
       }
       /* Fallback padding for other standard A4 documents that are not pre-paged */
-      #print-container-wrapper > *:not(#batch-printable-sheet-container):not(#acompanhamento-printable-sheet-container) {
+      #print-container-wrapper > *:not(#batch-printable-sheet-container):not(#acompanhamento-printable-sheet-container):not(#print-order-sheet) {
         padding: 12mm !important;
         box-sizing: border-box !important;
+      }
+      #print-order-sheet {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 4mm !important;
+        margin: 0 !important;
+        background: white !important;
+      }
+      .half-sheet-order-card {
+        box-sizing: border-box !important;
+        width: 100% !important;
+        max-height: 138mm !important;
+        padding: 5mm 7mm !important;
+        border: 1px dashed #94a3b8 !important;
+        margin-bottom: 4mm !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        overflow: hidden !important;
+        background: white !important;
+      }
+      .half-sheet-order-card:nth-child(2n) {
+        page-break-after: always !important;
+        break-after: page !important;
+        margin-bottom: 0 !important;
+      }
+      .full-sheet-order-card {
+        box-sizing: border-box !important;
+        width: 100% !important;
+        padding: 10mm 12mm !important;
+        border: 1px solid #cbd5e1 !important;
+        margin-bottom: 8mm !important;
+        page-break-after: always !important;
+        break-after: page !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        background: white !important;
+      }
+      .full-sheet-order-card:last-child {
+        page-break-after: auto !important;
+        break-after: auto !important;
       }
       #print-report-modal {
         display: block !important;

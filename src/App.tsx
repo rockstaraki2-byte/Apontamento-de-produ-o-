@@ -5338,9 +5338,12 @@ function PedidosScreen({
     await db.updateOrders(updatedOrders);
     db.addLogs([
       {
-        message: `Pedido #${orderCode} (${group[0]?.customerName || ""}) foi APROVADO.`,
-        userName: currentUser.name,
-        role: currentUser.role,
+        id: Date.now(),
+        operatorId: currentUser.id || "admin",
+        type: "PRODUCAO",
+        timestamp: Date.now(),
+        durationMillis: 0,
+        processName: `Pedido #${orderCode} (${group[0]?.customerName || ""}) foi APROVADO.`,
       },
     ]);
     setOrderToastMessage(`Pedido #${orderCode} APROVADO com sucesso!`);
@@ -5361,9 +5364,12 @@ function PedidosScreen({
     await db.updateOrders(updatedOrders);
     db.addLogs([
       {
-        message: `Pedido #${orderCode} (${group[0]?.customerName || ""}) foi REPROVADO.`,
-        userName: currentUser.name,
-        role: currentUser.role,
+        id: Date.now(),
+        operatorId: currentUser.id || "admin",
+        type: "PRODUCAO",
+        timestamp: Date.now(),
+        durationMillis: 0,
+        processName: `Pedido #${orderCode} (${group[0]?.customerName || ""}) foi REPROVADO.`,
       },
     ]);
     setOrderToastMessage(`Pedido #${orderCode} REPROVADO.`);
@@ -5610,9 +5616,12 @@ function PedidosScreen({
 
     db.addLogs([
       {
-        message: `Pedido #${editingOrderGroupCode} editado por ${currentUser.name}.${newCode !== editingOrderGroupCode ? ` Código alterado para #${newCode}.` : ""}`,
-        userName: currentUser.name,
-        role: currentUser.role,
+        id: Date.now(),
+        operatorId: currentUser.id || "admin",
+        type: "PRODUCAO",
+        timestamp: Date.now(),
+        durationMillis: 0,
+        processName: `Pedido #${editingOrderGroupCode} editado por ${currentUser.name}.${newCode !== editingOrderGroupCode ? ` Código alterado para #${newCode}.` : ""}`,
       },
     ]);
 
@@ -14334,6 +14343,7 @@ export default function App() {
   }, [db.productionBatches, currentUser, db.sectors]);
 
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [printSheetSize, setPrintSheetSize] = useState<"half" | "full">("half");
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -15080,17 +15090,17 @@ export default function App() {
 
       {orderToPrint &&
         (() => {
-          const allOrdersInGroup = db.orders.filter(
-            (o) =>
-              o.orderCode === orderToPrint.orderCode && o.isActive !== false,
-          );
-          const allOrderIds = allOrdersInGroup.map((o) => o.id);
-          const logs = db.logs.filter(
-            (l) => l.orderId && allOrderIds.includes(l.orderId),
-          );
+          // Resolve array of order codes to print
+          const orderCodesToPrintList: string[] = Array.isArray(orderToPrint)
+            ? orderToPrint.map((o: any) => o.orderCode || String(o))
+            : orderToPrint.isBatch && Array.isArray(orderToPrint.orderCodes)
+            ? orderToPrint.orderCodes
+            : orderToPrint.orderCode
+            ? [orderToPrint.orderCode]
+            : [];
 
           return (
-            <div className="fixed inset-0 bg-black/75 z-[9999] flex items-center justify-center p-4 backdrop-blur-xs text-left text-slate-800">
+            <div className="fixed inset-0 bg-black/75 z-[9999] flex items-center justify-center p-2 sm:p-4 backdrop-blur-xs text-left text-slate-800">
               <style>{`
               @media print {
                 .non-printable {
@@ -15100,90 +15110,157 @@ export default function App() {
                   display: block !important;
                   width: 100% !important;
                   max-width: 100% !important;
-                  min-height: 0 !important;
-                  height: auto !important;
-                  border: none !important;
-                  box-shadow: none !important;
                   padding: 0 !important;
                   margin: 0 !important;
                   background: white !important;
                 }
-                .flex-container-to-block {
-                  display: block !important;
-                }
-                .print-block {
-                  display: block !important;
+                .half-sheet-order-card {
+                  box-sizing: border-box !important;
+                  width: 100% !important;
+                  max-height: 138mm !important;
+                  padding: 5mm 7mm !important;
+                  border: 1px dashed #94a3b8 !important;
+                  margin-bottom: 4mm !important;
                   page-break-inside: avoid !important;
                   break-inside: avoid !important;
-                  margin-bottom: 20px !important;
+                  overflow: hidden !important;
+                  background: white !important;
+                }
+                .half-sheet-order-card:nth-child(2n) {
+                  page-break-after: always !important;
+                  break-after: page !important;
+                  margin-bottom: 0 !important;
+                }
+                .full-sheet-order-card {
+                  box-sizing: border-box !important;
+                  width: 100% !important;
+                  min-height: 270mm !important;
+                  padding: 8mm 10mm !important;
+                  border: 1px solid #cbd5e1 !important;
+                  margin-bottom: 0 !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                  page-break-after: always !important;
+                  break-after: page !important;
+                  background: white !important;
                 }
               }
             `}</style>
 
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col overflow-hidden max-h-[92vh] animate-in zoom-in-95 leading-normal">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden max-h-[92vh] animate-in zoom-in-95 leading-normal">
                 {/* Header (non-printable) */}
-                <div className="bg-slate-900 text-[#00b14f] p-4 flex items-center justify-between border-b border-[#00b14f]/20 non-printable shrink-0">
+                <div className="bg-slate-900 text-[#00b14f] p-3.5 sm:p-4 flex items-center justify-between border-b border-[#00b14f]/20 non-printable shrink-0 flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <Printer size={18} />
-                    <h3 className="font-bold text-xs sm:text-sm text-white">
-                      Espelho do Pedido (PDF / Impressão)
-                    </h3>
+                    <div>
+                      <h3 className="font-extrabold text-xs sm:text-sm text-white leading-tight">
+                        Espelho do Pedido ({printSheetSize === "half" ? "Meia Folha" : "Folha Inteira"})
+                      </h3>
+                      <span className="text-[10px] text-emerald-400 font-mono block">
+                        {orderCodesToPrintList.length === 1
+                          ? `Pedido #${orderCodesToPrintList[0]}`
+                          : `Impressão em Lote: ${orderCodesToPrintList.length} pedido(s)`}
+                      </span>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setOrderToPrint(null)}
-                    className="text-gray-400 hover:text-white transition duration-150 text-base font-bold px-1.5 focus:outline-none"
-                  >
-                    ✕
-                  </button>
+
+                  <div className="flex items-center gap-2">
+                    {/* Size Selector Toggle */}
+                    <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setPrintSheetSize("half")}
+                        className={`px-2.5 py-1 rounded-lg font-extrabold text-[11px] transition cursor-pointer flex items-center gap-1 ${
+                          printSheetSize === "half"
+                            ? "bg-[#00b14f] text-white shadow-xs"
+                            : "text-slate-400 hover:text-white hover:bg-slate-800"
+                        }`}
+                      >
+                        📄 Meia Folha
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPrintSheetSize("full")}
+                        className={`px-2.5 py-1 rounded-lg font-extrabold text-[11px] transition cursor-pointer flex items-center gap-1 ${
+                          printSheetSize === "full"
+                            ? "bg-[#00b14f] text-white shadow-xs"
+                            : "text-slate-400 hover:text-white hover:bg-slate-800"
+                        }`}
+                      >
+                        📑 Folha Inteira
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setOrderToPrint(null)}
+                      className="text-gray-400 hover:text-white transition duration-150 text-base font-bold px-1.5 focus:outline-none cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
 
                 {/* Main Content (Scrollable Container) */}
-                <div className="overflow-y-auto p-6 bg-slate-50 flex-1">
+                <div className="overflow-y-auto p-3 sm:p-5 bg-slate-100 flex-1">
                   {/* Print Sheet Target */}
                   <div
                     id="print-order-sheet"
-                    className="bg-white border rounded-xl shadow-xs p-6 max-w-xl mx-auto flex flex-col font-sans text-slate-800"
+                    className="bg-transparent max-w-2xl mx-auto flex flex-col font-sans text-slate-800 gap-4"
                     style={{ width: "100%", boxSizing: "border-box" }}
                   >
-                    {/* Brand Branding Block */}
-                    <div className="flex items-center justify-between border-b pb-4 border-slate-200 print-block">
-                      <div className="flex items-center gap-2.5">
-                        <div className="bg-slate-950 p-2 rounded-lg border border-[#00b14f]/20 flex items-center justify-center">
-                          <svg
-                            className="w-6 h-6 text-[#00b14f]"
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                          >
-                            <path d="M2 19h20v2H2v-2zm2-2.5h16L18 7l-4 4.5L12 4l-2 7.5L6 7 4 16.5z" />
-                          </svg>
-                        </div>
-                        <div>
-                          <h2 className="text-base font-black text-slate-900 tracking-tight leading-none">
-                            IMPÉRIO JOMARCI
-                          </h2>
-                          <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mt-1">
-                            Acessórios para Móveis e Artefatos de Metal
-                          </span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[8px] bg-[#00b14f]/10 text-[#00b14f] px-2 py-0.5 rounded font-black uppercase tracking-wider inline-block">
-                          Espelho do Pedido
-                        </span>
-                      </div>
-                    </div>
+                    {orderCodesToPrintList.map((codeToPrint) => {
+                      const groupOrders = db.orders.filter(
+                        (o) => o.orderCode === codeToPrint && o.isActive !== false,
+                      );
+                      if (groupOrders.length === 0) return null;
 
-                    {/* Info Blocks Grid (Formatted as clean header summary cards) */}
-                    {(() => {
+                      const firstOrd = groupOrders[0];
+                      const custObj = db.customers.find(
+                        (c) =>
+                          c.name.toLowerCase().trim() ===
+                            firstOrd.customerName?.toLowerCase().trim() ||
+                          (c.tradeName &&
+                            c.tradeName.toLowerCase().trim() ===
+                              firstOrd.customerName?.toLowerCase().trim()),
+                      );
+
+                      const customerCityState = custObj?.address
+                        ? custObj.address
+                        : "Não informada";
+                      const customerNeighborhood =
+                        custObj?.neighborhood || custObj?.bairro || "";
+
+                      const locationFullLabel = [
+                        customerCityState !== "Não informada" ? customerCityState : null,
+                        customerNeighborhood ? `Bairro: ${customerNeighborhood}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" • ") || "Não informada";
+
+                      const fiscalTypeVal =
+                        firstOrd.fiscalType || custObj?.fiscalType || "COM_NF";
+                      let fiscalTypeLabel = "Com Nota Fiscal (COM NF)";
+                      if (fiscalTypeVal === "SEM_NF")
+                        fiscalTypeLabel = "Sem Nota Fiscal (SEM NF)";
+                      if (fiscalTypeVal === "MEIA_NOTA")
+                        fiscalTypeLabel = "Meia Nota Fiscal";
+
+                      const paymentStr =
+                        [firstOrd.paymentCondition, firstOrd.paymentTerms]
+                          .filter(Boolean)
+                          .join(" - ") ||
+                        custObj?.defaultPaymentTerms ||
+                        "À vista / Padrão";
+
                       const linkedBatches = db.productionBatches.filter((b) =>
                         (b.orderIds || []).some(
                           (id) =>
-                            allOrderIds.some(
-                              (oid) =>
-                                Number(id) === Number(oid) ||
-                                String(id) === String(oid),
-                            ) || String(id) === String(orderToPrint.orderCode),
+                            groupOrders.some(
+                              (go) =>
+                                Number(id) === Number(go.id) ||
+                                String(id) === String(go.id),
+                            ) || String(id) === String(codeToPrint),
                         ),
                       );
                       const lotesStr =
@@ -15191,18 +15268,13 @@ export default function App() {
                           ? linkedBatches
                               .map((b) => b.name || b.code || `Lote #${b.id}`)
                               .join(", ")
-                          : "Não vinculado a lote";
+                          : "Não vinculado";
 
-                      const paymentCondStr =
-                        [orderToPrint.paymentCondition, orderToPrint.paymentTerms]
-                          .filter(Boolean)
-                          .join(" - ") || "À vista / Padrão";
-
-                      const totalQtyOrder = allOrdersInGroup.reduce(
+                      const totalQtyOrder = groupOrders.reduce(
                         (sum, o) => sum + (o.totalQuantity || 0),
                         0,
                       );
-                      const totalValOrder = allOrdersInGroup.reduce((sum, o) => {
+                      const totalValOrder = groupOrders.reduce((sum, o) => {
                         const itemInG = db.items.find((i) => i.id === o.itemId);
                         const price =
                           o.unitPrice !== undefined
@@ -15211,297 +15283,408 @@ export default function App() {
                         return sum + (o.totalQuantity || 0) * price;
                       }, 0);
 
+                      const isFull = printSheetSize === "full";
+
                       return (
-                        <>
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 mt-4 print-block">
-                            <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
-                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                        <div
+                          key={codeToPrint}
+                          className={`${
+                            isFull
+                              ? "full-sheet-order-card p-6 sm:p-8 space-y-4"
+                              : "half-sheet-order-card p-3.5 sm:p-4"
+                          } bg-white border border-slate-300 rounded-xl shadow-xs flex flex-col justify-between font-sans text-slate-800`}
+                          style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+                        >
+                          {/* Brand Branding Block */}
+                          <div
+                            className={`flex items-center justify-between border-b ${
+                              isFull ? "pb-4 mb-2" : "pb-2"
+                            } border-slate-200`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div
+                                className={`${
+                                  isFull ? "p-2.5" : "p-1.5"
+                                } bg-slate-950 rounded-lg border border-[#00b14f]/30 flex items-center justify-center`}
+                              >
+                                <svg
+                                  className={`${isFull ? "w-7 h-7" : "w-5 h-5"} text-[#00b14f]`}
+                                  viewBox="0 0 24 24"
+                                  fill="currentColor"
+                                >
+                                  <path d="M2 19h20v2H2v-2zm2-2.5h16L18 7l-4 4.5L12 4l-2 7.5L6 7 4 16.5z" />
+                                </svg>
+                              </div>
+                              <div>
+                                <h2
+                                  className={`${
+                                    isFull ? "text-base sm:text-lg" : "text-xs sm:text-sm"
+                                  } font-black text-slate-900 tracking-tight leading-none uppercase`}
+                                >
+                                  IMPÉRIO JOMARCI
+                                </h2>
+                                <span
+                                  className={`${
+                                    isFull ? "text-[9px]" : "text-[7.5px]"
+                                  } text-gray-500 font-extrabold uppercase tracking-wider block mt-0.5`}
+                                >
+                                  Acessórios para Móveis e Artefatos de Metal
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span
+                                className={`${
+                                  isFull ? "text-[10px] px-3 py-1" : "text-[8px] px-2 py-0.5"
+                                } bg-[#00b14f]/10 text-[#00b14f] border border-[#00b14f]/20 rounded font-black uppercase tracking-wider inline-block`}
+                              >
+                                Pedido de Venda ({isFull ? "Folha Inteira" : "Meia Folha"})
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Info Blocks Grid */}
+                          <div
+                            className={`grid ${
+                              isFull
+                                ? "grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3 text-xs"
+                                : "grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 mt-2 text-[10px]"
+                            }`}
+                          >
+                            <div className="bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
+                              <span
+                                className={`${
+                                  isFull ? "text-[9px]" : "text-[7.5px]"
+                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
+                              >
                                 Nº do Pedido
                               </span>
-                              <span className="text-sm font-black text-[#00b14f] font-mono block">
-                                #{orderToPrint.orderCode}
+                              <span
+                                className={`${
+                                  isFull ? "text-sm" : "text-xs"
+                                } font-black text-[#00b14f] font-mono block`}
+                              >
+                                #{codeToPrint}
                               </span>
                             </div>
 
-                            <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
-                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                            <div className="bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
+                              <span
+                                className={`${
+                                  isFull ? "text-[9px]" : "text-[7.5px]"
+                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
+                              >
                                 Data do Pedido
                               </span>
-                              <span className="text-xs font-bold text-slate-800 block mt-0.5">
-                                {orderToPrint.createdAt
-                                  ? new Date(orderToPrint.createdAt).toLocaleDateString(
-                                      "pt-BR",
-                                    )
+                              <span
+                                className={`${
+                                  isFull ? "text-xs" : "text-[10.5px]"
+                                } font-bold text-slate-800 block mt-0.5`}
+                              >
+                                {firstOrd.createdAt
+                                  ? new Date(firstOrd.createdAt).toLocaleDateString("pt-BR")
                                   : "-"}
                               </span>
                             </div>
 
-                            <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
-                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                            <div className="bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
+                              <span
+                                className={`${
+                                  isFull ? "text-[9px]" : "text-[7.5px]"
+                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
+                              >
                                 Previsão de Entrega
                               </span>
-                              <span className="text-xs font-bold text-rose-600 block mt-0.5 font-mono">
-                                {orderToPrint.deliveryDate
-                                  ? orderToPrint.deliveryDate
-                                      .split("-")
-                                      .reverse()
-                                      .join("/")
+                              <span
+                                className={`${
+                                  isFull ? "text-xs" : "text-[10.5px]"
+                                } font-bold text-rose-600 block mt-0.5 font-mono`}
+                              >
+                                {firstOrd.deliveryDate
+                                  ? firstOrd.deliveryDate.split("-").reverse().join("/")
                                   : "-"}
                               </span>
                             </div>
 
-                            <div className="col-span-2 bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
-                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                            <div className="bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
+                              <span
+                                className={`${
+                                  isFull ? "text-[9px]" : "text-[7.5px]"
+                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
+                              >
+                                Nota Fiscal (NF)
+                              </span>
+                              <span
+                                className={`${
+                                  isFull ? "text-xs" : "text-[10px]"
+                                } font-black text-slate-800 block mt-0.5 truncate`}
+                              >
+                                {fiscalTypeLabel}
+                              </span>
+                            </div>
+
+                            <div className="col-span-2 bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
+                              <span
+                                className={`${
+                                  isFull ? "text-[9px]" : "text-[7.5px]"
+                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
+                              >
                                 Cliente / Razão Social
                               </span>
-                              <span className="text-xs font-black text-slate-900 block mt-0.5">
-                                {orderToPrint.customerName}
+                              <span
+                                className={`${
+                                  isFull ? "text-xs" : "text-[10.5px]"
+                                } font-black text-slate-900 block mt-0.5 truncate`}
+                              >
+                                {firstOrd.customerName}
                               </span>
                             </div>
 
-                            <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
-                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
-                                Representante
+                            <div className="col-span-2 bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
+                              <span
+                                className={`${
+                                  isFull ? "text-[9px]" : "text-[7.5px]"
+                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
+                              >
+                                Cidade / UF / Bairro do Cliente
                               </span>
-                              <span className="text-xs font-bold text-slate-700 block mt-0.5">
-                                {orderToPrint.representativeName || "Venda Direta"}
+                              <span
+                                className={`${
+                                  isFull ? "text-xs" : "text-[10.5px]"
+                                } font-bold text-slate-800 block mt-0.5 truncate`}
+                              >
+                                📍 {locationFullLabel}
                               </span>
                             </div>
 
-                            <div className="col-span-2 bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
-                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                            <div className="col-span-2 bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
+                              <span
+                                className={`${
+                                  isFull ? "text-[9px]" : "text-[7.5px]"
+                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
+                              >
                                 Condição de Pagamento
                               </span>
-                              <span className="text-xs font-black text-indigo-900 block mt-0.5">
-                                {paymentCondStr}
+                              <span
+                                className={`${
+                                  isFull ? "text-xs" : "text-[10.5px]"
+                                } font-black text-indigo-900 block mt-0.5 truncate`}
+                              >
+                                💳 {paymentStr}
                               </span>
                             </div>
 
-                            <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
-                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
-                                Lote de Produção
+                            <div className="bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
+                              <span
+                                className={`${
+                                  isFull ? "text-[9px]" : "text-[7.5px]"
+                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
+                              >
+                                Representante
                               </span>
-                              <span className="text-xs font-extrabold text-emerald-800 block mt-0.5">
+                              <span
+                                className={`${
+                                  isFull ? "text-xs" : "text-[10px]"
+                                } font-bold text-slate-700 block mt-0.5 truncate`}
+                              >
+                                {firstOrd.representativeName || "Venda Direta"}
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
+                              <span
+                                className={`${
+                                  isFull ? "text-[9px]" : "text-[7.5px]"
+                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
+                              >
+                                Lote Produção
+                              </span>
+                              <span
+                                className={`${
+                                  isFull ? "text-xs" : "text-[10px]"
+                                } font-extrabold text-emerald-800 block mt-0.5 truncate`}
+                              >
                                 🏷️ {lotesStr}
                               </span>
                             </div>
                           </div>
 
-                          {/* Tabelado de Itens do Pedido */}
-                          <div className="mt-4 print-block">
-                            <h4 className="text-[9px] font-black uppercase text-slate-400 tracking-wider mb-2">
-                              Itens do Pedido ({allOrdersInGroup.length})
-                            </h4>
+                          {/* Table of Items */}
+                          <div
+                            className={`${
+                              isFull ? "mt-4" : "mt-2"
+                            } overflow-x-auto border border-slate-200 rounded-lg`}
+                          >
+                            <table
+                              className={`w-full text-left border-collapse ${
+                                isFull ? "text-xs" : "text-[10px]"
+                              } font-sans`}
+                            >
+                              <thead>
+                                <tr
+                                  className={`bg-slate-100 text-slate-700 font-black ${
+                                    isFull ? "text-[10px] py-2" : "text-[8px] py-1"
+                                  } uppercase tracking-wider border-b border-slate-200`}
+                                >
+                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"} text-center w-6`}>
+                                    #
+                                  </th>
+                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"}`}>
+                                    Código / Produto
+                                  </th>
+                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1"}`}>Cor</th>
+                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1"}`}>Tam</th>
+                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1"}`}>Var</th>
+                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1"} text-center`}>
+                                    Qtd
+                                  </th>
+                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"} text-right`}>
+                                    Preço Unit.
+                                  </th>
+                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"} text-right`}>
+                                    Subtotal
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200/60">
+                                {groupOrders.map((ordInGroup, index) => {
+                                  const itemInGroup = db.items.find(
+                                    (i) => i.id === ordInGroup.itemId,
+                                  );
+                                  const prodLabel =
+                                    itemInGroup?.name ||
+                                    ordInGroup.customProductName ||
+                                    `Produto #${ordInGroup.itemId}`;
+                                  const prodCode = itemInGroup?.code
+                                    ? `[${itemInGroup.code}] `
+                                    : "";
 
-                            <div className="overflow-x-auto border border-slate-200 rounded-lg">
-                              <table className="w-full text-left border-collapse text-xs font-sans">
-                                <thead>
-                                  <tr className="bg-slate-100 text-slate-700 font-black text-[9px] uppercase tracking-wider border-b border-slate-200">
-                                    <th className="py-2 px-2.5 text-center w-10">Item</th>
-                                    <th className="py-2 px-2.5">Código / Produto</th>
-                                    <th className="py-2 px-2.5">Cor</th>
-                                    <th className="py-2 px-2.5">Tamanho</th>
-                                    <th className="py-2 px-2.5">Variação</th>
-                                    <th className="py-2 px-2.5 text-center">Qtd</th>
-                                    <th className="py-2 px-2.5 text-right">Preço Unit.</th>
-                                    <th className="py-2 px-2.5 text-right">Subtotal</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-200/60">
-                                  {allOrdersInGroup.map((ordInGroup, index) => {
-                                    const itemInGroup = db.items.find(
-                                      (i) => i.id === ordInGroup.itemId,
-                                    );
-                                    const prodLabel =
-                                      itemInGroup?.name ||
-                                      ordInGroup.customProductName ||
-                                      `Produto #${ordInGroup.itemId}`;
-                                    const prodCode = itemInGroup?.code
-                                      ? `[${itemInGroup.code}] `
-                                      : "";
+                                  const price =
+                                    ordInGroup.unitPrice !== undefined
+                                      ? ordInGroup.unitPrice
+                                      : itemInGroup?.unitPrice || itemInGroup?.price || 0;
+                                  const subtotal = (ordInGroup.totalQuantity || 0) * price;
 
-                                    const price =
-                                      ordInGroup.unitPrice !== undefined
-                                        ? ordInGroup.unitPrice
-                                        : itemInGroup?.unitPrice || itemInGroup?.price || 0;
-                                    const subtotal = (ordInGroup.totalQuantity || 0) * price;
-
-                                    return (
-                                      <tr
-                                        key={ordInGroup.id}
-                                        className="even:bg-slate-50/40 text-slate-800 hover:bg-slate-100/50 transition"
+                                  return (
+                                    <tr
+                                      key={ordInGroup.id}
+                                      className="even:bg-slate-50/40 text-slate-800"
+                                    >
+                                      <td
+                                        className={`${
+                                          isFull ? "py-2 px-2" : "py-1 px-1.5"
+                                        } text-center font-bold text-gray-500`}
                                       >
-                                        <td className="py-2 px-2.5 text-center font-bold text-gray-500">
-                                          #{index + 1}
-                                        </td>
-                                        <td className="py-2 px-2.5 font-bold text-slate-900">
-                                          <span className="text-[#00b14f] font-mono font-black">{prodCode}</span>
-                                          {prodLabel}
-                                        </td>
-                                        <td className="py-2 px-2.5 text-slate-600 font-medium">
-                                          {ordInGroup.color || "-"}
-                                        </td>
-                                        <td className="py-2 px-2.5 text-slate-600 font-medium">
-                                          {ordInGroup.size || "-"}
-                                        </td>
-                                        <td className="py-2 px-2.5 text-slate-600 font-medium">
-                                          {ordInGroup.variation || "-"}
-                                        </td>
-                                        <td className="py-2 px-2.5 text-center font-extrabold text-slate-900 font-mono">
-                                          {ordInGroup.totalQuantity || 0} pç
-                                        </td>
-                                        <td className="py-2 px-2.5 text-right font-semibold text-slate-700 font-mono">
-                                          {price.toLocaleString("pt-BR", {
-                                            style: "currency",
-                                            currency: "BRL",
-                                          })}
-                                        </td>
-                                        <td className="py-2 px-2.5 text-right font-black text-slate-900 font-mono">
-                                          {subtotal.toLocaleString("pt-BR", {
-                                            style: "currency",
-                                            currency: "BRL",
-                                          })}
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                                <tfoot>
-                                  <tr className="bg-slate-900 text-white font-extrabold text-xs">
-                                    <td colSpan={5} className="py-2.5 px-3 text-right uppercase tracking-wider text-[10px] text-gray-300">
-                                      Total do Pedido:
-                                    </td>
-                                    <td className="py-2.5 px-2.5 text-center font-mono text-emerald-400 font-black">
-                                      {totalQtyOrder} pçs
-                                    </td>
-                                    <td colSpan={2} className="py-2.5 px-3 text-right font-mono text-emerald-400 font-black text-sm">
-                                      {totalValOrder.toLocaleString("pt-BR", {
-                                        style: "currency",
-                                        currency: "BRL",
-                                      })}
-                                    </td>
-                                  </tr>
-                                </tfoot>
-                              </table>
-                            </div>
+                                        #{index + 1}
+                                      </td>
+                                      <td
+                                        className={`${
+                                          isFull ? "py-2 px-2" : "py-1 px-1.5"
+                                        } font-bold text-slate-900`}
+                                      >
+                                        <span className="text-[#00b14f] font-mono font-black">
+                                          {prodCode}
+                                        </span>
+                                        {prodLabel}
+                                      </td>
+                                      <td
+                                        className={`${
+                                          isFull ? "py-2 px-2" : "py-1 px-1"
+                                        } text-slate-600 font-medium`}
+                                      >
+                                        {ordInGroup.color || "-"}
+                                      </td>
+                                      <td
+                                        className={`${
+                                          isFull ? "py-2 px-2" : "py-1 px-1"
+                                        } text-slate-600 font-medium`}
+                                      >
+                                        {ordInGroup.size || "-"}
+                                      </td>
+                                      <td
+                                        className={`${
+                                          isFull ? "py-2 px-2" : "py-1 px-1"
+                                        } text-slate-600 font-medium`}
+                                      >
+                                        {ordInGroup.variation || "-"}
+                                      </td>
+                                      <td
+                                        className={`${
+                                          isFull ? "py-2 px-2" : "py-1 px-1"
+                                        } text-center font-extrabold text-slate-900 font-mono`}
+                                      >
+                                        {ordInGroup.totalQuantity || 0} pç
+                                      </td>
+                                      <td
+                                        className={`${
+                                          isFull ? "py-2 px-2" : "py-1 px-1.5"
+                                        } text-right font-semibold text-slate-700 font-mono`}
+                                      >
+                                        {price.toLocaleString("pt-BR", {
+                                          style: "currency",
+                                          currency: "BRL",
+                                        })}
+                                      </td>
+                                      <td
+                                        className={`${
+                                          isFull ? "py-2 px-2" : "py-1 px-1.5"
+                                        } text-right font-black text-slate-900 font-mono`}
+                                      >
+                                        {subtotal.toLocaleString("pt-BR", {
+                                          style: "currency",
+                                          currency: "BRL",
+                                        })}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                              <tfoot>
+                                <tr
+                                  className={`bg-slate-900 text-white font-extrabold ${
+                                    isFull ? "text-xs" : "text-[9.5px]"
+                                  }`}
+                                >
+                                  <td
+                                    colSpan={5}
+                                    className="py-2 px-2 text-right uppercase tracking-wider text-[8px] sm:text-[10px] text-gray-300"
+                                  >
+                                    Total do Pedido:
+                                  </td>
+                                  <td className="py-2 px-1 text-center font-mono text-emerald-400 font-black">
+                                    {totalQtyOrder} pçs
+                                  </td>
+                                  <td
+                                    colSpan={2}
+                                    className="py-2 px-2 text-right font-mono text-emerald-400 font-black text-xs sm:text-sm"
+                                  >
+                                    {totalValOrder.toLocaleString("pt-BR", {
+                                      style: "currency",
+                                      currency: "BRL",
+                                    })}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            </table>
                           </div>
-                        </>
+                        </div>
                       );
-                    })()}
+                    })}
                   </div>
                 </div>
 
-                {/* Footer - Interactions & Email Sender (non-printable) */}
-                <div className="bg-gray-50 p-4 border-t flex flex-col gap-3 non-printable shrink-0">
-                  {/* Email inputs */}
-                  <div className="flex flex-col sm:flex-row items-stretch gap-2 bg-white border p-2.5 rounded-xl">
-                    <div className="flex-1 min-w-0">
-                      <span className="text-[8px] text-gray-400 font-bold uppercase tracking-widest block">
-                        Enviar Cópia do Pedido por E-mail
-                      </span>
-                      <input
-                        type="email"
-                        placeholder="E-mail do Cliente (ex: cliente@dominio.com)"
-                        value={emailToCustomerPrint}
-                        onChange={(e) =>
-                          setEmailToCustomerPrint(e.target.value)
-                        }
-                        className="w-full text-xs font-semibold focus:outline-none border-b border-transparent focus:border-[#00b14f] py-1 bg-transparent text-slate-800 placeholder-slate-400 mt-0.5"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={isSendingOrderPrintEmail}
-                      onClick={async () => {
-                        if (
-                          !emailToCustomerPrint ||
-                          !emailToCustomerPrint.includes("@")
-                        ) {
-                          alert("Por favor, digite um e-mail válido.");
-                          return;
-                        }
-                        setIsSendingOrderPrintEmail(true);
-                        try {
-                          const itemsPayload = allOrdersInGroup.map((ord) => {
-                            const itemInGroup = db.items.find(
-                              (i) => i.id === ord.itemId,
-                            );
-                            const prodLabel =
-                              itemInGroup?.name ||
-                              ord.customProductName ||
-                              `Produto #${ord.itemId}`;
-                            return {
-                              productDescription: prodLabel,
-                              color: ord.color || "-",
-                              size: ord.size || "-",
-                              variation: ord.variation || "-",
-                              totalQuantity: ord.totalQuantity || 0,
-                            };
-                          });
-
-                          const textLogs =
-                            logs
-                              .map((l) => {
-                                const opName =
-                                  db.users.find((u) => u.id === l.operatorId)
-                                    ?.name || l.operatorId;
-                                return (
-                                  `[${new Date(l.timestamp).toLocaleDateString("pt-BR")} ${new Date(l.timestamp).toLocaleTimeString("pt-BR")}] ` +
-                                  `${l.type} - Qtd: ${l.quantityCut || l.quantityProcessed || l.quantityPainted || l.quantityPacked || l.quantityInvoiced || 0} • Operador: ${opName}`
-                                );
-                              })
-                              .join("\n") ||
-                            "Nenhum histórico físico registrado.";
-
-                          const response = await fetch(
-                            "/api/send-order-print-email",
-                            {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({
-                                orderCode: orderToPrint.orderCode,
-                                customerName: orderToPrint.customerName,
-                                representativeName:
-                                  orderToPrint.representativeName,
-                                createdAt: orderToPrint.createdAt,
-                                deliveryDate: orderToPrint.deliveryDate,
-                                status: orderToPrint.status,
-                                logsText: textLogs,
-                                recipientEmail: emailToCustomerPrint,
-                                items: itemsPayload,
-                              }),
-                            },
-                          );
-                          const resData = await response.json();
-                          if (response.ok && resData.success) {
-                            alert(
-                              `Sucesso! E-mail com a cópia enviado para ${emailToCustomerPrint} (${resData.mode === "smtp" ? "SMTP Real" : "Log Simulado"})`,
-                            );
-                          } else {
-                            alert(
-                              "Erro ao processar: " +
-                                (resData.error || "Erro desconhecido"),
-                            );
-                          }
-                        } catch (err: any) {
-                          alert("Erro de requisição: " + String(err));
-                        } finally {
-                          setIsSendingOrderPrintEmail(false);
-                        }
-                      }}
-                      className={`bg-slate-900 hover:bg-zinc-800 text-white font-extrabold text-[11px] px-4 py-2 rounded-lg transition whitespace-nowrap self-end select-none ${isSendingOrderPrintEmail ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                    >
-                      {isSendingOrderPrintEmail
-                        ? "Enviando..."
-                        : "✉ Enviar E-mail"}
-                    </button>
-                  </div>
-
-                  <div className="flex justify-end gap-2 shrink-0">
+                {/* Footer controls */}
+                <div className="bg-gray-50 p-3 sm:p-4 border-t flex items-center justify-between non-printable shrink-0 gap-2">
+                  <span className="text-[10px] text-gray-500 font-medium hidden sm:inline">
+                    {printSheetSize === "half"
+                      ? "📄 Layout Otimizado em Meia Folha (2 por folha A4 em lote)"
+                      : "📑 Layout em Folha Inteira A4 (1 por folha com detalhes expandidos)"}
+                  </span>
+                  <div className="flex items-center gap-2 ml-auto">
                     <button
                       type="button"
                       onClick={() => setOrderToPrint(null)}
-                      className="px-4 py-1.5 border rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-100 transition cursor-pointer bg-white"
+                      className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-100 transition cursor-pointer bg-white"
                     >
                       Fechar
                     </button>
@@ -15511,14 +15694,14 @@ export default function App() {
                         import("./printUtils").then(({ printElementById }) => {
                           printElementById(
                             "print-order-sheet",
-                            `Pedido_${orderToPrint.orderCode}`,
+                            `Pedidos_${printSheetSize === "half" ? "MeiaFolha" : "FolhaInteira"}_${orderCodesToPrintList.join("_")}`,
                             true,
                           );
                         });
                       }}
-                      className="px-4 py-1.5 bg-[#00b14f] hover:bg-[#009e46] text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/15"
+                      className="px-4 py-1.5 bg-[#00b14f] hover:bg-[#009e46] text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/15 active:scale-95"
                     >
-                      <Printer size={13} /> Imprimir PDF do Pedido
+                      <Printer size={13} /> Imprimir PDF ({orderCodesToPrintList.length} pedido{orderCodesToPrintList.length > 1 ? "s" : ""})
                     </button>
                   </div>
                 </div>

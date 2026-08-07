@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useDatabase } from "./useDatabase";
 import type { OrderStatus, Order } from "./types";
 import { motion, AnimatePresence } from "motion/react";
-import { X, Trash2, Phone, Copy } from "lucide-react";
+import { X, Trash2, Phone, Copy, Printer } from "lucide-react";
 import { normalizeString } from "./searchUtils";
 
 export function StatusScreen({
@@ -34,6 +34,7 @@ export function StatusScreen({
   const [selectedOrderCode, setSelectedOrderCode] = useState<string | null>(
     null,
   );
+  const [selectedOrderCodesForPrint, setSelectedOrderCodesForPrint] = useState<string[]>([]);
   const [isUpdating, setIsUpdating] = useState<number | null>(null);
 
   const [whatsAppShareData, setWhatsAppShareData] = useState<{
@@ -844,26 +845,105 @@ export function StatusScreen({
             Nenhum pedido condizente com os filtros selecionados.
           </p>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pb-4">
-            {groupedOrders.map(([code, orders]) => (
-              <motion.div
-                layoutId={`card-${code}`}
-                key={code}
-                onClick={() => setSelectedOrderCode(code)}
-                className="order-card-container border border-indigo-150 rounded-xl shadow-sm hover:shadow-md bg-white hover:-translate-y-1 transition-all p-4 cursor-pointer relative group"
-              >
-                <div className="flex justify-between items-start md:items-center">
-                  <div className="flex flex-col">
-                    <h3 className="font-bold text-lg text-gray-800">
-                      Pedido: {code}
-                    </h3>
-                    <span className="text-xs text-gray-500">
-                      Cliente: {orders[0].customerName}
-                    </span>
-                    <span className="text-xs text-indigo-500 font-bold mt-1">
-                      {orders.length} Itens
-                    </span>
-                  </div>
+          <>
+            {/* Batch Selection & Printing Control Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3 bg-slate-100/90 p-2.5 px-3 rounded-xl border border-slate-200/80">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allFilteredCodes = groupedOrders.map(([c]) => c);
+                    if (selectedOrderCodesForPrint.length === allFilteredCodes.length) {
+                      setSelectedOrderCodesForPrint([]);
+                    } else {
+                      setSelectedOrderCodesForPrint(allFilteredCodes);
+                    }
+                  }}
+                  className="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                >
+                  <input
+                    type="checkbox"
+                    checked={
+                      groupedOrders.length > 0 &&
+                      selectedOrderCodesForPrint.length === groupedOrders.length
+                    }
+                    onChange={() => {}}
+                    className="w-3.5 h-3.5 text-emerald-600 rounded cursor-pointer pointer-events-none"
+                  />
+                  {selectedOrderCodesForPrint.length === groupedOrders.length
+                    ? "Desmarcar Todos"
+                    : "Marcar Todos Filtrados"}
+                </button>
+
+                {selectedOrderCodesForPrint.length > 0 && (
+                  <span className="text-xs font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-lg font-mono">
+                    {selectedOrderCodesForPrint.length} selecionado(s)
+                  </span>
+                )}
+              </div>
+
+              {selectedOrderCodesForPrint.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(
+                      new CustomEvent("print-order", {
+                        detail: {
+                          isBatch: true,
+                          orderCodes: selectedOrderCodesForPrint,
+                        },
+                      }),
+                    );
+                  }}
+                  className="px-3.5 py-1.5 bg-[#00b14f] hover:bg-emerald-600 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/20 active:scale-95"
+                >
+                  <Printer size={14} /> Imprimir Selecionados em Meia Folha ({selectedOrderCodesForPrint.length})
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pb-4">
+              {groupedOrders.map(([code, orders]) => (
+                <motion.div
+                  layoutId={`card-${code}`}
+                  key={code}
+                  onClick={() => setSelectedOrderCode(code)}
+                  className="order-card-container border border-indigo-150 rounded-xl shadow-sm hover:shadow-md bg-white hover:-translate-y-1 transition-all p-4 cursor-pointer relative group"
+                >
+                  <div className="flex justify-between items-start md:items-center">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedOrderCodesForPrint.includes(code)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            if (e.target.checked) {
+                              setSelectedOrderCodesForPrint([
+                                ...selectedOrderCodesForPrint,
+                                code,
+                              ]);
+                            } else {
+                              setSelectedOrderCodesForPrint(
+                                selectedOrderCodesForPrint.filter((c) => c !== code),
+                              );
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer"
+                          title="Selecionar para impressão em lote"
+                        />
+                        <h3 className="font-bold text-lg text-gray-800">
+                          Pedido: {code}
+                        </h3>
+                      </div>
+                      <span className="text-xs text-gray-500 mt-0.5">
+                        Cliente: {orders[0].customerName}
+                      </span>
+                      <span className="text-xs text-indigo-500 font-bold mt-1">
+                        {orders.length} Itens
+                      </span>
+                    </div>
 
                   <div className="flex flex-col items-end gap-1.5 font-sans justify-end">
                     {(() => {
@@ -1084,6 +1164,19 @@ export function StatusScreen({
                   )}
                   <button
                     type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.dispatchEvent(
+                        new CustomEvent("print-order", { detail: orders[0] }),
+                      );
+                    }}
+                    className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-[#00b14f] border border-emerald-200/80 font-bold text-[10px] rounded-lg transition active:scale-95 flex items-center gap-1 cursor-pointer"
+                    title="Gerar e imprimir PDF em meia folha"
+                  >
+                    <Printer size={12} /> PDF Meia Folha
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setSelectedOrderCode(code)}
                     className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] rounded-lg transition active:scale-95"
                   >
@@ -1112,6 +1205,7 @@ export function StatusScreen({
               </motion.div>
             ))}
           </div>
+        </>
         )}
       </div>
 
