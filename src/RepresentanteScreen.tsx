@@ -525,62 +525,56 @@ export function RepresentanteScreen({
         Painel do Representante
       </h2>
 
-      {/* Sales Representative Order Query Filters Dashboard */}
+      {/* Compact Sales Representative Order Query Filters Dashboard */}
       <div
         className="bg-slate-50 border border-slate-200 rounded-lg p-2 mb-2 shrink-0 flex flex-col transition-all duration-200"
         id="rep-filters-box-container"
       >
         <div
-          className="flex justify-between items-center cursor-pointer select-none pb-0.5"
+          className="flex justify-between items-center cursor-pointer select-none"
           onClick={() => setIsFiltersMinimized(!isFiltersMinimized)}
           id="rep-filters-box-toggle-header"
         >
-          <span className="text-[11px] font-bold text-slate-705 uppercase tracking-wide flex items-center gap-1 font-sans">
+          <span className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wide flex items-center gap-1 font-sans">
             🔎{" "}
             {isFiltersMinimized
-              ? "Pesquisa e Filtros (Minimizado - clique para abrir)"
-              : "Pesquisa e Filtros do Representante"}
+              ? "Filtros (Minimizado - clique para abrir)"
+              : "Filtros de Pedidos"}
           </span>
           <button
             type="button"
-            className="text-[11px] text-blue-600 hover:text-blue-800 font-bold transition cursor-pointer"
+            className="text-[10px] text-blue-600 hover:text-blue-800 font-bold transition cursor-pointer"
             id="rep-filters-box-toggle-btn"
           >
-            {isFiltersMinimized ? "Maximizar ➕" : "Minimizar ➖"}
+            {isFiltersMinimized ? "Expandir ➕" : "Recolher ➖"}
           </button>
         </div>
 
         {!isFiltersMinimized && (
           <div
-            className="flex flex-col gap-2 pt-2 border-t border-slate-200/70 mt-1.5"
+            className="flex flex-col gap-1.5 pt-1.5 border-t border-slate-200 mt-1"
             id="expanded-rep-filters-guts"
           >
-            <div className="flex flex-col md:flex-row gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5">
               {/* Main search text */}
-              <div className="flex-1">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
-                  🔎 Pesquisa Geral
-                </label>
+              <div className="md:col-span-2">
                 <input
                   type="text"
-                  placeholder="Pesquisar por cliente, pedido ou produto..."
+                  placeholder="🔎 Pesquisar cliente, pedido ou produto..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full border border-gray-300 p-1.5 text-xs rounded focus:ring-2 focus:ring-blue-500 bg-white outline-none"
+                  className="w-full border border-gray-300 px-2 py-1 text-xs rounded focus:ring-1 focus:ring-blue-500 bg-white outline-none h-8 font-medium placeholder:text-slate-400"
                 />
               </div>
 
               {/* Status Filter */}
-              <div className="w-full md:w-[180px]">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
-                  🏷️ Status do Pedido
-                </label>
+              <div>
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full border border-gray-300 p-1.5 text-xs rounded focus:ring-2 focus:ring-blue-500 bg-white outline-none font-medium text-slate-700"
+                  className="w-full border border-gray-300 px-2 py-1 text-xs rounded focus:ring-1 focus:ring-blue-500 bg-white outline-none font-medium text-slate-700 h-8"
                 >
-                  <option value="">Todos os Status</option>
+                  <option value="">🏷️ Todos os Status</option>
                   <option value="AGUARDANDO_APROVACAO">
                     Aguardando Aprovação
                   </option>
@@ -601,56 +595,60 @@ export function RepresentanteScreen({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1.5 border-t border-slate-200">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 pt-1 border-t border-slate-150">
               {/* Emission Date Start */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
-                  📅 Emissão De
-                </label>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-bold text-slate-500 uppercase shrink-0">
+                  Emissão:
+                </span>
                 <input
                   type="date"
                   value={emissionDateStart}
                   onChange={(e) => setEmissionDateStart(e.target.value)}
-                  className="w-full border border-gray-300 p-1 text-[11px] rounded focus:ring-2 focus:ring-blue-500 bg-white outline-none text-slate-700 font-medium"
+                  className="w-full border border-gray-300 px-1 py-0.5 text-[11px] rounded focus:ring-1 focus:ring-blue-500 bg-white outline-none text-slate-700 font-medium h-7"
+                  title="Emissão De"
                 />
               </div>
 
               {/* Emission Date End */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
-                  📅 Emissão Até
-                </label>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-bold text-slate-500 uppercase shrink-0">
+                  até
+                </span>
                 <input
                   type="date"
                   value={emissionDateEnd}
                   onChange={(e) => setEmissionDateEnd(e.target.value)}
-                  className="w-full border border-gray-300 p-1 text-[11px] rounded focus:ring-2 focus:ring-blue-500 bg-white outline-none text-slate-700 font-medium"
+                  className="w-full border border-gray-300 px-1 py-0.5 text-[11px] rounded focus:ring-1 focus:ring-blue-500 bg-white outline-none text-slate-700 font-medium h-7"
+                  title="Emissão Até"
                 />
               </div>
 
               {/* Delivery Date Start */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
-                  🚚 Entrega De
-                </label>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-bold text-slate-500 uppercase shrink-0">
+                  Entrega:
+                </span>
                 <input
                   type="date"
                   value={deliveryDateStart}
                   onChange={(e) => setDeliveryDateStart(e.target.value)}
-                  className="w-full border border-gray-300 p-1 text-[11px] rounded focus:ring-2 focus:ring-blue-500 bg-white outline-none text-slate-700 font-medium"
+                  className="w-full border border-gray-300 px-1 py-0.5 text-[11px] rounded focus:ring-1 focus:ring-blue-500 bg-white outline-none text-slate-700 font-medium h-7"
+                  title="Entrega De"
                 />
               </div>
 
               {/* Delivery Date End */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
-                  🚚 Entrega Até
-                </label>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-bold text-slate-500 uppercase shrink-0">
+                  até
+                </span>
                 <input
                   type="date"
                   value={deliveryDateEnd}
                   onChange={(e) => setDeliveryDateEnd(e.target.value)}
-                  className="w-full border border-gray-300 p-1 text-[11px] rounded focus:ring-2 focus:ring-blue-500 bg-white outline-none text-slate-700 font-medium"
+                  className="w-full border border-gray-300 px-1 py-0.5 text-[11px] rounded focus:ring-1 focus:ring-blue-500 bg-white outline-none text-slate-700 font-medium h-7"
+                  title="Entrega Até"
                 />
               </div>
             </div>
@@ -661,23 +659,22 @@ export function RepresentanteScreen({
               emissionDateEnd ||
               deliveryDateStart ||
               deliveryDateEnd) && (
-              <div className="flex justify-between items-center bg-blue-50 border border-blue-100 rounded p-2 text-xs text-blue-800">
-                <span>
+              <div className="flex justify-between items-center bg-blue-50 border border-blue-100 rounded px-2 py-0.5 text-[10px] text-blue-800">
+                <span className="truncate">
                   Filtros ativos:{" "}
                   <strong>
                     {[
-                      searchTerm && "Pesquisa por texto",
+                      searchTerm && "Texto",
                       statusFilter && `Status: ${statusFilter}`,
-                      (emissionDateStart || emissionDateEnd) &&
-                        "Intervalo de Emissão",
-                      (deliveryDateStart || deliveryDateEnd) &&
-                        "Intervalo de Entrega",
+                      (emissionDateStart || emissionDateEnd) && "Emissão",
+                      (deliveryDateStart || deliveryDateEnd) && "Entrega",
                     ]
                       .filter(Boolean)
                       .join(", ")}
                   </strong>
                 </span>
                 <button
+                  type="button"
                   onClick={() => {
                     setSearchTerm("");
                     setStatusFilter("");
@@ -686,9 +683,9 @@ export function RepresentanteScreen({
                     setDeliveryDateStart("");
                     setDeliveryDateEnd("");
                   }}
-                  className="bg-blue-100 hover:bg-blue-200 text-blue-800 font-bold px-2.5 py-1 rounded transition"
+                  className="bg-blue-100 hover:bg-blue-200 text-blue-900 font-extrabold px-1.5 py-0.5 rounded transition shrink-0 ml-2"
                 >
-                  Limpar Filtros
+                  Limpar
                 </button>
               </div>
             )}

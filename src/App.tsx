@@ -15174,219 +15174,220 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Info Blocks Grid (Formatted as block-style cards) */}
-                    <div className="grid grid-cols-2 gap-3 mt-4 print-block">
-                      <div className="bg-slate-50 border border-slate-200/60 p-3 rounded-lg">
-                        <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
-                          Nº de Controle
-                        </span>
-                        <span className="text-sm font-black text-[#00b14f] font-mono block">
-                          #{orderToPrint.orderCode}
-                        </span>
-                      </div>
-                      <div className="bg-slate-50 border border-slate-200/60 p-3 rounded-lg">
-                        <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
-                          Status do Processo
-                        </span>
-                        <span className="text-xs font-black text-slate-850 block uppercase mt-0.5">
-                          {orderToPrint.status || "PENDENTE"}
-                        </span>
-                      </div>
+                    {/* Info Blocks Grid (Formatted as clean header summary cards) */}
+                    {(() => {
+                      const linkedBatches = db.productionBatches.filter((b) =>
+                        (b.orderIds || []).some(
+                          (id) =>
+                            allOrderIds.some(
+                              (oid) =>
+                                Number(id) === Number(oid) ||
+                                String(id) === String(oid),
+                            ) || String(id) === String(orderToPrint.orderCode),
+                        ),
+                      );
+                      const lotesStr =
+                        linkedBatches.length > 0
+                          ? linkedBatches
+                              .map((b) => b.name || b.code || `Lote #${b.id}`)
+                              .join(", ")
+                          : "Não vinculado a lote";
 
-                      <div className="col-span-2 bg-slate-50 border border-slate-200/60 p-3 rounded-lg">
-                        <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
-                          Razão Social / Cliente
-                        </span>
-                        <span className="text-xs font-black text-slate-800 block mt-0.5">
-                          {orderToPrint.customerName}
-                        </span>
-                      </div>
+                      const paymentCondStr =
+                        [orderToPrint.paymentCondition, orderToPrint.paymentTerms]
+                          .filter(Boolean)
+                          .join(" - ") || "À vista / Padrão";
 
-                      <div className="bg-slate-50 border border-slate-200/60 p-3 rounded-lg">
-                        <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
-                          Representante Carteira
-                        </span>
-                        <span className="text-xs font-bold text-slate-705 block mt-0.5">
-                          {orderToPrint.representativeName || "Venda Direta"}
-                        </span>
-                      </div>
-                      <div className="bg-slate-50 border border-slate-200/60 p-3 rounded-lg">
-                        <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
-                          Previsão Prometida
-                        </span>
-                        <span className="text-xs font-bold text-rose-600 block mt-0.5 font-mono">
-                          {orderToPrint.deliveryDate
-                            ? orderToPrint.deliveryDate
-                                .split("-")
-                                .reverse()
-                                .join("/")
-                            : "-"}
-                        </span>
-                      </div>
-                    </div>
+                      const totalQtyOrder = allOrdersInGroup.reduce(
+                        (sum, o) => sum + (o.totalQuantity || 0),
+                        0,
+                      );
+                      const totalValOrder = allOrdersInGroup.reduce((sum, o) => {
+                        const itemInG = db.items.find((i) => i.id === o.itemId);
+                        const price =
+                          o.unitPrice !== undefined
+                            ? o.unitPrice
+                            : itemInG?.unitPrice || itemInG?.price || 0;
+                        return sum + (o.totalQuantity || 0) * price;
+                      }, 0);
 
-                    {/* Product Specification Section - Lists all items in the order group */}
-                    <div className="mt-4 space-y-4 flex-container-to-block">
-                      <h4 className="text-[9px] font-black uppercase text-slate-400 tracking-wider">
-                        Itens do Pedido ({allOrdersInGroup.length})
-                      </h4>
-
-                      {allOrdersInGroup.map((ordInGroup, index) => {
-                        const itemInGroup = db.items.find(
-                          (i) => i.id === ordInGroup.itemId,
-                        );
-                        const prodLabel =
-                          itemInGroup?.name ||
-                          ordInGroup.customProductName ||
-                          `Produto #${ordInGroup.itemId}`;
-
-                        return (
-                          <div
-                            key={ordInGroup.id}
-                            className="border border-emerald-500/10 bg-emerald-50/15 p-3.5 rounded-lg print-block"
-                          >
-                            <span className="text-[8px] text-emerald-800 font-black uppercase tracking-wider block">
-                              Item #{index + 1} - Produto & Atributos
-                            </span>
-                            <span className="text-xs font-black text-slate-900 block mt-0.5">
-                              {prodLabel}
-                            </span>
-
-                            <div className="grid grid-cols-4 gap-2 mt-2.5 pt-2 border-t border-emerald-500/10 text-[10px] text-slate-705">
-                              <div>
-                                <span className="text-[8px] text-gray-450 block">
-                                  Cor:
-                                </span>
-                                <strong className="block truncate">
-                                  {ordInGroup.color || "-"}
-                                </strong>
-                              </div>
-                              <div>
-                                <span className="text-[8px] text-gray-450 block">
-                                  Tamanho:
-                                </span>
-                                <strong className="block truncate">
-                                  {ordInGroup.size || "-"}
-                                </strong>
-                              </div>
-                              <div>
-                                <span className="text-[8px] text-gray-450 block">
-                                  Variação:
-                                </span>
-                                <strong className="block truncate">
-                                  {ordInGroup.variation || "-"}
-                                </strong>
-                              </div>
-                              <div className="bg-white/80 p-1.5 rounded border border-emerald-150 text-center">
-                                <span className="text-[7px] text-[#00b14f] font-black block leading-none uppercase">
-                                  Meta Lote
-                                </span>
-                                <strong className="text-xs font-black text-[#00b14f] mt-0.5 block leading-none">
-                                  {ordInGroup.totalQuantity} pç
-                                </strong>
-                              </div>
+                      return (
+                        <>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 mt-4 print-block">
+                            <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
+                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                                Nº do Pedido
+                              </span>
+                              <span className="text-sm font-black text-[#00b14f] font-mono block">
+                                #{orderToPrint.orderCode}
+                              </span>
                             </div>
 
-                            {/* Progressive phases summary for this specific item */}
-                            <div className="mt-3 bg-white/70 border border-slate-200/50 rounded-lg p-2 bg-slate-50/30">
-                              <span className="text-[7px] text-gray-400 font-bold uppercase tracking-wider block mb-1">
-                                Resumo de Estágios Processados
+                            <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
+                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                                Data do Pedido
                               </span>
-                              <div className="grid grid-cols-5 gap-1 text-center text-[8px]">
-                                <div className="bg-white border rounded py-0.5">
-                                  <span className="text-gray-450 block text-[6px] uppercase">
-                                    Cortado
-                                  </span>
-                                  <strong className="font-mono text-slate-700">
-                                    {ordInGroup.cutQuantity || 0}
-                                  </strong>
-                                </div>
-                                <div className="bg-white border rounded py-0.5">
-                                  <span className="text-gray-450 block text-[6px] uppercase">
-                                    Soldado
-                                  </span>
-                                  <strong className="font-mono text-slate-700">
-                                    {ordInGroup.producedQuantity || 0}
-                                  </strong>
-                                </div>
-                                <div className="bg-white border rounded py-0.5">
-                                  <span className="text-gray-450 block text-[6px] uppercase">
-                                    Pintado
-                                  </span>
-                                  <strong className="font-mono text-slate-700">
-                                    {ordInGroup.paintedQuantity || 0}
-                                  </strong>
-                                </div>
-                                <div className="bg-white border rounded py-0.5 bg-green-50/10">
-                                  <span className="text-green-700 block text-[6px] uppercase">
-                                    Embalado
-                                  </span>
-                                  <strong className="font-mono text-green-705">
-                                    {ordInGroup.packedQuantity || 0}
-                                  </strong>
-                                </div>
-                                <div className="bg-white border rounded py-0.5 bg-purple-50/10">
-                                  <span className="text-purple-700 block text-[6px] uppercase">
-                                    Faturado
-                                  </span>
-                                  <strong className="font-mono text-purple-755">
-                                    {ordInGroup.invoicedQuantity || 0}
-                                  </strong>
-                                </div>
-                              </div>
+                              <span className="text-xs font-bold text-slate-800 block mt-0.5">
+                                {orderToPrint.createdAt
+                                  ? new Date(orderToPrint.createdAt).toLocaleDateString(
+                                      "pt-BR",
+                                    )
+                                  : "-"}
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
+                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                                Previsão de Entrega
+                              </span>
+                              <span className="text-xs font-bold text-rose-600 block mt-0.5 font-mono">
+                                {orderToPrint.deliveryDate
+                                  ? orderToPrint.deliveryDate
+                                      .split("-")
+                                      .reverse()
+                                      .join("/")
+                                  : "-"}
+                              </span>
+                            </div>
+
+                            <div className="col-span-2 bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
+                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                                Cliente / Razão Social
+                              </span>
+                              <span className="text-xs font-black text-slate-900 block mt-0.5">
+                                {orderToPrint.customerName}
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
+                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                                Representante
+                              </span>
+                              <span className="text-xs font-bold text-slate-700 block mt-0.5">
+                                {orderToPrint.representativeName || "Venda Direta"}
+                              </span>
+                            </div>
+
+                            <div className="col-span-2 bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
+                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                                Condição de Pagamento
+                              </span>
+                              <span className="text-xs font-black text-indigo-900 block mt-0.5">
+                                {paymentCondStr}
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-lg">
+                              <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                                Lote de Produção
+                              </span>
+                              <span className="text-xs font-extrabold text-emerald-800 block mt-0.5">
+                                🏷️ {lotesStr}
+                              </span>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
 
-                    {/* Rastreabilidade logs */}
-                    <div className="mt-4 border border-slate-200 p-3.5 rounded-lg bg-white print-block">
-                      <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block border-b pb-1.5 border-slate-100">
-                        Rastreabilidade de PCP (Etapas Combinadas)
-                      </span>
-                      {logs.length === 0 ? (
-                        <p className="text-[10px] text-gray-400 italic mt-2 text-center pb-1">
-                          Nenhuma etapa física registrada para esses lotes.
-                        </p>
-                      ) : (
-                        <div className="mt-2 space-y-2 max-h-48 overflow-auto">
-                          {logs.slice(0, 15).map((log) => {
-                            const op =
-                              db.users.find((u) => u.id === log.operatorId)
-                                ?.name || log.operatorId;
-                            let act = "";
-                            if (log.type === "CORTE_LASER")
-                              act = `Corte de ${log.quantityCut || 0} pçs`;
-                            if (log.type === "PRODUCAO")
-                              act = `Solda/Processo de ${log.quantityProcessed || 0} pçs`;
-                            if (log.type === "PINTURA")
-                              act = `Pintura de ${log.quantityPainted || 0} pçs`;
-                            if (log.type === "EMBALAGEM")
-                              act = `Embalagem de ${log.quantityPacked || 0} pçs`;
-                            if (log.type === "FATURAMENTO")
-                              act = `Faturamento de ${log.quantityInvoiced || 0} pçs`;
+                          {/* Tabelado de Itens do Pedido */}
+                          <div className="mt-4 print-block">
+                            <h4 className="text-[9px] font-black uppercase text-slate-400 tracking-wider mb-2">
+                              Itens do Pedido ({allOrdersInGroup.length})
+                            </h4>
 
-                            return (
-                              <div
-                                key={log.id}
-                                className="text-[9px] border-l-2 border-[#00b14f] pl-2 py-0.5"
-                              >
-                                <span className="text-slate-705 font-bold">
-                                  {act}
-                                </span>
-                                <div className="text-[8px] text-gray-400">
-                                  {new Date(log.timestamp).toLocaleString(
-                                    "pt-BR",
-                                  )}{" "}
-                                  • Op: {op}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
+                            <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                              <table className="w-full text-left border-collapse text-xs font-sans">
+                                <thead>
+                                  <tr className="bg-slate-100 text-slate-700 font-black text-[9px] uppercase tracking-wider border-b border-slate-200">
+                                    <th className="py-2 px-2.5 text-center w-10">Item</th>
+                                    <th className="py-2 px-2.5">Código / Produto</th>
+                                    <th className="py-2 px-2.5">Cor</th>
+                                    <th className="py-2 px-2.5">Tamanho</th>
+                                    <th className="py-2 px-2.5">Variação</th>
+                                    <th className="py-2 px-2.5 text-center">Qtd</th>
+                                    <th className="py-2 px-2.5 text-right">Preço Unit.</th>
+                                    <th className="py-2 px-2.5 text-right">Subtotal</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200/60">
+                                  {allOrdersInGroup.map((ordInGroup, index) => {
+                                    const itemInGroup = db.items.find(
+                                      (i) => i.id === ordInGroup.itemId,
+                                    );
+                                    const prodLabel =
+                                      itemInGroup?.name ||
+                                      ordInGroup.customProductName ||
+                                      `Produto #${ordInGroup.itemId}`;
+                                    const prodCode = itemInGroup?.code
+                                      ? `[${itemInGroup.code}] `
+                                      : "";
+
+                                    const price =
+                                      ordInGroup.unitPrice !== undefined
+                                        ? ordInGroup.unitPrice
+                                        : itemInGroup?.unitPrice || itemInGroup?.price || 0;
+                                    const subtotal = (ordInGroup.totalQuantity || 0) * price;
+
+                                    return (
+                                      <tr
+                                        key={ordInGroup.id}
+                                        className="even:bg-slate-50/40 text-slate-800 hover:bg-slate-100/50 transition"
+                                      >
+                                        <td className="py-2 px-2.5 text-center font-bold text-gray-500">
+                                          #{index + 1}
+                                        </td>
+                                        <td className="py-2 px-2.5 font-bold text-slate-900">
+                                          <span className="text-[#00b14f] font-mono font-black">{prodCode}</span>
+                                          {prodLabel}
+                                        </td>
+                                        <td className="py-2 px-2.5 text-slate-600 font-medium">
+                                          {ordInGroup.color || "-"}
+                                        </td>
+                                        <td className="py-2 px-2.5 text-slate-600 font-medium">
+                                          {ordInGroup.size || "-"}
+                                        </td>
+                                        <td className="py-2 px-2.5 text-slate-600 font-medium">
+                                          {ordInGroup.variation || "-"}
+                                        </td>
+                                        <td className="py-2 px-2.5 text-center font-extrabold text-slate-900 font-mono">
+                                          {ordInGroup.totalQuantity || 0} pç
+                                        </td>
+                                        <td className="py-2 px-2.5 text-right font-semibold text-slate-700 font-mono">
+                                          {price.toLocaleString("pt-BR", {
+                                            style: "currency",
+                                            currency: "BRL",
+                                          })}
+                                        </td>
+                                        <td className="py-2 px-2.5 text-right font-black text-slate-900 font-mono">
+                                          {subtotal.toLocaleString("pt-BR", {
+                                            style: "currency",
+                                            currency: "BRL",
+                                          })}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                                <tfoot>
+                                  <tr className="bg-slate-900 text-white font-extrabold text-xs">
+                                    <td colSpan={5} className="py-2.5 px-3 text-right uppercase tracking-wider text-[10px] text-gray-300">
+                                      Total do Pedido:
+                                    </td>
+                                    <td className="py-2.5 px-2.5 text-center font-mono text-emerald-400 font-black">
+                                      {totalQtyOrder} pçs
+                                    </td>
+                                    <td colSpan={2} className="py-2.5 px-3 text-right font-mono text-emerald-400 font-black text-sm">
+                                      {totalValOrder.toLocaleString("pt-BR", {
+                                        style: "currency",
+                                        currency: "BRL",
+                                      })}
+                                    </td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 

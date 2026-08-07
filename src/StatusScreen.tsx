@@ -49,6 +49,10 @@ export function StatusScreen({
     code: string;
     orders: Order[];
   } | null>(null);
+
+  const isRepresentative =
+    currentUser?.role === "REPRESENTANTE" ||
+    String(currentUser?.role).toUpperCase() === "REPRESENTANTE";
   const [selectedBatchToLink, setSelectedBatchToLink] = useState<string>("");
   const [newBatchNameInput, setNewBatchNameInput] = useState<string>("");
 
@@ -1031,6 +1035,20 @@ export function StatusScreen({
                         )
                       );
 
+                      if (isRepresentative) {
+                        if (linkedBatches.length > 0) {
+                          return (
+                            <span
+                              className="px-2.5 py-1.5 bg-indigo-50 text-indigo-900 border border-indigo-200 font-extrabold text-[10px] rounded-lg flex items-center gap-1 select-none"
+                              title="Lote vinculado ao pedido"
+                            >
+                              🏷️ Lote: {linkedBatches.map((b) => b.code || b.name).join(", ")}
+                            </span>
+                          );
+                        }
+                        return null;
+                      }
+
                       if (linkedBatches.length > 0) {
                         return (
                           <button
@@ -1472,7 +1490,7 @@ _Mensagem do Sistema Império Jomarci_`;
       })()}
 
       {/* MODAL VINCULAR PEDIDO A LOTE */}
-      {linkModalOrderGroup && (() => {
+      {linkModalOrderGroup && !isRepresentative && (() => {
         const orderItemIds = linkModalOrderGroup.orders.map((o) => o.id);
         const currentLinked = db.productionBatches.filter((b) =>
           (b.orderIds || []).some((id) => orderItemIds.includes(id))
