@@ -33,6 +33,7 @@ export function StatusScreen({
   const [deliveryDateEnd, setDeliveryDateEnd] = useState<string>("");
   const [orderRangeStart, setOrderRangeStart] = useState<string>("");
   const [orderRangeEnd, setOrderRangeEnd] = useState<string>("");
+  const [filterByRangeActive, setFilterByRangeActive] = useState<boolean>(false);
   const [selectedOrderCode, setSelectedOrderCode] = useState<string | null>(
     null,
   );
@@ -67,7 +68,7 @@ export function StatusScreen({
 
   const handleSelectRangeForPrint = () => {
     if (!orderRangeStart.trim() && !orderRangeEnd.trim()) {
-      alert("Por favor, informe o número do pedido inicial ou final para marcar a faixa.");
+      alert("Por favor, informe o número do pedido inicial e/ou final para marcar a faixa.");
       return;
     }
 
@@ -76,7 +77,7 @@ export function StatusScreen({
 
     const allCodesMap = new Map<string, Order[]>();
     db.orders.forEach((o) => {
-      if (o.orderCode) {
+      if (o.orderCode && o.isActive !== false) {
         if (!allCodesMap.has(o.orderCode)) allCodesMap.set(o.orderCode, []);
         allCodesMap.get(o.orderCode)!.push(o);
       }
@@ -107,7 +108,7 @@ export function StatusScreen({
 
     const merged = Array.from(new Set([...selectedOrderCodesForPrint, ...matchingCodes]));
     setSelectedOrderCodesForPrint(merged);
-    alert(`${matchingCodes.length} pedido(s) da faixa foram selecionados para impressão!`);
+    alert(`🎯 ${matchingCodes.length} pedido(s) da faixa foram marcados para impressão!`);
   };
 
   const [confirmInvoiceData, setConfirmInvoiceData] = useState<{
@@ -445,8 +446,8 @@ export function StatusScreen({
         }
       }
 
-      // 3.6 Order Code Range Filter
-      if (orderRangeStart.trim() || orderRangeEnd.trim()) {
+      // 3.6 Order Code Range Filter (ONLY active if filterByRangeActive is true)
+      if (filterByRangeActive && (orderRangeStart.trim() || orderRangeEnd.trim())) {
         const startNum = extractOrderNum(orderRangeStart);
         const endNum = extractOrderNum(orderRangeEnd);
         const orderNum = extractOrderNum(o.orderCode);
@@ -503,7 +504,7 @@ export function StatusScreen({
     return Array.from(map.entries()).sort(
       (a, b) => b[1][0].createdAt - a[1][0].createdAt,
     );
-  }, [db.orders, debouncedSearchTerm, deliveryFilter, selectedStatuses, selectedBatchFilter, db.productionBatches, deliveryDateStart, deliveryDateEnd, orderRangeStart, orderRangeEnd]);
+  }, [db.orders, debouncedSearchTerm, deliveryFilter, selectedStatuses, selectedBatchFilter, db.productionBatches, deliveryDateStart, deliveryDateEnd, orderRangeStart, orderRangeEnd, filterByRangeActive]);
 
   const handleStatusChange = (orderId: number, newStatus: OrderStatus) => {
     setIsUpdating(orderId);
@@ -914,12 +915,12 @@ export function StatusScreen({
       </div>
 
       {/* Order Code Range Selection Box */}
-      <div className="mb-4 bg-emerald-50/80 p-3 rounded-xl border border-emerald-200/90 shadow-2xs">
+      <div className="mb-4 bg-emerald-50/90 p-3.5 rounded-xl border border-emerald-200 shadow-2xs">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5 text-emerald-950 font-extrabold text-xs">
               <span className="text-sm">🖨️</span>
-              <span className="uppercase tracking-wider font-mono">Intervalo de Pedidos para Impressão:</span>
+              <span className="uppercase tracking-wider font-mono">Seleção / Faixa de Pedidos:</span>
             </div>
             <div className="flex items-center gap-1.5">
               <input
@@ -944,8 +945,23 @@ export function StatusScreen({
               onClick={handleSelectRangeForPrint}
               className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-xs rounded-lg transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
             >
-              <span>🎯</span> Marcar Faixa para Impressão
+              <span>🎯</span> Marcar Faixa p/ Impressão
             </button>
+
+            {(orderRangeStart || orderRangeEnd) && (
+              <button
+                type="button"
+                onClick={() => setFilterByRangeActive(!filterByRangeActive)}
+                className={`px-3 py-1.5 font-bold text-xs rounded-lg border transition flex items-center gap-1.5 cursor-pointer shadow-3xs ${
+                  filterByRangeActive
+                    ? "bg-blue-600 text-white border-blue-700 shadow-xs"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                }`}
+                title="Ativar para filtrar os cartões visíveis na tela apenas pela faixa de código"
+              >
+                <span>🔍</span> {filterByRangeActive ? "Filtrando Lista p/ Faixa (Ativo)" : "Filtrar Lista na Tela"}
+              </button>
+            )}
 
             {(orderRangeStart || orderRangeEnd) && (
               <button
@@ -953,17 +969,18 @@ export function StatusScreen({
                 onClick={() => {
                   setOrderRangeStart("");
                   setOrderRangeEnd("");
+                  setFilterByRangeActive(false);
                 }}
                 className="px-2 py-1 text-xs text-rose-700 hover:text-rose-900 font-bold underline cursor-pointer"
               >
-                Limpar Filtro de Faixa
+                Limpar Faixa
               </button>
             )}
           </div>
 
-          <div className="text-[11px] text-emerald-800 font-bold flex items-center gap-2">
-            <span className="bg-emerald-100/90 text-emerald-900 px-2.5 py-1 rounded-lg border border-emerald-300/80 font-mono">
-              📄 Layout Meia Folha: 2 pedidos por A4 com linha serrilhada ao meio
+          <div className="text-[11px] text-emerald-900 font-bold flex items-center gap-2">
+            <span className="bg-emerald-100/90 text-emerald-950 px-2.5 py-1 rounded-lg border border-emerald-300/80 font-mono">
+              💡 Marque os pedidos nos cartões abaixo ou selecione a faixa desejada
             </span>
           </div>
         </div>
@@ -977,8 +994,8 @@ export function StatusScreen({
         ) : (
           <>
             {/* Batch Selection & Printing Control Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3 bg-slate-100/90 p-2.5 px-3 rounded-xl border border-slate-200/80">
-              <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 mb-4 bg-slate-900 text-white p-3 px-4 rounded-xl shadow-md border border-slate-800">
+              <div className="flex items-center gap-3 flex-wrap">
                 <button
                   type="button"
                   onClick={() => {
@@ -989,7 +1006,7 @@ export function StatusScreen({
                       setSelectedOrderCodesForPrint(allFilteredCodes);
                     }
                   }}
-                  className="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-extrabold text-xs rounded-lg transition flex items-center gap-2 cursor-pointer shadow-3xs"
                 >
                   <input
                     type="checkbox"
@@ -998,31 +1015,35 @@ export function StatusScreen({
                       selectedOrderCodesForPrint.length === groupedOrders.length
                     }
                     onChange={() => {}}
-                    className="w-3.5 h-3.5 text-emerald-600 rounded cursor-pointer pointer-events-none"
+                    className="w-4 h-4 text-emerald-500 rounded cursor-pointer pointer-events-none"
                   />
                   {selectedOrderCodesForPrint.length === groupedOrders.length
-                    ? "Desmarcar Todos"
-                    : "Marcar Todos Filtrados"}
+                    ? "Desmarcar Todos Visíveis"
+                    : `Marcar Todos Visíveis (${groupedOrders.length})`}
                 </button>
 
-                {selectedOrderCodesForPrint.length > 0 && (
-                  <>
-                    <span className="text-xs font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-lg font-mono">
-                      {selectedOrderCodesForPrint.length} selecionado(s)
-                    </span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-black px-3 py-1 rounded-lg font-mono border ${
+                    selectedOrderCodesForPrint.length > 0
+                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                      : "bg-slate-800 text-slate-400 border-slate-700"
+                  }`}>
+                    {selectedOrderCodesForPrint.length} pedido(s) marcado(s) p/ impressão
+                  </span>
+                  {selectedOrderCodesForPrint.length > 0 && (
                     <button
                       type="button"
                       onClick={() => setSelectedOrderCodesForPrint([])}
-                      className="text-xs text-rose-600 hover:text-rose-800 font-bold underline cursor-pointer px-1"
+                      className="text-xs text-rose-400 hover:text-rose-300 font-bold underline cursor-pointer px-1"
                     >
-                      Limpar Seleção
+                      Limpar
                     </button>
-                  </>
-                )}
+                  )}
+                </div>
               </div>
 
               {selectedOrderCodesForPrint.length > 0 && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
                     onClick={() => {
@@ -1031,60 +1052,96 @@ export function StatusScreen({
                           detail: {
                             isBatch: true,
                             orderCodes: selectedOrderCodesForPrint,
+                            printSheetSize: "half",
                           },
                         }),
                       );
                     }}
-                    className="px-3 py-1.5 bg-[#00b14f] hover:bg-emerald-600 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/20 active:scale-95"
+                    className="px-3.5 py-1.5 bg-[#00b14f] hover:bg-emerald-600 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/30 active:scale-95"
                   >
-                    <Printer size={14} /> Imprimir em Meia Folha ({selectedOrderCodesForPrint.length})
+                    <Printer size={15} /> Imprimir Meia Folha ({selectedOrderCodesForPrint.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(
+                        new CustomEvent("print-order", {
+                          detail: {
+                            isBatch: true,
+                            orderCodes: selectedOrderCodesForPrint,
+                            printSheetSize: "full",
+                          },
+                        }),
+                      );
+                    }}
+                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-blue-500/30 active:scale-95"
+                  >
+                    <Printer size={15} /> Imprimir Folha Inteira ({selectedOrderCodesForPrint.length})
                   </button>
                 </div>
               )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pb-4">
-              {groupedOrders.map(([code, orders]) => (
-                <motion.div
-                  layoutId={`card-${code}`}
-                  key={code}
-                  onClick={() => setSelectedOrderCode(code)}
-                  className="order-card-container border border-indigo-150 rounded-xl shadow-sm hover:shadow-md bg-white hover:-translate-y-1 transition-all p-4 cursor-pointer relative group"
-                >
-                  <div className="flex justify-between items-start md:items-center">
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedOrderCodesForPrint.includes(code)}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            if (e.target.checked) {
-                              setSelectedOrderCodesForPrint([
-                                ...selectedOrderCodesForPrint,
-                                code,
-                              ]);
-                            } else {
-                              setSelectedOrderCodesForPrint(
-                                selectedOrderCodesForPrint.filter((c) => c !== code),
-                              );
-                            }
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer"
-                          title="Selecionar para impressão em lote"
-                        />
-                        <h3 className="font-bold text-lg text-gray-800">
-                          Pedido: {code}
-                        </h3>
+              {groupedOrders.map(([code, orders]) => {
+                const isSelectedForPrint = selectedOrderCodesForPrint.includes(code);
+                return (
+                  <motion.div
+                    layoutId={`card-${code}`}
+                    key={code}
+                    onClick={() => setSelectedOrderCode(code)}
+                    className={`order-card-container rounded-xl shadow-sm hover:shadow-md transition-all p-4 cursor-pointer relative group ${
+                      isSelectedForPrint
+                        ? "bg-emerald-50/80 border-2 border-emerald-500 shadow-emerald-100 ring-2 ring-emerald-400/20"
+                        : "bg-white border border-indigo-150 hover:-translate-y-1"
+                    }`}
+                  >
+                    <div className="flex justify-between items-start md:items-center">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (isSelectedForPrint) {
+                                setSelectedOrderCodesForPrint(
+                                  selectedOrderCodesForPrint.filter((c) => c !== code)
+                                );
+                              } else {
+                                setSelectedOrderCodesForPrint([
+                                  ...selectedOrderCodesForPrint,
+                                  code,
+                                ]);
+                              }
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-3xs select-none ${
+                              isSelectedForPrint
+                                ? "bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700"
+                                : "bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-300 hover:border-emerald-400"
+                            }`}
+                            title="Marcar / Desmarcar para impressão em lote"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelectedForPrint}
+                              onChange={() => {}}
+                              className="w-3.5 h-3.5 text-emerald-600 rounded cursor-pointer pointer-events-none"
+                            />
+                            {isSelectedForPrint ? "Marcado p/ Imprimir" : "Marcar p/ Imprimir"}
+                          </button>
+
+                          <h3 className="font-bold text-lg text-gray-800 font-mono">
+                            Pedido: #{code}
+                          </h3>
+                        </div>
+                        <span className="text-xs text-gray-600 font-semibold mt-1">
+                          Cliente: {orders[0].customerName}
+                        </span>
+                        <span className="text-xs text-indigo-600 font-bold mt-0.5">
+                          {orders.length} Item(ns) no pedido
+                        </span>
                       </div>
-                      <span className="text-xs text-gray-500 mt-0.5">
-                        Cliente: {orders[0].customerName}
-                      </span>
-                      <span className="text-xs text-indigo-500 font-bold mt-1">
-                        {orders.length} Itens
-                      </span>
-                    </div>
 
                   <div className="flex flex-col items-end gap-1.5 font-sans justify-end">
                     {(() => {
@@ -1344,7 +1401,8 @@ export function StatusScreen({
                   )}
                 </div>
               </motion.div>
-            ))}
+            );
+          })}
           </div>
         </>
         )}
