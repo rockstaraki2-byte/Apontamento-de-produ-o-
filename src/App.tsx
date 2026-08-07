@@ -13953,6 +13953,9 @@ export default function App() {
   useEffect(() => {
     const handler = (e: any) => {
       setOrderToPrint(e.detail);
+      if (e.detail && e.detail.printSheetSize) {
+        setPrintSheetSize(e.detail.printSheetSize);
+      }
       setEmailToCustomerPrint("");
     };
     window.addEventListener("print-order", handler);

@@ -1365,11 +1365,17 @@ export function StatusScreen({
                     onClick={(e) => {
                       e.stopPropagation();
                       window.dispatchEvent(
-                        new CustomEvent("print-order", { detail: orders[0] }),
+                        new CustomEvent("print-order", {
+                          detail: {
+                            isBatch: true,
+                            orderCodes: [code],
+                            printSheetSize: "half",
+                          },
+                        }),
                       );
                     }}
                     className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-[#00b14f] border border-emerald-200/80 font-bold text-[10px] rounded-lg transition active:scale-95 flex items-center gap-1 cursor-pointer"
-                    title="Gerar e imprimir PDF em meia folha"
+                    title="Gerar e imprimir PDF do pedido em meia folha"
                   >
                     <Printer size={12} /> PDF Meia Folha
                   </button>
@@ -1407,6 +1413,72 @@ export function StatusScreen({
         </>
         )}
       </div>
+
+      {/* Floating Batch Printing Bar when orders are selected */}
+      <AnimatePresence>
+        {selectedOrderCodesForPrint.length > 0 && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white shadow-2xl rounded-2xl px-4 py-3 border border-slate-700 flex flex-wrap items-center justify-between gap-3 max-w-2xl w-[92%] sm:w-auto"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-extrabold text-xs text-slate-100 font-mono">
+                🎯 {selectedOrderCodesForPrint.length} pedido(s) selecionado(s)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("print-order", {
+                      detail: {
+                        isBatch: true,
+                        orderCodes: selectedOrderCodesForPrint,
+                        printSheetSize: "half",
+                      },
+                    }),
+                  );
+                }}
+                className="px-3.5 py-1.5 bg-[#00b14f] hover:bg-emerald-600 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-500/20 active:scale-95"
+              >
+                <Printer size={14} /> Imprimir Meia Folha
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("print-order", {
+                      detail: {
+                        isBatch: true,
+                        orderCodes: selectedOrderCodesForPrint,
+                        printSheetSize: "full",
+                      },
+                    }),
+                  );
+                }}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-blue-500/20 active:scale-95"
+              >
+                <Printer size={14} /> Imprimir Folha Inteira
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedOrderCodesForPrint([])}
+                className="px-2 py-1.5 text-xs text-slate-300 hover:text-white font-bold underline cursor-pointer"
+              >
+                Limpar
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {selectedOrderCode && (
