@@ -31,6 +31,8 @@ export function StatusScreen({
   >("TODOS");
   const [deliveryDateStart, setDeliveryDateStart] = useState<string>("");
   const [deliveryDateEnd, setDeliveryDateEnd] = useState<string>("");
+  const [orderRangeStart, setOrderRangeStart] = useState<string>("");
+  const [orderRangeEnd, setOrderRangeEnd] = useState<string>("");
   const [selectedOrderCode, setSelectedOrderCode] = useState<string | null>(
     null,
   );
@@ -56,6 +58,57 @@ export function StatusScreen({
     String(currentUser?.role).toUpperCase() === "REPRESENTANTE";
   const [selectedBatchToLink, setSelectedBatchToLink] = useState<string>("");
   const [newBatchNameInput, setNewBatchNameInput] = useState<string>("");
+
+  const extractOrderNum = (code: string): number | null => {
+    if (!code) return null;
+    const match = code.match(/\d+/);
+    return match ? parseInt(match[0], 10) : null;
+  };
+
+  const handleSelectRangeForPrint = () => {
+    if (!orderRangeStart.trim() && !orderRangeEnd.trim()) {
+      alert("Por favor, informe o número do pedido inicial ou final para marcar a faixa.");
+      return;
+    }
+
+    const startNum = extractOrderNum(orderRangeStart);
+    const endNum = extractOrderNum(orderRangeEnd);
+
+    const allCodesMap = new Map<string, Order[]>();
+    db.orders.forEach((o) => {
+      if (o.orderCode) {
+        if (!allCodesMap.has(o.orderCode)) allCodesMap.set(o.orderCode, []);
+        allCodesMap.get(o.orderCode)!.push(o);
+      }
+    });
+
+    const matchingCodes = Array.from(allCodesMap.keys()).filter((code) => {
+      const orderNum = extractOrderNum(code);
+      if (startNum !== null && endNum !== null) {
+        const minN = Math.min(startNum, endNum);
+        const maxN = Math.max(startNum, endNum);
+        return orderNum !== null && orderNum >= minN && orderNum <= maxN;
+      } else if (startNum !== null) {
+        return orderNum !== null && orderNum >= startNum;
+      } else if (endNum !== null) {
+        return orderNum !== null && orderNum <= endNum;
+      } else {
+        const codeLower = code.toLowerCase().trim();
+        if (orderRangeStart.trim() && codeLower < orderRangeStart.toLowerCase().trim()) return false;
+        if (orderRangeEnd.trim() && codeLower > orderRangeEnd.toLowerCase().trim()) return false;
+        return true;
+      }
+    });
+
+    if (matchingCodes.length === 0) {
+      alert("Nenhum pedido encontrado no intervalo de códigos informado.");
+      return;
+    }
+
+    const merged = Array.from(new Set([...selectedOrderCodesForPrint, ...matchingCodes]));
+    setSelectedOrderCodesForPrint(merged);
+    alert(`${matchingCodes.length} pedido(s) da faixa foram selecionados para impressão!`);
+  };
 
   const [confirmInvoiceData, setConfirmInvoiceData] = useState<{
     order: Order;
@@ -392,6 +445,27 @@ export function StatusScreen({
         }
       }
 
+      // 3.6 Order Code Range Filter
+      if (orderRangeStart.trim() || orderRangeEnd.trim()) {
+        const startNum = extractOrderNum(orderRangeStart);
+        const endNum = extractOrderNum(orderRangeEnd);
+        const orderNum = extractOrderNum(o.orderCode);
+
+        if (startNum !== null && endNum !== null) {
+          const minN = Math.min(startNum, endNum);
+          const maxN = Math.max(startNum, endNum);
+          if (orderNum === null || orderNum < minN || orderNum > maxN) return false;
+        } else if (startNum !== null) {
+          if (orderNum === null || orderNum < startNum) return false;
+        } else if (endNum !== null) {
+          if (orderNum === null || orderNum > endNum) return false;
+        } else {
+          const codeLower = (o.orderCode || "").toLowerCase().trim();
+          if (orderRangeStart.trim() && codeLower < orderRangeStart.toLowerCase().trim()) return false;
+          if (orderRangeEnd.trim() && codeLower > orderRangeEnd.toLowerCase().trim()) return false;
+        }
+      }
+
       // 4. Batch filter match
       if (selectedBatchFilter !== "TODOS") {
         const isLinkedToAnyBatch = db.productionBatches.some((b) =>
@@ -429,7 +503,7 @@ export function StatusScreen({
     return Array.from(map.entries()).sort(
       (a, b) => b[1][0].createdAt - a[1][0].createdAt,
     );
-  }, [db.orders, debouncedSearchTerm, deliveryFilter, selectedStatuses, selectedBatchFilter, db.productionBatches, deliveryDateStart, deliveryDateEnd]);
+  }, [db.orders, debouncedSearchTerm, deliveryFilter, selectedStatuses, selectedBatchFilter, db.productionBatches, deliveryDateStart, deliveryDateEnd, orderRangeStart, orderRangeEnd]);
 
   const handleStatusChange = (orderId: number, newStatus: OrderStatus) => {
     setIsUpdating(orderId);
@@ -799,7 +873,7 @@ export function StatusScreen({
       </div>
 
       {/* Advanced Multi-Status Pill Filter */}
-      <div className="mb-6 bg-slate-50 p-3 rounded-lg border border-slate-100">
+      <div className="mb-3 bg-slate-50 p-3 rounded-lg border border-slate-100">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider font-sans">
             Filtro por Status (Selecione Múltiplos):
@@ -839,6 +913,62 @@ export function StatusScreen({
         </div>
       </div>
 
+      {/* Order Code Range Selection Box */}
+      <div className="mb-4 bg-emerald-50/80 p-3 rounded-xl border border-emerald-200/90 shadow-2xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 text-emerald-950 font-extrabold text-xs">
+              <span className="text-sm">🖨️</span>
+              <span className="uppercase tracking-wider font-mono">Intervalo de Pedidos para Impressão:</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                placeholder="De (#1001)"
+                value={orderRangeStart}
+                onChange={(e) => setOrderRangeStart(e.target.value)}
+                className="w-28 border border-emerald-300 rounded-lg p-1.5 text-xs bg-white font-mono font-bold text-slate-800 focus:outline-emerald-600 focus:ring-1 focus:ring-emerald-600 shadow-3xs"
+              />
+              <span className="text-xs font-black text-emerald-800">até</span>
+              <input
+                type="text"
+                placeholder="Até (#1050)"
+                value={orderRangeEnd}
+                onChange={(e) => setOrderRangeEnd(e.target.value)}
+                className="w-28 border border-emerald-300 rounded-lg p-1.5 text-xs bg-white font-mono font-bold text-slate-800 focus:outline-emerald-600 focus:ring-1 focus:ring-emerald-600 shadow-3xs"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSelectRangeForPrint}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-xs rounded-lg transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>🎯</span> Marcar Faixa para Impressão
+            </button>
+
+            {(orderRangeStart || orderRangeEnd) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOrderRangeStart("");
+                  setOrderRangeEnd("");
+                }}
+                className="px-2 py-1 text-xs text-rose-700 hover:text-rose-900 font-bold underline cursor-pointer"
+              >
+                Limpar Filtro de Faixa
+              </button>
+            )}
+          </div>
+
+          <div className="text-[11px] text-emerald-800 font-bold flex items-center gap-2">
+            <span className="bg-emerald-100/90 text-emerald-900 px-2.5 py-1 rounded-lg border border-emerald-300/80 font-mono">
+              📄 Layout Meia Folha: 2 pedidos por A4 com linha serrilhada ao meio
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div className="flex-1 overflow-y-auto w-full">
         {groupedOrders.length === 0 ? (
           <p className="text-gray-500 text-center text-sm font-sans italic my-8">
@@ -848,7 +978,7 @@ export function StatusScreen({
           <>
             {/* Batch Selection & Printing Control Bar */}
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3 bg-slate-100/90 p-2.5 px-3 rounded-xl border border-slate-200/80">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => {
@@ -876,29 +1006,40 @@ export function StatusScreen({
                 </button>
 
                 {selectedOrderCodesForPrint.length > 0 && (
-                  <span className="text-xs font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-lg font-mono">
-                    {selectedOrderCodesForPrint.length} selecionado(s)
-                  </span>
+                  <>
+                    <span className="text-xs font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-lg font-mono">
+                      {selectedOrderCodesForPrint.length} selecionado(s)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedOrderCodesForPrint([])}
+                      className="text-xs text-rose-600 hover:text-rose-800 font-bold underline cursor-pointer px-1"
+                    >
+                      Limpar Seleção
+                    </button>
+                  </>
                 )}
               </div>
 
               {selectedOrderCodesForPrint.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.dispatchEvent(
-                      new CustomEvent("print-order", {
-                        detail: {
-                          isBatch: true,
-                          orderCodes: selectedOrderCodesForPrint,
-                        },
-                      }),
-                    );
-                  }}
-                  className="px-3.5 py-1.5 bg-[#00b14f] hover:bg-emerald-600 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/20 active:scale-95"
-                >
-                  <Printer size={14} /> Imprimir Selecionados em Meia Folha ({selectedOrderCodesForPrint.length})
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(
+                        new CustomEvent("print-order", {
+                          detail: {
+                            isBatch: true,
+                            orderCodes: selectedOrderCodesForPrint,
+                          },
+                        }),
+                      );
+                    }}
+                    className="px-3 py-1.5 bg-[#00b14f] hover:bg-emerald-600 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/20 active:scale-95"
+                  >
+                    <Printer size={14} /> Imprimir em Meia Folha ({selectedOrderCodesForPrint.length})
+                  </button>
+                </div>
               )}
             </div>
 

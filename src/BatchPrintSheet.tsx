@@ -239,6 +239,11 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
                         </td>
                         <td className="py-3 px-3 font-extrabold text-slate-800">
                           <div>{resolvedCustomerName}</div>
+                          {(customerObj?.neighborhood || customerObj?.bairro) && (
+                            <div className="text-[10px] text-slate-500 font-medium">
+                              Bairro: {customerObj.neighborhood || customerObj.bairro}
+                            </div>
+                          )}
                           <div className="text-[13px] text-[#1e40af] font-bold mt-0.5 whitespace-nowrap">
                             Prazo: {formatDateShort(o.deliveryDate)}
                           </div>

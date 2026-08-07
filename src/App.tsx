@@ -15103,6 +15103,10 @@ export default function App() {
             <div className="fixed inset-0 bg-black/75 z-[9999] flex items-center justify-center p-2 sm:p-4 backdrop-blur-xs text-left text-slate-800">
               <style>{`
               @media print {
+                @page {
+                  size: A4 portrait;
+                  margin: 4mm 5mm !important;
+                }
                 .non-printable {
                   display: none !important;
                 }
@@ -15114,27 +15118,53 @@ export default function App() {
                   margin: 0 !important;
                   background: white !important;
                 }
+                .half-sheet-page {
+                  box-sizing: border-box !important;
+                  width: 100% !important;
+                  height: 284mm !important;
+                  max-height: 285mm !important;
+                  page-break-after: always !important;
+                  break-after: page !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                  display: flex !important;
+                  flex-direction: column !important;
+                  justify-content: space-between !important;
+                  padding: 0 !important;
+                  margin-bottom: 0 !important;
+                  border: none !important;
+                  background: white !important;
+                }
                 .half-sheet-order-card {
                   box-sizing: border-box !important;
                   width: 100% !important;
-                  max-height: 138mm !important;
-                  padding: 5mm 7mm !important;
-                  border: 1px dashed #94a3b8 !important;
-                  margin-bottom: 4mm !important;
-                  page-break-inside: avoid !important;
-                  break-inside: avoid !important;
+                  height: 136mm !important;
+                  max-height: 136mm !important;
+                  padding: 3.5mm 5.5mm !important;
+                  border: 1px solid #94a3b8 !important;
                   overflow: hidden !important;
                   background: white !important;
+                  border-radius: 0 !important;
                 }
-                .half-sheet-order-card:nth-child(2n) {
-                  page-break-after: always !important;
-                  break-after: page !important;
-                  margin-bottom: 0 !important;
+                .serrated-cut-line {
+                  box-sizing: border-box !important;
+                  width: 100% !important;
+                  height: 6mm !important;
+                  display: flex !important;
+                  align-items: center !important;
+                  justify-content: center !important;
+                  border-bottom: 2px dashed #334155 !important;
+                  margin: 1.5mm 0 !important;
+                  text-align: center !important;
+                  font-size: 8pt !important;
+                  font-weight: 800 !important;
+                  color: #1e293b !important;
+                  letter-spacing: 1px !important;
                 }
                 .full-sheet-order-card {
                   box-sizing: border-box !important;
                   width: 100% !important;
-                  min-height: 270mm !important;
+                  min-height: 275mm !important;
                   padding: 8mm 10mm !important;
                   border: 1px solid #cbd5e1 !important;
                   margin-bottom: 0 !important;
@@ -15209,10 +15239,11 @@ export default function App() {
                     className="bg-transparent max-w-2xl mx-auto flex flex-col font-sans text-slate-800 gap-4"
                     style={{ width: "100%", boxSizing: "border-box" }}
                   >
-                    {orderCodesToPrintList.map((codeToPrint) => {
-                      const groupOrders = db.orders.filter(
-                        (o) => o.orderCode === codeToPrint && o.isActive !== false,
-                      );
+                    {(() => {
+                      const renderOrderCard = (codeToPrint: string) => {
+                        const groupOrders = db.orders.filter(
+                          (o) => o.orderCode === codeToPrint && o.isActive !== false,
+                        );
                       if (groupOrders.length === 0) return null;
 
                       const firstOrd = groupOrders[0];
@@ -15669,8 +15700,42 @@ export default function App() {
                           </div>
                         </div>
                       );
-                    })}
-                  </div>
+                    };
+
+                    if (printSheetSize === "full") {
+                      return orderCodesToPrintList.map((code) => renderOrderCard(code));
+                    }
+
+                    // Meia Folha: Group orders into pairs of 2 per A4 sheet with serrated cut line
+                    const pairs: string[][] = [];
+                    for (let i = 0; i < orderCodesToPrintList.length; i += 2) {
+                      pairs.push(orderCodesToPrintList.slice(i, i + 2));
+                    }
+
+                    return pairs.map((pair, pIndex) => (
+                      <div
+                        key={`page-${pIndex}`}
+                        className="half-sheet-page bg-slate-50/70 p-2 sm:p-3 rounded-2xl border border-slate-300 flex flex-col justify-between mb-6 gap-2"
+                      >
+                        {renderOrderCard(pair[0])}
+
+                        <div className="serrated-cut-line my-1 py-1 flex items-center justify-center border-b-2 border-dashed border-slate-400 text-slate-700 font-mono text-[10px] sm:text-xs font-black uppercase tracking-widest relative">
+                          <span className="bg-white px-3 py-0.5 border border-dashed border-slate-400 rounded-full text-slate-700 font-extrabold flex items-center gap-1.5 shadow-2xs">
+                            ✂ - - - - - - - LINHA SERRILHADA DE CORTE (MEIA FOLHA) - - - - - - - ✂
+                          </span>
+                        </div>
+
+                        {pair[1] ? (
+                          renderOrderCard(pair[1])
+                        ) : (
+                          <div className="half-sheet-order-card p-4 bg-white/60 border border-dashed border-slate-300 rounded-xl flex items-center justify-center text-slate-400 text-xs font-mono font-bold uppercase tracking-wider italic">
+                            [ Segunda Metade da Folha A4 Livre / Reservado ]
+                          </div>
+                        )}
+                      </div>
+                    ));
+                  })()}
+                </div>
                 </div>
 
                 {/* Footer controls */}

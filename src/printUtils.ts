@@ -196,26 +196,50 @@ export function printElementById(elementId: string, docTitle: string = "Document
         display: block !important;
         width: 100% !important;
         max-width: 100% !important;
-        padding: 4mm !important;
+        padding: 0 !important;
         margin: 0 !important;
+        background: white !important;
+      }
+      .half-sheet-page {
+        box-sizing: border-box !important;
+        width: 100% !important;
+        height: 284mm !important;
+        max-height: 285mm !important;
+        page-break-after: always !important;
+        break-after: page !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: space-between !important;
+        padding: 0 !important;
+        margin-bottom: 0 !important;
         background: white !important;
       }
       .half-sheet-order-card {
         box-sizing: border-box !important;
         width: 100% !important;
-        max-height: 138mm !important;
-        padding: 5mm 7mm !important;
-        border: 1px dashed #94a3b8 !important;
-        margin-bottom: 4mm !important;
-        page-break-inside: avoid !important;
-        break-inside: avoid !important;
+        height: 136mm !important;
+        max-height: 136mm !important;
+        padding: 3.5mm 5.5mm !important;
+        border: 1px solid #94a3b8 !important;
         overflow: hidden !important;
         background: white !important;
       }
-      .half-sheet-order-card:nth-child(2n) {
-        page-break-after: always !important;
-        break-after: page !important;
-        margin-bottom: 0 !important;
+      .serrated-cut-line {
+        box-sizing: border-box !important;
+        width: 100% !important;
+        height: 6mm !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-bottom: 2px dashed #334155 !important;
+        margin: 1.5mm 0 !important;
+        text-align: center !important;
+        font-size: 8pt !important;
+        font-weight: 800 !important;
+        color: #1e293b !important;
+        letter-spacing: 1px !important;
       }
       .full-sheet-order-card {
         box-sizing: border-box !important;
