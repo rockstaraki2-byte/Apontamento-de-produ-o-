@@ -2858,6 +2858,63 @@ function PedidosScreen({
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [filterUrgentOnly, setFilterUrgentOnly] = useState<boolean>(false);
 
+  // Batch Printing & Range Selection States
+  const [orderRangeStart, setOrderRangeStart] = useState<string>("");
+  const [orderRangeEnd, setOrderRangeEnd] = useState<string>("");
+  const [filterByRangeActive, setFilterByRangeActive] = useState<boolean>(false);
+  const [selectedOrderCodesForPrint, setSelectedOrderCodesForPrint] = useState<string[]>([]);
+
+  const extractOrderNum = (code: string): number | null => {
+    if (!code) return null;
+    const match = code.match(/\d+/);
+    return match ? parseInt(match[0], 10) : null;
+  };
+
+  const handleSelectRangeForPrint = () => {
+    if (!orderRangeStart.trim() && !orderRangeEnd.trim()) {
+      alert("Por favor, informe o número do pedido inicial e/ou final para marcar a faixa.");
+      return;
+    }
+
+    const startNum = extractOrderNum(orderRangeStart);
+    const endNum = extractOrderNum(orderRangeEnd);
+
+    const allCodesMap = new Map<string, typeof db.orders>();
+    db.orders.forEach((o) => {
+      if (o.orderCode && o.isActive !== false) {
+        if (!allCodesMap.has(o.orderCode)) allCodesMap.set(o.orderCode, []);
+        allCodesMap.get(o.orderCode)!.push(o);
+      }
+    });
+
+    const matchingCodes = Array.from(allCodesMap.keys()).filter((code) => {
+      const orderNum = extractOrderNum(code);
+      if (startNum !== null && endNum !== null) {
+        const minN = Math.min(startNum, endNum);
+        const maxN = Math.max(startNum, endNum);
+        return orderNum !== null && orderNum >= minN && orderNum <= maxN;
+      } else if (startNum !== null) {
+        return orderNum !== null && orderNum >= startNum;
+      } else if (endNum !== null) {
+        return orderNum !== null && orderNum <= endNum;
+      } else {
+        const codeLower = code.toLowerCase().trim();
+        if (orderRangeStart.trim() && codeLower < orderRangeStart.toLowerCase().trim()) return false;
+        if (orderRangeEnd.trim() && codeLower > orderRangeEnd.toLowerCase().trim()) return false;
+        return true;
+      }
+    });
+
+    if (matchingCodes.length === 0) {
+      alert("Nenhum pedido encontrado no intervalo de códigos informado.");
+      return;
+    }
+
+    const merged = Array.from(new Set([...selectedOrderCodesForPrint, ...matchingCodes]));
+    setSelectedOrderCodesForPrint(merged);
+    alert(`🎯 ${matchingCodes.length} pedido(s) da faixa foram marcados para impressão!`);
+  };
+
   const getDeliveryStatus = React.useCallback((o: any) => {
     if (o.status === "FATURADO") return "Faturado";
     if (!o.deliveryDate) return "Sem Prazo";
@@ -3048,6 +3105,27 @@ function PedidosScreen({
         if (!selectedStatuses.includes(effSt)) return false;
       }
 
+      // Order Code Range Filter (ONLY active if filterByRangeActive is true)
+      if (filterByRangeActive && (orderRangeStart.trim() || orderRangeEnd.trim())) {
+        const startNum = extractOrderNum(orderRangeStart);
+        const endNum = extractOrderNum(orderRangeEnd);
+        const orderNum = extractOrderNum(o.orderCode);
+
+        if (startNum !== null && endNum !== null) {
+          const minN = Math.min(startNum, endNum);
+          const maxN = Math.max(startNum, endNum);
+          if (orderNum === null || orderNum < minN || orderNum > maxN) return false;
+        } else if (startNum !== null) {
+          if (orderNum === null || orderNum < startNum) return false;
+        } else if (endNum !== null) {
+          if (orderNum === null || orderNum > endNum) return false;
+        } else {
+          const codeLower = (o.orderCode || "").toLowerCase().trim();
+          if (orderRangeStart.trim() && codeLower < orderRangeStart.toLowerCase().trim()) return false;
+          if (orderRangeEnd.trim() && codeLower > orderRangeEnd.toLowerCase().trim()) return false;
+        }
+      }
+
       return true;
     });
 
@@ -3070,6 +3148,9 @@ function PedidosScreen({
     deliveryDateEnd,
     currentUser,
     db.productionBatches,
+    filterByRangeActive,
+    orderRangeStart,
+    orderRangeEnd,
   ]);
 
   const getDuplicatesDiagnostic = React.useCallback(() => {
@@ -9520,6 +9601,25 @@ function PedidosScreen({
                 </span>
               )}
 
+              {(orderRangeStart.trim() || orderRangeEnd.trim()) && (
+                <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-full shadow-2xs">
+                  🎯 Faixa: {orderRangeStart || "Início"} até {orderRangeEnd || "Fim"}
+                  {filterByRangeActive && <span className="font-bold text-amber-700">(Filtrando)</span>}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOrderRangeStart("");
+                      setOrderRangeEnd("");
+                      setFilterByRangeActive(false);
+                    }}
+                    className="hover:text-red-500 font-extrabold text-[12px] leading-none ml-1 transition cursor-pointer"
+                    title="Remover filtro de faixa"
+                  >
+                    &times;
+                  </button>
+                </span>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
@@ -9529,11 +9629,15 @@ function PedidosScreen({
                     "ATRASADO",
                     "SEM_PRAZO",
                     "FATURADO",
+                    "FATURADO_PARCIAL",
                   ]);
                   setFilterBatchState("TODOS");
                   setFilterNotInvoicedOnly(false);
                   setDeliveryDateStart("");
                   setDeliveryDateEnd("");
+                  setOrderRangeStart("");
+                  setOrderRangeEnd("");
+                  setFilterByRangeActive(false);
                 }}
                 className="text-[9px] font-black text-slate-400 hover:text-slate-650 uppercase tracking-widest ml-auto hover:underline cursor-pointer py-1"
               >
@@ -9541,6 +9645,133 @@ function PedidosScreen({
               </button>
             </div>
           )}
+
+          {/* Order Range Selector & Batch Print Controls */}
+          <div className="mb-2.5 bg-slate-100/80 p-2.5 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                🎯 Seleção / Faixa de Pedidos:
+              </span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  placeholder="Ped. Inicial (ex: 101)"
+                  value={orderRangeStart}
+                  onChange={(e) => setOrderRangeStart(e.target.value)}
+                  className="w-28 sm:w-32 text-xs bg-white border border-slate-300 rounded-lg px-2 py-1 font-mono font-bold text-slate-800 placeholder:font-normal placeholder:text-slate-400 focus:outline-indigo-500 shadow-2xs"
+                />
+                <span className="text-slate-400 font-bold text-xs">até</span>
+                <input
+                  type="text"
+                  placeholder="Ped. Final (ex: 150)"
+                  value={orderRangeEnd}
+                  onChange={(e) => setOrderRangeEnd(e.target.value)}
+                  className="w-28 sm:w-32 text-xs bg-white border border-slate-300 rounded-lg px-2 py-1 font-mono font-bold text-slate-800 placeholder:font-normal placeholder:text-slate-400 focus:outline-indigo-500 shadow-2xs"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSelectRangeForPrint}
+                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-[11px] rounded-lg transition active:scale-95 shadow-2xs cursor-pointer flex items-center gap-1"
+                title="Marcar todos os pedidos neste intervalo para a lista de impressão"
+              >
+                🎯 Marcar Faixa p/ Impressão
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFilterByRangeActive(!filterByRangeActive)}
+                className={`px-2.5 py-1 font-extrabold text-[11px] rounded-lg transition active:scale-95 shadow-2xs cursor-pointer flex items-center gap-1 border ${
+                  filterByRangeActive
+                    ? "bg-amber-600 text-white border-amber-700 shadow-xs"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                }`}
+                title="Filtrar ou exibir todos os pedidos na tela com base no intervalo"
+              >
+                🔍 {filterByRangeActive ? "Filtrando Lista p/ Faixa (Ativo)" : "Filtrar Lista na Tela"}
+              </button>
+
+              {(orderRangeStart || orderRangeEnd || filterByRangeActive) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOrderRangeStart("");
+                    setOrderRangeEnd("");
+                    setFilterByRangeActive(false);
+                  }}
+                  className="text-[10px] font-bold text-rose-600 hover:text-rose-800 underline cursor-pointer"
+                >
+                  Limpar Faixa
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const allFilteredCodes = groupedOrders.map(([c]) => c);
+                  if (
+                    groupedOrders.length > 0 &&
+                    selectedOrderCodesForPrint.length === groupedOrders.length
+                  ) {
+                    setSelectedOrderCodesForPrint([]);
+                  } else {
+                    setSelectedOrderCodesForPrint(allFilteredCodes);
+                  }
+                }}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-[11px] rounded-lg transition active:scale-95 cursor-pointer shadow-2xs"
+              >
+                {selectedOrderCodesForPrint.length === groupedOrders.length &&
+                groupedOrders.length > 0
+                  ? "Desmarcar Todos Visíveis"
+                  : `Marcar Todos Visíveis (${groupedOrders.length})`}
+              </button>
+
+              {selectedOrderCodesForPrint.length > 0 && (
+                <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                  <span className="text-[10px] font-extrabold text-emerald-800 font-mono">
+                    {selectedOrderCodesForPrint.length} marcado(s)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(
+                        new CustomEvent("print-order", {
+                          detail: {
+                            isBatch: true,
+                            orderCodes: selectedOrderCodesForPrint,
+                            printSheetSize: "half",
+                          },
+                        }),
+                      );
+                    }}
+                    className="px-2 py-0.5 bg-[#00b14f] hover:bg-emerald-600 text-white font-extrabold text-[10px] rounded shadow-xs transition cursor-pointer flex items-center gap-1"
+                  >
+                    <Printer size={11} /> Meia Folha
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(
+                        new CustomEvent("print-order", {
+                          detail: {
+                            isBatch: true,
+                            orderCodes: selectedOrderCodesForPrint,
+                            printSheetSize: "full",
+                          },
+                        }),
+                      );
+                    }}
+                    className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[10px] rounded shadow-xs transition cursor-pointer flex items-center gap-1"
+                  >
+                    <Printer size={11} /> Folha Inteira
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
 
           <div className="flex-1 overflow-y-auto pr-1">
             {groupedOrders.length === 0 ? (
@@ -9552,6 +9783,7 @@ function PedidosScreen({
                 {groupedOrders.map(([code, orders]) => {
                   const firstOrder = orders[0];
                   const dStatus = getDeliveryStatus(firstOrder);
+                  const isSelectedForPrint = selectedOrderCodesForPrint.includes(code);
                   let badgeColor = "";
                   if (dStatus === "Atrasado") {
                     badgeColor =
@@ -9585,9 +9817,41 @@ function PedidosScreen({
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex flex-col min-w-0 bg-white">
-                          <h4 className="font-extrabold text-xs sm:text-sm text-slate-800 leading-tight">
-                            Pedido: {code}
-                          </h4>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="font-extrabold text-xs sm:text-sm text-slate-800 leading-tight">
+                              Pedido: {code}
+                            </h4>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isSelectedForPrint) {
+                                  setSelectedOrderCodesForPrint(
+                                    selectedOrderCodesForPrint.filter((c) => c !== code),
+                                  );
+                                } else {
+                                  setSelectedOrderCodesForPrint([
+                                    ...selectedOrderCodesForPrint,
+                                    code,
+                                  ]);
+                                }
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold transition flex items-center gap-1 cursor-pointer border ${
+                                isSelectedForPrint
+                                  ? "bg-amber-500 text-white border-amber-600 shadow-xs"
+                                  : "bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-300"
+                              }`}
+                              title="Marcar/Desmarcar para Impressão em Lote"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelectedForPrint}
+                                onChange={() => {}}
+                                className="w-3 h-3 rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer pointer-events-none"
+                              />
+                              <span>{isSelectedForPrint ? "Marcado" : "Marcar"}</span>
+                            </button>
+                          </div>
                           <span className="text-[9px] sm:text-[10px] text-slate-700 font-semibold mt-0.5 truncate max-w-[210px]" title={firstOrder.customerName}>
                             Cliente: {clientDisplayName} <span className="ml-1 text-[8px] font-mono leading-none bg-slate-100 text-slate-500 font-extrabold px-1 rounded border border-slate-200 block sm:inline-block w-max mt-0.5 sm:mt-0">Cód: {clientCode}</span>
                           </span>
@@ -9694,6 +9958,25 @@ function PedidosScreen({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  window.dispatchEvent(
+                                    new CustomEvent("print-order", {
+                                      detail: {
+                                        isBatch: true,
+                                        orderCodes: [code],
+                                        printSheetSize: "half",
+                                      },
+                                    }),
+                                  );
+                                }}
+                                className="p-1 px-2 bg-emerald-50 hover:bg-emerald-100 text-[#00b14f] font-bold text-[10px] rounded-lg border border-emerald-200/80 transition flex items-center gap-1 cursor-pointer"
+                                title="Imprimir PDF do pedido em meia folha"
+                              >
+                                <Printer size={11} /> PDF Meia Folha
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   handleOpenOrderGroupEditModal(code);
                                 }}
                                 className="p-1 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] rounded-lg border border-indigo-200 transition flex items-center gap-1 cursor-pointer"
@@ -9724,6 +10007,72 @@ function PedidosScreen({
           </div>
         </div>
       </div>
+
+      {/* Floating Batch Printing Bar when orders are selected */}
+      <AnimatePresence>
+        {selectedOrderCodesForPrint.length > 0 && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white shadow-2xl rounded-2xl px-4 py-3 border border-slate-700 flex flex-wrap items-center justify-between gap-3 max-w-2xl w-[92%] sm:w-auto"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-extrabold text-xs text-slate-100 font-mono">
+                🎯 {selectedOrderCodesForPrint.length} pedido(s) selecionado(s)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("print-order", {
+                      detail: {
+                        isBatch: true,
+                        orderCodes: selectedOrderCodesForPrint,
+                        printSheetSize: "half",
+                      },
+                    }),
+                  );
+                }}
+                className="px-3.5 py-1.5 bg-[#00b14f] hover:bg-emerald-600 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-500/20 active:scale-95"
+              >
+                <Printer size={14} /> Imprimir Meia Folha
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("print-order", {
+                      detail: {
+                        isBatch: true,
+                        orderCodes: selectedOrderCodesForPrint,
+                        printSheetSize: "full",
+                      },
+                    }),
+                  );
+                }}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-blue-500/20 active:scale-95"
+              >
+                <Printer size={14} /> Imprimir Folha Inteira
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedOrderCodesForPrint([])}
+                className="px-2 py-1.5 text-xs text-slate-300 hover:text-white font-bold underline cursor-pointer"
+              >
+                Limpar
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Selected Order Grouped Items Drawer / Modal */}
       {selectedOrderCode && (
