@@ -40,77 +40,7 @@ export const imageToZPLHex = (
         const imgData = ctx.getImageData(0, 0, width, height);
         const data = imgData.data;
 
-        // Step 1: Analyze object pixels and compute luminance
-        const isObjectPixel = new Uint8Array(width * height);
-        const luminanceMap = new Float32Array(width * height);
-
-        for (let y = 0; y < height; y++) {
-          for (let x = 0; x < width; x++) {
-            const idx = (y * width + x) * 4;
-            const r = data[idx];
-            const g = data[idx + 1];
-            const b = data[idx + 2];
-            const a = data[idx + 3];
-
-            const pIdx = y * width + x;
-            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            luminanceMap[pIdx] = lum;
-
-            // Object pixel if alpha > 20 and not pure white background
-            if (a > 20 && !(r > 248 && g > 248 && b > 248)) {
-              isObjectPixel[pIdx] = 1;
-            } else {
-              isObjectPixel[pIdx] = 0;
-            }
-          }
-        }
-
-        // Step 2: Detect object boundary contour & dilate to create a solid 2px black stroke
-        const isOutlinePixel = new Uint8Array(width * height);
-        for (let y = 0; y < height; y++) {
-          for (let x = 0; x < width; x++) {
-            const pIdx = y * width + x;
-            if (!isObjectPixel[pIdx]) continue;
-
-            let isEdge = false;
-            for (let dy = -1; dy <= 1 && !isEdge; dy++) {
-              for (let dx = -1; dx <= 1 && !isEdge; dx++) {
-                if (dx === 0 && dy === 0) continue;
-                const ny = y + dy;
-                const nx = x + dx;
-                if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
-                  isEdge = true;
-                } else if (!isObjectPixel[ny * width + nx]) {
-                  isEdge = true;
-                }
-              }
-            }
-            if (isEdge) {
-              isOutlinePixel[pIdx] = 1;
-            }
-          }
-        }
-
-        // Dilate contour by 2 pixels for a strong, crisp, solid black border
-        const isDilatedOutline = new Uint8Array(width * height);
-        for (let y = 0; y < height; y++) {
-          for (let x = 0; x < width; x++) {
-            const pIdx = y * width + x;
-            if (isOutlinePixel[pIdx]) {
-              for (let dy = -2; dy <= 2; dy++) {
-                for (let dx = -2; dx <= 2; dx++) {
-                  const ny = y + dy;
-                  const nx = x + dx;
-                  if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                    isDilatedOutline[ny * width + nx] = 1;
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        // Step 3: Binarize with high contrast, preserving grays (darkened) and black outlines
+        // Step 1: Analyze pixels and binarize cleanly
         const bytesPerRow = Math.ceil(width / 8);
         const byteCount = bytesPerRow * height;
 
@@ -121,22 +51,14 @@ export const imageToZPLHex = (
           let rowHex = "";
 
           for (let x = 0; x < width; x++) {
-            const pIdx = y * width + x;
-            const lum = luminanceMap[pIdx];
+            const idx = (y * width + x) * 4;
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
+            const a = data[idx + 3];
 
-            let isBlack = false;
-
-            // Forced solid black for contour outline
-            if (isDilatedOutline[pIdx]) {
-              isBlack = true;
-            } else if (isObjectPixel[pIdx]) {
-              // Darken gray tones so small and light items print crisply (lum < 235)
-              if (lum < 235) {
-                isBlack = true;
-              }
-            } else if (lum < 180) {
-              isBlack = true;
-            }
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            const isBlack = a > 20 && lum < 210;
 
             if (isBlack) {
               byteVal |= 1 << (7 - bitsInByte);
@@ -194,7 +116,8 @@ export interface ZPLLabelItemData {
 export const generateZPLFromBatchLabels = async (
   labelItems: ZPLLabelItemData[],
   logoUrl?: string,
-  companyName: string = "IMPÉRIO JOMARCI"
+  companyName: string = "IMPÉRIO JOMARCI",
+  showImage: boolean = true
 ): Promise<string> => {
   if (!labelItems || labelItems.length === 0) {
     return "";
@@ -231,9 +154,9 @@ export const generateZPLFromBatchLabels = async (
 
     const maxTitleWidth = badgeX - 110;
 
-    // Convert product image to ZPL Graphic if available
+    // Convert product image to ZPL Graphic if available and enabled
     let barcodeOrImageBlock = "";
-    if (label.imageUrl) {
+    if (showImage && label.imageUrl) {
       const zplImg = await imageToZPLHex(label.imageUrl, 240, 240);
       if (zplImg) {
         barcodeOrImageBlock = `^FO540,80^GFA,${zplImg.byteCount},${zplImg.byteCount},${zplImg.bytesPerRow},${zplImg.hex}^FS`;

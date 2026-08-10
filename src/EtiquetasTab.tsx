@@ -27,32 +27,36 @@ interface EtiquetasTabProps {
 }
 
 // Inline deterministic high-resolution Barcode renderer
-function LocalSVGBarcode({ data }: { data: string }) {
+function LocalSVGBarcode({ data, codeText }: { data: string; codeText?: string }) {
+  const displayCode = React.useMemo(() => {
+    if (codeText && codeText !== "S/C") return codeText;
+    const parts = data.split("|");
+    return parts[0] || data;
+  }, [data, codeText]);
+
   const bars = React.useMemo(() => {
-    // extract code or relevant text
-    const cleanData = data.split("|")[0] || data.replace(/[^a-zA-Z0-9]/g, "");
+    const cleanData = displayCode.replace(/[^a-zA-Z0-9]/g, "") || "123456";
     const values = cleanData.split("").map((c) => c.charCodeAt(0));
-    // Start guards
     const result: number[] = [1, 1, 1];
-    for (let i = 0; i < Math.min(values.length, 12); i++) {
+    for (let i = 0; i < Math.min(values.length, 14); i++) {
       const v = values[i];
       result.push((v % 3) + 1);
       result.push(((v >> 1) % 2) + 1);
       result.push(((v >> 2) % 3) + 1);
       result.push(((v >> 3) % 2) + 1);
     }
-    // End guards
     result.push(1, 1, 1);
     return result;
-  }, [data]);
+  }, [displayCode]);
 
   return (
-    <div className="flex flex-col items-center justify-center select-none bg-white p-1 rounded border border-slate-200 shrink-0" style={{ width: "90px" }}>
+    <div className="flex flex-col items-center justify-center select-none bg-white p-1 rounded border border-slate-200 w-full shrink-0">
       <svg
-        width="82"
-        height="36"
+        width="100%"
+        height="32"
         viewBox={`0 0 ${bars.length * 2} 40`}
-        className="shrink-0"
+        preserveAspectRatio="none"
+        className="w-full h-[32px]"
       >
         <g fill="#000000">
           {bars.map((width, idx) => {
@@ -72,8 +76,8 @@ function LocalSVGBarcode({ data }: { data: string }) {
           })}
         </g>
       </svg>
-      <span className="text-[9px] font-mono font-black text-black mt-1 uppercase max-w-[82px] truncate block text-center leading-none">
-        {data.split("|")[0] || data.slice(0, 10)}
+      <span className="text-[10px] font-mono font-black text-black mt-1 uppercase text-center leading-none tracking-wider whitespace-nowrap">
+        {displayCode}
       </span>
     </div>
   );
@@ -99,6 +103,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
   // Preview and customization modal states
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState<boolean>(false);
   const [previewFormat, setPreviewFormat] = useState<"thermal" | "a4">("thermal");
+  const [includeImageInLabel, setIncludeImageInLabel] = useState<boolean>(true);
   const [previewLabels, setPreviewLabels] = useState<any[]>([]);
 
   // Modal and custom overlay states
@@ -878,77 +883,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           const imgData = ctx.getImageData(0, 0, width, height);
           const data = imgData.data;
           
-          // Step 1: Analyze object pixels and compute luminance
-          const isObjectPixel = new Uint8Array(width * height);
-          const luminanceMap = new Float32Array(width * height);
-
-          for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-              const idx = (y * width + x) * 4;
-              const r = data[idx];
-              const g = data[idx + 1];
-              const b = data[idx + 2];
-              const a = data[idx + 3];
-
-              const pIdx = y * width + x;
-              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-              luminanceMap[pIdx] = lum;
-
-              // Object pixel if alpha > 20 and not pure white background
-              if (a > 20 && !(r > 248 && g > 248 && b > 248)) {
-                isObjectPixel[pIdx] = 1;
-              } else {
-                isObjectPixel[pIdx] = 0;
-              }
-            }
-          }
-
-          // Step 2: Detect object boundary contour & dilate to create a solid 2px black stroke
-          const isOutlinePixel = new Uint8Array(width * height);
-          for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-              const pIdx = y * width + x;
-              if (!isObjectPixel[pIdx]) continue;
-
-              let isEdge = false;
-              for (let dy = -1; dy <= 1 && !isEdge; dy++) {
-                for (let dx = -1; dx <= 1 && !isEdge; dx++) {
-                  if (dx === 0 && dy === 0) continue;
-                  const ny = y + dy;
-                  const nx = x + dx;
-                  if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
-                    isEdge = true;
-                  } else if (!isObjectPixel[ny * width + nx]) {
-                    isEdge = true;
-                  }
-                }
-              }
-              if (isEdge) {
-                isOutlinePixel[pIdx] = 1;
-              }
-            }
-          }
-
-          // Dilate contour by 2 pixels for a strong, crisp, solid black border
-          const isDilatedOutline = new Uint8Array(width * height);
-          for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-              const pIdx = y * width + x;
-              if (isOutlinePixel[pIdx]) {
-                for (let dy = -2; dy <= 2; dy++) {
-                  for (let dx = -2; dx <= 2; dx++) {
-                    const ny = y + dy;
-                    const nx = x + dx;
-                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                      isDilatedOutline[ny * width + nx] = 1;
-                    }
-                  }
-                }
-              }
-            }
-          }
-
-          // Step 3: Binarize with high contrast, preserving grays (darkened) and black outlines
+          // Step 1: Analyze pixels and binarize cleanly
           const bytesPerRow = Math.ceil(width / 8);
           const byteCount = bytesPerRow * height;
           
@@ -959,22 +894,14 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
             let rowHex = "";
             
             for (let x = 0; x < width; x++) {
-              const pIdx = y * width + x;
-              const lum = luminanceMap[pIdx];
+              const idx = (y * width + x) * 4;
+              const r = data[idx];
+              const g = data[idx + 1];
+              const b = data[idx + 2];
+              const a = data[idx + 3];
 
-              let isBlack = false;
-
-              // Forced solid black for contour outline
-              if (isDilatedOutline[pIdx]) {
-                isBlack = true;
-              } else if (isObjectPixel[pIdx]) {
-                // Darken gray tones so small and light items print crisply (lum < 235)
-                if (lum < 235) {
-                  isBlack = true;
-                }
-              } else if (lum < 180) {
-                isBlack = true;
-              }
+              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+              const isBlack = a > 20 && lum < 210;
               
               if (isBlack) {
                 byteVal |= (1 << (7 - bitsInByte));
@@ -1058,10 +985,10 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           }
         }
 
-        // Convert image to ZPL Graphic if available with a clean, perfectly square 240x240 size to remove stretching entirely!
+        // Convert image to ZPL Graphic if available and enabled
         let imageZPLCommand = "";
         let hasImage = false;
-        if (imageUrl) {
+        if (includeImageInLabel && imageUrl) {
           const zplImg = await imageToZPLHex(imageUrl, 240, 240);
           if (zplImg) {
             imageZPLCommand = `^FO540,80^GFA,${zplImg.byteCount},${zplImg.byteCount},${zplImg.bytesPerRow},${zplImg.hex}^FS`;
@@ -1806,24 +1733,43 @@ ${barcodeBlock}
               <div className="w-full lg:w-1/2 p-4 overflow-y-auto bg-slate-900 text-white flex flex-col gap-4">
                 
                 {/* Visualizer header tabs */}
-                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-800 pb-2">
                   <h4 className="font-black text-yellow-500 text-sm uppercase flex items-center gap-1.5">
                     <Printer size={15} />
                     Pré-Visualização Realística
                   </h4>
-                  <div className="flex bg-slate-800 p-0.5 rounded-lg border border-slate-750">
-                    <button
-                      onClick={() => setPreviewFormat("thermal")}
-                      className={`px-3 py-1.5 text-[10px] font-black rounded-md uppercase transition cursor-pointer ${previewFormat === "thermal" ? "bg-blue-600 text-white" : "text-black hover:text-white"}`}
-                    >
-                      Térmica 10x5cm
-                    </button>
-                    <button
-                      onClick={() => setPreviewFormat("a4")}
-                      className={`px-3 py-1.5 text-[10px] font-black rounded-md uppercase transition cursor-pointer ${previewFormat === "a4" ? "bg-purple-600 text-white" : "text-black hover:text-white"}`}
-                    >
-                      Grade Folha A4
-                    </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Img vs Barcode toggle */}
+                    <div className="flex bg-slate-800 p-0.5 rounded-lg border border-slate-750">
+                      <button
+                        onClick={() => setIncludeImageInLabel(true)}
+                        className={`px-2.5 py-1 text-[10px] font-black rounded-md transition cursor-pointer ${includeImageInLabel ? "bg-amber-500 text-white" : "text-slate-300 hover:text-white"}`}
+                      >
+                        🖼️ Com Imagem
+                      </button>
+                      <button
+                        onClick={() => setIncludeImageInLabel(false)}
+                        className={`px-2.5 py-1 text-[10px] font-black rounded-md transition cursor-pointer ${!includeImageInLabel ? "bg-amber-500 text-white" : "text-slate-300 hover:text-white"}`}
+                      >
+                        📊 Somente Cód. Barras
+                      </button>
+                    </div>
+
+                    {/* Thermal vs A4 format */}
+                    <div className="flex bg-slate-800 p-0.5 rounded-lg border border-slate-750">
+                      <button
+                        onClick={() => setPreviewFormat("thermal")}
+                        className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase transition cursor-pointer ${previewFormat === "thermal" ? "bg-blue-600 text-white" : "text-slate-300 hover:text-white"}`}
+                      >
+                        Térmica 10x5cm
+                      </button>
+                      <button
+                        onClick={() => setPreviewFormat("a4")}
+                        className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase transition cursor-pointer ${previewFormat === "a4" ? "bg-purple-600 text-white" : "text-slate-300 hover:text-white"}`}
+                      >
+                        Grade Folha A4
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1870,19 +1816,18 @@ ${barcodeBlock}
                           </div>
                         </div>
                         <div className="w-[94px] flex flex-col items-center shrink-0 border-l border-slate-100 pl-1 justify-center h-full overflow-hidden">
-                          {lbl.imageUrl ? (
-                            <div className="w-full h-full bg-white flex items-center justify-center min-h-0">
+                          {includeImageInLabel && lbl.imageUrl ? (
+                            <div className="w-full h-full bg-white flex items-center justify-center min-h-0 p-0.5">
                               <img 
                                 src={lbl.imageUrl} 
                                 alt="img" 
-                                className="w-full h-full object-contain filter contrast-[200%] brightness-80 drop-shadow-[0_0_1.5px_rgba(0,0,0,1)] drop-shadow-[0_0_0.5px_rgba(0,0,0,1)]" 
-                                style={{ filter: "contrast(200%) brightness(80%) drop-shadow(0 0 1.5px #000) drop-shadow(0 0 0.5px #000)", imageRendering: "crisp-edges" }}
+                                className="w-full h-full object-contain" 
                                 crossOrigin="anonymous" 
                               />
                             </div>
                           ) : (
                             <div className="w-full flex justify-center items-center scale-90">
-                              <LocalSVGBarcode data={`${lbl.code}|${lbl.color}|${lbl.size}|${lbl.printQuantity}`} />
+                              <LocalSVGBarcode data={`${lbl.code}|${lbl.color}|${lbl.size}|${lbl.printQuantity}`} codeText={lbl.code} />
                             </div>
                           )}
                         </div>
@@ -2144,19 +2089,18 @@ ${barcodeBlock}
 
                 {/* Barcode section */}
                 <div className="w-[104px] flex flex-col items-center shrink-0 border-l border-slate-100 pl-1 justify-center h-full overflow-hidden">
-                  {imageUrl ? (
-                    <div className="w-full h-full bg-white flex items-center justify-center min-h-0">
+                  {includeImageInLabel && imageUrl ? (
+                    <div className="w-full h-full bg-white flex items-center justify-center min-h-0 p-0.5">
                       <img 
                         src={imageUrl} 
                         alt="img" 
-                        className="w-full h-full object-contain filter contrast-[200%] brightness-80 drop-shadow-[0_0_1.5px_rgba(0,0,0,1)] drop-shadow-[0_0_0.5px_rgba(0,0,0,1)]" 
-                        style={{ filter: "contrast(200%) brightness(80%) drop-shadow(0 0 1.5px #000) drop-shadow(0 0 0.5px #000)", imageRendering: "crisp-edges" }}
+                        className="w-full h-full object-contain" 
                         crossOrigin="anonymous" 
                       />
                     </div>
                   ) : (
                     <div className="w-full flex justify-center items-center scale-[0.9]">
-                      <LocalSVGBarcode data={`${code}|${color}|${size}|${printQuantity}`} />
+                      <LocalSVGBarcode data={`${code}|${color}|${size}|${printQuantity}`} codeText={code} />
                     </div>
                   )}
                 </div>
@@ -2259,19 +2203,18 @@ ${barcodeBlock}
 
                           {/* Inner labels Barcode */}
                           <div className="w-[100px] flex flex-col items-center shrink-0 border-l border-slate-100 pl-1 justify-center h-full overflow-hidden">
-                            {imageUrl ? (
-                              <div className="w-full h-full bg-white flex items-center justify-center min-h-0">
+                            {includeImageInLabel && imageUrl ? (
+                              <div className="w-full h-full bg-white flex items-center justify-center min-h-0 p-0.5">
                                 <img 
                                   src={imageUrl} 
                                   alt="img" 
-                                  className="w-full h-full object-contain filter contrast-[200%] brightness-80 drop-shadow-[0_0_1.5px_rgba(0,0,0,1)] drop-shadow-[0_0_0.5px_rgba(0,0,0,1)]" 
-                                  style={{ filter: "contrast(200%) brightness(80%) drop-shadow(0 0 1.5px #000) drop-shadow(0 0 0.5px #000)", imageRendering: "crisp-edges" }}
+                                  className="w-full h-full object-contain" 
                                   crossOrigin="anonymous" 
                                 />
                               </div>
                             ) : (
                               <div className="w-full flex justify-center items-center scale-[0.8]">
-                                <LocalSVGBarcode data={`${code}|${color}|${size}|${printQuantity}`} />
+                                <LocalSVGBarcode data={`${code}|${color}|${size}|${printQuantity}`} codeText={code} />
                               </div>
                             )}
                           </div>

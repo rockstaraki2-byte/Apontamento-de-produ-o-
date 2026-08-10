@@ -86,6 +86,7 @@ export function LotesScreen({
   const [previewEtiquetasBatch, setPreviewEtiquetasBatch] = useState<ProductionBatch | null>(null);
   const [etiquetasSelectedOrderIds, setEtiquetasSelectedOrderIds] = useState<number[]>([]);
   const [etiquetasLayoutFormat, setEtiquetasLayoutFormat] = useState<"thermal" | "a4">("thermal");
+  const [etiquetasShowImage, setEtiquetasShowImage] = useState(true);
   const [etiquetasDestrinchar, setEtiquetasDestrinchar] = useState(false);
   const [etiquetasOcultarPai, setEtiquetasOcultarPai] = useState(false);
   const [isDirectPrintingEtiquetas, setIsDirectPrintingEtiquetas] = useState(false);
@@ -613,7 +614,7 @@ export function LotesScreen({
       const logoUrl = systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png";
       const companyName = systemSettings.companyName || db.activeTenant?.name || "IMPÉRIO JOMARCI";
 
-      const zplString = await generateZPLFromBatchLabels(labelItems, logoUrl, companyName);
+      const zplString = await generateZPLFromBatchLabels(labelItems, logoUrl, companyName, etiquetasShowImage);
 
       if (!zplString) {
         alert("Não foi possível gerar código ZPL para os itens selecionados.");
@@ -2129,6 +2130,35 @@ export function LotesScreen({
                   {/* Configurações da Etiqueta */}
                   <div className="bg-white border border-slate-200/80 p-3.5 rounded-xl shadow-2xs space-y-2.5">
                     <span className="text-xs font-black text-slate-800 uppercase tracking-wider block">
+                      🖼️ Conteúdo Visual da Etiqueta
+                    </span>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEtiquetasShowImage(true)}
+                        className={`p-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition border ${
+                          etiquetasShowImage
+                            ? "bg-amber-500 text-white border-amber-600 shadow-2xs"
+                            : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                        }`}
+                      >
+                        🖼️ Imagem do Produto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEtiquetasShowImage(false)}
+                        className={`p-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition border ${
+                          !etiquetasShowImage
+                            ? "bg-amber-500 text-white border-amber-600 shadow-2xs"
+                            : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                        }`}
+                      >
+                        📊 Somente Cód. Barras + Código
+                      </button>
+                    </div>
+
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider block pt-2 border-t border-slate-100">
                       ⚙️ Opções de Kits / Peças
                     </span>
 
@@ -2291,6 +2321,7 @@ export function LotesScreen({
                       layoutFormat={etiquetasLayoutFormat}
                       destrincharComposicoes={etiquetasDestrinchar}
                       ocultarPaiComposicao={etiquetasOcultarPai}
+                      showImage={etiquetasShowImage}
                     />
                   </div>
                 )}

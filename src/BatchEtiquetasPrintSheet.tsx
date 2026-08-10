@@ -10,6 +10,7 @@ interface BatchEtiquetasPrintSheetProps {
   layoutFormat: "thermal" | "a4";
   destrincharComposicoes?: boolean;
   ocultarPaiComposicao?: boolean;
+  showImage?: boolean;
 }
 
 // Fallback Company Logo with image error handling
@@ -211,7 +212,7 @@ export function buildBatchLabelItemsData({
 export const BatchEtiquetasPrintSheet = forwardRef<
   HTMLDivElement,
   BatchEtiquetasPrintSheetProps
->(({ batch, orderIds = [], db, layoutFormat = "thermal", destrincharComposicoes = false, ocultarPaiComposicao = false }, ref) => {
+>(({ batch, orderIds = [], db, layoutFormat = "thermal", destrincharComposicoes = false, ocultarPaiComposicao = false, showImage = true }, ref) => {
   const systemSettings = db.systemSettings?.[0] || {};
   const logoUrl = systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png";
   const companyName = systemSettings.companyName || db.activeTenant?.name || "IMPÉRIO JOMARCI";
@@ -296,13 +297,12 @@ export const BatchEtiquetasPrintSheet = forwardRef<
 
         {/* Right Column: Barcode or Image */}
         <div className="w-[105px] flex flex-col items-center shrink-0 border-l border-slate-200 pl-2 justify-center h-full overflow-hidden">
-          {label.imageUrl ? (
-            <div className="w-full h-full bg-white flex flex-col items-center justify-center min-h-0 p-1">
+          {showImage && label.imageUrl ? (
+            <div className="w-full h-full bg-white flex flex-col items-center justify-center min-h-0 p-0.5">
               <img 
                 src={label.imageUrl} 
                 alt="img" 
-                className="w-full h-full object-contain filter contrast-[200%] brightness-80 drop-shadow-[0_0_1.5px_rgba(0,0,0,1)] drop-shadow-[0_0_0.5px_rgba(0,0,0,1)]" 
-                style={{ filter: "contrast(200%) brightness(80%) drop-shadow(0 0 1.5px #000) drop-shadow(0 0 0.5px #000)", imageRendering: "crisp-edges" }}
+                className="w-full h-full object-contain" 
                 crossOrigin="anonymous" 
               />
             </div>
