@@ -29,6 +29,9 @@ export function StatusScreen({
   const [deliveryFilter, setDeliveryFilter] = useState<
     "TODOS" | "NO_PRAZO" | "RISCO" | "ATRASADO" | "FATURADO_PARCIAL" | "FATURADO"
   >("TODOS");
+  const [printedFilter, setPrintedFilter] = useState<
+    "TODOS" | "NAO_IMPRESSOS" | "IMPRESSOS"
+  >("TODOS");
   const [deliveryDateStart, setDeliveryDateStart] = useState<string>("");
   const [deliveryDateEnd, setDeliveryDateEnd] = useState<string>("");
   const [orderRangeStart, setOrderRangeStart] = useState<string>("");
@@ -39,6 +42,31 @@ export function StatusScreen({
   );
   const [selectedOrderCodesForPrint, setSelectedOrderCodesForPrint] = useState<string[]>([]);
   const [isUpdating, setIsUpdating] = useState<number | null>(null);
+
+  const markOrdersAsPrinted = (codes: string[]) => {
+    if (!codes || codes.length === 0) return;
+    const ordersToUpdate = db.orders.filter((o) => codes.includes(o.orderCode) && !o.isPrinted);
+    if (ordersToUpdate.length > 0) {
+      const updated = ordersToUpdate.map((o) => ({
+        ...o,
+        isPrinted: true,
+        printedAt: Date.now(),
+      }));
+      db.updateOrders(updated);
+    }
+  };
+
+  const toggleOrderPrintedStatus = (code: string, currentPrinted: boolean) => {
+    const ordersToUpdate = db.orders.filter((o) => o.orderCode === code);
+    if (ordersToUpdate.length > 0) {
+      const updated = ordersToUpdate.map((o) => ({
+        ...o,
+        isPrinted: !currentPrinted,
+        printedAt: !currentPrinted ? Date.now() : undefined,
+      }));
+      db.updateOrders(updated);
+    }
+  };
 
   const [whatsAppShareData, setWhatsAppShareData] = useState<{
     orderCode: string;
@@ -493,6 +521,10 @@ export function StatusScreen({
         }
       }
 
+      // 5. Printed status filter match
+      if (printedFilter === "NAO_IMPRESSOS" && o.isPrinted) return false;
+      if (printedFilter === "IMPRESSOS" && !o.isPrinted) return false;
+
       return true;
     });
 
@@ -504,7 +536,7 @@ export function StatusScreen({
     return Array.from(map.entries()).sort(
       (a, b) => b[1][0].createdAt - a[1][0].createdAt,
     );
-  }, [db.orders, debouncedSearchTerm, deliveryFilter, selectedStatuses, selectedBatchFilter, db.productionBatches, deliveryDateStart, deliveryDateEnd, orderRangeStart, orderRangeEnd, filterByRangeActive]);
+  }, [db.orders, debouncedSearchTerm, deliveryFilter, printedFilter, selectedStatuses, selectedBatchFilter, db.productionBatches, deliveryDateStart, deliveryDateEnd, orderRangeStart, orderRangeEnd, filterByRangeActive]);
 
   const handleStatusChange = (orderId: number, newStatus: OrderStatus) => {
     setIsUpdating(orderId);
@@ -856,8 +888,8 @@ export function StatusScreen({
       )}
 
       {/* Search and Delivery Status Selector Filters */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-3">
-        <div className="md:col-span-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 mb-3">
+        <div className="sm:col-span-2 lg:col-span-2">
           <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1.5 font-sans">
             Buscar Pedido ou Cliente
           </label>
@@ -905,6 +937,26 @@ export function StatusScreen({
             <option value="ATRASADO">Atrasado (Vencido)</option>
             <option value="FATURADO_PARCIAL">Faturado Parcial</option>
             <option value="FATURADO">Faturado Completo</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1.5 font-sans">
+            Impressão
+          </label>
+          <select
+            value={printedFilter}
+            onChange={(e) => setPrintedFilter(e.target.value as any)}
+            className={`border p-2 text-sm rounded w-full font-bold focus:outline-blue-500 cursor-pointer ${
+              printedFilter === "NAO_IMPRESSOS"
+                ? "bg-amber-50 text-amber-900 border-amber-300"
+                : printedFilter === "IMPRESSOS"
+                ? "bg-emerald-50 text-emerald-900 border-emerald-300"
+                : "bg-white text-gray-700 border-gray-300"
+            }`}
+          >
+            <option value="TODOS">Todos os Status</option>
+            <option value="NAO_IMPRESSOS">⏳ Não Impressos</option>
+            <option value="IMPRESSOS">🖨️ Já Impressos</option>
           </select>
         </div>
         <div>
@@ -1107,6 +1159,7 @@ export function StatusScreen({
                   <button
                     type="button"
                     onClick={() => {
+                      markOrdersAsPrinted(selectedOrderCodesForPrint);
                       window.dispatchEvent(
                         new CustomEvent("print-order", {
                           detail: {
@@ -1125,6 +1178,7 @@ export function StatusScreen({
                   <button
                     type="button"
                     onClick={() => {
+                      markOrdersAsPrinted(selectedOrderCodesForPrint);
                       window.dispatchEvent(
                         new CustomEvent("print-order", {
                           detail: {
@@ -1265,6 +1319,26 @@ export function StatusScreen({
                           </div>
                         );
                       })()}
+                    {(() => {
+                      const isPrinted = orders.some((o) => o.isPrinted);
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleOrderPrintedStatus(code, isPrinted);
+                          }}
+                          title="Clique para alternar o status de impressão"
+                          className={`px-2 py-0.5 rounded text-[10px] font-extrabold border uppercase tracking-wider flex items-center gap-1 cursor-pointer transition active:scale-95 ${
+                            isPrinted
+                              ? "bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200"
+                              : "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200"
+                          }`}
+                        >
+                          {isPrinted ? "🖨️ Impresso" : "⏳ Não Impresso"}
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -1424,6 +1498,7 @@ export function StatusScreen({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
+                      markOrdersAsPrinted([code]);
                       window.dispatchEvent(
                         new CustomEvent("print-order", {
                           detail: {
@@ -1495,6 +1570,7 @@ export function StatusScreen({
               <button
                 type="button"
                 onClick={() => {
+                  markOrdersAsPrinted(selectedOrderCodesForPrint);
                   window.dispatchEvent(
                     new CustomEvent("print-order", {
                       detail: {
@@ -1513,6 +1589,7 @@ export function StatusScreen({
               <button
                 type="button"
                 onClick={() => {
+                  markOrdersAsPrinted(selectedOrderCodesForPrint);
                   window.dispatchEvent(
                     new CustomEvent("print-order", {
                       detail: {

@@ -16054,6 +16054,21 @@ export default function App() {
                           }
                         }
 
+                        // Mark orders as printed in DB
+                        if (orderCodesToPrintList.length > 0) {
+                          const ordersToUpdate = db.orders.filter(
+                            (o) => orderCodesToPrintList.includes(o.orderCode) && !o.isPrinted
+                          );
+                          if (ordersToUpdate.length > 0) {
+                            const updated = ordersToUpdate.map((o) => ({
+                              ...o,
+                              isPrinted: true,
+                              printedAt: Date.now(),
+                            }));
+                            db.updateOrders(updated);
+                          }
+                        }
+
                         import("./printUtils").then(({ printElementById }) => {
                           printElementById("print-order-sheet", pdfTitle, true);
                         });

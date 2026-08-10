@@ -207,6 +207,8 @@ export interface Order {
   cutQuantity?: number;
   invoicedQuantity?: number;
   isThirdPartyLaser?: boolean;
+  isPrinted?: boolean;
+  printedAt?: number;
   isActive: boolean;
   createdAt: number;
   deliveryDate: string;
