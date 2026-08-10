@@ -15492,11 +15492,15 @@ export default function App() {
                   width: 100% !important;
                   height: 136mm !important;
                   max-height: 136mm !important;
-                  padding: 3.5mm 5.5mm !important;
+                  padding: 3mm 5mm !important;
                   border: 1px solid #94a3b8 !important;
                   overflow: hidden !important;
                   background: white !important;
                   border-radius: 0 !important;
+                  display: flex !important;
+                  flex-direction: column !important;
+                  justify-content: flex-start !important;
+                  gap: 2mm !important;
                 }
                 .serrated-cut-line {
                   box-sizing: border-box !important;
@@ -15516,8 +15520,7 @@ export default function App() {
                 .full-sheet-order-card {
                   box-sizing: border-box !important;
                   width: 100% !important;
-                  min-height: 275mm !important;
-                  padding: 8mm 10mm !important;
+                  padding: 6mm 8mm !important;
                   border: 1px solid #cbd5e1 !important;
                   margin-bottom: 0 !important;
                   page-break-inside: avoid !important;
@@ -15525,6 +15528,10 @@ export default function App() {
                   page-break-after: always !important;
                   break-after: page !important;
                   background: white !important;
+                  display: flex !important;
+                  flex-direction: column !important;
+                  justify-content: flex-start !important;
+                  gap: 3.5mm !important;
                 }
               }
             `}</style>
@@ -15673,25 +15680,25 @@ export default function App() {
                           key={codeToPrint}
                           className={`${
                             isFull
-                              ? "full-sheet-order-card p-6 sm:p-8 space-y-4"
-                              : "half-sheet-order-card p-3.5 sm:p-4"
-                          } bg-white border border-slate-300 rounded-xl shadow-xs flex flex-col justify-between font-sans text-slate-800`}
+                              ? "full-sheet-order-card p-5 sm:p-6 gap-3"
+                              : "half-sheet-order-card p-3 sm:p-3.5 gap-2"
+                          } bg-white border border-slate-300 rounded-xl shadow-xs flex flex-col justify-start font-sans text-slate-800`}
                           style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
                         >
                           {/* Brand Branding Block */}
                           <div
                             className={`flex items-center justify-between border-b ${
-                              isFull ? "pb-4 mb-2" : "pb-2"
+                              isFull ? "pb-3 mb-1" : "pb-1.5 mb-0.5"
                             } border-slate-200`}
                           >
                             <div className="flex items-center gap-2.5">
                               <div
                                 className={`${
-                                  isFull ? "p-2.5" : "p-1.5"
+                                  isFull ? "p-2" : "p-1.5"
                                 } bg-slate-950 rounded-lg border border-[#00b14f]/30 flex items-center justify-center`}
                               >
                                 <svg
-                                  className={`${isFull ? "w-7 h-7" : "w-5 h-5"} text-[#00b14f]`}
+                                  className={`${isFull ? "w-6 h-6" : "w-4 h-4"} text-[#00b14f]`}
                                   viewBox="0 0 24 24"
                                   fill="currentColor"
                                 >
@@ -15718,7 +15725,7 @@ export default function App() {
                             <div className="text-right">
                               <span
                                 className={`${
-                                  isFull ? "text-[10px] px-3 py-1" : "text-[8px] px-2 py-0.5"
+                                  isFull ? "text-[10px] px-2.5 py-0.5" : "text-[8px] px-2 py-0.5"
                                 } bg-[#00b14f]/10 text-[#00b14f] border border-[#00b14f]/20 rounded font-black uppercase tracking-wider inline-block`}
                               >
                                 Pedido de Venda ({isFull ? "Folha Inteira" : "Meia Folha"})
@@ -15726,169 +15733,100 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Info Blocks Grid */}
-                          <div
-                            className={`grid ${
-                              isFull
-                                ? "grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3 text-xs"
-                                : "grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 mt-2 text-[10px]"
-                            }`}
-                          >
-                            <div className="bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
-                              <span
-                                className={`${
-                                  isFull ? "text-[9px]" : "text-[7.5px]"
-                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
-                              >
-                                Nº do Pedido
-                              </span>
-                              <span
-                                className={`${
-                                  isFull ? "text-sm" : "text-xs"
-                                } font-black text-[#00b14f] font-mono block`}
-                              >
-                                #{codeToPrint}
-                              </span>
+                          {/* Unified Condensed Info Panel */}
+                          <div className="border border-slate-300/90 rounded-lg overflow-hidden bg-slate-50/70 divide-y divide-slate-200">
+                            {/* Row 1: Key Metadata */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-200">
+                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                  Nº do Pedido
+                                </span>
+                                <span className={`${isFull ? "text-sm" : "text-xs"} font-black text-[#00b14f] font-mono block mt-0.5`}>
+                                  #{codeToPrint}
+                                </span>
+                              </div>
+
+                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                  Data do Pedido
+                                </span>
+                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-800 block mt-0.5`}>
+                                  {firstOrd.createdAt
+                                    ? new Date(firstOrd.createdAt).toLocaleDateString("pt-BR")
+                                    : "-"}
+                                </span>
+                              </div>
+
+                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                  Previsão de Entrega
+                                </span>
+                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-rose-600 block mt-0.5 font-mono`}>
+                                  {firstOrd.deliveryDate
+                                    ? firstOrd.deliveryDate.split("-").reverse().join("/")
+                                    : "-"}
+                                </span>
+                              </div>
+
+                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                  Nota Fiscal (NF)
+                                </span>
+                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-slate-800 block mt-0.5 truncate`}>
+                                  {fiscalTypeLabel}
+                                </span>
+                              </div>
                             </div>
 
-                            <div className="bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
-                              <span
-                                className={`${
-                                  isFull ? "text-[9px]" : "text-[7.5px]"
-                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
-                              >
-                                Data do Pedido
-                              </span>
-                              <span
-                                className={`${
-                                  isFull ? "text-xs" : "text-[10.5px]"
-                                } font-bold text-slate-800 block mt-0.5`}
-                              >
-                                {firstOrd.createdAt
-                                  ? new Date(firstOrd.createdAt).toLocaleDateString("pt-BR")
-                                  : "-"}
-                              </span>
+                            {/* Row 2: Customer Details */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
+                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                  Cliente / Razão Social
+                                </span>
+                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-slate-900 block mt-0.5 truncate`}>
+                                  {firstOrd.customerName}
+                                </span>
+                              </div>
+
+                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                  Cidade / UF / Bairro do Cliente
+                                </span>
+                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-800 block mt-0.5 truncate`}>
+                                  📍 {locationFullLabel}
+                                </span>
+                              </div>
                             </div>
 
-                            <div className="bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
-                              <span
-                                className={`${
-                                  isFull ? "text-[9px]" : "text-[7.5px]"
-                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
-                              >
-                                Previsão de Entrega
-                              </span>
-                              <span
-                                className={`${
-                                  isFull ? "text-xs" : "text-[10.5px]"
-                                } font-bold text-rose-600 block mt-0.5 font-mono`}
-                              >
-                                {firstOrd.deliveryDate
-                                  ? firstOrd.deliveryDate.split("-").reverse().join("/")
-                                  : "-"}
-                              </span>
-                            </div>
+                            {/* Row 3: Commercial & Production */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
+                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                  Condição de Pagamento
+                                </span>
+                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-indigo-900 block mt-0.5 truncate`}>
+                                  💳 {paymentStr}
+                                </span>
+                              </div>
 
-                            <div className="bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
-                              <span
-                                className={`${
-                                  isFull ? "text-[9px]" : "text-[7.5px]"
-                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
-                              >
-                                Nota Fiscal (NF)
-                              </span>
-                              <span
-                                className={`${
-                                  isFull ? "text-xs" : "text-[10px]"
-                                } font-black text-slate-800 block mt-0.5 truncate`}
-                              >
-                                {fiscalTypeLabel}
-                              </span>
-                            </div>
+                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                  Representante
+                                </span>
+                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-700 block mt-0.5 truncate`}>
+                                  {firstOrd.representativeName || "Venda Direta"}
+                                </span>
+                              </div>
 
-                            <div className="col-span-2 bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
-                              <span
-                                className={`${
-                                  isFull ? "text-[9px]" : "text-[7.5px]"
-                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
-                              >
-                                Cliente / Razão Social
-                              </span>
-                              <span
-                                className={`${
-                                  isFull ? "text-xs" : "text-[10.5px]"
-                                } font-black text-slate-900 block mt-0.5 truncate`}
-                              >
-                                {firstOrd.customerName}
-                              </span>
-                            </div>
-
-                            <div className="col-span-2 bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
-                              <span
-                                className={`${
-                                  isFull ? "text-[9px]" : "text-[7.5px]"
-                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
-                              >
-                                Cidade / UF / Bairro do Cliente
-                              </span>
-                              <span
-                                className={`${
-                                  isFull ? "text-xs" : "text-[10.5px]"
-                                } font-bold text-slate-800 block mt-0.5 truncate`}
-                              >
-                                📍 {locationFullLabel}
-                              </span>
-                            </div>
-
-                            <div className="col-span-2 bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
-                              <span
-                                className={`${
-                                  isFull ? "text-[9px]" : "text-[7.5px]"
-                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
-                              >
-                                Condição de Pagamento
-                              </span>
-                              <span
-                                className={`${
-                                  isFull ? "text-xs" : "text-[10.5px]"
-                                } font-black text-indigo-900 block mt-0.5 truncate`}
-                              >
-                                💳 {paymentStr}
-                              </span>
-                            </div>
-
-                            <div className="bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
-                              <span
-                                className={`${
-                                  isFull ? "text-[9px]" : "text-[7.5px]"
-                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
-                              >
-                                Representante
-                              </span>
-                              <span
-                                className={`${
-                                  isFull ? "text-xs" : "text-[10px]"
-                                } font-bold text-slate-700 block mt-0.5 truncate`}
-                              >
-                                {firstOrd.representativeName || "Venda Direta"}
-                              </span>
-                            </div>
-
-                            <div className="bg-slate-50 border border-slate-200/80 p-1.5 sm:p-2 rounded-lg">
-                              <span
-                                className={`${
-                                  isFull ? "text-[9px]" : "text-[7.5px]"
-                                } text-gray-400 font-extrabold uppercase tracking-wider block`}
-                              >
-                                Lote Produção
-                              </span>
-                              <span
-                                className={`${
-                                  isFull ? "text-xs" : "text-[10px]"
-                                } font-extrabold text-emerald-800 block mt-0.5 truncate`}
-                              >
-                                🏷️ {lotesStr}
-                              </span>
+                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                  Lote Produção
+                                </span>
+                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-extrabold text-emerald-800 block mt-0.5 truncate`}>
+                                  🏷️ {lotesStr}
+                                </span>
+                              </div>
                             </div>
                           </div>
 

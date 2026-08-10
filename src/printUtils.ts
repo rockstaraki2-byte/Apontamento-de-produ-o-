@@ -221,10 +221,14 @@ export function printElementById(elementId: string, docTitle: string = "Document
         width: 100% !important;
         height: 136mm !important;
         max-height: 136mm !important;
-        padding: 3.5mm 5.5mm !important;
+        padding: 3mm 5mm !important;
         border: 1px solid #94a3b8 !important;
         overflow: hidden !important;
         background: white !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        gap: 2mm !important;
       }
       .serrated-cut-line {
         box-sizing: border-box !important;
@@ -244,7 +248,7 @@ export function printElementById(elementId: string, docTitle: string = "Document
       .full-sheet-order-card {
         box-sizing: border-box !important;
         width: 100% !important;
-        padding: 10mm 12mm !important;
+        padding: 6mm 8mm !important;
         border: 1px solid #cbd5e1 !important;
         margin-bottom: 8mm !important;
         page-break-after: always !important;
@@ -252,6 +256,10 @@ export function printElementById(elementId: string, docTitle: string = "Document
         page-break-inside: avoid !important;
         break-inside: avoid !important;
         background: white !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        gap: 3.5mm !important;
       }
       .full-sheet-order-card:last-child {
         page-break-after: auto !important;
