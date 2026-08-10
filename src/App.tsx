@@ -2858,6 +2858,40 @@ function PedidosScreen({
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [filterUrgentOnly, setFilterUrgentOnly] = useState<boolean>(false);
+  const [printedFilter, setPrintedFilter] = useState<"TODOS" | "NAO_IMPRESSOS" | "IMPRESSOS">("TODOS");
+
+  const markOrdersAsPrinted = React.useCallback(
+    (codes: string[]) => {
+      if (!codes || codes.length === 0) return;
+      const ordersToUpdate = db.orders.filter(
+        (o) => codes.includes(o.orderCode) && !o.isPrinted
+      );
+      if (ordersToUpdate.length > 0) {
+        const updated = ordersToUpdate.map((o) => ({
+          ...o,
+          isPrinted: true,
+          printedAt: Date.now(),
+        }));
+        db.updateOrders(updated);
+      }
+    },
+    [db.orders, db.updateOrders],
+  );
+
+  const toggleOrderPrintedStatus = React.useCallback(
+    (code: string, currentPrinted: boolean) => {
+      const ordersToUpdate = db.orders.filter((o) => o.orderCode === code);
+      if (ordersToUpdate.length > 0) {
+        const updated = ordersToUpdate.map((o) => ({
+          ...o,
+          isPrinted: !currentPrinted,
+          printedAt: !currentPrinted ? Date.now() : undefined,
+        }));
+        db.updateOrders(updated);
+      }
+    },
+    [db.orders, db.updateOrders],
+  );
 
   // Batch Printing & Range Selection States
   const [orderRangeStart, setOrderRangeStart] = useState<string>("");
@@ -3127,6 +3161,10 @@ function PedidosScreen({
         }
       }
 
+      // Printed status filter match
+      if (printedFilter === "NAO_IMPRESSOS" && o.isPrinted) return false;
+      if (printedFilter === "IMPRESSOS" && !o.isPrinted) return false;
+
       return true;
     });
 
@@ -3145,6 +3183,7 @@ function PedidosScreen({
     selectedStatuses,
     filterBatchState,
     filterNotInvoicedOnly,
+    printedFilter,
     deliveryDateStart,
     deliveryDateEnd,
     currentUser,
@@ -9197,6 +9236,7 @@ function PedidosScreen({
                       filterDeadlines.length < 5 ||
                       filterBatchState !== "TODOS" ||
                       filterNotInvoicedOnly ||
+                      printedFilter !== "TODOS" ||
                       deliveryDateStart || deliveryDateEnd
                         ? "text-indigo-600 animate-pulse"
                         : "text-slate-500"
@@ -9206,12 +9246,14 @@ function PedidosScreen({
                   {(filterDeadlines.length < 5 ? 1 : 0) +
                     (filterBatchState !== "TODOS" ? 1 : 0) +
                     (filterNotInvoicedOnly ? 1 : 0) +
+                    (printedFilter !== "TODOS" ? 1 : 0) +
                     (deliveryDateStart || deliveryDateEnd ? 1 : 0) >
                     0 && (
                     <span className="bg-indigo-600 text-white text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center">
                       {(filterDeadlines.length < 5 ? 1 : 0) +
                         (filterBatchState !== "TODOS" ? 1 : 0) +
                         (filterNotInvoicedOnly ? 1 : 0) +
+                        (printedFilter !== "TODOS" ? 1 : 0) +
                         (deliveryDateStart || deliveryDateEnd ? 1 : 0)}
                     </span>
                   )}
@@ -9241,6 +9283,7 @@ function PedidosScreen({
                             ]);
                             setFilterBatchState("TODOS");
                             setFilterNotInvoicedOnly(false);
+                            setPrintedFilter("TODOS");
                             setDeliveryDateStart("");
                             setDeliveryDateEnd("");
                           }}
@@ -9437,6 +9480,30 @@ function PedidosScreen({
                           </span>
                         </label>
                       </div>
+
+                      {/* Section 4: Impressão */}
+                      <div className="flex flex-col gap-1 border-t border-slate-100 pt-2">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+                          Status de Impressão
+                        </label>
+                        <select
+                          value={printedFilter}
+                          onChange={(e) =>
+                            setPrintedFilter(e.target.value as any)
+                          }
+                          className={`w-full border border-slate-200 text-[11px] font-bold rounded p-1.5 outline-none cursor-pointer ${
+                            printedFilter === "NAO_IMPRESSOS"
+                              ? "bg-amber-50 text-amber-900 border-amber-300"
+                              : printedFilter === "IMPRESSOS"
+                              ? "bg-emerald-50 text-emerald-900 border-emerald-300"
+                              : "bg-slate-50 text-slate-700"
+                          }`}
+                        >
+                          <option value="TODOS">Todos os Pedidos</option>
+                          <option value="NAO_IMPRESSOS">⏳ Não Impressos</option>
+                          <option value="IMPRESSOS">🖨️ Já Impressos</option>
+                        </select>
+                      </div>
                     </div>
                   </>
                 )}
@@ -9515,12 +9582,27 @@ function PedidosScreen({
           {(filterDeadlines.length < 6 ? 1 : 0) +
             (filterBatchState !== "TODOS" ? 1 : 0) +
             (filterNotInvoicedOnly ? 1 : 0) +
+            (printedFilter !== "TODOS" ? 1 : 0) +
             (deliveryDateStart || deliveryDateEnd ? 1 : 0) >
             0 && (
             <div className="flex flex-wrap items-center gap-1.5 px-1 pb-2 mb-2 border-b border-slate-150 shrink-0">
               <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest mr-1">
                 Filtros:
               </span>
+
+              {printedFilter !== "TODOS" && (
+                <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-full shadow-2xs">
+                  {printedFilter === "NAO_IMPRESSOS" ? "⏳ Não Impressos" : "🖨️ Já Impressos"}
+                  <button
+                    type="button"
+                    onClick={() => setPrintedFilter("TODOS")}
+                    className="hover:text-red-500 font-extrabold text-[12px] leading-none ml-1 transition cursor-pointer"
+                    title="Remover filtro de impressão"
+                  >
+                    &times;
+                  </button>
+                </span>
+              )}
 
               {filterDeadlines.length < 6 && (
                 <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-150/60 px-2 py-0.5 rounded-full shadow-2xs">
@@ -9634,6 +9716,7 @@ function PedidosScreen({
                   ]);
                   setFilterBatchState("TODOS");
                   setFilterNotInvoicedOnly(false);
+                  setPrintedFilter("TODOS");
                   setDeliveryDateStart("");
                   setDeliveryDateEnd("");
                   setOrderRangeStart("");
@@ -9738,6 +9821,7 @@ function PedidosScreen({
                   <button
                     type="button"
                     onClick={() => {
+                      markOrdersAsPrinted(selectedOrderCodesForPrint);
                       window.dispatchEvent(
                         new CustomEvent("print-order", {
                           detail: {
@@ -9755,6 +9839,7 @@ function PedidosScreen({
                   <button
                     type="button"
                     onClick={() => {
+                      markOrdersAsPrinted(selectedOrderCodesForPrint);
                       window.dispatchEvent(
                         new CustomEvent("print-order", {
                           detail: {
@@ -9785,6 +9870,7 @@ function PedidosScreen({
                   const firstOrder = orders[0];
                   const dStatus = getDeliveryStatus(firstOrder);
                   const isSelectedForPrint = selectedOrderCodesForPrint.includes(code);
+                  const isPrinted = orders.some((o) => o.isPrinted);
                   let badgeColor = "";
                   if (dStatus === "Atrasado") {
                     badgeColor =
@@ -9851,6 +9937,21 @@ function PedidosScreen({
                                 className="w-3 h-3 rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer pointer-events-none"
                               />
                               <span>{isSelectedForPrint ? "Marcado" : "Marcar"}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleOrderPrintedStatus(code, isPrinted);
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold transition flex items-center gap-1 cursor-pointer border ${
+                                isPrinted
+                                  ? "bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200"
+                                  : "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200"
+                              }`}
+                              title="Clique para alternar o status de impressão do pedido"
+                            >
+                              {isPrinted ? "🖨️ Impresso" : "⏳ Não Impresso"}
                             </button>
                           </div>
                           <span className="text-[9px] sm:text-[10px] text-slate-700 font-semibold mt-0.5 truncate max-w-[210px]" title={firstOrder.customerName}>
@@ -9959,6 +10060,7 @@ function PedidosScreen({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  markOrdersAsPrinted([code]);
                                   window.dispatchEvent(
                                     new CustomEvent("print-order", {
                                       detail: {
@@ -10030,6 +10132,7 @@ function PedidosScreen({
               <button
                 type="button"
                 onClick={() => {
+                  markOrdersAsPrinted(selectedOrderCodesForPrint);
                   window.dispatchEvent(
                     new CustomEvent("print-order", {
                       detail: {
@@ -10048,6 +10151,7 @@ function PedidosScreen({
               <button
                 type="button"
                 onClick={() => {
+                  markOrdersAsPrinted(selectedOrderCodesForPrint);
                   window.dispatchEvent(
                     new CustomEvent("print-order", {
                       detail: {
@@ -10099,10 +10203,29 @@ function PedidosScreen({
                   );
                   const clientCode = clientObj?.id || "-";
                   const clientDisplayName = clientObj?.tradeName || rawCustName || "-";
+                  const modalOrders = db.orders.filter(
+                    (o) => o.orderCode === selectedOrderCode && o.isActive !== false
+                  );
+                  const modalIsPrinted = modalOrders.some((o) => o.isPrinted);
+
                   return (
-                    <span className="text-[10px] sm:text-xs text-slate-700 font-bold font-sans">
-                      Cliente: {clientDisplayName} <span className="ml-1 text-[9px] font-mono leading-none bg-indigo-100 text-indigo-700 font-black px-1.5 py-0.5 rounded border border-indigo-200">Cód: {clientCode}</span>
-                    </span>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] sm:text-xs text-slate-700 font-bold font-sans">
+                        Cliente: {clientDisplayName} <span className="ml-1 text-[9px] font-mono leading-none bg-indigo-100 text-indigo-700 font-black px-1.5 py-0.5 rounded border border-indigo-200">Cód: {clientCode}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => toggleOrderPrintedStatus(selectedOrderCode, modalIsPrinted)}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold transition flex items-center gap-1 cursor-pointer border ${
+                          modalIsPrinted
+                            ? "bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200"
+                            : "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200"
+                        }`}
+                        title="Clique para alternar o status de impressão do pedido"
+                      >
+                        {modalIsPrinted ? "🖨️ Impresso" : "⏳ Não Impresso"}
+                      </button>
+                    </div>
                   );
                 })()}
               </div>
