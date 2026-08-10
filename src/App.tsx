@@ -5853,7 +5853,7 @@ function PedidosScreen({
           isThirdPartyLaser: itemInfo.isThirdPartyLaser,
           isUrgent: itemInfo.isUrgent,
           isProgramacao: itemInfo.isProgramacao,
-          isActive: status !== "TEM_ESTOQUE",
+          isActive: true,
           createdAt: Date.now(),
           deliveryDate,
           status: status,
@@ -15602,7 +15602,10 @@ export default function App() {
                     {(() => {
                       const renderOrderCard = (codeToPrint: string) => {
                         const groupOrders = db.orders.filter(
-                          (o) => o.orderCode === codeToPrint && o.isActive !== false,
+                          (o) =>
+                            o.orderCode === codeToPrint &&
+                            o.status !== "CANCELADO" &&
+                            (o.isActive !== false || o.status === "TEM_ESTOQUE"),
                         );
                       if (groupOrders.length === 0) return null;
 
@@ -16025,7 +16028,10 @@ export default function App() {
                         if (orderCodesToPrintList.length >= 1) {
                           const code = orderCodesToPrintList[0];
                           const ord = db.orders.find(
-                            (o) => o.orderCode === code && o.isActive !== false
+                            (o) =>
+                              o.orderCode === code &&
+                              o.status !== "CANCELADO" &&
+                              (o.isActive !== false || o.status === "TEM_ESTOQUE")
                           );
                           const cust = ord ? findCustomerForOrder(ord, db.customers) : null;
                           const rawClientName =

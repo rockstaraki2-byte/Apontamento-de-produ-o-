@@ -77,7 +77,7 @@ export function StatusScreen({
 
     const allCodesMap = new Map<string, Order[]>();
     db.orders.forEach((o) => {
-      if (o.orderCode && o.isActive !== false) {
+      if (o.orderCode && (o.isActive !== false || o.status === "TEM_ESTOQUE") && o.status !== "CANCELADO") {
         if (!allCodesMap.has(o.orderCode)) allCodesMap.set(o.orderCode, []);
         allCodesMap.get(o.orderCode)!.push(o);
       }
