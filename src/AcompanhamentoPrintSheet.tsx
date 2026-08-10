@@ -4,6 +4,7 @@ import { Order, ProductionBatch } from "./types";
 import { ClipboardList, Layers, Grid } from "lucide-react";
 import { getItemUnit } from "./utils/unitUtils";
 import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
+import { findCustomerForOrder } from "./searchUtils";
 
 interface AcompanhamentoPrintSheetProps {
   batch: ProductionBatch;
@@ -306,12 +307,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
                               </span>
                               <div className="grid grid-cols-1 gap-y-1 text-[9px] overflow-y-auto max-h-[160px] pr-1">
                                 {p.orders.map((o, oIdx) => {
-                                  const customerObj = db.customers?.find(
-                                    (c) =>
-                                      c.name === o.customerName ||
-                                      c.tradeName === o.customerName ||
-                                      String(c.id) === String(o.customerName)
-                                  );
+                                  const customerObj = findCustomerForOrder(o, db.customers);
                                   const resolvedCustomerName = customerObj?.tradeName?.trim() || customerObj?.name?.trim() || o.customerName;
 
                                   return (

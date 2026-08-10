@@ -3,6 +3,7 @@ import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
 import { ProductionBatch, Order, User } from "./types";
 import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
+import { findCustomerForOrder } from "./searchUtils";
 
 interface BatchPrintSheetProps {
   batch: ProductionBatch;
@@ -224,12 +225,7 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
                 <tbody className="divide-y divide-slate-150">
                   {pageOrders.map((o) => {
                     const item = db.items.find((i) => i.id === o.itemId);
-                    const customerObj = db.customers?.find(
-                      (c) =>
-                        c.name === o.customerName ||
-                        c.tradeName === o.customerName ||
-                        String(c.id) === String(o.customerName)
-                    );
+                    const customerObj = findCustomerForOrder(o, db.customers);
                     const resolvedCustomerName = customerObj?.tradeName?.trim() || customerObj?.name?.trim() || o.customerName;
 
                     return (

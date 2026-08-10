@@ -112,7 +112,8 @@ import { InjetoraScreen } from "./InjetoraScreen";
 import { LogisticaScreen } from "./LogisticaScreen";
 import { OrcamentoLaserScreen } from "./OrcamentoLaserScreen";
 import { MontagemRetratilScreen } from "./MontagemRetratilScreen";
-import { normalizeString } from "./searchUtils";
+import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
+import { normalizeString, findCustomerForOrder, getCustomerLocationLabel } from "./searchUtils";
 
 // Custom virtualization and metrics components
 import { MonitoramentoMetricsSummary } from "./components/MonitoramentoMetricsSummary";
@@ -15606,27 +15607,9 @@ export default function App() {
                       if (groupOrders.length === 0) return null;
 
                       const firstOrd = groupOrders[0];
-                      const custObj = db.customers.find(
-                        (c) =>
-                          c.name.toLowerCase().trim() ===
-                            firstOrd.customerName?.toLowerCase().trim() ||
-                          (c.tradeName &&
-                            c.tradeName.toLowerCase().trim() ===
-                              firstOrd.customerName?.toLowerCase().trim()),
-                      );
-
-                      const customerCityState = custObj?.address
-                        ? custObj.address
-                        : "Não informada";
-                      const customerNeighborhood =
-                        custObj?.neighborhood || custObj?.bairro || "";
-
-                      const locationFullLabel = [
-                        customerCityState !== "Não informada" ? customerCityState : null,
-                        customerNeighborhood ? `Bairro: ${customerNeighborhood}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" • ") || "Não informada";
+                      const custObj = findCustomerForOrder(firstOrd, db.customers);
+                      const locationFullLabel = getCustomerLocationLabel(firstOrd, custObj);
+                      const customerDisplayName = custObj?.tradeName?.trim() || custObj?.name?.trim() || firstOrd.customerName;
 
                       const fiscalTypeVal =
                         firstOrd.fiscalType || custObj?.fiscalType || "COM_NF";
@@ -15692,19 +15675,11 @@ export default function App() {
                             } border-slate-200`}
                           >
                             <div className="flex items-center gap-2.5">
-                              <div
-                                className={`${
-                                  isFull ? "p-2" : "p-1.5"
-                                } bg-slate-950 rounded-lg border border-[#00b14f]/30 flex items-center justify-center`}
-                              >
-                                <svg
-                                  className={`${isFull ? "w-6 h-6" : "w-4 h-4"} text-[#00b14f]`}
-                                  viewBox="0 0 24 24"
-                                  fill="currentColor"
-                                >
-                                  <path d="M2 19h20v2H2v-2zm2-2.5h16L18 7l-4 4.5L12 4l-2 7.5L6 7 4 16.5z" />
-                                </svg>
-                              </div>
+                              <ReportHeaderLogo
+                                logoUrl={db.systemSettings?.[0]?.companyLogoUrl || db.activeTenant?.logoUrl}
+                                className={isFull ? "w-10 h-10 object-contain rounded" : "w-7 h-7 object-contain rounded"}
+                                alt="Logo Empresa"
+                              />
                               <div>
                                 <h2
                                   className={`${
@@ -15718,7 +15693,7 @@ export default function App() {
                                     isFull ? "text-[9px]" : "text-[7.5px]"
                                   } text-gray-500 font-extrabold uppercase tracking-wider block mt-0.5`}
                                 >
-                                  Acessórios para Móveis e Artefatos de Metal
+                                  Acessórios para Móveis
                                 </span>
                               </div>
                             </div>
@@ -15741,7 +15716,7 @@ export default function App() {
                                 <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
                                   Nº do Pedido
                                 </span>
-                                <span className={`${isFull ? "text-sm" : "text-xs"} font-black text-[#00b14f] font-mono block mt-0.5`}>
+                                <span className={`${isFull ? "text-base sm:text-lg" : "text-sm sm:text-base"} font-black text-black font-mono block mt-0.5`}>
                                   #{codeToPrint}
                                 </span>
                               </div>
@@ -15785,7 +15760,7 @@ export default function App() {
                                   Cliente / Razão Social
                                 </span>
                                 <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-slate-900 block mt-0.5 truncate`}>
-                                  {firstOrd.customerName}
+                                  {customerDisplayName}
                                 </span>
                               </div>
 
