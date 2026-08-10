@@ -37,6 +37,11 @@ import {
   Plus,
   ChevronRight,
   Info,
+  Edit3,
+  RotateCcw,
+  Trash2,
+  Save,
+  X,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -168,6 +173,64 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
   const [showWaModal, setShowWaModal] = useState(false);
   const [waMessageText, setWaMessageText] = useState("");
   const [waRecipientPhone, setWaRecipientPhone] = useState("");
+
+  // Manual Faturamento Adjustment System Settings & States
+  const currentSystemSettings = db.systemSettings?.[0] || { id: "default" };
+  const manualTotalAdjustment = currentSystemSettings.manualTotalAdjustment || 0;
+  const manualDailyAdjustments = currentSystemSettings.manualDailyAdjustments || {};
+  const manualRepAdjustments = currentSystemSettings.manualRepAdjustments || {};
+
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [manualModalTab, setManualModalTab] = useState<"TOTAL" | "DAILY" | "REP">("TOTAL");
+
+  const [draftTotalAdj, setDraftTotalAdj] = useState<number>(0);
+  const [draftDailyAdjs, setDraftDailyAdjs] = useState<Record<string, number>>({});
+  const [draftRepAdjs, setDraftRepAdjs] = useState<Record<string, number>>({});
+  const [newRepNameInput, setNewRepNameInput] = useState("");
+
+  const openManualModal = (tab: "TOTAL" | "DAILY" | "REP" = "TOTAL") => {
+    const settings = db.systemSettings?.[0] || {};
+    setDraftTotalAdj(settings.manualTotalAdjustment || 0);
+    setDraftDailyAdjs({ ...(settings.manualDailyAdjustments || {}) });
+    setDraftRepAdjs({ ...(settings.manualRepAdjustments || {}) });
+    setManualModalTab(tab);
+    setShowManualModal(true);
+  };
+
+  const handleSaveManualAdjustments = async () => {
+    try {
+      const settings = db.systemSettings?.[0] || { id: "default" };
+      await db.saveSystemSettings({
+        ...settings,
+        manualTotalAdjustment: Number(draftTotalAdj) || 0,
+        manualDailyAdjustments: draftDailyAdjs,
+        manualRepAdjustments: draftRepAdjs,
+      });
+      setShowManualModal(false);
+    } catch (err: any) {
+      alert(`Erro ao salvar ajustes manuais: ${err.message}`);
+    }
+  };
+
+  const handleClearAllAdjustments = async () => {
+    if (confirm("Deseja realmente remover todos os ajustes manuais de faturamento?")) {
+      try {
+        const settings = db.systemSettings?.[0] || { id: "default" };
+        setDraftTotalAdj(0);
+        setDraftDailyAdjs({});
+        setDraftRepAdjs({});
+        await db.saveSystemSettings({
+          ...settings,
+          manualTotalAdjustment: 0,
+          manualDailyAdjustments: {},
+          manualRepAdjustments: {},
+        });
+        setShowManualModal(false);
+      } catch (err: any) {
+        alert(`Erro ao limpar ajustes: ${err.message}`);
+      }
+    }
+  };
 
   // Helper to format date range display
   const formatRangeLabel = (start: string, end: string, isFiltered: boolean) => {
@@ -311,7 +374,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
     });
   }, [db.orders, db.logs, summaryStartDate, summaryEndDate, filterByDate]);
 
-  // Now we group dailyFaturadosOrders by representative
+  // Group dailyFaturadosOrders by representative + apply manual adjustments
   const representativeSummary = useMemo(() => {
     const groups: {
       [repName: string]: {
@@ -320,6 +383,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
         orders: Order[];
         totalValue: number;
         totalItems: number;
+        hasManualAdjustment?: boolean;
       }
     } = {};
 
@@ -346,8 +410,25 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       groups[repName].totalItems += qtyFat;
     });
 
+    // Apply manual representative adjustments
+    Object.entries(manualRepAdjustments).forEach(([repName, adjValue]) => {
+      if (typeof adjValue === "number" && adjValue !== 0) {
+        if (!groups[repName]) {
+          groups[repName] = {
+            representativeName: repName,
+            orders: [],
+            totalValue: 0,
+            totalItems: 0,
+            hasManualAdjustment: true,
+          };
+        }
+        groups[repName].totalValue += adjValue;
+        groups[repName].hasManualAdjustment = true;
+      }
+    });
+
     return Object.values(groups).sort((a, b) => b.totalValue - a.totalValue);
-  }, [dailyFaturadosOrders, db.logs, summaryStartDate, summaryEndDate, filterByDate]);
+  }, [dailyFaturadosOrders, db.logs, summaryStartDate, summaryEndDate, filterByDate, manualRepAdjustments]);
 
   // Overall Financial stats
   const stats = useMemo(() => {
@@ -393,6 +474,10 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       totalExpected += 169194.69;
     }
 
+    // Apply manual total adjustment
+    totalInvoiced += manualTotalAdjustment;
+    totalExpected += manualTotalAdjustment;
+
     const averageOrderValue = orderCount > 0 ? totalExpected / orderCount : 0;
 
     return {
@@ -402,7 +487,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       averageOrderValue,
       orderCount,
     };
-  }, [filteredOrders, selectedMonth]);
+  }, [filteredOrders, selectedMonth, db.activeTenantId, manualTotalAdjustment]);
 
   // Monthly billing goal data for current/selected month
   const monthlyBillingGoalData = useMemo(() => {
@@ -453,9 +538,12 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       billedAmount += 169194.69; // Exactly R$ 169.194,69 for July 1-7
     }
 
+    // Apply manual total adjustment
+    billedAmount += manualTotalAdjustment;
+
     const goal = db.systemSettings?.[0]?.monthlyBillingGoal || 0;
     return { billedAmount, goal, year, month };
-  }, [db.logs, db.systemSettings, db.orders, db.items, selectedMonth]);
+  }, [db.logs, db.systemSettings, db.orders, db.items, selectedMonth, db.activeTenantId, manualTotalAdjustment]);
 
   // Evolution of daily billing during the selected month
   const dailyBillingEvolution = useMemo(() => {
@@ -515,16 +603,28 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
     let accumulated = 0;
     return Array.from({ length: daysInMonth }, (_, idx) => {
       const dayNum = idx + 1;
-      const dailyVal = dailyMap[dayNum] || 0;
+      const dayKeyISO = `${year}-${String(month + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+      const dayKeyNum = String(dayNum);
+
+      let dailyVal = dailyMap[dayNum] || 0;
+
+      // Check for manual daily override or adjustment
+      if (manualDailyAdjustments[dayKeyISO] !== undefined) {
+        dailyVal = manualDailyAdjustments[dayKeyISO];
+      } else if (manualDailyAdjustments[dayKeyNum] !== undefined) {
+        dailyVal = manualDailyAdjustments[dayKeyNum];
+      }
+
       accumulated += dailyVal;
       return {
         day: dayNum,
         dayLabel: `${String(dayNum).padStart(2, "0")}`,
         "Faturamento Diário": Number(dailyVal.toFixed(2)),
         "Faturamento Acumulado": Number(accumulated.toFixed(2)),
+        isManual: manualDailyAdjustments[dayKeyISO] !== undefined || manualDailyAdjustments[dayKeyNum] !== undefined,
       };
     });
-  }, [db.logs, db.orders, db.items, monthlyBillingGoalData]);
+  }, [db.logs, db.orders, db.items, monthlyBillingGoalData, db.activeTenantId, manualDailyAdjustments]);
 
   // Helper function to calculate instalments based on payment terms/conditions
   const parsePaymentTermsToInstalments = (deliveryDateStr: string, paymentTermsStr: string, totalValue: number) => {
@@ -717,6 +817,9 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       totalInvoiced = 169194.69;
     }
 
+    // Apply manual total adjustment
+    totalInvoiced += manualTotalAdjustment;
+
     const estimatedTaxes = totalInvoiced * 0.06;
     const netRevenue = totalInvoiced - estimatedTaxes;
 
@@ -888,10 +991,21 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       repData[repName].total += val;
     });
 
+    // Apply manual representative adjustments
+    Object.entries(manualRepAdjustments).forEach(([repName, adjValue]) => {
+      if (typeof adjValue === "number" && adjValue !== 0) {
+        if (!repData[repName]) {
+          repData[repName] = { name: repName, faturado: 0, pendente: 0, total: 0 };
+        }
+        repData[repName].faturado += adjValue;
+        repData[repName].total += adjValue;
+      }
+    });
+
     return Object.values(repData)
       .sort((a, b) => b.total - a.total)
       .slice(0, 10); // top 10 representativos
-  }, [filteredOrders]);
+  }, [filteredOrders, manualRepAdjustments]);
 
   // Handle Changing Logged user password
   const handleUpdateMyPassword = async (e: React.FormEvent) => {
@@ -1005,6 +1119,13 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
             </select>
 
             <button
+              onClick={() => openManualModal("TOTAL")}
+              className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <Edit3 size={13} /> Ajustar Faturamento
+            </button>
+
+            <button
               onClick={() => db.triggerSyncQueue?.(true)}
               className="p-1.5 border border-slate-200 rounded-lg bg-slate-50 hover:bg-slate-100 transition text-slate-600 cursor-pointer flex items-center gap-1 text-xs font-bold"
               title="Recarregar dados"
@@ -1108,6 +1229,27 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
           <Settings size={16} /> Metas & Custos dos Setores
         </button>
       </div>
+
+      {/* Active Manual Adjustments Indicator Banner */}
+      {(manualTotalAdjustment !== 0 || Object.keys(manualDailyAdjustments).length > 0 || Object.keys(manualRepAdjustments).length > 0) && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex flex-wrap items-center justify-between text-xs text-amber-900 font-medium gap-2 shrink-0">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+            <span>
+              <strong>Ajustes Manuais Ativos:</strong>{" "}
+              {manualTotalAdjustment !== 0 && `Total: ${manualTotalAdjustment > 0 ? "+" : ""}R$ ${manualTotalAdjustment.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} `}
+              {Object.keys(manualDailyAdjustments).length > 0 && `| ${Object.keys(manualDailyAdjustments).length} dia(s) `}
+              {Object.keys(manualRepAdjustments).length > 0 && `| ${Object.keys(manualRepAdjustments).length} representante(s)`}
+            </span>
+          </div>
+          <button
+            onClick={() => openManualModal("TOTAL")}
+            className="text-amber-800 underline hover:text-amber-950 font-bold text-xs cursor-pointer"
+          >
+            Gerenciar Ajustes
+          </button>
+        </div>
+      )}
 
       <ScrollContainer paddingSize="normal" className="bg-slate-50 flex flex-col gap-4">
         {/* TAB 1: OVERVIEW */}
@@ -2231,11 +2373,21 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                   </div>
                 </div>
 
-                <div className="text-xs text-gray-500 font-bold bg-slate-50 px-3 py-2 rounded-lg border border-slate-200/50 shrink-0">
-                  Total de Pedidos Faturados na Seleção:{" "}
-                  <span className="text-slate-800 font-black">
-                    {dailyFaturadosOrders.length}
-                  </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => openManualModal("REP")}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  >
+                    <Edit3 size={13} /> Ajustar Faturamento Representantes
+                  </button>
+
+                  <div className="text-xs text-gray-500 font-bold bg-slate-50 px-3 py-2 rounded-lg border border-slate-200/50">
+                    Total Pedidos:{" "}
+                    <span className="text-slate-800 font-black">
+                      {dailyFaturadosOrders.length}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -3022,6 +3174,297 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
               >
                 <Phone size={13} className="text-white" /> Abrir WhatsApp
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Ajustes Manuais do Faturamento */}
+      {showManualModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <Edit3 size={20} className="text-amber-400" />
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-white">Ajuste Manual de Faturamento</h3>
+                  <p className="text-[11px] text-slate-300 font-medium">Ajuste valores totais, diários e por representante para os relatórios</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowManualModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="bg-slate-100 border-b border-slate-200 px-6 flex gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setManualModalTab("TOTAL")}
+                className={`py-3 px-3 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
+                  manualModalTab === "TOTAL"
+                    ? "border-amber-500 text-amber-700 bg-white"
+                    : "border-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <DollarSign size={14} /> Total Geral
+              </button>
+              <button
+                type="button"
+                onClick={() => setManualModalTab("DAILY")}
+                className={`py-3 px-3 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
+                  manualModalTab === "DAILY"
+                    ? "border-amber-500 text-amber-700 bg-white"
+                    : "border-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Calendar size={14} /> Faturamento Diário
+              </button>
+              <button
+                type="button"
+                onClick={() => setManualModalTab("REP")}
+                className={`py-3 px-3 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
+                  manualModalTab === "REP"
+                    ? "border-amber-500 text-amber-700 bg-white"
+                    : "border-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Users size={14} /> Por Representante
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-4">
+              {/* TAB TOTAL */}
+              {manualModalTab === "TOTAL" && (
+                <div className="flex flex-col gap-4">
+                  <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-xs text-amber-900">
+                    <strong>💡 Dica:</strong> Insira um valor positivo para somar ao faturamento calculado do sistema (ex: <code>15000</code>) ou um valor negativo para descontar (ex: <code>-5000</code>).
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-bold text-slate-700">Ajuste Adicional no Faturamento Total (R$):</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={draftTotalAdj || ""}
+                      onChange={(e) => setDraftTotalAdj(Number(e.target.value))}
+                      className="border border-slate-300 rounded-xl p-3 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none"
+                    />
+                  </div>
+
+                  {/* Realtime summary preview */}
+                  <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col gap-2 text-xs">
+                    <div className="flex justify-between text-slate-500 font-medium">
+                      <span>Base Calculada pelo Sistema:</span>
+                      <span className="font-mono">R$ {(monthlyBillingGoalData.billedAmount - manualTotalAdjustment).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between text-amber-700 font-bold">
+                      <span>Ajuste Manual Aplicado:</span>
+                      <span className="font-mono">{draftTotalAdj >= 0 ? "+" : ""}R$ {(draftTotalAdj || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="border-t border-slate-200 pt-2 flex justify-between text-slate-900 font-black text-sm">
+                      <span>Faturamento Total Resultante:</span>
+                      <span className="font-mono text-emerald-600">
+                        R$ {((monthlyBillingGoalData.billedAmount - manualTotalAdjustment) + (Number(draftTotalAdj) || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB DAILY */}
+              {manualModalTab === "DAILY" && (
+                <div className="flex flex-col gap-3">
+                  <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-900">
+                    Altere diretamente o valor faturado para cada dia do mês selecionado. Deixe em branco ou limpe para retornar ao cálculo automático do sistema.
+                  </div>
+
+                  <div className="max-h-[350px] overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+                    {dailyBillingEvolution.map((item) => {
+                      const { year, month } = monthlyBillingGoalData;
+                      const dayKeyISO = `${year}-${String(month + 1).padStart(2, "0")}-${String(item.day).padStart(2, "0")}`;
+                      const currentVal = draftDailyAdjs[dayKeyISO] !== undefined ? draftDailyAdjs[dayKeyISO] : (draftDailyAdjs[String(item.day)] !== undefined ? draftDailyAdjs[String(item.day)] : "");
+
+                      return (
+                        <div key={item.day} className="p-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition">
+                          <div className="flex items-center gap-2">
+                            <span className="w-8 h-8 rounded-lg bg-slate-100 text-slate-800 font-black text-xs flex items-center justify-center shrink-0">
+                              {item.day}
+                            </span>
+                            <div>
+                              <span className="text-xs font-bold text-slate-800 block">
+                                Dia {item.day} ({item.dayLabel}/{String(month + 1).padStart(2, "0")}/{year})
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                Calculado: R$ {item["Faturamento Diário"].toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder={`Ex: ${item["Faturamento Diário"]}`}
+                              value={currentVal}
+                              onChange={(e) => {
+                                const valStr = e.target.value;
+                                const newMap = { ...draftDailyAdjs };
+                                if (valStr === "") {
+                                  delete newMap[dayKeyISO];
+                                  delete newMap[String(item.day)];
+                                } else {
+                                  newMap[dayKeyISO] = Number(valStr);
+                                }
+                                setDraftDailyAdjs(newMap);
+                              }}
+                              className="w-32 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 text-right focus:ring-2 focus:ring-amber-500 outline-none"
+                            />
+
+                            {currentVal !== "" && (
+                              <button
+                                type="button"
+                                title="Resetar este dia"
+                                onClick={() => {
+                                  const newMap = { ...draftDailyAdjs };
+                                  delete newMap[dayKeyISO];
+                                  delete newMap[String(item.day)];
+                                  setDraftDailyAdjs(newMap);
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-red-500 rounded transition cursor-pointer"
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB REP */}
+              {manualModalTab === "REP" && (
+                <div className="flex flex-col gap-4">
+                  <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-900">
+                    Ajuste o valor adicional faturado para cada representante comercial. O valor digitado será somado à receita acumulada do representante.
+                  </div>
+
+                  {/* Add Custom Representative */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Nome de novo representante..."
+                      value={newRepNameInput}
+                      onChange={(e) => setNewRepNameInput(e.target.value)}
+                      className="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-amber-500 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const trimmed = newRepNameInput.trim();
+                        if (trimmed) {
+                          setDraftRepAdjs({ ...draftRepAdjs, [trimmed]: draftRepAdjs[trimmed] || 0 });
+                          setNewRepNameInput("");
+                        }
+                      }}
+                      className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1"
+                    >
+                      <Plus size={14} /> Adicionar
+                    </button>
+                  </div>
+
+                  <div className="max-h-[300px] overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+                    {/* List of Reps from summary + drafts */}
+                    {Array.from(
+                      new Set([
+                        ...representativeSummary.map((r) => r.representativeName),
+                        ...Object.keys(draftRepAdjs),
+                      ])
+                    ).map((repName) => {
+                      const repItem = representativeSummary.find((r) => r.representativeName === repName);
+                      const baseVal = repItem ? repItem.totalValue - (manualRepAdjustments[repName] || 0) : 0;
+                      const currentAdj = draftRepAdjs[repName] !== undefined ? draftRepAdjs[repName] : 0;
+
+                      return (
+                        <div key={repName} className="p-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition">
+                          <div>
+                            <span className="text-xs font-extrabold text-slate-800 block">{repName}</span>
+                            <span className="text-[10px] text-slate-400">
+                              Base Calculada: R$ {baseVal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-bold text-slate-400">Ajuste (R$):</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={currentAdj || ""}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setDraftRepAdjs({ ...draftRepAdjs, [repName]: val });
+                              }}
+                              className="w-28 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 text-right focus:ring-2 focus:ring-amber-500 outline-none"
+                            />
+                            {currentAdj !== 0 && (
+                              <button
+                                type="button"
+                                title="Resetar ajuste deste representante"
+                                onClick={() => {
+                                  const newMap = { ...draftRepAdjs };
+                                  delete newMap[repName];
+                                  setDraftRepAdjs(newMap);
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-red-500 rounded transition cursor-pointer"
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 px-6 py-4 flex items-center justify-between border-t border-slate-200 shrink-0">
+              <button
+                type="button"
+                onClick={handleClearAllAdjustments}
+                className="px-3.5 py-2 border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 size={14} /> Limpar Todos os Ajustes
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowManualModal(false)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveManualAdjustments}
+                  className="px-4 py-2 bg-[#00b14f] hover:bg-[#009e46] text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Save size={14} /> Salvar e Aplicar
+                </button>
+              </div>
             </div>
           </div>
         </div>

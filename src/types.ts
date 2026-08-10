@@ -477,6 +477,9 @@ export interface SystemSettings {
   systemName?: string;
   primaryColor?: string;
   monthlyBillingGoal?: number;
+  manualTotalAdjustment?: number;
+  manualDailyAdjustments?: Record<string, number>;
+  manualRepAdjustments?: Record<string, number>;
 }
 
 export interface TornoEvent {

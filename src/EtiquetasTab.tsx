@@ -103,7 +103,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
   // Preview and customization modal states
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState<boolean>(false);
   const [previewFormat, setPreviewFormat] = useState<"thermal" | "a4">("thermal");
-  const [includeImageInLabel, setIncludeImageInLabel] = useState<boolean>(true);
+  const [includeImageInLabel, setIncludeImageInLabel] = useState<boolean>(() => localStorage.getItem("etiquetas_show_image") === "true");
   const [previewLabels, setPreviewLabels] = useState<any[]>([]);
 
   // Modal and custom overlay states
@@ -1742,16 +1742,22 @@ ${barcodeBlock}
                     {/* Img vs Barcode toggle */}
                     <div className="flex bg-slate-800 p-0.5 rounded-lg border border-slate-750">
                       <button
-                        onClick={() => setIncludeImageInLabel(true)}
+                        onClick={() => {
+                          setIncludeImageInLabel(true);
+                          localStorage.setItem("etiquetas_show_image", "true");
+                        }}
                         className={`px-2.5 py-1 text-[10px] font-black rounded-md transition cursor-pointer ${includeImageInLabel ? "bg-amber-500 text-white" : "text-slate-300 hover:text-white"}`}
                       >
                         🖼️ Com Imagem
                       </button>
                       <button
-                        onClick={() => setIncludeImageInLabel(false)}
+                        onClick={() => {
+                          setIncludeImageInLabel(false);
+                          localStorage.setItem("etiquetas_show_image", "false");
+                        }}
                         className={`px-2.5 py-1 text-[10px] font-black rounded-md transition cursor-pointer ${!includeImageInLabel ? "bg-amber-500 text-white" : "text-slate-300 hover:text-white"}`}
                       >
-                        📊 Somente Cód. Barras
+                        📊 Somente Cód. Barras + Código
                       </button>
                     </div>
 

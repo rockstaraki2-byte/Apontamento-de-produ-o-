@@ -86,7 +86,7 @@ export function LotesScreen({
   const [previewEtiquetasBatch, setPreviewEtiquetasBatch] = useState<ProductionBatch | null>(null);
   const [etiquetasSelectedOrderIds, setEtiquetasSelectedOrderIds] = useState<number[]>([]);
   const [etiquetasLayoutFormat, setEtiquetasLayoutFormat] = useState<"thermal" | "a4">("thermal");
-  const [etiquetasShowImage, setEtiquetasShowImage] = useState(true);
+  const [etiquetasShowImage, setEtiquetasShowImage] = useState(() => localStorage.getItem("etiquetas_show_image") === "true");
   const [etiquetasDestrinchar, setEtiquetasDestrinchar] = useState(false);
   const [etiquetasOcultarPai, setEtiquetasOcultarPai] = useState(false);
   const [isDirectPrintingEtiquetas, setIsDirectPrintingEtiquetas] = useState(false);
@@ -2136,7 +2136,10 @@ export function LotesScreen({
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        onClick={() => setEtiquetasShowImage(true)}
+                        onClick={() => {
+                          setEtiquetasShowImage(true);
+                          localStorage.setItem("etiquetas_show_image", "true");
+                        }}
                         className={`p-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition border ${
                           etiquetasShowImage
                             ? "bg-amber-500 text-white border-amber-600 shadow-2xs"
@@ -2147,7 +2150,10 @@ export function LotesScreen({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setEtiquetasShowImage(false)}
+                        onClick={() => {
+                          setEtiquetasShowImage(false);
+                          localStorage.setItem("etiquetas_show_image", "false");
+                        }}
                         className={`p-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition border ${
                           !etiquetasShowImage
                             ? "bg-amber-500 text-white border-amber-600 shadow-2xs"
