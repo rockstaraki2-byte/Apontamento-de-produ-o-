@@ -15609,7 +15609,16 @@ export default function App() {
                       const firstOrd = groupOrders[0];
                       const custObj = findCustomerForOrder(firstOrd, db.customers);
                       const locationFullLabel = getCustomerLocationLabel(firstOrd, custObj);
-                      const customerDisplayName = custObj?.tradeName?.trim() || custObj?.name?.trim() || firstOrd.customerName;
+
+                      const custCode = custObj?.id || custObj?.code || firstOrd.customerCode || "";
+                      const rawNameStr = custObj?.tradeName?.trim() || custObj?.name?.trim() || firstOrd.customerName?.trim() || "";
+                      const leadingCodeMatch = rawNameStr.match(/^\s*[\[\(]?\s*(\d+)/);
+                      const finalCode = custCode || (leadingCodeMatch ? leadingCodeMatch[1] : "");
+                      const cleanNameStr = rawNameStr.replace(/^\s*[\[\(]?\s*\d+\s*[\]\)]?\s*[-–—]?\s*/, "").trim();
+
+                      const customerDisplayName = finalCode
+                        ? `${finalCode} - ${cleanNameStr || rawNameStr}`
+                        : cleanNameStr || rawNameStr;
 
                       const fiscalTypeVal =
                         firstOrd.fiscalType || custObj?.fiscalType || "COM_NF";
@@ -15774,8 +15783,8 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* Row 3: Commercial & Production */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
+                            {/* Row 3: Commercial Details */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
                               <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
                                 <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
                                   Condição de Pagamento
@@ -15791,15 +15800,6 @@ export default function App() {
                                 </span>
                                 <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-700 block mt-0.5 truncate`}>
                                   {firstOrd.representativeName || "Venda Direta"}
-                                </span>
-                              </div>
-
-                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
-                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Lote Produção
-                                </span>
-                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-extrabold text-emerald-800 block mt-0.5 truncate`}>
-                                  🏷️ {lotesStr}
                                 </span>
                               </div>
                             </div>
@@ -16021,12 +16021,35 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
-                        import("./printUtils").then(({ printElementById }) => {
-                          printElementById(
-                            "print-order-sheet",
-                            `Pedidos_${printSheetSize === "half" ? "MeiaFolha" : "FolhaInteira"}_${orderCodesToPrintList.join("_")}`,
-                            true,
+                        let pdfTitle = "Pedido";
+                        if (orderCodesToPrintList.length >= 1) {
+                          const code = orderCodesToPrintList[0];
+                          const ord = db.orders.find(
+                            (o) => o.orderCode === code && o.isActive !== false
                           );
+                          const cust = ord ? findCustomerForOrder(ord, db.customers) : null;
+                          const rawClientName =
+                            cust?.tradeName?.trim() ||
+                            cust?.name?.trim() ||
+                            ord?.customerName?.trim() ||
+                            "";
+                          const cleanClientName = rawClientName
+                            .replace(/^\s*[\[\(]?\s*\d+\s*[\]\)]?\s*[-–—]?\s*/, "")
+                            .trim();
+
+                          if (orderCodesToPrintList.length === 1) {
+                            pdfTitle = cleanClientName
+                              ? `Pedido ${code} - ${cleanClientName}`
+                              : `Pedido ${code}`;
+                          } else {
+                            pdfTitle = cleanClientName
+                              ? `Pedido ${orderCodesToPrintList.join(", ")} - ${cleanClientName}`
+                              : `Pedidos ${orderCodesToPrintList.join(", ")}`;
+                          }
+                        }
+
+                        import("./printUtils").then(({ printElementById }) => {
+                          printElementById("print-order-sheet", pdfTitle, true);
                         });
                       }}
                       className="px-4 py-1.5 bg-[#00b14f] hover:bg-[#009e46] text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/15 active:scale-95"
