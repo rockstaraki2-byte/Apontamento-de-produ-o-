@@ -703,8 +703,59 @@ export function StatusScreen({
       else if (myLaunchedVolume < avgMonthlyLaunched * 0.95) performanceStatus = "ABAIXO";
     }
 
+    // Include Manual Financial Adjustments from systemSettings
+    const settings = db.systemSettings?.[0] || {};
+    const manualRepAdjustments: Record<string, number> = settings.manualRepAdjustments || {};
+
+    let myManualAdjustment = 0;
+
+    if (isRep) {
+      const myOrders = db.orders.filter((o: any) => isMyOrder(o));
+
+      Object.entries(manualRepAdjustments).forEach(([repKey, val]) => {
+        if (typeof val !== "number" || val === 0) return;
+        const keyLower = repKey.toLowerCase().trim();
+        const nameLower = (myName || "").toLowerCase().trim();
+        const idLower = (myId || "").toLowerCase().trim();
+
+        let isMatch = false;
+        if (keyLower === nameLower || keyLower === idLower) {
+          isMatch = true;
+        } else if (nameLower && (keyLower.includes(nameLower) || nameLower.includes(keyLower))) {
+          isMatch = true;
+        } else if (idLower && (keyLower.includes(idLower) || idLower.includes(keyLower))) {
+          isMatch = true;
+        } else if (
+          (idLower === "representante_danilo" || nameLower.includes("danilo") || nameLower.includes("mapefor")) &&
+          (keyLower.includes("danilo") || keyLower.includes("mapefor"))
+        ) {
+          isMatch = true;
+        }
+
+        if (!isMatch && myOrders.length > 0) {
+          isMatch = myOrders.some((o: any) => {
+            const oRep = (o.representativeName || "").toLowerCase().trim();
+            return oRep && (oRep === keyLower || oRep.includes(keyLower) || keyLower.includes(oRep));
+          });
+        }
+
+        if (isMatch) {
+          myManualAdjustment += val;
+        }
+      });
+
+      myBilledAmount += myManualAdjustment;
+    } else {
+      let totalRepAdj = 0;
+      Object.values(manualRepAdjustments).forEach((val) => {
+        if (typeof val === "number") totalRepAdj += val;
+      });
+      billedAmount += (settings.manualTotalAdjustment || 0) + totalRepAdj;
+    }
+
     return { 
        billedAmount: isRep ? myBilledAmount : billedAmount, 
+       myManualAdjustment,
        goal,
        isRep,
        myLaunchedVolume,
@@ -781,15 +832,24 @@ export function StatusScreen({
           </div>
 
           <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/50 shadow-sm flex flex-col justify-center">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-lg">💰</span>
-              <h3 className="text-sm font-bold text-blue-900">Seus Pedidos Faturados (Mês)</h3>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">💰</span>
+                <h3 className="text-sm font-bold text-blue-900">Seus Pedidos Faturados (Mês)</h3>
+              </div>
+              {monthlyBillingData.myManualAdjustment !== 0 && (
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 shrink-0">
+                  ⚖️ Ajuste: {monthlyBillingData.myManualAdjustment > 0 ? "+" : ""}R$ {monthlyBillingData.myManualAdjustment.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              )}
             </div>
             <span className="text-2xl font-black text-blue-700">
               R$ {monthlyBillingData.billedAmount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             <span className="text-xs text-blue-700/80 font-semibold mt-1">
-              Volume que já foi expedido e faturado neste mês.
+              {monthlyBillingData.myManualAdjustment !== 0
+                ? `Volume faturado no mês (incluindo ajuste financeiro de R$ ${monthlyBillingData.myManualAdjustment.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} aplicado pela gerência).`
+                : "Volume que já foi expedido e faturado neste mês."}
             </span>
           </div>
         </div>

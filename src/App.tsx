@@ -91,7 +91,6 @@ import { EstoqueScreen } from "./EstoqueScreen";
 import { EstoqueNestingScreen } from "./EstoqueNestingScreen";
 import { EstoqueChapasScreen } from "./EstoqueChapasScreen";
 import { RepresentanteScreen } from "./RepresentanteScreen";
-import { StatusScreen } from "./StatusScreen";
 import { UploadNestScreen } from "./UploadNestScreen";
 import { HistoricoProducaoScreen } from "./HistoricoProducaoScreen";
 import { PCPScreen } from "./PCPScreen";
@@ -12151,7 +12150,6 @@ function AdminScreen({
     | "EVOLUCAO_EMBALAGEM"
     | "ETIQUETAS"
     | "GESTAO_PESSOAS"
-    | "STATUS"
   >("PAINEL");
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [dailyProductionGoal, setDailyProductionGoal] = useState<number>(() => {
@@ -12980,12 +12978,6 @@ function AdminScreen({
           >
             Monitoramento
           </button>
-          <button
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "STATUS" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-            onClick={() => setActiveTab("STATUS")}
-          >
-            📋 Status & Impressão em Lote
-          </button>
           {(currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA") && (
             <button
@@ -13692,11 +13684,6 @@ function AdminScreen({
       )}
       {activeTab === "GESTAO_PESSOAS" && (
         <GestaoPessoasTab db={db} currentUser={currentUser} />
-      )}
-      {activeTab === "STATUS" && (
-        <div className="flex-1 overflow-y-auto w-full bg-slate-100">
-          <StatusScreen db={db} currentUser={currentUser} />
-        </div>
       )}
 
       {isMonitoringModalOpen &&
@@ -14896,11 +14883,7 @@ export default function App() {
               <>
                 <Route
                   path="/status"
-                  element={
-                    <div className="p-4 bg-slate-100 min-h-screen">
-                      <StatusScreen db={db} currentUser={currentUser} />
-                    </div>
-                  }
+                  element={<Navigate to="/pedidos" replace />}
                 />
                 <Route path="/itens" element={<ItensScreen db={db} />} />
               </>
@@ -15245,18 +15228,11 @@ export default function App() {
             currentUser.id === "dinei" ||
             currentUser.name.toLowerCase().includes("dinei") ||
             (currentUser.role === "LEITURA" && currentUser.id !== "romario" && !currentUser.name.toLowerCase().includes("romario"))) && (
-            <>
-              <NavLink
-                to="/pedidos"
-                icon={<ShoppingCart size={24} />}
-                label="Pedidos"
-              />
-              <NavLink
-                to="/status"
-                icon={<Printer size={24} />}
-                label="Status & Impressão em Lote"
-              />
-            </>
+            <NavLink
+              to="/pedidos"
+              icon={<ShoppingCart size={24} />}
+              label="Pedidos"
+            />
           )}
 
           {(currentUser.role === "ADMIN" ||

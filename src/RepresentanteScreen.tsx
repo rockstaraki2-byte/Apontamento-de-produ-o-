@@ -519,11 +519,80 @@ export function RepresentanteScreen({
     >,
   );
 
+  const myManualAdjustment = React.useMemo(() => {
+    const settings = db.systemSettings?.[0] || {};
+    const manualRepAdjustments: Record<string, number> = settings.manualRepAdjustments || {};
+
+    const myName = currentUser.name || "";
+    const myId = currentUser.id || "";
+    let adj = 0;
+
+    const myOrders = db.orders.filter((o: any) => {
+      const isDirectMatch =
+        o.representativeId === myId ||
+        o.representativeName === myName;
+      const isDaniloCheck =
+        currentUser.id === "representante_danilo" &&
+        ((o.representativeName &&
+          o.representativeName.toLowerCase().includes("mapefor")) ||
+          (o.representativeId && o.representativeId === "mapefor"));
+      return isDirectMatch || isDaniloCheck;
+    });
+
+    Object.entries(manualRepAdjustments).forEach(([repKey, val]) => {
+      if (typeof val !== "number" || val === 0) return;
+      const keyLower = repKey.toLowerCase().trim();
+      const nameLower = myName.toLowerCase().trim();
+      const idLower = myId.toLowerCase().trim();
+
+      let isMatch = false;
+      if (keyLower === nameLower || keyLower === idLower) {
+        isMatch = true;
+      } else if (nameLower && (keyLower.includes(nameLower) || nameLower.includes(keyLower))) {
+        isMatch = true;
+      } else if (idLower && (keyLower.includes(idLower) || idLower.includes(keyLower))) {
+        isMatch = true;
+      } else if (
+        (myId === "representante_danilo" || nameLower.includes("danilo") || nameLower.includes("mapefor")) &&
+        (keyLower.includes("danilo") || keyLower.includes("mapefor"))
+      ) {
+        isMatch = true;
+      }
+
+      if (!isMatch && myOrders.length > 0) {
+        isMatch = myOrders.some((o: any) => {
+          const oRep = (o.representativeName || "").toLowerCase().trim();
+          return oRep && (oRep === keyLower || oRep.includes(keyLower) || keyLower.includes(oRep));
+        });
+      }
+
+      if (isMatch) {
+        adj += val;
+      }
+    });
+
+    return adj;
+  }, [db.systemSettings, db.orders, currentUser]);
+
   return (
     <div className="flex flex-col h-full">
       <h2 className="text-2xl font-bold mb-4 text-gray-800">
         Painel do Representante
       </h2>
+
+      {myManualAdjustment !== 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 mb-2 shrink-0 flex items-center justify-between text-xs text-amber-900 font-medium">
+          <div className="flex items-center gap-2">
+            <span className="text-base">⚖️</span>
+            <span>
+              <strong>Ajuste Financeiro de Faturamento Aplicado:</strong>{" "}
+              {myManualAdjustment > 0 ? "+" : ""}R${" "}
+              {myManualAdjustment.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {" "}(Este valor foi ajustado pela gerência no módulo financeiro e reflete no seu volume faturado).
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Compact Sales Representative Order Query Filters Dashboard */}
       <div
