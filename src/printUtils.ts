@@ -203,8 +203,8 @@ export function printElementById(elementId: string, docTitle: string = "Document
       .half-sheet-page {
         box-sizing: border-box !important;
         width: 100% !important;
-        height: 284mm !important;
-        max-height: 285mm !important;
+        height: 297mm !important;
+        max-height: 297mm !important;
         page-break-after: always !important;
         break-after: page !important;
         page-break-inside: avoid !important;
@@ -213,34 +213,41 @@ export function printElementById(elementId: string, docTitle: string = "Document
         flex-direction: column !important;
         justify-content: space-between !important;
         padding: 0 !important;
-        margin-bottom: 0 !important;
+        margin: 0 !important;
         background: white !important;
+        position: relative !important;
+        overflow: hidden !important;
       }
       .half-sheet-order-card {
         box-sizing: border-box !important;
         width: 100% !important;
-        height: 136mm !important;
-        max-height: 136mm !important;
-        padding: 3mm 5mm !important;
+        height: 148.5mm !important;
+        max-height: 148.5mm !important;
+        padding: 3.5mm 5mm !important;
         border: 1px solid #94a3b8 !important;
         overflow: hidden !important;
         background: white !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: flex-start !important;
-        gap: 2mm !important;
+        gap: 1.5mm !important;
       }
       .serrated-cut-line {
         box-sizing: border-box !important;
-        width: 100% !important;
-        height: 6mm !important;
+        position: absolute !important;
+        top: 148.5mm !important;
+        left: 0 !important;
+        right: 0 !important;
+        transform: translateY(-50%) !important;
+        z-index: 10 !important;
+        height: 0 !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        border-bottom: 2px dashed #334155 !important;
-        margin: 1.5mm 0 !important;
+        border-top: 2px dashed #334155 !important;
+        margin: 0 !important;
         text-align: center !important;
-        font-size: 8pt !important;
+        font-size: 7.5pt !important;
         font-weight: 800 !important;
         color: #1e293b !important;
         letter-spacing: 1px !important;
