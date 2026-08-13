@@ -209,6 +209,7 @@ export interface Order {
   isThirdPartyLaser?: boolean;
   isPrinted?: boolean;
   printedAt?: number;
+  printCount?: number;
   isActive: boolean;
   createdAt: number;
   deliveryDate: string;

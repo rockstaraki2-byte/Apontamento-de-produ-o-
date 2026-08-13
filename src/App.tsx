@@ -2864,14 +2864,18 @@ function PedidosScreen({
     (codes: string[]) => {
       if (!codes || codes.length === 0) return;
       const ordersToUpdate = db.orders.filter(
-        (o) => codes.includes(o.orderCode) && !o.isPrinted
+        (o) => codes.includes(o.orderCode)
       );
       if (ordersToUpdate.length > 0) {
-        const updated = ordersToUpdate.map((o) => ({
-          ...o,
-          isPrinted: true,
-          printedAt: Date.now(),
-        }));
+        const updated = ordersToUpdate.map((o) => {
+          const currentCount = o.printCount ?? (o.isPrinted ? 1 : 0);
+          return {
+            ...o,
+            isPrinted: true,
+            printedAt: Date.now(),
+            printCount: currentCount + 1,
+          };
+        });
         db.updateOrders(updated);
       }
     },
@@ -2882,11 +2886,24 @@ function PedidosScreen({
     (code: string, currentPrinted: boolean) => {
       const ordersToUpdate = db.orders.filter((o) => o.orderCode === code);
       if (ordersToUpdate.length > 0) {
-        const updated = ordersToUpdate.map((o) => ({
-          ...o,
-          isPrinted: !currentPrinted,
-          printedAt: !currentPrinted ? Date.now() : undefined,
-        }));
+        const updated = ordersToUpdate.map((o) => {
+          if (currentPrinted) {
+            return {
+              ...o,
+              isPrinted: false,
+              printedAt: undefined,
+              printCount: 0,
+            };
+          } else {
+            const currentCount = o.printCount ?? 0;
+            return {
+              ...o,
+              isPrinted: true,
+              printedAt: Date.now(),
+              printCount: currentCount > 0 ? currentCount : 1,
+            };
+          }
+        });
         db.updateOrders(updated);
       }
     },
@@ -9871,6 +9888,7 @@ function PedidosScreen({
                   const dStatus = getDeliveryStatus(firstOrder);
                   const isSelectedForPrint = selectedOrderCodesForPrint.includes(code);
                   const isPrinted = orders.some((o) => o.isPrinted);
+                  const printCount = Math.max(0, ...orders.map((o) => o.printCount ?? (o.isPrinted ? 1 : 0)));
                   let badgeColor = "";
                   if (dStatus === "Atrasado") {
                     badgeColor =
@@ -9951,7 +9969,7 @@ function PedidosScreen({
                               }`}
                               title="Clique para alternar o status de impressão do pedido"
                             >
-                              {isPrinted ? "🖨️ Impresso" : "⏳ Não Impresso"}
+                              {isPrinted ? `🖨️ Impresso ${printCount > 0 ? printCount : 1}x` : "⏳ Não Impresso"}
                             </button>
                           </div>
                           <span className="text-[9px] sm:text-[10px] text-slate-700 font-semibold mt-0.5 truncate max-w-[210px]" title={firstOrder.customerName}>
@@ -10207,6 +10225,7 @@ function PedidosScreen({
                     (o) => o.orderCode === selectedOrderCode && o.isActive !== false
                   );
                   const modalIsPrinted = modalOrders.some((o) => o.isPrinted);
+                  const modalPrintCount = Math.max(0, ...modalOrders.map((o) => o.printCount ?? (o.isPrinted ? 1 : 0)));
 
                   return (
                     <div className="flex items-center gap-2 mt-0.5">
@@ -10223,7 +10242,7 @@ function PedidosScreen({
                         }`}
                         title="Clique para alternar o status de impressão do pedido"
                       >
-                        {modalIsPrinted ? "🖨️ Impresso" : "⏳ Não Impresso"}
+                        {modalIsPrinted ? `🖨️ Impresso ${modalPrintCount > 0 ? modalPrintCount : 1}x` : "⏳ Não Impresso"}
                       </button>
                     </div>
                   );
@@ -16186,17 +16205,7 @@ export default function App() {
 
                         // Mark orders as printed in DB
                         if (orderCodesToPrintList.length > 0) {
-                          const ordersToUpdate = db.orders.filter(
-                            (o) => orderCodesToPrintList.includes(o.orderCode) && !o.isPrinted
-                          );
-                          if (ordersToUpdate.length > 0) {
-                            const updated = ordersToUpdate.map((o) => ({
-                              ...o,
-                              isPrinted: true,
-                              printedAt: Date.now(),
-                            }));
-                            db.updateOrders(updated);
-                          }
+                          markOrdersAsPrinted(orderCodesToPrintList);
                         }
 
                         import("./printUtils").then(({ printElementById }) => {

@@ -45,13 +45,17 @@ export function StatusScreen({
 
   const markOrdersAsPrinted = (codes: string[]) => {
     if (!codes || codes.length === 0) return;
-    const ordersToUpdate = db.orders.filter((o) => codes.includes(o.orderCode) && !o.isPrinted);
+    const ordersToUpdate = db.orders.filter((o) => codes.includes(o.orderCode));
     if (ordersToUpdate.length > 0) {
-      const updated = ordersToUpdate.map((o) => ({
-        ...o,
-        isPrinted: true,
-        printedAt: Date.now(),
-      }));
+      const updated = ordersToUpdate.map((o) => {
+        const currentCount = o.printCount ?? (o.isPrinted ? 1 : 0);
+        return {
+          ...o,
+          isPrinted: true,
+          printedAt: Date.now(),
+          printCount: currentCount + 1,
+        };
+      });
       db.updateOrders(updated);
     }
   };
@@ -59,11 +63,24 @@ export function StatusScreen({
   const toggleOrderPrintedStatus = (code: string, currentPrinted: boolean) => {
     const ordersToUpdate = db.orders.filter((o) => o.orderCode === code);
     if (ordersToUpdate.length > 0) {
-      const updated = ordersToUpdate.map((o) => ({
-        ...o,
-        isPrinted: !currentPrinted,
-        printedAt: !currentPrinted ? Date.now() : undefined,
-      }));
+      const updated = ordersToUpdate.map((o) => {
+        if (currentPrinted) {
+          return {
+            ...o,
+            isPrinted: false,
+            printedAt: undefined,
+            printCount: 0,
+          };
+        } else {
+          const currentCount = o.printCount ?? 0;
+          return {
+            ...o,
+            isPrinted: true,
+            printedAt: Date.now(),
+            printCount: currentCount > 0 ? currentCount : 1,
+          };
+        }
+      });
       db.updateOrders(updated);
     }
   };
@@ -1321,6 +1338,7 @@ export function StatusScreen({
                       })()}
                     {(() => {
                       const isPrinted = orders.some((o) => o.isPrinted);
+                      const printCount = Math.max(0, ...orders.map((o) => o.printCount ?? (o.isPrinted ? 1 : 0)));
                       return (
                         <button
                           type="button"
@@ -1335,7 +1353,7 @@ export function StatusScreen({
                               : "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200"
                           }`}
                         >
-                          {isPrinted ? "🖨️ Impresso" : "⏳ Não Impresso"}
+                          {isPrinted ? `🖨️ Impresso ${printCount > 0 ? printCount : 1}x` : "⏳ Não Impresso"}
                         </button>
                       );
                     })()}
