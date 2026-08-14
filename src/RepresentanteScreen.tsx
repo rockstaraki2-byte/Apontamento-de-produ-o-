@@ -69,6 +69,8 @@ export function RepresentanteScreen({
   const [billingRule, setBillingRule] = useState<"cadastro" | "ultimo_pedido">(
     "cadastro",
   );
+  const [discountPercent, setDiscountPercent] = useState<number | "">("");
+  const [hasRET, setHasRET] = useState<boolean>(false);
 
   const matchedCustomerForRep = React.useMemo(() => {
     if (!customerName || !customerName.trim()) return null;
@@ -95,6 +97,12 @@ export function RepresentanteScreen({
       }
       if (billingRule === "cadastro" && matchedCustomerForRep.defaultPaymentTerms) {
         setPaymentTerms(matchedCustomerForRep.defaultPaymentTerms);
+      }
+      if (matchedCustomerForRep.defaultDiscountPercent !== undefined) {
+        setDiscountPercent(matchedCustomerForRep.defaultDiscountPercent || "");
+      }
+      if (matchedCustomerForRep.hasRET !== undefined) {
+        setHasRET(!!matchedCustomerForRep.hasRET);
       }
     }
   }, [matchedCustomerForRep, billingRule]);
@@ -299,6 +307,8 @@ export function RepresentanteScreen({
         paymentTerms,
         fiscalType,
         billingRule,
+        discountPercent: discountPercent === "" ? undefined : Number(discountPercent),
+        hasRET,
         unitPrice: itemUnitPrice,
         isActive: true,
         createdAt: Date.now(),

@@ -385,19 +385,22 @@ export function printElementById(elementId: string, docTitle: string = "Document
     });
   });
 
-  Promise.all(loadPromises).then(() => {
-    // A small buffer for rendering/layout stabilization
-    setTimeout(() => {
-      window.print();
+  const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 500));
+
+  Promise.race([Promise.all(loadPromises), timeoutPromise])
+    .then(() => {
       setTimeout(() => {
-        document.title = originalTitle;
-      }, 500);
-    }, 300);
-  }).catch((err) => {
-    console.error("Error waiting for images to load:", err);
-    window.print();
-    document.title = originalTitle;
-  });
+        window.print();
+        setTimeout(() => {
+          document.title = originalTitle;
+        }, 500);
+      }, 150);
+    })
+    .catch((err) => {
+      console.error("Error waiting for images to load:", err);
+      window.print();
+      document.title = originalTitle;
+    });
 }
 
 export function exportRepresentativeBillingPdf(
@@ -410,7 +413,8 @@ export function exportRepresentativeBillingPdf(
     totalItems: number;
   },
   dbItems: any[],
-  getInvoicedQtyOnDay: (o: any, date: string) => number
+  getInvoicedQtyOnDay: (o: any, date: string) => number,
+  companyName: string = "SUA EMPRESA"
 ) {
   const doc = new jsPDF({
     orientation: "portrait",
@@ -436,7 +440,7 @@ export function exportRepresentativeBillingPdf(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
   doc.setTextColor(30, 41, 59); // Slate-800
-  doc.text("IMPÉRIO JOMARCI", 14, 22);
+  doc.text(companyName.toUpperCase(), 14, 22);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
@@ -579,7 +583,7 @@ export function exportRepresentativeBillingPdf(
   doc.save(`Fechamento_${repName.replace(/\s+/g, "_")}_${summaryDate}.pdf`);
 }
 
-function drawSignatures(doc: jsPDF, startY: number, totalValue: number, countOrders: number, countItems: number) {
+function drawSignatures(doc: jsPDF, startY: number, totalValue: number, countOrders: number, countItems: number, companyName: string = "SUA EMPRESA") {
   // Mini terms/notes section
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
@@ -590,7 +594,7 @@ function drawSignatures(doc: jsPDF, startY: number, totalValue: number, countOrd
   doc.setFontSize(7.5);
   doc.setTextColor(100, 116, 139); // Slate-500
   doc.text("O faturamento consolidado acima reflete a conferência física e liberação das peças finalizadas.", 14, startY + 4.5);
-  doc.text("As baixas de estoque foram processadas de forma irrevogável conforme regimento interno Império Jomarci.", 14, startY + 8);
+  doc.text(`As baixas de estoque foram processadas de forma irrevogável conforme regimento interno ${companyName}.`, 14, startY + 8);
 
   // Draw signature lines
   const sigY = startY + 24;
@@ -609,6 +613,6 @@ function drawSignatures(doc: jsPDF, startY: number, totalValue: number, countOrd
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(100, 116, 139);
-  doc.text("PCP Império Jomarci", 130, sigY + 4);
+  doc.text(`PCP ${companyName}`, 130, sigY + 4);
 }
 

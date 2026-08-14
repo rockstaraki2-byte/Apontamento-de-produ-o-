@@ -11,10 +11,13 @@ import {
   ShieldAlert,
   Key,
   Crown,
-  Upload
+  Upload,
+  CheckSquare,
+  Square
 } from "lucide-react";
 import type { useDatabase } from "../useDatabase";
 import type { Tenant, User, Role } from "../types";
+import { ALL_AVAILABLE_SCREENS, ALL_AVAILABLE_SUBTABS } from "../types";
 
 interface SuperAdminScreenProps {
   db: ReturnType<typeof useDatabase>;
@@ -35,6 +38,7 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
     systemName: "",
     sectorsInput: "",
     machinesInput: "",
+    allowedScreens: ALL_AVAILABLE_SCREENS.map((s) => s.key),
   });
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,6 +140,9 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
       primaryColor: companyForm.primaryColor?.trim() || "#00b14f",
       systemName: companyForm.systemName?.trim() || "SISTEMA DE PRODUÇÃO",
       machines: parsedMachines,
+      allowedScreens: Array.isArray(companyForm.allowedScreens) && companyForm.allowedScreens.length > 0
+        ? companyForm.allowedScreens
+        : ALL_AVAILABLE_SCREENS.map((s) => s.key),
     };
 
     try {
@@ -168,6 +175,8 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
         systemName: "",
         sectorsInput: "",
         machinesInput: "",
+        allowedScreens: ALL_AVAILABLE_SCREENS.map((s) => s.key),
+        allowedSubTabs: ALL_AVAILABLE_SUBTABS.map((st) => st.key),
       });
       alert("Empresa salva com sucesso!");
     } catch (err: any) {
@@ -185,6 +194,12 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
       ...t,
       sectorsInput: tenantSectors || "",
       machinesInput: t.machines?.join(", ") || "",
+      allowedScreens: t.allowedScreens && t.allowedScreens.length > 0
+        ? t.allowedScreens
+        : ALL_AVAILABLE_SCREENS.map((s) => s.key),
+      allowedSubTabs: t.allowedSubTabs && t.allowedSubTabs.length > 0
+        ? t.allowedSubTabs
+        : ALL_AVAILABLE_SUBTABS.map((st) => st.key),
     } as any);
     setIsAddingCompany(true);
   };
@@ -436,6 +451,182 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
                 </div>
 
                 <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-slate-500 block">
+                      Telas e Módulos Habilitados para esta Empresa
+                    </label>
+                    <div className="flex gap-2 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCompanyForm((prev: any) => ({
+                            ...prev,
+                            allowedScreens: ALL_AVAILABLE_SCREENS.map((s) => s.key),
+                          }))
+                        }
+                        className="text-indigo-600 hover:text-indigo-800 font-bold underline"
+                      >
+                        Marcar Todas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCompanyForm((prev: any) => ({
+                            ...prev,
+                            allowedScreens: [],
+                          }))
+                        }
+                        className="text-slate-500 hover:text-slate-700 font-bold underline"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="border border-slate-200 bg-slate-50/50 rounded-lg p-3 max-h-56 overflow-y-auto flex flex-col gap-3">
+                    {["Geral", "PCP e Pedidos", "Produção e Setores", "Estoque", "Gestão"].map((cat) => {
+                      const catScreens = ALL_AVAILABLE_SCREENS.filter((s) => s.category === cat);
+                      if (catScreens.length === 0) return null;
+                      return (
+                        <div key={cat} className="flex flex-col gap-1">
+                          <span className="text-[9px] font-black uppercase text-indigo-700 tracking-wider">
+                            {cat}
+                          </span>
+                          <div className="grid grid-cols-1 gap-1">
+                            {catScreens.map((sc) => {
+                              const isChecked = (companyForm.allowedScreens || []).includes(sc.key);
+                              return (
+                                <label
+                                  key={sc.key}
+                                  className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer bg-white border border-slate-150 p-1.5 rounded hover:bg-slate-100 transition"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      const current = companyForm.allowedScreens || [];
+                                      if (e.target.checked) {
+                                        setCompanyForm((prev: any) => ({
+                                          ...prev,
+                                          allowedScreens: [...current, sc.key],
+                                        }));
+                                      } else {
+                                        setCompanyForm((prev: any) => ({
+                                          ...prev,
+                                          allowedScreens: current.filter((k: string) => k !== sc.key),
+                                        }));
+                                      }
+                                    }}
+                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                                  />
+                                  <span className="truncate">{sc.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[9px] text-slate-400 mt-1">
+                    Defina quais telas aparecerão no menu e estarão acessíveis para os usuários desta empresa.
+                  </p>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-slate-500 block">
+                      Sub-Abas e Funções Específicas Habilitadas
+                    </label>
+                    <div className="flex gap-2 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCompanyForm((prev: any) => ({
+                            ...prev,
+                            allowedSubTabs: ALL_AVAILABLE_SUBTABS.map((st) => st.key),
+                          }))
+                        }
+                        className="text-indigo-600 hover:text-indigo-800 font-bold underline"
+                      >
+                        Marcar Todas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCompanyForm((prev: any) => ({
+                            ...prev,
+                            allowedSubTabs: [],
+                          }))
+                        }
+                        className="text-slate-500 hover:text-slate-700 font-bold underline"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="border border-slate-200 bg-slate-50/50 rounded-xl p-3 max-h-80 overflow-y-auto flex flex-col gap-4">
+                    {["pcp", "estoque", "pedidos", "representante", "orcamentos"].map((parentKey) => {
+                      const subTabs = ALL_AVAILABLE_SUBTABS.filter((st) => st.parentScreen === parentKey);
+                      if (subTabs.length === 0) return null;
+                      const parentScreenName = ALL_AVAILABLE_SCREENS.find((s) => s.key === parentKey)?.label || parentKey.toUpperCase();
+                      return (
+                        <div key={parentKey} className="flex flex-col gap-2 bg-white/80 p-2.5 rounded-lg border border-slate-200/80 shadow-3xs">
+                          <span className="text-[10px] font-extrabold uppercase text-indigo-700 tracking-wider flex items-center gap-1">
+                            📂 Módulo {parentScreenName}
+                          </span>
+                          <div className="grid grid-cols-1 gap-1.5">
+                            {subTabs.map((st) => {
+                              const isChecked = (companyForm.allowedSubTabs || []).includes(st.key);
+                              return (
+                                <label
+                                  key={st.key}
+                                  className={`flex items-start gap-2.5 text-xs font-semibold p-2 rounded-lg border transition cursor-pointer ${
+                                    isChecked
+                                      ? "bg-indigo-50/60 border-indigo-200 text-indigo-950"
+                                      : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      const current = companyForm.allowedSubTabs || [];
+                                      if (e.target.checked) {
+                                        setCompanyForm((prev: any) => ({
+                                          ...prev,
+                                          allowedSubTabs: [...current, st.key],
+                                        }));
+                                      } else {
+                                        setCompanyForm((prev: any) => ({
+                                          ...prev,
+                                          allowedSubTabs: current.filter((k: string) => k !== st.key),
+                                        }));
+                                      }
+                                    }}
+                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 mt-0.5 shrink-0"
+                                  />
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="leading-snug break-words">{st.label}</span>
+                                    <span className="text-[10px] font-mono text-slate-400 font-normal">
+                                      {st.key}
+                                    </span>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[9px] text-slate-400 mt-1">
+                    Defina sub-abas e botões específicos que estarão visíveis nesta empresa (ex: Planos de Corte, Representantes, EPIs, etc).
+                  </p>
+                </div>
+
+                <div>
                   <label className="text-[10px] font-extrabold uppercase text-slate-500 block mb-1">
                     Logo da Empresa <span className="text-red-500">*</span>
                   </label>
@@ -495,7 +686,7 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
                       onClick={() => {
                         setIsAddingCompany(false);
                         setEditCompanyId(null);
-                        setCompanyForm({ id: "", name: "", logoUrl: "/icon.png", primaryColor: "#00b14f", systemName: "", sectorsInput: "", machinesInput: "" });
+                        setCompanyForm({ id: "", name: "", logoUrl: "/icon.png", primaryColor: "#00b14f", systemName: "", sectorsInput: "", machinesInput: "", allowedScreens: ALL_AVAILABLE_SCREENS.map(s => s.key) });
                       }}
                       className="px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs transition"
                     >
@@ -514,7 +705,9 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {db.tenants.map((t) => (
+                  {db.tenants.map((t) => {
+                    const activeAllowedCount = t.allowedScreens && t.allowedScreens.length > 0 ? t.allowedScreens.length : ALL_AVAILABLE_SCREENS.length;
+                    return (
                     <div 
                       key={t.id} 
                       className="border border-slate-150 rounded-xl p-4 flex flex-col justify-between bg-slate-50/50 hover:bg-white transition shadow-2xs relative overflow-hidden"
@@ -548,8 +741,10 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
                             </span>
                           </div>
                           <div>
-                            <span className="text-[7.5px] uppercase block font-extrabold text-slate-400">Logo</span>
-                            <span className="truncate block font-semibold text-slate-800" title={t.logoUrl}>{t.logoUrl}</span>
+                            <span className="text-[7.5px] uppercase block font-extrabold text-slate-400">Módulos Habilitados</span>
+                            <span className="font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-150 inline-block">
+                              {activeAllowedCount}/{ALL_AVAILABLE_SCREENS.length} Telas
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -572,7 +767,8 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
                         </button>
                       </div>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               </div>
             </div>

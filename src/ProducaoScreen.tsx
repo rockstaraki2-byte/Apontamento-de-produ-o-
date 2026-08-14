@@ -16,6 +16,7 @@ import {
   Play,
 } from "lucide-react";
 import { useDatabase } from "./useDatabase";
+import { ColorBadgeWithImage } from "./components/ColorBadgeWithImage";
 import type { User, OrderStatus } from "./types";
 import { calculateWorkingMillis } from "./timeUtils";
 import { LoteGeralWidget } from "./components/LoteGeralWidget";
@@ -1457,7 +1458,10 @@ export function ProducaoScreen({
               {activePack.itemId === 0 ? (
                 <span>Cliente / Origem: <strong className="text-blue-700">{activePack.thirdPartyName || "Geral"}</strong></span>
               ) : (
-                <span>{activePack.color || "-"} | {activePack.size || "-"} | {activePack.variation || "-"}</span>
+                <span className="flex items-center gap-1.5 flex-wrap">
+                  <ColorBadgeWithImage color={activePack.color} attributes={db.attributes} size="md" />
+                  <span>| Tam: {activePack.size || "-"} | Var: {activePack.variation || "-"}</span>
+                </span>
               )}
             </p>
           </div>
@@ -1857,11 +1861,11 @@ export function ProducaoScreen({
                               </strong>
                             </span>
                           ) : (
-                            <span className="text-[10px] font-semibold text-slate-500 mt-0.5">
-                              Especificações:{" "}
+                            <span className="text-[10px] font-semibold text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                              <span>Especificações:</span>
+                              <ColorBadgeWithImage color={pack.color} attributes={db.attributes} size="sm" />
                               <strong className="text-slate-800">
-                                {pack.color || "-"} | {pack.size || "-"} |{" "}
-                                {pack.variation || "-"}
+                                Tam: {pack.size || "-"} | Var: {pack.variation || "-"}
                               </strong>
                             </span>
                           )}

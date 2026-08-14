@@ -246,8 +246,8 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
   const a4PrintContainerRef = useRef<HTMLDivElement | null>(null);
 
   const systemSettings = db.systemSettings?.[0] || {};
-  const logoUrl = systemSettings.companyLogoUrl || "/icon.png";
-  const companyName = systemSettings.companyName || "IMPÉRIO JOMARCI - ACESSÓRIOS PARA MOVÉIS";
+  const logoUrl = (db.activeTenant?.logoUrl && db.activeTenant.logoUrl !== "/icon.png") ? db.activeTenant.logoUrl : (systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png");
+  const companyName = db.activeTenant?.name || systemSettings.companyName || "SUA EMPRESA";
 
   const handleOpenPreviewModal = () => {
     const list: any[] = [];
@@ -1798,7 +1798,7 @@ ${barcodeBlock}
                         <div className="flex-1 flex flex-col justify-between h-full text-left">
                           <div>
                             <div className="flex justify-between items-center border-b border-slate-200 pb-1 mb-1">
-                              <span className="text-[8px] font-black tracking-wider text-black">IMPÉRIO ACESSÓRIOS</span>
+                              <span className="text-[8px] font-black tracking-wider text-black">{companyName}</span>
                               <span className="text-[10px] font-black bg-slate-100 text-black px-1 py-0.2 rounded scale-90">{lbl.sectorLabel}</span>
                             </div>
                             <h5 className="text-[10px] font-black text-black leading-tight truncate">{lbl.name}</h5>
@@ -2154,7 +2154,7 @@ ${barcodeBlock}
                 <div>
                   {/* Page header indicator */}
                   <div className="flex justify-between items-center text-[11px] font-black text-black border-b pb-2 mb-4 uppercase tracking-widest font-sans">
-                    <span>IMPÉRIO ACESSÓRIOS · ETIQUETAS DE PROCESSO</span>
+                    <span>{companyName} · ETIQUETAS DE PROCESSO</span>
                     <span>PÁGINA {pageIdx + 1} DE {pages.length}</span>
                   </div>
 
@@ -2232,7 +2232,7 @@ ${barcodeBlock}
 
                 {/* Footer identifier */}
                 <div className="text-[10px] text-black text-center border-t pt-2 mt-4 select-none uppercase tracking-wider font-black">
-                  IMPÉRIO ACESSÓRIOS LTDA · GESTÃO INTEGRADA DE PRODUÇÃO E LOGÍSTICA
+                  {companyName} · GESTÃO INTEGRADA DE PRODUÇÃO E LOGÍSTICA
                 </div>
               </div>
             ));

@@ -19,7 +19,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
   AcompanhamentoPrintSheetProps
 >(({ batch, orderIds = [], db, destrincharComposicoes = false, ocultarPaiComposicao = false }, ref) => {
   const logoUrl = db.activeTenant?.logoUrl || "/icon.png";
-  const companyName = db.activeTenant?.name || "IMPÉRIO ACESSÓRIOS | METALURGIA";
+  const companyName = db.activeTenant?.name || "SUA EMPRESA";
 
   // Group batch orders by unique item characteristics: itemId, color, size, variation.
   // If destrincharComposicoes is true, products with compositions are expanded into their sub-components.
@@ -330,7 +330,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
                             </div>
                             <div className="border-t border-dashed border-slate-200 pt-1 mt-1 flex justify-between items-center text-[7.5px] text-slate-400 font-mono leading-none">
                               <span>Ficha de controle de processo e estoque</span>
-                              <span>Império Acessórios</span>
+                              <span>{companyName}</span>
                             </div>
                           </div>
                         </div>

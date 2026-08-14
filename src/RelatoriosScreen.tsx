@@ -190,119 +190,43 @@ export function RelatoriosScreen({
 
   // Advanced sector-wise productivity logic that compares the latest collection with the prior average
   const sectorProductivityMetrics = useMemo(() => {
-    const list = [
-      {
-        id: "CORTE_LASER",
-        name: "Corte a Laser",
-        benchmark: 20.0,
-        colorTheme: "indigo",
-        bgTheme: "indigo-50/30",
-        borderTheme: "border-indigo-100",
-      },
-      {
-        id: "PINTURA",
-        name: "Pintura",
-        benchmark: 35.0,
-        colorTheme: "amber",
-        bgTheme: "amber-50/30",
-        borderTheme: "border-amber-100",
-      },
-      {
-        id: "EMBALAGEM",
-        name: "Embalagem",
-        benchmark: 40.0,
-        colorTheme: "green",
-        bgTheme: "green-50/30",
-        borderTheme: "border-green-100",
-      },
-      {
-        id: "MONTAGEM_RETRATIL",
-        name: "Montagem de Retrátil",
-        benchmark: 15.0,
-        colorTheme: "purple",
-        bgTheme: "purple-50/30",
-        borderTheme: "border-purple-100",
-      },
-      {
-        id: "MONTAGEM_RODRIGO",
-        name: "Pendurar Barra chata",
-        benchmark: 15.0,
-        colorTheme: "pink",
-        bgTheme: "pink-50/30",
-        borderTheme: "border-pink-100",
-      },
-      {
-        id: "PRENSA_EDUARDO",
-        name: "Prensa Eduardo",
-        benchmark: 10.0,
-        colorTheme: "sky",
-        bgTheme: "sky-50/30",
-        borderTheme: "border-sky-100",
-      },
-      {
-        id: "PRENSA_RAFAEL",
-        name: "Prensa Rafael",
-        benchmark: 10.0,
-        colorTheme: "teal",
-        bgTheme: "teal-50/30",
-        borderTheme: "border-teal-100",
-      },
-      {
-        id: "INJETORA",
-        name: "Injetora",
-        benchmark: 25.0,
-        colorTheme: "rose",
-        bgTheme: "rose-50/30",
-        borderTheme: "border-rose-100",
-      },
-      {
-        id: "BANHO_QUIMICO",
-        name: "Banho Químico",
-        benchmark: 18.0,
-        colorTheme: "cyan",
-        bgTheme: "cyan-50/30",
-        borderTheme: "border-cyan-100",
-      },
+    const list: any[] = [];
+    const themes = [
+      { colorTheme: "indigo", bgTheme: "indigo-50/30", borderTheme: "border-indigo-100" },
+      { colorTheme: "amber", bgTheme: "amber-50/30", borderTheme: "border-amber-100" },
+      { colorTheme: "green", bgTheme: "green-50/30", borderTheme: "border-green-100" },
+      { colorTheme: "purple", bgTheme: "purple-50/30", borderTheme: "border-purple-100" },
+      { colorTheme: "pink", bgTheme: "pink-50/30", borderTheme: "border-pink-100" },
+      { colorTheme: "sky", bgTheme: "sky-50/30", borderTheme: "border-sky-100" },
+      { colorTheme: "teal", bgTheme: "teal-50/30", borderTheme: "border-teal-100" },
+      { colorTheme: "rose", bgTheme: "rose-50/30", borderTheme: "border-rose-100" },
+      { colorTheme: "cyan", bgTheme: "cyan-50/30", borderTheme: "border-cyan-100" },
     ];
 
-    // Find all welders dynamically
-    const welders = new Set<string>();
-    db.logs.forEach((l) => {
-      if (l.operatorId && l.operatorId.startsWith("solda - ")) {
-        const parts = l.operatorId.split(" - ");
-        if (parts[1]) {
-          welders.add(parts[1].trim());
-        }
-      }
-    });
-
-    if (welders.size > 0) {
-      welders.forEach((welder) => {
+    if (db.sectors && db.sectors.length > 0) {
+      db.sectors.forEach((s, idx) => {
+        const t = themes[idx % themes.length];
         list.push({
-          id: `SOLDA_${welder}`,
-          name: `Solda - ${welder}`,
-          benchmark: 12.0,
-          colorTheme: "blue",
-          bgTheme: "blue-50/30",
-          borderTheme: "border-blue-100",
+          id: String(s.id),
+          name: s.name,
+          benchmark: (s as any).targetPph || 20.0,
+          ...t,
         });
       });
-      list.push({
-        id: "SOLDA_GERAL",
-        name: "Solda Geral",
-        benchmark: 12.0,
-        colorTheme: "blue",
-        bgTheme: "blue-50/30",
-        borderTheme: "border-blue-100",
-      });
     } else {
-      list.push({
-        id: "SOLDA",
-        name: "Solda / Soldador",
-        benchmark: 12.0,
-        colorTheme: "blue",
-        bgTheme: "blue-50/30",
-        borderTheme: "border-blue-100",
+      const logSectors = new Set<string>();
+      db.logs.forEach((l) => {
+        const sec = l.processName || l.type?.replace("_", " ") || "Geral";
+        logSectors.add(sec);
+      });
+      Array.from(logSectors).forEach((secName, idx) => {
+        const t = themes[idx % themes.length];
+        list.push({
+          id: secName,
+          name: secName,
+          benchmark: 20.0,
+          ...t,
+        });
       });
     }
 
@@ -670,53 +594,27 @@ export function RelatoriosScreen({
     const oneDayMs = 24 * 60 * 60 * 1000;
     const sevenDaysMs = 7 * oneDayMs;
 
-    const list = [
-      { id: "CORTE_LASER", name: "Corte a Laser", benchmark: 20.0 },
-      { id: "PINTURA", name: "Pintura", benchmark: 35.0 },
-      { id: "EMBALAGEM", name: "Embalagem", benchmark: 40.0 },
-      {
-        id: "MONTAGEM_RETRATIL",
-        name: "Montagem de Retrátil",
-        benchmark: 15.0,
-      },
-      { id: "MONTAGEM_RODRIGO", name: "Pendurar Barra chata", benchmark: 15.0 },
-      { id: "PRENSA_EDUARDO", name: "Prensa Eduardo", benchmark: 10.0 },
-      { id: "TORNO_CNC_WILLIAN", name: "Torno CNC Willian", benchmark: 10.0 },
-      { id: "TORNO_CNC_HENRIQUE", name: "Torno CNC Henrique", benchmark: 10.0 },
-      { id: "PRENSA_RAFAEL", name: "Prensa Rafael", benchmark: 10.0 },
-      { id: "INJETORA", name: "Injetora", benchmark: 25.0 },
-      { id: "BANHO_QUIMICO", name: "Banho Químico", benchmark: 18.0 },
-    ];
-
-    // Find all welders dynamically
-    const welders = new Set<string>();
-    db.logs.forEach((l) => {
-      if (l.operatorId && l.operatorId.startsWith("solda - ")) {
-        const parts = l.operatorId.split(" - ");
-        if (parts[1]) {
-          welders.add(parts[1].trim());
-        }
-      }
-    });
-
-    if (welders.size > 0) {
-      welders.forEach((welder) => {
+    const list: any[] = [];
+    if (db.sectors && db.sectors.length > 0) {
+      db.sectors.forEach((s) => {
         list.push({
-          id: `SOLDA_${welder}`,
-          name: `Solda - ${welder}`,
-          benchmark: 12.0,
+          id: String(s.id),
+          name: s.name,
+          benchmark: (s as any).targetPph || 20.0,
         });
       });
-      list.push({
-        id: "SOLDA_GERAL",
-        name: "Solda Geral",
-        benchmark: 12.0,
-      });
     } else {
-      list.push({
-        id: "SOLDA",
-        name: "Solda / Soldador",
-        benchmark: 12.0,
+      const logSectors = new Set<string>();
+      db.logs.forEach((l) => {
+        const sec = l.processName || l.type?.replace("_", " ") || "Geral";
+        logSectors.add(sec);
+      });
+      Array.from(logSectors).forEach((secName) => {
+        list.push({
+          id: secName,
+          name: secName,
+          benchmark: 20.0,
+        });
       });
     }
 
@@ -2074,45 +1972,24 @@ export function RelatoriosScreen({
                     onChange={(e) => {
                       const val = e.target.value;
                       setSimulatorSector(val);
-                      if (val === "MONTAGEM_RETRATIL")
-                        setSimulatorOperator("montagem_retratil");
-                      else if (val === "MONTAGEM_RODRIGO")
-                        setSimulatorOperator("montagem_rodrigo");
-                      else if (val === "SOLDA") setSimulatorOperator("Adriano");
-                      else if (val === "PRENSA_EDUARDO")
-                        setSimulatorOperator("prensa_eduardo");
-                      else if (val === "PRENSA_RAFAEL")
-                        setSimulatorOperator("prensa_rafael");
-                      else if (val === "INJETORA")
-                        setSimulatorOperator("injetora");
-                      else if (val === "BANHO_QUIMICO")
-                        setSimulatorOperator("banho_quimico");
-                      else if (val === "CORTE_LASER")
-                        setSimulatorOperator("cortelaser_giovani");
-                      else if (val === "PINTURA")
-                        setSimulatorOperator("pintura");
-                      else if (val === "EMBALAGEM")
-                        setSimulatorOperator("embalagem");
-                      else setSimulatorOperator("solda");
+                      setSimulatorOperator(val);
                     }}
                     className="w-full text-xs p-2 border border-gray-300 rounded bg-white text-gray-700 font-semibold"
                   >
-                    <option value="CORTE_LASER">Corte a Laser</option>
-                    <option value="SOLDA">Solda (por Soldador)</option>
-                    <option value="PINTURA">Pintura</option>
-                    <option value="EMBALAGEM">Embalagem</option>
-                    <option value="MONTAGEM_RETRATIL">
-                      Montagem de Retrátil
-                    </option>
-                    <option value="MONTAGEM_RODRIGO">
-                      Pendurar Barra chata
-                    </option>
-                    <option value="PRENSA_EDUARDO">Prensa Eduardo</option>
-                    <option value="TORNO_CNC_WILLIAN">Torno CNC Willian</option>
-                    <option value="TORNO_CNC_HENRIQUE">Torno CNC Henrique</option>
-                    <option value="PRENSA_RAFAEL">Prensa Rafael</option>
-                    <option value="INJETORA">Injetora</option>
-                    <option value="BANHO_QUIMICO">Banho Químico</option>
+                    {db.sectors && db.sectors.length > 0 ? (
+                      db.sectors.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="CORTE_LASER">Corte a Laser</option>
+                        <option value="SOLDA">Solda</option>
+                        <option value="PINTURA">Pintura</option>
+                        <option value="EMBALAGEM">Embalagem</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 {simulatorSector === "SOLDA" && (
@@ -2602,17 +2479,20 @@ export function RelatoriosScreen({
                     className="w-full text-xs p-2 border border-gray-300 rounded bg-white text-gray-700 font-semibold cursor-pointer"
                   >
                     <option value="ALL">Todos os Setores</option>
-                    <option value="CORTE_LASER">Corte a Laser</option>
-                    <option value="PINTURA">Pintura</option>
-                    <option value="EMBALAGEM">Embalagem</option>
-                    <option value="PRODUCAO">Produção / Montagem</option>
-                    <option value="BANHO_QUIMICO">Banho Químico</option>
-                    <option value="PRENSA_EDUARDO">Prensa Eduardo</option>
-                    <option value="PRENSA_RAFAEL">Prensa Rafael</option>
-                    <option value="INJETORA">Injetora</option>
-                    <option value="TORNO_CNC_WILLIAN">Torno CNC Willian</option>
-                    <option value="TORNO_CNC_HENRIQUE">Torno CNC Henrique</option>
-                    <option value="SOLDA">Solda</option>
+                    {db.sectors && db.sectors.length > 0 ? (
+                      db.sectors.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="CORTE_LASER">Corte a Laser</option>
+                        <option value="PINTURA">Pintura</option>
+                        <option value="EMBALAGEM">Embalagem</option>
+                        <option value="PRODUCAO">Produção / Montagem</option>
+                      </>
+                    )}
                   </select>
                 </div>
 

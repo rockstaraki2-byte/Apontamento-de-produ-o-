@@ -132,105 +132,94 @@ export function RealTimeFactoryMonitoring({
     });
   }, [activePacks, selectedSectorFilter, onlyLongDuration, searchTerm, items, now]);
 
-  // Sector Definitions for visual categorization
-  const SECTOR_CATEGORIES = [
-    {
-      key: "CORTE_LASER",
-      title: "Corte Laser",
-      subtitle: "Mesa & Chapas CNC",
-      icon: Scissors,
-      color: "teal",
-      matchTypes: ["CORTE_LASER"],
-      bgBadge: "bg-teal-500",
-      textAccent: "text-teal-700",
-      borderAccent: "border-teal-200",
-      bgCard: "bg-teal-50/50 hover:bg-teal-50",
-    },
-    {
-      key: "TORNOS_CNC",
-      title: "Tornos CNC",
-      subtitle: "Willian & Henrique",
-      icon: Settings,
-      color: "cyan",
-      matchTypes: ["TORNO_CNC_WILLIAN", "TORNO_CNC_HENRIQUE"],
-      bgBadge: "bg-cyan-600",
-      textAccent: "text-cyan-700",
-      borderAccent: "border-cyan-200",
-      bgCard: "bg-cyan-50/50 hover:bg-cyan-50",
-    },
-    {
-      key: "PRENSAS",
-      title: "Prensas & Estamparia",
-      subtitle: "Rafael & Eduardo",
-      icon: Hammer,
-      color: "indigo",
-      matchTypes: ["PRENSA_RAFAEL", "PRENSA_EDUARDO"],
-      bgBadge: "bg-indigo-600",
-      textAccent: "text-indigo-700",
-      borderAccent: "border-indigo-200",
-      bgCard: "bg-indigo-50/50 hover:bg-indigo-50",
-    },
-    {
-      key: "BANHO_QUIMICO",
-      title: "Banho Químico",
-      subtitle: "Desengraxe & Passivação",
-      icon: Droplet,
-      color: "amber",
-      matchTypes: ["BANHO_QUIMICO"],
-      bgBadge: "bg-amber-500",
-      textAccent: "text-amber-700",
-      borderAccent: "border-amber-200",
-      bgCard: "bg-amber-50/50 hover:bg-amber-50",
-    },
-    {
-      key: "INJETORA",
-      title: "Injetora Plástica",
-      subtitle: "Moldes & Injeção",
-      icon: Cpu,
-      color: "purple",
-      matchTypes: ["INJETORA"],
-      bgBadge: "bg-purple-600",
-      textAccent: "text-purple-700",
-      borderAccent: "border-purple-200",
-      bgCard: "bg-purple-50/50 hover:bg-purple-50",
-    },
-    {
-      key: "PINTURA",
-      title: "Pintura Eletrostática",
-      subtitle: "Cabine & Estufa",
-      icon: Paintbrush,
-      color: "pink",
-      matchTypes: ["PINTURA"],
-      bgBadge: "bg-pink-600",
-      textAccent: "text-pink-700",
-      borderAccent: "border-pink-200",
-      bgCard: "bg-pink-50/50 hover:bg-pink-50",
-    },
-    {
-      key: "EMBALAGEM",
-      title: "Embalagem & Expedição",
-      subtitle: "Kits, Caixas & Etiquetas",
-      icon: Package,
-      color: "emerald",
-      matchTypes: ["EMBALAGEM"],
-      bgBadge: "bg-emerald-600",
-      textAccent: "text-emerald-700",
-      borderAccent: "border-emerald-200",
-      bgCard: "bg-emerald-50/50 hover:bg-emerald-50",
-    },
-    {
-      key: "PRODUCAO",
-      title: "Usinagem & Montagem",
-      subtitle: "Retrátil & Processos Gerais",
-      icon: Wrench,
-      color: "blue",
-      matchTypes: ["PRODUCAO", "MONTAGEM_RETRATIL"],
-      bgBadge: "bg-blue-600",
-      textAccent: "text-blue-700",
-      borderAccent: "border-blue-200",
-      bgCard: "bg-blue-50/50 hover:bg-blue-50",
+  // Dynamic sector categories based on active tenant's registered sectors
+  const activeTenantSectors = useMemo(() => {
+    const colorPalette = [
+      { bgBadge: "bg-teal-600", textAccent: "text-teal-700", borderAccent: "border-teal-200", bgCard: "bg-teal-50/50 hover:bg-teal-50", icon: Scissors },
+      { bgBadge: "bg-indigo-600", textAccent: "text-indigo-700", borderAccent: "border-indigo-200", bgCard: "bg-indigo-50/50 hover:bg-indigo-50", icon: Hammer },
+      { bgBadge: "bg-amber-600", textAccent: "text-amber-700", borderAccent: "border-amber-200", bgCard: "bg-amber-50/50 hover:bg-amber-50", icon: Droplet },
+      { bgBadge: "bg-purple-600", textAccent: "text-purple-700", borderAccent: "border-purple-200", bgCard: "bg-purple-50/50 hover:bg-purple-50", icon: Cpu },
+      { bgBadge: "bg-pink-600", textAccent: "text-pink-700", borderAccent: "border-pink-200", bgCard: "bg-pink-50/50 hover:bg-pink-50", icon: Paintbrush },
+      { bgBadge: "bg-emerald-600", textAccent: "text-emerald-700", borderAccent: "border-emerald-200", bgCard: "bg-emerald-50/50 hover:bg-emerald-50", icon: Package },
+      { bgBadge: "bg-cyan-600", textAccent: "text-cyan-700", borderAccent: "border-cyan-200", bgCard: "bg-cyan-50/50 hover:bg-cyan-50", icon: Settings },
+      { bgBadge: "bg-blue-600", textAccent: "text-blue-700", borderAccent: "border-blue-200", bgCard: "bg-blue-50/50 hover:bg-blue-50", icon: Wrench },
+    ];
+
+    if (sectors && sectors.length > 0) {
+      return sectors.map((s, idx) => {
+        const theme = colorPalette[idx % colorPalette.length];
+        const sIdStr = String(s.id);
+        const sNameNorm = (s.name || "").toLowerCase().trim();
+        const sRoleNorm = (s.role || "").toLowerCase().trim();
+        const sCodeNorm = (s.code || "").toLowerCase().trim();
+
+        return {
+          key: sIdStr,
+          id: s.id,
+          title: s.name,
+          subtitle: s.department || "Setor Operacional",
+          icon: theme.icon,
+          bgBadge: theme.bgBadge,
+          textAccent: theme.textAccent,
+          borderAccent: theme.borderAccent,
+          bgCard: theme.bgCard,
+          matchesPack: (p: ActiveTask) => {
+            if (p.sectorId && String(p.sectorId) === sIdStr) return true;
+            const pType = (p.type || "").toLowerCase().trim();
+            const pProc = (p.processName || "").toLowerCase().trim();
+
+            if (pType && (pType === sNameNorm || pType === sRoleNorm || pType === sCodeNorm || pType === sIdStr.toLowerCase())) return true;
+            if (pProc && pProc === sNameNorm) return true;
+
+            // Legacy fallback matches
+            if (sNameNorm.includes("corte") && pType === "corte_laser") return true;
+            if (sNameNorm.includes("prensa") && (pType.includes("prensa") || pType === "prensa_eduardo" || pType === "prensa_rafael")) return true;
+            if (sNameNorm.includes("torno") && (pType.includes("torno") || pType === "torno_cnc_willian" || pType === "torno_cnc_henrique")) return true;
+            if (sNameNorm.includes("pintura") && pType === "pintura") return true;
+            if (sNameNorm.includes("embalagem") && pType === "embalagem") return true;
+            if (sNameNorm.includes("banho") && pType === "banho_quimico") return true;
+            if (sNameNorm.includes("injetora") && pType === "injetora") return true;
+            if (sNameNorm.includes("solda") && pType.includes("solda")) return true;
+
+            return false;
+          }
+        };
+      });
     }
-  ];
+
+    // Fallback: derive sectors from activePacks for this tenant if no explicit sector registration exists
+    const uniqueSectorNames = new Set<string>();
+    activePacks.forEach((p) => {
+      const name = p.processName || p.type?.replace("_", " ") || "Geral";
+      uniqueSectorNames.add(name);
+    });
+
+    if (uniqueSectorNames.size > 0) {
+      return Array.from(uniqueSectorNames).map((secName, idx) => {
+        const theme = colorPalette[idx % colorPalette.length];
+        return {
+          key: secName.toUpperCase().replace(/\s+/g, "_"),
+          id: secName,
+          title: secName,
+          subtitle: "Posto Ativo",
+          icon: theme.icon,
+          bgBadge: theme.bgBadge,
+          textAccent: theme.textAccent,
+          borderAccent: theme.borderAccent,
+          bgCard: theme.bgCard,
+          matchesPack: (p: ActiveTask) => {
+            return (
+              (p.processName && p.processName === secName) ||
+              p.type?.replace("_", " ") === secName ||
+              p.type === secName
+            );
+          }
+        };
+      });
+    }
+
+    return [];
+  }, [sectors, activePacks]);
 
   // Distinct active operators count
   const activeOperatorsList = useMemo(() => {
@@ -486,15 +475,12 @@ export function RealTimeFactoryMonitoring({
               onChange={(e) => setSelectedSectorFilter(e.target.value)}
               className="bg-white border border-slate-200 text-xs font-bold text-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs shrink-0 cursor-pointer"
             >
-              <option value="ALL">Todos os Setores</option>
-              <option value="CORTE_LASER">Corte Laser</option>
-              <option value="TORNOS_CNC">Tornos CNC</option>
-              <option value="PRENSAS">Prensas</option>
-              <option value="BANHO_QUIMICO">Banho Químico</option>
-              <option value="INJETORA">Injetora</option>
-              <option value="PINTURA">Pintura</option>
-              <option value="EMBALAGEM">Embalagem</option>
-              <option value="PRODUCAO_GERAL">Usinagem Geral</option>
+              <option value="ALL">Todos os Setores ({activeTenantSectors.length})</option>
+              {activeTenantSectors.map((cat) => (
+                <option key={cat.key} value={cat.key}>
+                  {cat.title}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -503,88 +489,89 @@ export function RealTimeFactoryMonitoring({
       {/* SUBTAB 1: CHÃO DE FÁBRICA AO VIVO (VISÃO GERAL) */}
       {activeSubTab === "OVERVIEW" && (
         <div className="flex flex-col gap-6">
-          {SECTOR_CATEGORIES.map((cat) => {
-            const CAT_ICON = cat.icon;
+          {activeTenantSectors.length === 0 ? (
+            <div className="p-8 bg-white border border-dashed border-slate-300 rounded-2xl text-center space-y-2">
+              <p className="text-sm font-bold text-slate-700">Nenhum setor cadastrado para esta empresa</p>
+              <p className="text-xs text-slate-500">Acesse a aba <strong>Cadastros &gt; Setores</strong> para adicionar os postos de trabalho da sua empresa.</p>
+            </div>
+          ) : (
+            activeTenantSectors.map((cat) => {
+              const CAT_ICON = cat.icon;
 
-            // Find matching active packs for this sector
-            const sectorPacks = filteredActivePacks.filter((p) => {
-              if (cat.key === "CORTE_LASER") return p.type === "CORTE_LASER";
-              if (cat.key === "TORNOS_CNC") return ["TORNO_CNC_WILLIAN", "TORNO_CNC_HENRIQUE"].includes(p.type || "");
-              if (cat.key === "PRENSAS") return ["PRENSA_RAFAEL", "PRENSA_EDUARDO"].includes(p.type || "");
-              if (cat.key === "BANHO_QUIMICO") return p.type === "BANHO_QUIMICO";
-              if (cat.key === "INJETORA") return p.type === "INJETORA";
-              if (cat.key === "PINTURA") return p.type === "PINTURA";
-              if (cat.key === "EMBALAGEM") return p.type === "EMBALAGEM";
-              if (cat.key === "PRODUCAO") return ["PRODUCAO", "MONTAGEM_RETRATIL"].includes(p.type || "");
-              return false;
-            });
+              // Find matching active packs for this sector using cat.matchesPack
+              const sectorPacks = filteredActivePacks.filter((p) => cat.matchesPack(p));
 
-            // If filtering by sector or search term and this sector has 0 packs, hide it unless "ALL" filter
-            if (sectorPacks.length === 0 && (selectedSectorFilter !== "ALL" || searchTerm.trim() !== "" || onlyLongDuration)) {
-              return null;
-            }
+              // If filtering by sector or search term and this sector has 0 packs, hide it unless "ALL" filter
+              if (sectorPacks.length === 0 && (selectedSectorFilter !== "ALL" || searchTerm.trim() !== "" || onlyLongDuration)) {
+                if (selectedSectorFilter !== "ALL" && selectedSectorFilter !== cat.key) {
+                  return null;
+                }
+                if (searchTerm.trim() !== "" || onlyLongDuration) {
+                  return null;
+                }
+              }
 
-            return (
-              <div key={cat.key} className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-                {/* Sector Header Bar */}
-                <div className="bg-slate-50/80 border-b border-slate-200 p-4 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2.5 rounded-xl ${cat.bgBadge} text-white shadow-2xs`}>
-                      <CAT_ICON size={18} />
+              return (
+                <div key={cat.key} className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+                  {/* Sector Header Bar */}
+                  <div className="bg-slate-50/80 border-b border-slate-200 p-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2.5 rounded-xl ${cat.bgBadge} text-white shadow-2xs`}>
+                        <CAT_ICON size={18} />
+                      </div>
+                      <div>
+                        <h3 className="font-black text-slate-800 text-sm flex items-center gap-2">
+                          {cat.title}
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                            sectorPacks.length > 0 
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-200" 
+                              : "bg-slate-200 text-slate-600"
+                          }`}>
+                            {sectorPacks.length} {sectorPacks.length === 1 ? "ativo" : "ativos"}
+                          </span>
+                        </h3>
+                        <p className="text-[11px] text-slate-500 font-medium">{cat.subtitle}</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-black text-slate-800 text-sm flex items-center gap-2">
-                        {cat.title}
-                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                          sectorPacks.length > 0 
-                            ? "bg-emerald-100 text-emerald-800 border border-emerald-200" 
-                            : "bg-slate-200 text-slate-600"
-                        }`}>
-                          {sectorPacks.length} {sectorPacks.length === 1 ? "ativo" : "ativos"}
-                        </span>
-                      </h3>
-                      <p className="text-[11px] text-slate-500 font-medium">{cat.subtitle}</p>
-                    </div>
+
+                    {sectorPacks.length > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Em Operação
+                      </div>
+                    )}
                   </div>
 
-                  {sectorPacks.length > 0 && (
-                    <div className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      Em Operação
-                    </div>
-                  )}
-                </div>
-
-                {/* Cards Grid */}
-                <div className="p-4">
-                  {sectorPacks.length === 0 ? (
-                    <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50 flex flex-col items-center justify-center gap-2">
-                      <div className="p-3 bg-slate-200/60 rounded-full text-slate-400">
-                        <CAT_ICON size={22} />
+                  {/* Cards Grid */}
+                  <div className="p-4">
+                    {sectorPacks.length === 0 ? (
+                      <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50 flex flex-col items-center justify-center gap-2">
+                        <div className="p-3 bg-slate-200/60 rounded-full text-slate-400">
+                          <CAT_ICON size={22} />
+                        </div>
+                        <p className="text-xs font-extrabold text-slate-500">Posto de Trabalho Disponível / Ocioso</p>
+                        <p className="text-[11px] text-slate-400">Nenhum apontamento ativo neste setor no momento.</p>
                       </div>
-                      <p className="text-xs font-extrabold text-slate-500">Posto de Trabalho Disponível / Ocioso</p>
-                      <p className="text-[11px] text-slate-400">Nenhum apontamento ativo neste setor no momento.</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                      {sectorPacks.map((pack) => {
-                        const item = items.find((i) => i.id === pack.itemId);
-                        const elapsedHrs = getElapsedHours(pack.startTime);
-                        const isWarning = elapsedHrs >= 2;
-                        const isCritical = elapsedHrs >= 4;
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                        {sectorPacks.map((pack) => {
+                          const item = items.find((i) => i.id === pack.itemId);
+                          const elapsedHrs = getElapsedHours(pack.startTime);
+                          const isWarning = elapsedHrs >= 2;
+                          const isCritical = elapsedHrs >= 4;
 
-                        return (
-                          <div
-                            key={pack.id}
-                            onClick={() => onOpenModal(pack)}
-                            className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3 relative overflow-hidden group shadow-2xs hover:shadow-md ${
-                              isCritical
-                                ? "border-rose-400 bg-rose-50/40 hover:bg-rose-50/80"
-                                : isWarning
-                                ? "border-amber-400 bg-amber-50/40 hover:bg-amber-50/80"
-                                : `${cat.borderAccent} ${cat.bgCard}`
-                            }`}
-                          >
+                          return (
+                            <div
+                              key={pack.id}
+                              onClick={() => onOpenModal(pack)}
+                              className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3 relative overflow-hidden group shadow-2xs hover:shadow-md ${
+                                isCritical
+                                  ? "border-rose-400 bg-rose-50/40 hover:bg-rose-50/80"
+                                  : isWarning
+                                  ? "border-amber-400 bg-amber-50/40 hover:bg-amber-50/80"
+                                  : `${cat.borderAccent} ${cat.bgCard}`
+                              }`}
+                            >
                             {/* Warning Indicator Ribbon */}
                             {isWarning && (
                               <div className={`absolute top-0 right-0 text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl shadow-2xs text-white ${
@@ -673,26 +660,17 @@ export function RealTimeFactoryMonitoring({
                 </div>
               </div>
             );
-          })}
+          })
+          )}
         </div>
       )}
 
       {/* SUBTAB 2: MATRIZ DE POSTOS DE TRABALHO */}
       {activeSubTab === "STATIONS" && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {SECTOR_CATEGORIES.map((cat) => {
+          {activeTenantSectors.map((cat) => {
             const CAT_ICON = cat.icon;
-            const activeSectorPacks = activePacks.filter((p) => {
-              if (cat.key === "CORTE_LASER") return p.type === "CORTE_LASER";
-              if (cat.key === "TORNOS_CNC") return ["TORNO_CNC_WILLIAN", "TORNO_CNC_HENRIQUE"].includes(p.type || "");
-              if (cat.key === "PRENSAS") return ["PRENSA_RAFAEL", "PRENSA_EDUARDO"].includes(p.type || "");
-              if (cat.key === "BANHO_QUIMICO") return p.type === "BANHO_QUIMICO";
-              if (cat.key === "INJETORA") return p.type === "INJETORA";
-              if (cat.key === "PINTURA") return p.type === "PINTURA";
-              if (cat.key === "EMBALAGEM") return p.type === "EMBALAGEM";
-              if (cat.key === "PRODUCAO") return ["PRODUCAO", "MONTAGEM_RETRATIL"].includes(p.type || "");
-              return false;
-            });
+            const activeSectorPacks = activePacks.filter((p) => cat.matchesPack(p));
 
             const isOperating = activeSectorPacks.length > 0;
 

@@ -214,8 +214,10 @@ export const BatchEtiquetasPrintSheet = forwardRef<
   BatchEtiquetasPrintSheetProps
 >(({ batch, orderIds = [], db, layoutFormat = "thermal", destrincharComposicoes = false, ocultarPaiComposicao = false, showImage = true }, ref) => {
   const systemSettings = db.systemSettings?.[0] || {};
-  const logoUrl = systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png";
-  const companyName = systemSettings.companyName || db.activeTenant?.name || "IMPÉRIO JOMARCI";
+  const companyName = db.activeTenant?.name || systemSettings.companyName || "SUA EMPRESA";
+  const logoUrl = (db.activeTenant?.logoUrl && db.activeTenant.logoUrl !== "/icon.png")
+    ? db.activeTenant.logoUrl
+    : (systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png");
 
   // Build the list of labels to render for the selected orders in the batch
   const labelItems = React.useMemo(() => {

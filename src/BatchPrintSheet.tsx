@@ -89,7 +89,7 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
   const { batch, orderIds, customDeadline, customNotes, db, currentUser } = props;
 
   const logoUrl = db.activeTenant?.logoUrl || "/icon.png";
-  const companyName = db.activeTenant?.name || "IMPÉRIO JOMARCI - ACESSÓRIOS PARA MÓVEIS";
+  const companyName = db.activeTenant?.name || "SUA EMPRESA";
 
   // Filter orders
   const ordersToPrint = batch.orderIds

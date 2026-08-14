@@ -13,6 +13,7 @@ import {
   Activity,
 } from "lucide-react";
 import { useDatabase } from "./useDatabase";
+import { ColorBadgeWithImage } from "./components/ColorBadgeWithImage";
 import { ProductivityCard } from "./components/ProductivityCard";
 import { MachineStopWidget } from "./components/OperatorActions";
 import type {
@@ -518,7 +519,10 @@ export function EmbalagemScreen({
                 {activePack.itemId === 0 ? (
                   <span>Origem: <strong className="text-blue-700">{activePack.thirdPartyName || "Geral"}</strong></span>
                 ) : (
-                  <span>{activePack.color || "-"} | {activePack.size || "-"} | {activePack.variation || "-"}</span>
+                  <span className="flex items-center gap-1.5 flex-wrap">
+                    <ColorBadgeWithImage color={activePack.color} attributes={db.attributes} size="sm" />
+                    <span>| Tam: {activePack.size || "-"} | Var: {activePack.variation || "-"}</span>
+                  </span>
                 )}
               </p>
             </div>
@@ -1121,10 +1125,10 @@ export function EmbalagemScreen({
                       <span className="font-bold text-xs text-gray-800 truncate">
                         {item?.name || "Item"}
                       </span>
-                      <span className="text-[10px] text-gray-500 flex flex-wrap gap-1 mt-0.5">
-                        <span className="bg-slate-100 px-1 rounded">{g.color || "-"}</span>
-                        <span className="bg-slate-100 px-1 rounded">{g.size || "-"}</span>
-                        <span className="bg-slate-100 px-1 rounded">{g.variation || "-"}</span>
+                      <span className="text-[10px] text-gray-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <ColorBadgeWithImage color={g.color} attributes={db.attributes} size="sm" />
+                        <span className="bg-slate-100 px-1 rounded">Tam: {g.size || "-"}</span>
+                        <span className="bg-slate-100 px-1 rounded">Var: {g.variation || "-"}</span>
                       </span>
                     </div>
                     <div className="flex flex-col items-end shrink-0 pl-2">
@@ -1182,9 +1186,7 @@ export function EmbalagemScreen({
                         ?.name || "Item"}
                     </span>
                     <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
-                      <span className="font-mono bg-slate-200/60 px-1 py-0.5 rounded">
-                        Cor: {confirmingGroup.color || "-"}
-                      </span>
+                      <ColorBadgeWithImage color={confirmingGroup.color} attributes={db.attributes} size="sm" />
                       <span className="font-mono bg-slate-200/60 px-1 py-0.5 rounded">
                         Tam: {confirmingGroup.size || "-"}
                       </span>

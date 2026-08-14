@@ -1853,6 +1853,18 @@ export function useDatabase(currentUser?: User | null) {
     deleteLog,
     attributes: filteredAttributes,
     setAttributes,
+    addAttribute: async (attr: Omit<import("./types").ProductAttribute, "id"> & { id?: number }) => {
+      const id = attr.id || Date.now();
+      const newAttr = { ...attr, id, tenantId: attr.tenantId || activeTenantId };
+      await setDoc(doc(db, "attributes", id.toString()), cleanUndefined(newAttr));
+    },
+    updateAttribute: async (attr: import("./types").ProductAttribute) => {
+      const updated = { ...attr, tenantId: attr.tenantId || activeTenantId };
+      await setDoc(doc(db, "attributes", attr.id.toString()), cleanUndefined(updated), { merge: true });
+    },
+    deleteAttribute: async (id: number) => {
+      await deleteDoc(doc(db, "attributes", id.toString()));
+    },
     activePacks: filteredActivePacks,
     addActivePack,
     removeActivePack,

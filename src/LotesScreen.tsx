@@ -611,8 +611,8 @@ export function LotesScreen({
       });
 
       const systemSettings = db.systemSettings?.[0] || {};
-      const logoUrl = systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png";
-      const companyName = systemSettings.companyName || db.activeTenant?.name || "IMPÉRIO JOMARCI";
+      const logoUrl = (db.activeTenant?.logoUrl && db.activeTenant.logoUrl !== "/icon.png") ? db.activeTenant.logoUrl : (systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png");
+      const companyName = db.activeTenant?.name || systemSettings.companyName || "SUA EMPRESA";
 
       const zplString = await generateZPLFromBatchLabels(labelItems, logoUrl, companyName, etiquetasShowImage);
 
@@ -1508,7 +1508,7 @@ export function LotesScreen({
                       <ReportHeaderLogo logoUrl={db.activeTenant?.logoUrl} className="w-10 h-10 object-contain" alt="Logo Império" />
                       <div>
                         <span className="text-[9px] font-black text-emerald-650 uppercase tracking-widest block mb-0.5">
-                          {db.activeTenant?.name || "Império Jomarci - Metalúrgica"}
+                          {db.activeTenant?.name || "SUA EMPRESA"}
                         </span>
                         <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
                           {previewBatch.name}

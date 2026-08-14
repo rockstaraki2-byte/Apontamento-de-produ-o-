@@ -116,7 +116,7 @@ export interface ZPLLabelItemData {
 export const generateZPLFromBatchLabels = async (
   labelItems: ZPLLabelItemData[],
   logoUrl?: string,
-  companyName: string = "IMPÉRIO JOMARCI",
+  companyName: string = "SUA EMPRESA",
   showImage: boolean = true
 ): Promise<string> => {
   if (!labelItems || labelItems.length === 0) {

@@ -12,7 +12,7 @@ import {
   Boxes,
   Check,
 } from "lucide-react";
-import type { StockEntry } from "./types";
+import { StockEntry, isSubTabAllowed } from "./types";
 import {
   ScreenLayout,
   ScreenHeader,
@@ -1008,30 +1008,38 @@ export function EstoqueScreen({
         icon={<Layers size={20} className="text-emerald-700" />}
         actions={
           <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 shrink-0">
-            <button
-              onClick={() => setActiveTab("PRODUTOS")}
-              className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "PRODUTOS" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-            >
-              Produtos
-            </button>
-            <button
-              onClick={() => setActiveTab("EPIS")}
-              className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "EPIS" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-            >
-              EPI
-            </button>
-            <button
-              onClick={() => setActiveTab("UNIFORMES")}
-              className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "UNIFORMES" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-            >
-              Uniformes
-            </button>
-            <button
-              onClick={() => setActiveTab("RELATORIOS")}
-              className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "RELATORIOS" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-            >
-              Ficha/Recibo
-            </button>
+            {isSubTabAllowed(db.activeTenant, "estoque:produtos") && (
+              <button
+                onClick={() => setActiveTab("PRODUTOS")}
+                className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "PRODUTOS" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+              >
+                Produtos
+              </button>
+            )}
+            {isSubTabAllowed(db.activeTenant, "estoque:epis") && (
+              <button
+                onClick={() => setActiveTab("EPIS")}
+                className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "EPIS" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+              >
+                EPI
+              </button>
+            )}
+            {isSubTabAllowed(db.activeTenant, "estoque:uniformes") && (
+              <button
+                onClick={() => setActiveTab("UNIFORMES")}
+                className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "UNIFORMES" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+              >
+                Uniformes
+              </button>
+            )}
+            {isSubTabAllowed(db.activeTenant, "estoque:relatorios") && (
+              <button
+                onClick={() => setActiveTab("RELATORIOS")}
+                className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "RELATORIOS" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+              >
+                Ficha/Recibo
+              </button>
+            )}
           </div>
         }
       />

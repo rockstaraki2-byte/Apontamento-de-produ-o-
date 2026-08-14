@@ -90,7 +90,105 @@ export interface Tenant {
   systemName?: string;
   monthlyBillingGoal?: number;
   machines?: string[];
+  allowedScreens?: string[];
+  allowedSubTabs?: string[];
 }
+
+export interface SubTabOption {
+  key: string;
+  label: string;
+  parentScreen: string;
+}
+
+export const ALL_AVAILABLE_SUBTABS: SubTabOption[] = [
+  // PCP / Admin Sub-tabs
+  { key: "pcp:painel", label: "PCP - Painel Geral", parentScreen: "pcp" },
+  { key: "pcp:monitoramento", label: "PCP - Monitoramento", parentScreen: "pcp" },
+  { key: "pcp:gestao_pessoas", label: "PCP - Gestão de Pessoas", parentScreen: "pcp" },
+  { key: "pcp:evolucao_embalagem", label: "PCP - Evolução Embalagem", parentScreen: "pcp" },
+  { key: "pcp:etiquetas", label: "PCP - Etiquetas", parentScreen: "pcp" },
+  { key: "pcp:cadastros", label: "PCP - Aba Cadastros Geral", parentScreen: "pcp" },
+  { key: "pcp:lotes", label: "PCP - Gestão de Lotes", parentScreen: "pcp" },
+
+  // PCP Cadastros Inner Sub-tabs
+  { key: "pcp:cadastro_clientes", label: "Cadastros - Clientes", parentScreen: "pcp" },
+  { key: "pcp:cadastro_setores", label: "Cadastros - Setores", parentScreen: "pcp" },
+  { key: "pcp:cadastro_fluxos", label: "Cadastros - Fluxos por Produto", parentScreen: "pcp" },
+  { key: "pcp:cadastro_planos_corte", label: "Cadastros - Planos de Corte & Injeção (Prensa e Injetora)", parentScreen: "pcp" },
+  { key: "pcp:cadastro_representantes", label: "Cadastros - Contatos Representantes", parentScreen: "pcp" },
+  { key: "pcp:cadastro_bom", label: "Cadastros - Composição de Produtos (BOM)", parentScreen: "pcp" },
+  { key: "pcp:cadastro_configuracoes", label: "Cadastros - Configurações do Sistema", parentScreen: "pcp" },
+
+  // Estoque Sub-tabs
+  { key: "estoque:produtos", label: "Estoque - Produtos Acabados", parentScreen: "estoque" },
+  { key: "estoque:epis", label: "Estoque - Equipamentos de Proteção (EPI)", parentScreen: "estoque" },
+  { key: "estoque:uniformes", label: "Estoque - Uniformes & Vestuário", parentScreen: "estoque" },
+  { key: "estoque:relatorios", label: "Estoque - Ficha/Recibo de Entrega", parentScreen: "estoque" },
+
+  // Pedidos Sub-tabs
+  { key: "pedidos:faturamento", label: "Pedidos - Faturamento / Lista", parentScreen: "pedidos" },
+  { key: "pedidos:novo", label: "Pedidos - Lançar Novo Pedido", parentScreen: "pedidos" },
+
+  // Representantes Sub-tabs
+  { key: "representante:status", label: "Representante - Status dos Pedidos", parentScreen: "representante" },
+  { key: "representante:novo", label: "Representante - Criar Novo Pedido", parentScreen: "representante" },
+
+  // Orçamentos Laser Sub-tabs
+  { key: "orcamentos:lista", label: "Orçamentos - Lista de Orçamentos", parentScreen: "orcamentos" },
+  { key: "orcamentos:novo", label: "Orçamentos - Criar Orçamento", parentScreen: "orcamentos" },
+];
+
+export function isSubTabAllowed(tenant: Tenant | null | undefined, subTabKey: string): boolean {
+  if (!tenant) return true;
+  if (!tenant.allowedSubTabs || tenant.allowedSubTabs.length === 0) return true;
+  return tenant.allowedSubTabs.includes(subTabKey);
+}
+
+export interface ScreenOption {
+  key: string;
+  label: string;
+  category: "Geral" | "PCP e Pedidos" | "Produção e Setores" | "Estoque" | "Gestão";
+  path: string;
+}
+
+export const ALL_AVAILABLE_SCREENS: ScreenOption[] = [
+  // Geral
+  { key: "inicio", label: "Início / Dashboard", category: "Geral", path: "/" },
+  { key: "admin", label: "Monitor de Produção", category: "Geral", path: "/admin" },
+  { key: "relatorios", label: "Relatórios Gerenciais", category: "Geral", path: "/relatorios" },
+  { key: "historico", label: "Histórico de Produção", category: "Geral", path: "/historico" },
+
+  // PCP e Pedidos
+  { key: "pcp", label: "Cadastros PCP", category: "PCP e Pedidos", path: "/pcp" },
+  { key: "pedidos", label: "Gestão de Pedidos", category: "PCP e Pedidos", path: "/pedidos" },
+  { key: "lotes", label: "Gestão de Lotes", category: "PCP e Pedidos", path: "/lotes" },
+  { key: "gestao-clientes", label: "Gestão de Clientes", category: "PCP e Pedidos", path: "/gestao-clientes" },
+  { key: "itens", label: "Cadastro de Itens", category: "PCP e Pedidos", path: "/itens" },
+  { key: "orcamentos", label: "Orçamentos Laser", category: "PCP e Pedidos", path: "/orcamentos" },
+  { key: "nests", label: "Gestão de Nests", category: "PCP e Pedidos", path: "/nests" },
+  { key: "representante", label: "Painel Representante", category: "PCP e Pedidos", path: "/representante" },
+
+  // Produção e Setores
+  { key: "producao", label: "Painel da Produção", category: "Produção e Setores", path: "/producao" },
+  { key: "cortelaser", label: "Setor Corte Laser", category: "Produção e Setores", path: "/cortelaser" },
+  { key: "pintura", label: "Setor Pintura", category: "Produção e Setores", path: "/pintura" },
+  { key: "prensa-eduardo", label: "Setor Prensa (E)", category: "Produção e Setores", path: "/prensa-eduardo" },
+  { key: "torno-cnc-willian", label: "Setor Torno Willian", category: "Produção e Setores", path: "/torno-cnc-willian" },
+  { key: "torno-cnc-henrique", label: "Setor Torno Henrique", category: "Produção e Setores", path: "/torno-cnc-henrique" },
+  { key: "prensa-rafael", label: "Setor Prensa (R)", category: "Produção e Setores", path: "/prensa-rafael" },
+  { key: "injetora", label: "Setor Injetora", category: "Produção e Setores", path: "/injetora" },
+  { key: "banho-quimico", label: "Setor Banho / Zincagem", category: "Produção e Setores", path: "/banho-quimico" },
+  { key: "embalagem", label: "Setor Embalagem", category: "Produção e Setores", path: "/embalagem" },
+  { key: "montagem-retratil", label: "Setor Montagem Retrátil", category: "Produção e Setores", path: "/montagem-retratil" },
+
+  // Estoque
+  { key: "estoque", label: "Estoque Geral (Produtos/EPIs)", category: "Estoque", path: "/estoque" },
+  { key: "estoque-chapas", label: "Estoque de Chapas", category: "Estoque", path: "/estoque-chapas" },
+  { key: "estoque-laser", label: "Estoque Pçs Cortadas Laser", category: "Estoque", path: "/estoque-laser" },
+
+  // Gestão
+  { key: "financeiro", label: "Financeiro", category: "Gestão", path: "/financeiro" },
+];
 
 export interface Item {
   id: number;
@@ -161,6 +259,9 @@ export interface ProductAttribute {
   id: number;
   type: "COLOR" | "SIZE" | "VARIATION";
   value: string;
+  imageUrl?: string;
+  code?: string;
+  tenantId?: string;
 }
 
 export interface AppNotification {
@@ -228,6 +329,9 @@ export interface Order {
   _alreadyDeducted?: boolean;
   laserAssignments?: { partName: string; size: string; quantity: number }[];
   customProductName?: string;
+  discountPercent?: number;
+  discountAmount?: number;
+  hasRET?: boolean;
 }
 
 export interface ProductionLog {
@@ -344,6 +448,8 @@ export interface Customer {
   tradeName?: string;
   fiscalType?: "COM_NF" | "SEM_NF" | "MEIA_NOTA";
   defaultPaymentTerms?: string;
+  defaultDiscountPercent?: number;
+  hasRET?: boolean;
 }
 
 export interface Sector {

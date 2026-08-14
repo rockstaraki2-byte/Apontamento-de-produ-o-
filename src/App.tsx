@@ -63,6 +63,7 @@ import {
   Copy,
   Edit3,
   Plus,
+  Image as ImageIcon,
 } from "lucide-react";
 import {
   BarChart,
@@ -78,6 +79,7 @@ import {
 import { useDatabase } from "./useDatabase";
 import type { User, OrderStatus, Role, Order, AppNotification } from "./types";
 import { calculateWorkingMillis } from "./timeUtils";
+import { ColorBadgeWithImage, getColorAttribute } from "./components/ColorBadgeWithImage";
 import { getItemUnit } from "./utils/unitUtils";
 
 import { ProducaoScreen } from "./ProducaoScreen";
@@ -136,7 +138,7 @@ import { storage } from "./firebase";
 import { CatalogImportModal } from "./CatalogImportModal";
 import { EvolucaoEmbalagemTab } from "./EvolucaoEmbalagemTab";
 import { GestaoPessoasTab } from "./components/GestaoPessoasTab";
-import { COLOR_MAP } from "./types";
+import { COLOR_MAP, isSubTabAllowed } from "./types";
 
 const BottomNavContext = React.createContext<{ isCollapsed: boolean }>({ isCollapsed: false });
 
@@ -1562,9 +1564,9 @@ function LoginScreen({
 }
 
 function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
-  const [activeTab, setActiveTab] = useState<"PRODUTOS" | "PECAS" | "EPIS">(
-    "PRODUTOS",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "PRODUTOS" | "PECAS" | "EPIS" | "CORES" | "VARIACOES" | "TAMANHOS"
+  >("PRODUTOS");
   const [isFormCollapsed, setIsFormCollapsed] = useState(false);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -1578,6 +1580,13 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageUploadProgress, setImageUploadProgress] = useState(0);
   const [fullSizeImage, setFullSizeImage] = useState<string | null>(null);
+
+  // Attribute Management State (Cores, Variações, Tamanhos)
+  const [attrValue, setAttrValue] = useState("");
+  const [attrCode, setAttrCode] = useState("");
+  const [attrImageUrl, setAttrImageUrl] = useState("");
+  const [attrEditingId, setAttrEditingId] = useState<number | null>(null);
+  const [isUploadingAttrImage, setIsUploadingAttrImage] = useState(false);
 
   // Components (BOM - Bill of Materials) modal
   const [isBomModalOpen, setIsBomModalOpen] = useState(false);
@@ -1605,6 +1614,100 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [batchImageProgress, setBatchImageProgress] = useState(0);
   const [batchImageResult, setBatchImageResult] = useState("");
   const [isUploadingBatch, setIsUploadingBatch] = useState(false);
+
+  const handleAttrImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingAttrImage(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 600;
+        const MAX_HEIGHT = 600;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+        setAttrImageUrl(dataUrl);
+        setIsUploadingAttrImage(false);
+      };
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCadastrarAttr = async (type: "COLOR" | "VARIATION" | "SIZE") => {
+    if (!attrValue.trim()) {
+      alert("⚠️ Por favor, digite o nome/descrição para o cadastro.");
+      return;
+    }
+
+    if (attrEditingId) {
+      const existing = db.attributes.find((a) => a.id === attrEditingId);
+      if (existing) {
+        await db.updateAttribute({
+          ...existing,
+          value: attrValue.trim().toUpperCase(),
+          code: attrCode.trim().toUpperCase() || undefined,
+          imageUrl: type === "COLOR" ? (attrImageUrl || undefined) : undefined,
+        });
+      }
+      setAttrEditingId(null);
+    } else {
+      await db.addAttribute({
+        type,
+        value: attrValue.trim().toUpperCase(),
+        code: attrCode.trim().toUpperCase() || undefined,
+        imageUrl: type === "COLOR" ? (attrImageUrl || undefined) : undefined,
+      });
+    }
+
+    setAttrValue("");
+    setAttrCode("");
+    setAttrImageUrl("");
+  };
+
+  const handleEditAttr = (attr: import("./types").ProductAttribute) => {
+    setAttrEditingId(attr.id);
+    setAttrValue(attr.value);
+    setAttrCode(attr.code || "");
+    setAttrImageUrl(attr.imageUrl || "");
+    setIsFormCollapsed(false);
+  };
+
+  const handleDeleteAttr = async (id: number) => {
+    if (confirm("Tem certeza que deseja excluir esta opção?")) {
+      await db.deleteAttribute(id);
+    }
+  };
+
+  const filteredAttributesList = db.attributes.filter((a) => {
+    if (activeTab === "CORES" && a.type !== "COLOR") return false;
+    if (activeTab === "VARIACOES" && a.type !== "VARIATION") return false;
+    if (activeTab === "TAMANHOS" && a.type !== "SIZE") return false;
+    if (!debouncedSearchTerm) return true;
+    const searchStr = normalizeString(`${a.value} ${a.code || ""}`);
+    return searchStr.includes(normalizeString(debouncedSearchTerm));
+  });
 
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
@@ -2161,24 +2264,42 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
         </div>
       </div>
 
-      <div className="flex bg-white rounded-lg shadow-sm border p-1 mb-4">
+      <div className="flex bg-white rounded-lg shadow-sm border p-1 mb-4 overflow-x-auto gap-1">
         <button
-          onClick={() => setActiveTab("PRODUTOS")}
-          className={`flex-1 py-1.5 text-sm font-bold rounded-md transition ${activeTab === "PRODUTOS" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+          onClick={() => { setActiveTab("PRODUTOS"); setEditingId(null); setAttrEditingId(null); }}
+          className={`flex-1 min-w-[90px] py-1.5 px-3 text-xs sm:text-sm font-bold rounded-md transition ${activeTab === "PRODUTOS" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
         >
           Produtos
         </button>
         <button
-          onClick={() => setActiveTab("PECAS")}
-          className={`flex-1 py-1.5 text-sm font-bold rounded-md transition ${activeTab === "PECAS" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+          onClick={() => { setActiveTab("PECAS"); setEditingId(null); setAttrEditingId(null); }}
+          className={`flex-1 min-w-[90px] py-1.5 px-3 text-xs sm:text-sm font-bold rounded-md transition ${activeTab === "PECAS" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
         >
           Peças
         </button>
         <button
-          onClick={() => setActiveTab("EPIS")}
-          className={`flex-1 py-1.5 text-sm font-bold rounded-md transition ${activeTab === "EPIS" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+          onClick={() => { setActiveTab("EPIS"); setEditingId(null); setAttrEditingId(null); }}
+          className={`flex-1 min-w-[90px] py-1.5 px-3 text-xs sm:text-sm font-bold rounded-md transition ${activeTab === "EPIS" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
         >
           EPIs
+        </button>
+        <button
+          onClick={() => { setActiveTab("CORES"); setEditingId(null); setAttrEditingId(null); }}
+          className={`flex-1 min-w-[100px] py-1.5 px-3 text-xs sm:text-sm font-bold rounded-md transition ${activeTab === "CORES" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+        >
+          🎨 Cores
+        </button>
+        <button
+          onClick={() => { setActiveTab("VARIACOES"); setEditingId(null); setAttrEditingId(null); }}
+          className={`flex-1 min-w-[100px] py-1.5 px-3 text-xs sm:text-sm font-bold rounded-md transition ${activeTab === "VARIACOES" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+        >
+          🔀 Variações
+        </button>
+        <button
+          onClick={() => { setActiveTab("TAMANHOS"); setEditingId(null); setAttrEditingId(null); }}
+          className={`flex-1 min-w-[100px] py-1.5 px-3 text-xs sm:text-sm font-bold rounded-md transition ${activeTab === "TAMANHOS" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+        >
+          📐 Tamanhos
         </button>
       </div>
 
@@ -2353,34 +2474,247 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
       )}
 
       <div className="flex-1 overflow-y-auto w-full pr-1">
-        <div className="bg-white rounded-lg shadow-sm border mb-6 overflow-hidden">
-        <button
-          onClick={() => setIsFormCollapsed(!isFormCollapsed)}
-          className="w-full flex justify-between items-center px-4 py-3 bg-gray-50 border-b hover:bg-gray-100/80 transition text-left cursor-pointer"
-        >
-          <span className="font-bold text-gray-700 text-sm flex items-center gap-2">
-            <span>
-              {editingId
-                ? `Editando Item: ${code || ""}`
-                : `Cadastrar Novo(a) ${activeTab === "PECAS" ? "Peça" : activeTab === "EPIS" ? "EPI" : "Produto"}`}
-            </span>
-            {editingId && (
-              <span className="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded-full font-extrabold animate-pulse">
-                Modo Edição
-              </span>
-            )}
-          </span>
-          <div className="flex items-center gap-2 text-gray-500">
-            <span className="text-xs">
-              {isFormCollapsed ? "Expandir" : "Minimizar"}
-            </span>
-            {isFormCollapsed ? (
-              <ChevronDown size={18} />
-            ) : (
-              <ChevronUp size={18} />
-            )}
+        {activeTab === "CORES" || activeTab === "VARIACOES" || activeTab === "TAMANHOS" ? (
+          <div className="flex flex-col gap-4">
+            {/* Form Card for Attributes */}
+            <div className="bg-white rounded-lg shadow-sm border p-4">
+              <h3 className="font-bold text-gray-800 text-sm mb-3 flex items-center gap-2">
+                <span>
+                  {attrEditingId
+                    ? `Editando ${activeTab === "CORES" ? "Cor" : activeTab === "VARIACOES" ? "Variação" : "Tamanho"}`
+                    : `Cadastrar Novo(a) ${activeTab === "CORES" ? "Cor" : activeTab === "VARIACOES" ? "Variação" : "Tamanho"}`}
+                </span>
+                {attrEditingId && (
+                  <span className="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded-full font-extrabold animate-pulse">
+                    Modo Edição
+                  </span>
+                )}
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Nome / Descrição <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={attrValue}
+                    onChange={(e) => setAttrValue(e.target.value)}
+                    placeholder={
+                      activeTab === "CORES"
+                        ? "Ex: PRETO FOSCO, AZUL CELESTE, ZINCADO..."
+                        : activeTab === "VARIACOES"
+                        ? "Ex: DIREITO, ESQUERDO, PAR..."
+                        : "Ex: P, M, G, GG, 120CM..."
+                    }
+                    className="w-full border border-gray-300 p-2 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Código / Abreviação (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={attrCode}
+                    onChange={(e) => setAttrCode(e.target.value)}
+                    placeholder="Ex: 01, 02, DIR, M..."
+                    className="w-full border border-gray-300 p-2 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 uppercase"
+                  />
+                </div>
+              </div>
+
+              {activeTab === "CORES" && (
+                <div className="mb-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                    <span className="bg-purple-100 text-purple-700 p-1 rounded text-xs">📷</span>
+                    Imagem da Cor (Para conferência visual na Solda, Embalagem e PCP)
+                  </label>
+                  <div className="flex items-center gap-4">
+                    {attrImageUrl ? (
+                      <div className="relative group">
+                        <img
+                          src={attrImageUrl}
+                          alt="Amostra da Cor"
+                          className="w-20 h-20 object-cover rounded-lg shadow border border-gray-300 cursor-pointer hover:opacity-90 transition"
+                          onClick={() => setFullSizeImage(attrImageUrl)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setAttrImageUrl("")}
+                          className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1 text-xs shadow hover:bg-red-700 transition cursor-pointer"
+                          title="Remover imagem"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-20 h-20 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 p-1 text-center">
+                        <ImageIcon size={20} />
+                        <span className="text-[9px] font-semibold mt-1">Sem imagem</span>
+                      </div>
+                    )}
+                    <div className="flex-1 flex flex-col gap-1">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAttrImageUpload}
+                        className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
+                        disabled={isUploadingAttrImage}
+                      />
+                      <span className="text-[10px] text-gray-500">
+                        Selecione uma foto do acabamento ou amostra da cor.
+                      </span>
+                      {isUploadingAttrImage && (
+                        <span className="text-xs text-indigo-600 font-semibold animate-pulse">
+                          Processando imagem...
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end">
+                {attrEditingId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAttrEditingId(null);
+                      setAttrValue("");
+                      setAttrCode("");
+                      setAttrImageUrl("");
+                    }}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 font-bold text-xs rounded hover:bg-gray-300 transition cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCadastrarAttr(
+                      activeTab === "CORES"
+                        ? "COLOR"
+                        : activeTab === "VARIACOES"
+                        ? "VARIATION"
+                        : "SIZE"
+                    )
+                  }
+                  className="px-6 py-2 bg-indigo-600 text-white font-bold text-xs rounded shadow hover:bg-indigo-700 transition cursor-pointer"
+                >
+                  {attrEditingId
+                    ? "Atualizar"
+                    : `Salvar ${activeTab === "CORES" ? "Cor" : activeTab === "VARIACOES" ? "Variação" : "Tamanho"}`}
+                </button>
+              </div>
+            </div>
+
+            {/* List of attributes */}
+            <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+              <div className="p-3 bg-gray-50 border-b flex justify-between items-center">
+                <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider">
+                  {activeTab === "CORES"
+                    ? "Cores Cadastradas"
+                    : activeTab === "VARIACOES"
+                    ? "Variações Cadastradas"
+                    : "Tamanhos Cadastrados"}
+                </h4>
+                <span className="text-xs text-gray-500 font-semibold">
+                  Total: {filteredAttributesList.length}
+                </span>
+              </div>
+
+              {filteredAttributesList.length === 0 ? (
+                <div className="p-6 text-center text-gray-500 text-sm">
+                  Nenhum registro cadastrado nesta categoria.
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {filteredAttributesList.map((attr) => (
+                    <div
+                      key={attr.id}
+                      className="p-3 flex items-center justify-between hover:bg-gray-50 transition"
+                    >
+                      <div className="flex items-center gap-3">
+                        {activeTab === "CORES" && (
+                          attr.imageUrl ? (
+                            <img
+                              src={attr.imageUrl}
+                              alt={attr.value}
+                              className="w-10 h-10 object-cover rounded-md shadow-xs border border-gray-200 cursor-pointer hover:opacity-80 transition"
+                              onClick={() => setFullSizeImage(attr.imageUrl || null)}
+                            />
+                          ) : (
+                            <div className="w-10 h-10 bg-gray-100 rounded-md border border-gray-200 flex items-center justify-center text-gray-400">
+                              <ImageIcon size={18} />
+                            </div>
+                          )
+                        )}
+                        <div>
+                          <div className="font-bold text-sm text-gray-800 flex items-center gap-2">
+                            <span>{attr.value}</span>
+                            {attr.code && (
+                              <span className="text-xs font-mono bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100">
+                                Cód: {attr.code}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEditAttr(attr)}
+                          className="px-2.5 py-1 text-xs font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 rounded transition cursor-pointer"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAttr(attr.id)}
+                          className="px-2.5 py-1 text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded transition cursor-pointer"
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </button>
+        ) : (
+          <>
+            <div className="bg-white rounded-lg shadow-sm border mb-6 overflow-hidden">
+            <button
+              onClick={() => setIsFormCollapsed(!isFormCollapsed)}
+              className="w-full flex justify-between items-center px-4 py-3 bg-gray-50 border-b hover:bg-gray-100/80 transition text-left cursor-pointer"
+            >
+              <span className="font-bold text-gray-700 text-sm flex items-center gap-2">
+                <span>
+                  {editingId
+                    ? `Editando Item: ${code || ""}`
+                    : `Cadastrar Novo(a) ${activeTab === "PECAS" ? "Peça" : activeTab === "EPIS" ? "EPI" : "Produto"}`}
+                </span>
+                {editingId && (
+                  <span className="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded-full font-extrabold animate-pulse">
+                    Modo Edição
+                  </span>
+                )}
+              </span>
+              <div className="flex items-center gap-2 text-gray-500">
+                <span className="text-xs">
+                  {isFormCollapsed ? "Expandir" : "Minimizar"}
+                </span>
+                {isFormCollapsed ? (
+                  <ChevronDown size={18} />
+                ) : (
+                  <ChevronUp size={18} />
+                )}
+              </div>
+            </button>
 
         {!isFormCollapsed && (
           <div className="p-4 flex flex-col gap-3">
@@ -2678,6 +3012,8 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           ))
         )}
         </div>
+      </>
+      )}
       </div>
       {isBomModalOpen && currentBomProduct && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
@@ -3437,6 +3773,8 @@ function PedidosScreen({
   const [billingRule, setBillingRule] = useState<"cadastro" | "ultimo_pedido">(
     "cadastro",
   );
+  const [discountPercent, setDiscountPercent] = useState<number | "">("");
+  const [hasRET, setHasRET] = useState<boolean>(false);
 
   const matchedCustomerForOrder = React.useMemo(() => {
     if (!customerName || !customerName.trim()) return null;
@@ -3463,6 +3801,12 @@ function PedidosScreen({
       }
       if (billingRule === "cadastro" && matchedCustomerForOrder.defaultPaymentTerms) {
         setPaymentTerms(matchedCustomerForOrder.defaultPaymentTerms);
+      }
+      if (matchedCustomerForOrder.defaultDiscountPercent !== undefined) {
+        setDiscountPercent(matchedCustomerForOrder.defaultDiscountPercent || "");
+      }
+      if (matchedCustomerForOrder.hasRET !== undefined) {
+        setHasRET(!!matchedCustomerForOrder.hasRET);
       }
     }
   }, [matchedCustomerForOrder, billingRule]);
@@ -5902,6 +6246,8 @@ function PedidosScreen({
           paymentTerms,
           fiscalType,
           billingRule,
+          discountPercent: discountPercent === "" ? undefined : Number(discountPercent),
+          hasRET,
           packedQuantity: qtFromStock,
           producedQuantity: qtFromStock,
           paintedQuantity: qtFromStock,
@@ -5953,6 +6299,8 @@ function PedidosScreen({
     setIsThirdPartyLaser(false);
     setIsUrgent(false);
     setIsProgramacao(false);
+    setDiscountPercent("");
+    setHasRET(false);
     setLineItems([]);
     setIsFormVisible(false);
   };
@@ -6001,6 +6349,8 @@ function PedidosScreen({
     setIsThirdPartyLaser(!!o.isThirdPartyLaser);
     setIsUrgent(!!o.isUrgent);
     setIsProgramacao(!!o.isProgramacao);
+    setDiscountPercent(o.discountPercent !== undefined ? o.discountPercent : "");
+    setHasRET(!!o.hasRET);
     setIsFormVisible(true);
   };
 
@@ -8822,8 +9172,8 @@ function PedidosScreen({
                     </div>
                   </div>
 
-                  {/* Row 3: Quantities, dates, prices & stock status */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                  {/* Row 3: Quantities, dates, prices, discounts & stock status */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
                     <div className="flex flex-col gap-0.5">
                       <label className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">
                         Quantidade Total
@@ -8890,6 +9240,36 @@ function PedidosScreen({
                     </div>
 
                     <div className="flex flex-col gap-0.5">
+                      <label className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5 flex justify-between items-center">
+                        <span>Desconto (%)</span>
+                        {matchedCustomerForOrder?.defaultDiscountPercent ? (
+                          <span className="text-[9px] text-emerald-700 font-extrabold bg-emerald-50 px-1 rounded border border-emerald-200">
+                            Padrão
+                          </span>
+                        ) : null}
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          value={discountPercent}
+                          onChange={(e) =>
+                            setDiscountPercent(
+                              e.target.value !== "" ? parseFloat(e.target.value) : "",
+                            )
+                          }
+                          placeholder="0.00"
+                          className="border border-slate-300 text-xs px-2.5 py-1.5 pr-6 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full bg-white text-slate-800 font-semibold"
+                        />
+                        <span className="absolute right-2.5 top-1.5 text-slate-400 font-bold text-xs">
+                          %
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-0.5">
                       <label className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">
                         Data Limite
                       </label>
@@ -8905,7 +9285,7 @@ function PedidosScreen({
                       <div className="flex flex-col gap-0.5 justify-end">
                         <div className="text-xs font-semibold text-emerald-800 bg-emerald-50 p-2 border border-emerald-150 rounded flex justify-between items-center h-[34px]">
                           <span className="text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wide text-emerald-700 truncate pr-1">
-                            📦 Estoque Acabado:
+                            📦 Estoque:
                           </span>
                           <span className="font-bold font-mono">
                             {db.stocks.find(
@@ -8922,6 +9302,26 @@ function PedidosScreen({
 
                   {/* Row 4: Config flags & status indicators */}
                   <div className="flex flex-wrap items-center gap-4 py-1.5 border-t border-b border-slate-100/80 my-1 justify-start">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="hasRET"
+                        checked={hasRET}
+                        onChange={(e) => setHasRET(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 rounded bg-blue-50 border-blue-300 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <label
+                        htmlFor="hasRET"
+                        className="text-xs text-blue-900 font-bold cursor-pointer select-none flex items-center gap-1"
+                      >
+                        Possui RET
+                        {matchedCustomerForOrder?.hasRET && (
+                          <span className="text-[9px] bg-blue-100 text-blue-800 font-extrabold px-1.5 rounded border border-blue-200">
+                            Cliente RET
+                          </span>
+                        )}
+                      </label>
+                    </div>
                     <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
@@ -13109,20 +13509,23 @@ function AdminScreen({
 
       <div className="bg-slate-50 px-3 py-1.5 border-b border-slate-200 shrink-0">
         <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 overflow-x-auto scrollbar-none max-w-full gap-0.5 select-none">
-          <button
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "PAINEL" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-            onClick={() => setActiveTab("PAINEL")}
-          >
-            Painel Geral
-          </button>
-          <button
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "MONITORAMENTO" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-            onClick={() => setActiveTab("MONITORAMENTO")}
-          >
-            Monitoramento
-          </button>
-          {(currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA") && (
+          {isSubTabAllowed(db.activeTenant, "pcp:painel") && (
+            <button
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "PAINEL" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+              onClick={() => setActiveTab("PAINEL")}
+            >
+              Painel Geral
+            </button>
+          )}
+          {isSubTabAllowed(db.activeTenant, "pcp:monitoramento") && (
+            <button
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "MONITORAMENTO" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+              onClick={() => setActiveTab("MONITORAMENTO")}
+            >
+              Monitoramento
+            </button>
+          )}
+          {(currentUser.role === "ADMIN" || currentUser.role === "GERENCIA") && isSubTabAllowed(db.activeTenant, "pcp:gestao_pessoas") && (
             <button
               className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "GESTAO_PESSOAS" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
               onClick={() => setActiveTab("GESTAO_PESSOAS")}
@@ -13134,7 +13537,7 @@ function AdminScreen({
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
             currentUser.name.toLowerCase().includes("romario") ||
-            currentUser.name.toLowerCase().includes("alessandra")) && (
+            currentUser.name.toLowerCase().includes("alessandra")) && isSubTabAllowed(db.activeTenant, "pcp:evolucao_embalagem") && (
             <button
               className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "EVOLUCAO_EMBALAGEM" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
               onClick={() => setActiveTab("EVOLUCAO_EMBALAGEM")}
@@ -13143,27 +13546,33 @@ function AdminScreen({
             </button>
           )}
 
-          <button
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "ETIQUETAS" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-            onClick={() => setActiveTab("ETIQUETAS")}
-          >
-            🏷️ Etiquetas
-          </button>
+          {isSubTabAllowed(db.activeTenant, "pcp:etiquetas") && (
+            <button
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "ETIQUETAS" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+              onClick={() => setActiveTab("ETIQUETAS")}
+            >
+              🏷️ Etiquetas
+            </button>
+          )}
 
           {(currentUser.role === "ADMIN" || currentUser.role === "PCP") && (
             <>
-              <button
-                className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "CADASTROS" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-                onClick={() => setActiveTab("CADASTROS")}
-              >
-                Cadastros
-              </button>
-              <button
-                className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "LOTES" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-                onClick={() => setActiveTab("LOTES")}
-              >
-                Lotes
-              </button>
+              {isSubTabAllowed(db.activeTenant, "pcp:cadastros") && (
+                <button
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "CADASTROS" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+                  onClick={() => setActiveTab("CADASTROS")}
+                >
+                  Cadastros
+                </button>
+              )}
+              {isSubTabAllowed(db.activeTenant, "pcp:lotes") && (
+                <button
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "LOTES" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+                  onClick={() => setActiveTab("LOTES")}
+                >
+                  Lotes
+                </button>
+              )}
             </>
           )}
         </div>
@@ -14902,6 +15311,13 @@ export default function App() {
     return machines.some((m) => m.toLowerCase().includes(nameKeyword.toLowerCase()));
   };
 
+  const isScreenAllowed = (screenKey: string) => {
+    if (currentUser?.id === "raul") return true;
+    const allowed = db.activeTenant?.allowedScreens;
+    if (!allowed || allowed.length === 0) return true;
+    return allowed.includes(screenKey);
+  };
+
   return (
     <BrowserRouter>
       <div className="flex flex-col h-screen-safe w-screen bg-slate-50 overflow-hidden font-sans antialiased">
@@ -15305,7 +15721,7 @@ export default function App() {
               label="SuperAdmin"
             />
           )}
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("inicio") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "PCP" ||
             currentUser.id === "projetista_marcos" ||
@@ -15315,7 +15731,7 @@ export default function App() {
             <NavLink to="/" icon={<Home size={24} />} label="Início" />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("financeiro") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA") && (
             <NavLink
               to="/financeiro"
@@ -15324,7 +15740,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("admin") && (currentUser.role === "ADMIN" ||
             currentUser.role === "LEITURA" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
@@ -15336,7 +15752,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("relatorios") && (currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "LEITURA" ||
@@ -15348,7 +15764,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" || currentUser.role === "PCP") && (
+          {isScreenAllowed("gestao-clientes") && (currentUser.role === "ADMIN" || currentUser.role === "PCP") && (
             <NavLink
               to="/gestao-clientes"
               icon={<Users size={24} />}
@@ -15356,14 +15772,14 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("itens") && (currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
             currentUser.id === "dinei" ||
             currentUser.name.toLowerCase().includes("dinei")) && (
             <NavLink to="/itens" icon={<List size={24} />} label="Itens" />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("pedidos") && (currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "ENCARREGADO" ||
@@ -15378,7 +15794,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("estoque") && (currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
             currentUser.role === "LEITURA" ||
             currentUser.role === "ENCARREGADO") && (
@@ -15394,20 +15810,24 @@ export default function App() {
             currentUser.role === "GERENCIA" ||
             currentUser.role === "PROJETISTA") && (
             <>
-              <NavLink
-                to="/estoque-chapas"
-                icon={<Layers size={24} />}
-                label="Estoque de Chapas"
-              />
-              <NavLink
-                to="/estoque-laser"
-                icon={<Layers size={24} />}
-                label="Estoque Pç Cortadas"
-              />
+              {isScreenAllowed("estoque-chapas") && (
+                <NavLink
+                  to="/estoque-chapas"
+                  icon={<Layers size={24} />}
+                  label="Estoque de Chapas"
+                />
+              )}
+              {isScreenAllowed("estoque-laser") && (
+                <NavLink
+                  to="/estoque-laser"
+                  icon={<Layers size={24} />}
+                  label="Estoque Pç Cortadas"
+                />
+              )}
             </>
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("orcamentos") && (currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "PROJETISTA" ||
@@ -15420,7 +15840,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("nests") && (currentUser.role === "ADMIN" ||
             currentUser.role === "PROJETISTA" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
@@ -15429,7 +15849,7 @@ export default function App() {
             <NavLink to="/nests" icon={<Scissors size={24} />} label="Nests" />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("producao") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "MONTAGEM_RODRIGO" ||
             currentUser.role === "PRODUCAO" ||
@@ -15442,7 +15862,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("cortelaser") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "CORTE_LASER") && 
             (currentUser.id === "raul" || hasSector("laser") || hasSector("corte")) && (
@@ -15453,7 +15873,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("pintura") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "PINTURA") && 
             (currentUser.id === "raul" || hasSector("pintura")) && (
@@ -15464,7 +15884,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("prensa-eduardo") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "PRENSA_EDUARDO") && 
             (currentUser.id === "raul" || hasMachine("eduardo") || hasMachine("prensa") || hasSector("prensa")) && (
@@ -15475,7 +15895,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("torno-cnc-willian") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "TORNO_CNC_WILLIAN") && 
             (currentUser.id === "raul" || hasMachine("willian") || hasMachine("torno") || hasSector("torno")) && (
@@ -15486,7 +15906,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("torno-cnc-henrique") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "TORNO_CNC_HENRIQUE") && 
             (currentUser.id === "raul" || hasMachine("henrique") || hasMachine("torno") || hasSector("torno")) && (
@@ -15497,7 +15917,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("prensa-rafael") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "PRENSA_RAFAEL") && 
             (currentUser.id === "raul" || hasMachine("rafael") || hasMachine("prensa") || hasSector("prensa")) && (
@@ -15508,7 +15928,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("injetora") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "INJETORA") && 
             (currentUser.id === "raul" || hasMachine("injetora") || hasSector("injetora")) && (
@@ -15519,7 +15939,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("banho-quimico") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "BANHO_QUIMICO") && 
             (currentUser.id === "raul" || hasMachine("banho") || hasMachine("zinc") || hasSector("banho") || hasSector("zinc") || hasSector("quimico")) && (
@@ -15530,7 +15950,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("embalagem") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "EMBALAGEM") && 
             (currentUser.id === "raul" || hasSector("embalagem")) && (
@@ -15541,7 +15961,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("montagem-retratil") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "MONTAGEM_RETRATIL") && 
             (currentUser.id === "raul" || hasSector("retratil") || hasSector("montagem")) && (
@@ -15552,7 +15972,7 @@ export default function App() {
             />
           )}
 
-          {currentUser.role === "REPRESENTANTE" && (
+          {isScreenAllowed("representante") && currentUser.role === "REPRESENTANTE" && (
             <NavLink
               to="/representante"
               icon={<ClipboardList size={24} />}
@@ -15560,7 +15980,7 @@ export default function App() {
             />
           )}
 
-          {(currentUser.role === "ADMIN" ||
+          {isScreenAllowed("lotes") && (currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "ENCARREGADO" ||
@@ -15574,11 +15994,13 @@ export default function App() {
             />
           )}
 
-          <NavLink
-            to="/historico"
-            icon={<History size={24} />}
-            label="Histórico"
-          />
+          {isScreenAllowed("historico") && (
+            <NavLink
+              to="/historico"
+              icon={<History size={24} />}
+              label="Histórico"
+            />
+          )}
         </nav>
       </BottomNavContext.Provider>
     </div>
@@ -15804,11 +16226,18 @@ export default function App() {
                               .join(", ")
                           : "Não vinculado";
 
+                      const orderDiscountPercent =
+                        firstOrd.discountPercent !== undefined
+                          ? firstOrd.discountPercent
+                          : custObj?.defaultDiscountPercent;
+                      const orderHasRET =
+                        firstOrd.hasRET !== undefined ? firstOrd.hasRET : custObj?.hasRET;
+
                       const totalQtyOrder = groupOrders.reduce(
                         (sum, o) => sum + (o.totalQuantity || 0),
                         0,
                       );
-                      const totalValOrder = groupOrders.reduce((sum, o) => {
+                      const subtotalBeforeDiscount = groupOrders.reduce((sum, o) => {
                         const itemInG = db.items.find((i) => i.id === o.itemId);
                         const price =
                           o.unitPrice !== undefined
@@ -15816,6 +16245,13 @@ export default function App() {
                             : itemInG?.unitPrice || itemInG?.price || 0;
                         return sum + (o.totalQuantity || 0) * price;
                       }, 0);
+
+                      const discountAmount =
+                        orderDiscountPercent && orderDiscountPercent > 0
+                          ? (subtotalBeforeDiscount * orderDiscountPercent) / 100
+                          : 0;
+
+                      const totalValOrder = subtotalBeforeDiscount - discountAmount;
 
                       const isFull = printSheetSize === "full";
 
@@ -15837,7 +16273,7 @@ export default function App() {
                           >
                             <div className="flex items-center gap-2.5">
                               <ReportHeaderLogo
-                                logoUrl={db.systemSettings?.[0]?.companyLogoUrl || db.activeTenant?.logoUrl}
+                                logoUrl={db.activeTenant?.logoUrl && db.activeTenant.logoUrl !== "/icon.png" ? db.activeTenant.logoUrl : (db.systemSettings?.[0]?.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png")}
                                 className={isFull ? "w-10 h-10 object-contain rounded" : "w-7 h-7 object-contain rounded"}
                                 alt="Logo Empresa"
                               />
@@ -15847,14 +16283,14 @@ export default function App() {
                                     isFull ? "text-base sm:text-lg" : "text-xs sm:text-sm"
                                   } font-black text-slate-900 tracking-tight leading-none uppercase`}
                                 >
-                                  IMPÉRIO JOMARCI
+                                  {db.activeTenant?.name || db.systemSettings?.[0]?.companyName || "SUA EMPRESA"}
                                 </h2>
                                 <span
                                   className={`${
                                     isFull ? "text-[9px]" : "text-[7.5px]"
                                   } text-gray-500 font-extrabold uppercase tracking-wider block mt-0.5`}
                                 >
-                                  Acessórios para Móveis
+                                  {db.activeTenant?.systemName || db.systemSettings?.[0]?.systemName || "Acessórios para Móveis"}
                                 </span>
                               </div>
                             </div>
@@ -15952,6 +16388,31 @@ export default function App() {
                                 </span>
                                 <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-700 block mt-0.5 truncate`}>
                                   {firstOrd.representativeName || "Venda Direta"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Row 4: Discounts & RET */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 border-t border-slate-200">
+                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                  Desconto no Pedido
+                                </span>
+                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-emerald-800 block mt-0.5 truncate`}>
+                                  {orderDiscountPercent && orderDiscountPercent > 0
+                                    ? `🏷️ ${orderDiscountPercent}% (-${discountAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`
+                                    : "Sem Desconto (0%)"}
+                                </span>
+                              </div>
+
+                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                  Regime Tributário (RET)
+                                </span>
+                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-800 block mt-0.5 truncate`}>
+                                  {orderHasRET
+                                    ? "🏛️ SIM (Regime Especial de Tributação)"
+                                    : "NÃO (Regime Comum)"}
                                 </span>
                               </div>
                             </div>
@@ -16088,30 +16549,75 @@ export default function App() {
                                 })}
                               </tbody>
                               <tfoot>
-                                <tr
-                                  className={`bg-slate-900 text-white font-extrabold ${
-                                    isFull ? "text-xs" : "text-[9.5px]"
-                                  }`}
-                                >
-                                  <td
-                                    colSpan={5}
-                                    className="py-2 px-2 text-right uppercase tracking-wider text-[8px] sm:text-[10px] text-gray-300"
+                                {orderDiscountPercent && orderDiscountPercent > 0 ? (
+                                  <>
+                                    <tr className="bg-slate-800 text-slate-200 text-[9px] font-bold border-t border-slate-700">
+                                      <td colSpan={5} className="py-1 px-2 text-right uppercase tracking-wider text-slate-300">
+                                        Subtotal Bruto:
+                                      </td>
+                                      <td className="py-1 px-1 text-center font-mono text-slate-200">
+                                        {totalQtyOrder} pçs
+                                      </td>
+                                      <td colSpan={2} className="py-1 px-2 text-right font-mono text-slate-200">
+                                        {subtotalBeforeDiscount.toLocaleString("pt-BR", {
+                                          style: "currency",
+                                          currency: "BRL",
+                                        })}
+                                      </td>
+                                    </tr>
+                                    <tr className="bg-slate-800 text-emerald-300 text-[9px] font-bold">
+                                      <td colSpan={5} className="py-1 px-2 text-right uppercase tracking-wider">
+                                        Desconto ({orderDiscountPercent}%):
+                                      </td>
+                                      <td className="py-1 px-1"></td>
+                                      <td colSpan={2} className="py-1 px-2 text-right font-mono text-emerald-400">
+                                        -{discountAmount.toLocaleString("pt-BR", {
+                                          style: "currency",
+                                          currency: "BRL",
+                                        })}
+                                      </td>
+                                    </tr>
+                                    <tr className={`bg-slate-900 text-white font-extrabold ${isFull ? "text-xs" : "text-[9.5px]"}`}>
+                                      <td colSpan={5} className="py-2 px-2 text-right uppercase tracking-wider text-[8px] sm:text-[10px] text-gray-300">
+                                        Total Final com Desconto:
+                                      </td>
+                                      <td className="py-2 px-1 text-center font-mono text-emerald-400 font-black">
+                                        {totalQtyOrder} pçs
+                                      </td>
+                                      <td colSpan={2} className="py-2 px-2 text-right font-mono text-emerald-400 font-black text-xs sm:text-sm">
+                                        {totalValOrder.toLocaleString("pt-BR", {
+                                          style: "currency",
+                                          currency: "BRL",
+                                        })}
+                                      </td>
+                                    </tr>
+                                  </>
+                                ) : (
+                                  <tr
+                                    className={`bg-slate-900 text-white font-extrabold ${
+                                      isFull ? "text-xs" : "text-[9.5px]"
+                                    }`}
                                   >
-                                    Total do Pedido:
-                                  </td>
-                                  <td className="py-2 px-1 text-center font-mono text-emerald-400 font-black">
-                                    {totalQtyOrder} pçs
-                                  </td>
-                                  <td
-                                    colSpan={2}
-                                    className="py-2 px-2 text-right font-mono text-emerald-400 font-black text-xs sm:text-sm"
-                                  >
-                                    {totalValOrder.toLocaleString("pt-BR", {
-                                      style: "currency",
-                                      currency: "BRL",
-                                    })}
-                                  </td>
-                                </tr>
+                                    <td
+                                      colSpan={5}
+                                      className="py-2 px-2 text-right uppercase tracking-wider text-[8px] sm:text-[10px] text-gray-300"
+                                    >
+                                      Total do Pedido:
+                                    </td>
+                                    <td className="py-2 px-1 text-center font-mono text-emerald-400 font-black">
+                                      {totalQtyOrder} pçs
+                                    </td>
+                                    <td
+                                      colSpan={2}
+                                      className="py-2 px-2 text-right font-mono text-emerald-400 font-black text-xs sm:text-sm"
+                                    >
+                                      {totalValOrder.toLocaleString("pt-BR", {
+                                        style: "currency",
+                                        currency: "BRL",
+                                      })}
+                                    </td>
+                                  </tr>
+                                )}
                               </tfoot>
                             </table>
                           </div>
@@ -16205,7 +16711,19 @@ export default function App() {
 
                         // Mark orders as printed in DB
                         if (orderCodesToPrintList.length > 0) {
-                          markOrdersAsPrinted(orderCodesToPrintList);
+                          const ordersToUpdate = db.orders.filter((o) => orderCodesToPrintList.includes(o.orderCode));
+                          if (ordersToUpdate.length > 0) {
+                            const updated = ordersToUpdate.map((o) => {
+                              const currentCount = o.printCount ?? (o.isPrinted ? 1 : 0);
+                              return {
+                                ...o,
+                                isPrinted: true,
+                                printedAt: Date.now(),
+                                printCount: currentCount + 1,
+                              };
+                            });
+                            db.updateOrders(updated);
+                          }
                         }
 
                         import("./printUtils").then(({ printElementById }) => {

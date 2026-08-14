@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useDatabase } from "./useDatabase";
-import { User, Sector, ProductFlow, Customer, Order } from "./types";
+import { User, Sector, ProductFlow, Customer, Order, isSubTabAllowed } from "./types";
 import {
   Users,
   Building,
@@ -21,7 +21,11 @@ import {
   Scissors,
   Layers,
   SlidersHorizontal,
-  Phone
+  Phone,
+  FileSpreadsheet,
+  Upload,
+  FileText,
+  Sparkles
 } from "lucide-react";
 import { ScreenLayout, ScrollContainer } from "./components/Layout";
 import { ComposicaoProdutosTab } from "./components/ComposicaoProdutosTab";
@@ -1238,6 +1242,12 @@ export function PCPScreen({
   const [lotesDateEnd, setLotesDateEnd] = useState("");
   const [lotesVisibleCount, setLotesVisibleCount] = useState(10);
 
+  // States for CSV Lote Import via Gemini AI
+  const [isCsvImportModalOpen, setIsCsvImportModalOpen] = useState(false);
+  const [csvRawText, setCsvRawText] = useState("");
+  const [isParsingCsv, setIsParsingCsv] = useState(false);
+  const [parsedCsvResult, setParsedCsvResult] = useState<any | null>(null);
+
   React.useEffect(() => {
     setLotesVisibleCount(10);
   }, [lotesSearchTerm, lotesDateStart, lotesDateEnd]);
@@ -2221,55 +2231,149 @@ export function PCPScreen({
     }
   };
 
+  const handleProcessCsvWithGemini = async () => {
+    if (!csvRawText.trim()) {
+      alert("Por favor, cole ou selecione o conteúdo de um arquivo CSV.");
+      return;
+    }
+    setIsParsingCsv(true);
+    try {
+      const res = await fetch("/api/ai-parse-lote-csv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csvText: csvRawText }),
+      });
+      if (!res.ok) {
+        throw new Error("Erro na requisição ao servidor");
+      }
+      const data = await res.json();
+      if (!data.items || data.items.length === 0) {
+        alert("Não foi possível identificar itens válidos no arquivo CSV.");
+      } else {
+        setParsedCsvResult(data);
+      }
+    } catch (err: any) {
+      alert("Erro ao analisar arquivo CSV via Gemini: " + err.message);
+    } finally {
+      setIsParsingCsv(false);
+    }
+  };
+
+  const handleConfirmCreateBatchFromCsv = async () => {
+    if (!parsedCsvResult || !parsedCsvResult.items || parsedCsvResult.items.length === 0) {
+      return;
+    }
+    try {
+      const createdOrderIds: number[] = [];
+
+      for (const item of parsedCsvResult.items) {
+        let existingItem = db.items.find(
+          (i) => i.code.toLowerCase() === item.code?.toLowerCase() || i.name.toLowerCase() === item.description?.toLowerCase()
+        );
+
+        let itemId = existingItem?.id;
+        if (!itemId) {
+          itemId = await db.addItem({
+            code: item.code || `CSV-${Math.floor(Math.random() * 8999 + 1000)}`,
+            name: item.description || "Produto Importado via CSV",
+            notes: item.notes || "Cadastrado via importação de Lote CSV",
+            type: "PRODUTO",
+          });
+        }
+
+        const newOrderId = await db.addOrder({
+          orderCode: `LOTE-${parsedCsvResult.loteNum}-${createdOrderIds.length + 1}`,
+          customerName: parsedCsvResult.loteDesc || `LOTE ${parsedCsvResult.loteNum}`,
+          itemId: itemId,
+          totalQuantity: item.quantity || 1,
+          deliveryDate: parsedCsvResult.endDate || "",
+          status: "PENDENTE",
+        });
+
+        createdOrderIds.push(newOrderId);
+      }
+
+      await db.addProductionBatch({
+        name: parsedCsvResult.loteDesc || `LOTE ${parsedCsvResult.loteNum}`,
+        code: parsedCsvResult.loteNum || String(Math.floor(Math.random() * 8999 + 1000)),
+        orderIds: createdOrderIds,
+        deliveryDate: parsedCsvResult.endDate || "",
+        startDate: parsedCsvResult.startDate || "",
+        notes: `Importado via CSV (IA Gemini). Contém ${createdOrderIds.length} produtos.`,
+      });
+
+      alert(`✅ Lote "${parsedCsvResult.loteDesc || parsedCsvResult.loteNum}" criado com sucesso com ${createdOrderIds.length} produtos!`);
+      setIsCsvImportModalOpen(false);
+      setCsvRawText("");
+      setParsedCsvResult(null);
+    } catch (err: any) {
+      alert("Erro ao criar lote importado: " + err.message);
+    }
+  };
+
   return (
     <ScreenLayout className="gap-4">
       <ScrollContainer paddingSize="dense">
         {subScreen === "CADASTROS" && (
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex gap-2 mb-4 overflow-x-auto shrink-0 pb-2">
-              <button
-                onClick={() => setCadastroTab("CLIENTES")}
-                className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "CLIENTES" ? "bg-gray-800 text-white" : "bg-white text-gray-600 border"}`}
-              >
-                <Users size={16} className="inline mr-2" /> Clientes
-              </button>
-              <button
-                onClick={() => setCadastroTab("SETORES")}
-                className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "SETORES" ? "bg-gray-800 text-white" : "bg-white text-gray-600 border"}`}
-              >
-                <Building size={16} className="inline mr-2" /> Setores
-              </button>
-              <button
-                onClick={() => setCadastroTab("FLUXOS")}
-                className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "FLUXOS" ? "bg-gray-800 text-white" : "bg-white text-gray-600 border"}`}
-              >
-                <Route size={16} className="inline mr-2" /> Fluxos por Produto
-              </button>
-              <button
-                onClick={() => setCadastroTab("PLANOS_CORTE")}
-                className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "PLANOS_CORTE" ? "bg-indigo-700 text-white shadow-md" : "bg-white text-indigo-700 border border-indigo-200"}`}
-              >
-                <Scissors size={16} className="inline mr-2" /> Planos de Corte &
-                Injeção (Prensa e Injetora)
-              </button>
-              <button
-                onClick={() => setCadastroTab("REPRESENTANTES")}
-                className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "REPRESENTANTES" ? "bg-teal-700 text-white shadow-md" : "bg-white text-teal-700 border border-teal-200"}`}
-              >
-                <Phone size={16} className="inline mr-2" /> Contatos Representantes
-              </button>
-              <button
-                onClick={() => setCadastroTab("COMPOSICAO")}
-                className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "COMPOSICAO" ? "bg-purple-700 text-white shadow-md font-extrabold" : "bg-white text-purple-700 border border-purple-250"}`}
-              >
-                <Layers size={16} className="inline mr-2" /> Composição de Produtos (BOM)
-              </button>
-              <button
-                onClick={() => setCadastroTab("CONFIGURACOES")}
-                className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "CONFIGURACOES" ? "bg-blue-700 text-white shadow-md" : "bg-white text-blue-700 border border-blue-200"}`}
-              >
-                <SlidersHorizontal size={16} className="inline mr-2" /> Configurações do Sistema
-              </button>
+              {isSubTabAllowed(db.activeTenant, "pcp:cadastro_clientes") && (
+                <button
+                  onClick={() => setCadastroTab("CLIENTES")}
+                  className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "CLIENTES" ? "bg-gray-800 text-white" : "bg-white text-gray-600 border"}`}
+                >
+                  <Users size={16} className="inline mr-2" /> Clientes
+                </button>
+              )}
+              {isSubTabAllowed(db.activeTenant, "pcp:cadastro_setores") && (
+                <button
+                  onClick={() => setCadastroTab("SETORES")}
+                  className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "SETORES" ? "bg-gray-800 text-white" : "bg-white text-gray-600 border"}`}
+                >
+                  <Building size={16} className="inline mr-2" /> Setores
+                </button>
+              )}
+              {isSubTabAllowed(db.activeTenant, "pcp:cadastro_fluxos") && (
+                <button
+                  onClick={() => setCadastroTab("FLUXOS")}
+                  className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "FLUXOS" ? "bg-gray-800 text-white" : "bg-white text-gray-600 border"}`}
+                >
+                  <Route size={16} className="inline mr-2" /> Fluxos por Produto
+                </button>
+              )}
+              {isSubTabAllowed(db.activeTenant, "pcp:cadastro_planos_corte") && (
+                <button
+                  onClick={() => setCadastroTab("PLANOS_CORTE")}
+                  className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "PLANOS_CORTE" ? "bg-indigo-700 text-white shadow-md" : "bg-white text-indigo-700 border border-indigo-200"}`}
+                >
+                  <Scissors size={16} className="inline mr-2" /> Planos de Corte &
+                  Injeção (Prensa e Injetora)
+                </button>
+              )}
+              {isSubTabAllowed(db.activeTenant, "pcp:cadastro_representantes") && (
+                <button
+                  onClick={() => setCadastroTab("REPRESENTANTES")}
+                  className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "REPRESENTANTES" ? "bg-teal-700 text-white shadow-md" : "bg-white text-teal-700 border border-teal-200"}`}
+                >
+                  <Phone size={16} className="inline mr-2" /> Contatos Representantes
+                </button>
+              )}
+              {isSubTabAllowed(db.activeTenant, "pcp:cadastro_bom") && (
+                <button
+                  onClick={() => setCadastroTab("COMPOSICAO")}
+                  className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "COMPOSICAO" ? "bg-purple-700 text-white shadow-md font-extrabold" : "bg-white text-purple-700 border border-purple-250"}`}
+                >
+                  <Layers size={16} className="inline mr-2" /> Composição de Produtos (BOM)
+                </button>
+              )}
+              {isSubTabAllowed(db.activeTenant, "pcp:cadastro_configuracoes") && (
+                <button
+                  onClick={() => setCadastroTab("CONFIGURACOES")}
+                  className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "CONFIGURACOES" ? "bg-blue-700 text-white shadow-md" : "bg-white text-blue-700 border border-blue-200"}`}
+                >
+                  <SlidersHorizontal size={16} className="inline mr-2" /> Configurações do Sistema
+                </button>
+              )}
             </div>
 
             <ScrollContainer paddingSize="none" className="w-full">
@@ -3399,12 +3503,21 @@ export function PCPScreen({
                   <h3 className="font-bold text-gray-700 flex items-center gap-2">
                     <Package size={18} /> Lotes Detalhados
                   </h3>
-                  <button
-                    onClick={() => setShowNewBatchModal(true)}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold text-xs"
-                  >
-                    <Plus size={14} /> Novo Lote Manual
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowNewBatchModal(true)}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold text-xs"
+                    >
+                      <Plus size={14} /> Novo Lote Manual
+                    </button>
+
+                    <button
+                      onClick={() => setIsCsvImportModalOpen(true)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold text-xs shadow-xs"
+                    >
+                      <FileSpreadsheet size={14} /> Importar CSV (IA Gemini)
+                    </button>
+                  </div>
                 </div>
                 <span className="text-xs text-indigo-700 font-semibold bg-indigo-50 px-2 py-0.5 rounded">
                   Clique no card para abrir e editar
@@ -4997,6 +5110,157 @@ export function PCPScreen({
                     </>
                   )}
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Importar Lote via CSV (IA Gemini) */}
+        {isCsvImportModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              {/* Modal Header */}
+              <div className="p-4 bg-emerald-700 text-white flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={20} className="text-emerald-200" />
+                  <h3 className="font-extrabold text-sm sm:text-base">
+                    Importar Produção via CSV (Inteligência Gemini)
+                  </h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsCsvImportModalOpen(false);
+                    setParsedCsvResult(null);
+                  }}
+                  className="text-emerald-100 hover:text-white p-1 rounded-lg hover:bg-emerald-600 transition cursor-pointer"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-4 overflow-y-auto flex-1 space-y-4">
+                <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl text-xs text-emerald-900 flex flex-col gap-1">
+                  <span className="font-bold flex items-center gap-1 text-emerald-950">
+                    <FileSpreadsheet size={15} /> Como funciona:
+                  </span>
+                  <span>
+                    Cole abaixo o conteúdo do arquivo CSV de produção (com colunas como Código, Descrição, Quantidade, Observações).
+                    A Inteligência Artificial Gemini identificará os campos correspondentes e montará o lote automaticamente.
+                  </span>
+                </div>
+
+                {!parsedCsvResult ? (
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Conteúdo do Arquivo CSV:
+                      </label>
+                      <textarea
+                        rows={8}
+                        value={csvRawText}
+                        onChange={(e) => setCsvRawText(e.target.value)}
+                        placeholder="Nº Lote: 1526&#10;Desc.: LOTE 1526-CARRO CYRNE [LARANJA]&#10;Início: 17/08/2026; Prev. Término: 27/08/2026&#10;&#10;Código; Descrição; Quantidade; Observação&#10;CYR-01; Estrutura Carro Cyrne; 10; Laranja&#10;CYR-02; Rodízio Reforçado; 20; Preto..."
+                        className="w-full border border-slate-300 rounded-lg p-2.5 text-xs font-mono bg-slate-50 focus:ring-2 focus:ring-emerald-500 outline-none"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <label className="bg-slate-100 border border-slate-300 text-slate-700 hover:bg-slate-200 px-3 py-2 rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1.5 transition">
+                        <Upload size={14} /> Carregar arquivo .csv do computador
+                        <input
+                          type="file"
+                          accept=".csv,.txt"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                setCsvRawText(ev.target?.result as string || "");
+                              };
+                              reader.readAsText(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isParsingCsv || !csvRawText.trim()}
+                      onClick={handleProcessCsvWithGemini}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2.5 rounded-xl transition flex items-center justify-center gap-2 text-xs shadow-md disabled:opacity-50 cursor-pointer"
+                    >
+                      {isParsingCsv ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Analisando CSV com Gemini IA...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={16} /> Processar com Inteligência Gemini
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3 animate-fade-in">
+                    <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-col gap-2">
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-xs font-bold text-slate-800">
+                          📦 {parsedCsvResult.loteDesc || `LOTE ${parsedCsvResult.loteNum}`}
+                        </span>
+                        <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">
+                          Nº {parsedCsvResult.loteNum}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                        <div><strong className="text-slate-800">Início:</strong> {parsedCsvResult.startDate || "Não especificada"}</div>
+                        <div><strong className="text-slate-800">Término:</strong> {parsedCsvResult.endDate || "Não especificada"}</div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                        <span>Produtos Extraídos ({parsedCsvResult.items?.length || 0}):</span>
+                        <button
+                          type="button"
+                          onClick={() => setParsedCsvResult(null)}
+                          className="text-xs text-indigo-600 hover:underline font-semibold"
+                        >
+                          Colar outro CSV
+                        </button>
+                      </h4>
+
+                      <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+                        {parsedCsvResult.items?.map((item: any, idx: number) => (
+                          <div key={idx} className="p-2 bg-white flex justify-between items-center text-xs">
+                            <div className="flex flex-col">
+                              <span className="font-bold text-slate-800">
+                                {item.code ? `[${item.code}] ` : ""}{item.description}
+                              </span>
+                              {item.notes && (
+                                <span className="text-[10px] text-slate-500">Obs: {item.notes}</span>
+                              )}
+                            </div>
+                            <span className="bg-indigo-50 text-indigo-700 font-extrabold px-2 py-0.5 rounded text-xs shrink-0">
+                              {item.quantity} pçs
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleConfirmCreateBatchFromCsv}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-3 rounded-xl transition flex items-center justify-center gap-2 text-xs shadow-lg cursor-pointer"
+                    >
+                      <Check size={18} /> Confirmar e Criar Lote de Produção
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

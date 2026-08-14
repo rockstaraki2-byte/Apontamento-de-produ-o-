@@ -66,6 +66,9 @@ export function GestaoClientesScreen({
   >("COM_NF");
   const [newCustomerDefaultPaymentTerms, setNewCustomerDefaultPaymentTerms] =
     useState("");
+  const [newCustomerDefaultDiscountPercent, setNewCustomerDefaultDiscountPercent] =
+    useState<number | "">("");
+  const [newCustomerHasRET, setNewCustomerHasRET] = useState<boolean>(false);
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,6 +108,11 @@ export function GestaoClientesScreen({
       email: newCustomerEmail.trim().toLowerCase(),
       fiscalType: newCustomerFiscalType,
       defaultPaymentTerms: newCustomerDefaultPaymentTerms.trim(),
+      defaultDiscountPercent:
+        newCustomerDefaultDiscountPercent === ""
+          ? undefined
+          : Number(newCustomerDefaultDiscountPercent),
+      hasRET: newCustomerHasRET,
     });
 
     setIsAddModalOpen(false);
@@ -118,6 +126,8 @@ export function GestaoClientesScreen({
     setNewCustomerEmail("");
     setNewCustomerFiscalType("COM_NF");
     setNewCustomerDefaultPaymentTerms("");
+    setNewCustomerDefaultDiscountPercent("");
+    setNewCustomerHasRET(false);
   };
 
   // Editing Row State (Inline Quick-Edit)
@@ -135,6 +145,11 @@ export function GestaoClientesScreen({
   >("COM_NF");
   const [inlineEditDefaultPaymentTerms, setInlineEditDefaultPaymentTerms] =
     useState("");
+  const [
+    inlineEditDefaultDiscountPercent,
+    setInlineEditDefaultDiscountPercent,
+  ] = useState<number | "">("");
+  const [inlineEditHasRET, setInlineEditHasRET] = useState<boolean>(false);
 
   // Creative Mock Coordinate mappings for key cities to make map indicators look authentic:
   const cityCoordinates: Record<string, { lat: number; lng: number }> = {
@@ -325,6 +340,10 @@ export function GestaoClientesScreen({
     setInlineEditEmail(c.email || "");
     setInlineEditFiscalType(c.fiscalType || "COM_NF");
     setInlineEditDefaultPaymentTerms(c.defaultPaymentTerms || "");
+    setInlineEditDefaultDiscountPercent(
+      c.defaultDiscountPercent !== undefined ? c.defaultDiscountPercent : "",
+    );
+    setInlineEditHasRET(!!c.hasRET);
   };
 
   // Save changes from quick inline edits
@@ -363,6 +382,11 @@ export function GestaoClientesScreen({
       email: inlineEditEmail.trim().toLowerCase(),
       fiscalType: inlineEditFiscalType,
       defaultPaymentTerms: inlineEditDefaultPaymentTerms.trim(),
+      defaultDiscountPercent:
+        inlineEditDefaultDiscountPercent === ""
+          ? undefined
+          : Number(inlineEditDefaultDiscountPercent),
+      hasRET: inlineEditHasRET,
     };
 
     await db.updateCustomer(updatedCustomer, inlineEditId!);
@@ -862,10 +886,39 @@ export function GestaoClientesScreen({
                                   }
                                   className="border border-blue-400 rounded px-1.5 py-0.5 outline-none text-[11px]"
                                 />
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    max="100"
+                                    placeholder="Desc %"
+                                    value={inlineEditDefaultDiscountPercent}
+                                    onChange={(e) =>
+                                      setInlineEditDefaultDiscountPercent(
+                                        e.target.value !== ""
+                                          ? parseFloat(e.target.value)
+                                          : "",
+                                      )
+                                    }
+                                    className="w-16 border border-blue-400 rounded px-1 py-0.5 outline-none text-[10px]"
+                                  />
+                                  <label className="flex items-center gap-1 text-[10px] font-bold text-slate-700 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={inlineEditHasRET}
+                                      onChange={(e) =>
+                                        setInlineEditHasRET(e.target.checked)
+                                      }
+                                      className="w-3 h-3 text-blue-600 rounded"
+                                    />
+                                    RET
+                                  </label>
+                                </div>
                               </div>
                             ) : (
                               <div className="flex flex-col gap-1 text-[11px]">
-                                <div>
+                                <div className="flex items-center gap-1 flex-wrap">
                                   {c.fiscalType === "SEM_NF" ? (
                                     <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full inline-block">
                                       Sem NF
@@ -877,6 +930,16 @@ export function GestaoClientesScreen({
                                   ) : (
                                     <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full inline-block">
                                       Com NF
+                                    </span>
+                                  )}
+                                  {c.hasRET && (
+                                    <span className="bg-blue-100 text-blue-900 border border-blue-300 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block">
+                                      RET
+                                    </span>
+                                  )}
+                                  {c.defaultDiscountPercent !== undefined && c.defaultDiscountPercent > 0 && (
+                                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-bold px-1.5 py-0.5 rounded-full inline-block">
+                                      -{c.defaultDiscountPercent}%
                                     </span>
                                   )}
                                 </div>
@@ -1180,6 +1243,24 @@ export function GestaoClientesScreen({
                         {selectedCustomer.defaultPaymentTerms || "Não cadastrada"}
                       </span>
                     </div>
+                    <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+                      <span className="text-slate-500 font-medium">Desconto Automático Padrão:</span>
+                      <span className="font-bold text-emerald-700">
+                        {selectedCustomer.defaultDiscountPercent !== undefined && selectedCustomer.defaultDiscountPercent > 0
+                          ? `${selectedCustomer.defaultDiscountPercent}%`
+                          : "Sem desconto (0%)"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+                      <span className="text-slate-500 font-medium">Regime Especial (RET):</span>
+                      {selectedCustomer.hasRET ? (
+                        <span className="bg-blue-100 text-blue-900 border border-blue-300 font-extrabold text-[10px] px-2 py-0.5 rounded-full">
+                          RET Ativo (Possui RET)
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 font-medium">Não possui RET</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -1482,6 +1563,51 @@ export function GestaoClientesScreen({
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                     placeholder="Ex: 30/60/90 dias"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 border-t border-gray-100 pt-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">
+                    Desconto Automático Padrão (%)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      value={newCustomerDefaultDiscountPercent}
+                      onChange={(e) =>
+                        setNewCustomerDefaultDiscountPercent(
+                          e.target.value !== "" ? parseFloat(e.target.value) : "",
+                        )
+                      }
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm pr-7 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                      placeholder="Ex: 5"
+                    />
+                    <span className="absolute right-3 top-2 text-gray-400 font-bold text-sm">
+                      %
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-col justify-end pb-1">
+                  <label className="flex items-center gap-2 cursor-pointer bg-slate-50 border border-gray-200 p-2.5 rounded-lg hover:bg-slate-100 transition">
+                    <input
+                      type="checkbox"
+                      checked={newCustomerHasRET}
+                      onChange={(e) => setNewCustomerHasRET(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-gray-800 block">
+                        Possui RET
+                      </span>
+                      <span className="text-[10px] text-gray-500 block">
+                        Regime Especial de Tributação
+                      </span>
+                    </div>
+                  </label>
                 </div>
               </div>
               <div className="pt-4 flex justify-end gap-2">

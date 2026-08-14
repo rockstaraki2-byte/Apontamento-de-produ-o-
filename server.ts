@@ -1879,6 +1879,129 @@ Responda em formato JSON contendo apenas o campo "summary" com a string formatad
     }
   });
 
+  app.post("/api/ai-parse-lote-csv", async (req, res) => {
+    try {
+      const { csvText } = req.body;
+      if (!csvText || typeof csvText !== "string") {
+        return res.status(400).json({ error: "O campo 'csvText' é obrigatório." });
+      }
+
+      console.log("[AI CSV Parse] Analisando arquivo CSV de lote de produção...");
+
+      // Fallback local CSV parser
+      const runLocalCsvParse = () => {
+        const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        let loteNum = "";
+        let loteDesc = "";
+        let startDate = "";
+        let endDate = "";
+        const items: any[] = [];
+
+        for (const line of lines) {
+          const cols = line.split(";").map(c => c.trim().replace(/^"|"$/g, ''));
+
+          // Try to detect header info
+          line.replace(/(?:LOTE|Nº LOTE|LOTE Nº|LOTE:)\s*[:=]?\s*(\d+)/i, (_, num) => {
+            if (!loteNum) loteNum = num;
+            return "";
+          });
+
+          if (!loteDesc) {
+            const descMatch = line.match(/(?:Desc\.|Descrição|Nome)\s*[:=]?\s*([^;,\n]+)/i);
+            if (descMatch) loteDesc = descMatch[1].trim();
+          }
+
+          if (!startDate) {
+            const dateMatch = line.match(/(?:Início|Data Início|Start)\s*[:=]?\s*(\d{2}\/\d{2}\/\d{4})/i);
+            if (dateMatch) startDate = dateMatch[1];
+          }
+
+          if (!endDate) {
+            const endDateMatch = line.match(/(?:Prev\.\s*Término|Término|Fim|Deadline)\s*[:=]?\s*(\d{2}\/\d{2}\/\d{4})/i);
+            if (endDateMatch) endDate = endDateMatch[1];
+          }
+
+          // Try item parsing (Code; Description; Quantity; Notes or similar)
+          if (cols.length >= 3) {
+            const potentialQty = parseInt(cols[2] || cols[3] || "0", 10);
+            if (!isNaN(potentialQty) && potentialQty > 0 && !cols[0].toLowerCase().includes("código") && !cols[0].toLowerCase().includes("lote")) {
+              items.push({
+                code: cols[0] || `ITEM-${Math.floor(Math.random() * 8999 + 1000)}`,
+                description: cols[1] || cols[0],
+                quantity: potentialQty,
+                notes: cols[3] || cols[4] || "",
+              });
+            }
+          }
+        }
+
+        if (!loteNum) loteNum = `LOTE-${Math.floor(Math.random() * 8999 + 1000)}`;
+        if (!loteDesc) loteDesc = `LOTE IMPORTADO CSV ${loteNum}`;
+
+        return { loteNum, loteDesc, startDate, endDate, items };
+      };
+
+      try {
+        const ai = getGeminiClient();
+        const prompt = `
+Você é um assistente especialista em PCP industrial.
+Analise este arquivo CSV (ou dados brutos) de ordem de produção / lote manual e extraia as informações estruturadas em JSON:
+1. Número do Lote (loteNum)
+2. Descrição/Nome do Lote (loteDesc)
+3. Data de Início (startDate - DD/MM/YYYY)
+4. Previsão de Término (endDate - DD/MM/YYYY)
+5. Lista de itens a produzir (items: array com { code, description, quantity, notes })
+
+CSV Bruto:
+\`\`\`
+${csvText.slice(0, 8000)}
+\`\`\`
+
+Retorne ESTRITAMENTE um objeto JSON válido no formato:
+{
+  "loteNum": "1526",
+  "loteDesc": "LOTE 1526-CARRO CYRNE[LARANJA]",
+  "startDate": "17/08/2026",
+  "endDate": "27/08/2026",
+  "items": [
+    {
+      "code": "CYR-01",
+      "description": "ESTRUTURA CARRO CYRNE LARANJA",
+      "quantity": 10,
+      "notes": "Pintura Laranja"
+    }
+  ]
+}
+`;
+
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+          },
+        });
+
+        const textResponse = response.text || "{}";
+        const parsed = JSON.parse(textResponse);
+        if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+          return res.json(parsed);
+        }
+
+        // If Gemini returned empty or malformed items, fallback
+        const fallback = runLocalCsvParse();
+        return res.json({ ...fallback, ...parsed, items: parsed.items?.length ? parsed.items : fallback.items });
+      } catch (aiError: any) {
+        console.warn("[AI CSV Parse] Gemini error, running local parser fallback:", aiError.message);
+        const fallbackResult = runLocalCsvParse();
+        return res.json(fallbackResult);
+      }
+    } catch (error: any) {
+      console.error("Erro no processamento do CSV:", error);
+      res.status(500).json({ error: error.message || "Erro ao processar CSV do lote." });
+    }
+  });
+
   app.post("/api/ai-suggest-routes", async (req, res) => {
     try {
       const { orders } = req.body;
