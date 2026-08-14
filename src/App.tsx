@@ -140,6 +140,48 @@ import { EvolucaoEmbalagemTab } from "./EvolucaoEmbalagemTab";
 import { GestaoPessoasTab } from "./components/GestaoPessoasTab";
 import { COLOR_MAP, isSubTabAllowed } from "./types";
 
+class ScreenErrorBoundary extends React.Component<
+  { children: React.ReactNode; screenName?: string },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode; screenName?: string }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("ScreenErrorBoundary caught an error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 bg-red-50 border border-red-200 rounded-xl m-4 text-slate-800 flex flex-col items-center justify-center text-center">
+          <div className="flex items-center gap-2 font-bold text-red-700 text-base mb-2">
+            <AlertCircle size={24} className="text-red-600" />
+            <span>Ocorreu um problema nesta tela ({this.props.screenName || "Itens"})</span>
+          </div>
+          <p className="text-xs text-slate-600 mb-4 max-w-md">
+            {this.state.error?.message || "Erro inesperado ao renderizar."}
+          </p>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-lg transition cursor-pointer"
+          >
+            Tentar Novamente
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 const BottomNavContext = React.createContext<{ isCollapsed: boolean }>({ isCollapsed: false });
 
 function NavLink({
@@ -1704,11 +1746,12 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
 
   const filteredAttributesList = (db.attributes || []).filter((a) => {
+    if (!a) return false;
     if (activeTab === "CORES" && a.type !== "COLOR") return false;
     if (activeTab === "VARIACOES" && a.type !== "VARIATION") return false;
     if (activeTab === "TAMANHOS" && a.type !== "SIZE") return false;
     if (!debouncedSearchTerm) return true;
-    const searchStr = normalizeString(`${a.value} ${a.code || ""}`);
+    const searchStr = normalizeString(`${a.value || ""} ${a.code || ""}`);
     return searchStr.includes(normalizeString(debouncedSearchTerm));
   });
 
@@ -1729,15 +1772,16 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     return () => window.removeEventListener("keydown", handleEvents);
   }, []);
 
-  const filteredItems = db.items.filter((it) => {
+  const filteredItems = (db.items || []).filter((it) => {
+    if (!it) return false;
     const isPeca = it.type === "PECA";
     const isEpi = it.type === "EPI";
     if (activeTab === "PRODUTOS" && (isPeca || isEpi)) return false;
     if (activeTab === "PECAS" && !isPeca) return false;
     if (activeTab === "EPIS" && !isEpi) return false;
 
-    const term = normalizeString(debouncedSearchTerm);
-    const searchTarget = normalizeString(`${it.code} ${it.name}`);
+    const term = normalizeString(debouncedSearchTerm || "");
+    const searchTarget = normalizeString(`${it.code || ""} ${it.name || ""}`);
     return searchTarget.includes(term);
   });
 
@@ -2563,7 +2607,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                         disabled={isUploadingAttrImage}
                       />
                       <span className="text-[10px] text-gray-500">
-                        Selecione uma foto do acabamento ou amostra da cor.
+                        Selecione uma foto ou amostra da cor.
                       </span>
                       {isUploadingAttrImage && (
                         <span className="text-xs text-indigo-600 font-semibold animate-pulse">
@@ -2971,12 +3015,14 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex flex-col text-right text-xs text-gray-500">
-                  {it.basePrice !== undefined ? (
+                  {typeof it.basePrice === "number" && !isNaN(it.basePrice) ? (
                     <span>R$ {it.basePrice.toFixed(2)}</span>
+                  ) : it.basePrice !== undefined && it.basePrice !== null && it.basePrice !== "" && !isNaN(Number(it.basePrice)) ? (
+                    <span>R$ {Number(it.basePrice).toFixed(2)}</span>
                   ) : (
                     <span>-</span>
                   )}
-                  {it.productionPoints !== undefined ? (
+                  {it.productionPoints !== undefined && it.productionPoints !== null && it.productionPoints !== "" && !isNaN(Number(it.productionPoints)) ? (
                     <span>{Number(it.productionPoints).toFixed(5)} pts</span>
                   ) : (
                     <span>-</span>
@@ -15444,7 +15490,14 @@ export default function App() {
                   path="/status"
                   element={<Navigate to="/pedidos" replace />}
                 />
-                <Route path="/itens" element={<ItensScreen db={db} />} />
+                <Route
+                  path="/itens"
+                  element={
+                    <ScreenErrorBoundary screenName="Itens">
+                      <ItensScreen db={db} />
+                    </ScreenErrorBoundary>
+                  }
+                />
               </>
             )}
             {(currentUser.role === "ADMIN" ||

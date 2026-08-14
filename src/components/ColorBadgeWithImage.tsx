@@ -10,14 +10,15 @@ export function getColorAttribute(
     return null;
   }
 
-  const safeAttrs = attributes || [];
-  const normalized = colorStr.trim().toUpperCase();
+  const safeAttrs = (attributes || []).filter(Boolean);
+  const normalized = String(colorStr).trim().toUpperCase();
 
   // 1. Direct match by value or code
   let found = safeAttrs.find(
     (a) =>
       a.type === "COLOR" &&
-      (a.value.toUpperCase() === normalized || (a.code && a.code.toUpperCase() === normalized)),
+      ((a.value && a.value.toUpperCase() === normalized) ||
+        (a.code && a.code.toUpperCase() === normalized)),
   );
   if (found) return found;
 
@@ -25,20 +26,24 @@ export function getColorAttribute(
   const mappedName = COLOR_MAP[colorStr];
   if (mappedName) {
     found = safeAttrs.find(
-      (a) => a.type === "COLOR" && a.value.toUpperCase() === mappedName.toUpperCase(),
+      (a) =>
+        a.type === "COLOR" &&
+        a.value &&
+        a.value.toUpperCase() === mappedName.toUpperCase(),
     );
     if (found) return found;
   }
 
   // 3. Lookup in COLOR_MAP (name to numeric key)
   const entry = Object.entries(COLOR_MAP).find(
-    ([, v]) => v.toUpperCase() === normalized,
+    ([, v]) => v && v.toUpperCase() === normalized,
   );
   if (entry) {
     found = safeAttrs.find(
       (a) =>
         a.type === "COLOR" &&
-        ((a.code && a.code === entry[0]) || a.value.toUpperCase() === entry[1].toUpperCase()),
+        ((a.code && a.code === entry[0]) ||
+          (a.value && a.value.toUpperCase() === entry[1].toUpperCase())),
     );
     if (found) return found;
   }
