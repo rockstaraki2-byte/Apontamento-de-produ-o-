@@ -1700,7 +1700,10 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     }
   };
 
-  const filteredAttributesList = db.attributes.filter((a) => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+
+  const filteredAttributesList = (db.attributes || []).filter((a) => {
     if (activeTab === "CORES" && a.type !== "COLOR") return false;
     if (activeTab === "VARIACOES" && a.type !== "VARIATION") return false;
     if (activeTab === "TAMANHOS" && a.type !== "SIZE") return false;
@@ -1708,9 +1711,6 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     const searchStr = normalizeString(`${a.value} ${a.code || ""}`);
     return searchStr.includes(normalizeString(debouncedSearchTerm));
   });
-
-  const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
 
   React.useEffect(() => {
     const handler = setTimeout(() => {
@@ -2528,7 +2528,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                 <div className="mb-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
                   <label className="block text-xs font-bold text-gray-700 mb-1.5 flex items-center gap-1.5">
                     <span className="bg-purple-100 text-purple-700 p-1 rounded text-xs">📷</span>
-                    Imagem da Cor (Para conferência visual na Solda, Embalagem e PCP)
+                    Imagem da Cor
                   </label>
                   <div className="flex items-center gap-4">
                     {attrImageUrl ? (

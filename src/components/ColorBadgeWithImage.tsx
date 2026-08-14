@@ -4,16 +4,17 @@ import { Image as ImageIcon, X } from "lucide-react";
 
 export function getColorAttribute(
   colorStr: string | undefined | null,
-  attributes: ProductAttribute[],
+  attributes: ProductAttribute[] | undefined | null,
 ): ProductAttribute | null {
   if (!colorStr || colorStr === "-" || colorStr === "Sem Cor" || colorStr === "INDEFINIDA") {
     return null;
   }
 
+  const safeAttrs = attributes || [];
   const normalized = colorStr.trim().toUpperCase();
 
   // 1. Direct match by value or code
-  let found = attributes.find(
+  let found = safeAttrs.find(
     (a) =>
       a.type === "COLOR" &&
       (a.value.toUpperCase() === normalized || (a.code && a.code.toUpperCase() === normalized)),
@@ -23,7 +24,7 @@ export function getColorAttribute(
   // 2. Lookup in COLOR_MAP (numeric key to name)
   const mappedName = COLOR_MAP[colorStr];
   if (mappedName) {
-    found = attributes.find(
+    found = safeAttrs.find(
       (a) => a.type === "COLOR" && a.value.toUpperCase() === mappedName.toUpperCase(),
     );
     if (found) return found;
@@ -34,7 +35,7 @@ export function getColorAttribute(
     ([, v]) => v.toUpperCase() === normalized,
   );
   if (entry) {
-    found = attributes.find(
+    found = safeAttrs.find(
       (a) =>
         a.type === "COLOR" &&
         ((a.code && a.code === entry[0]) || a.value.toUpperCase() === entry[1].toUpperCase()),
