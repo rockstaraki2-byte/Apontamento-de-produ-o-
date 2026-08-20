@@ -649,9 +649,12 @@ export function EmbalagemScreen({
       db.addLogs(logsToAdd);
 
       const itemDb = db.items.find((i) => i.id === activePack.itemId);
+      const attendedOrdersText = updatedOrders.filter((o) => o.status === "EMBALADO" || o.status === "EMBALANDO").map((o) => o.orderCode ? `#${o.orderCode}` : `#${o.id}`).filter(Boolean);
+      const ordersSuffix = attendedOrdersText.length > 0 ? ` (Pedidos: ${attendedOrdersText.join(", ")})` : "";
       db.addNotification({
-        message: `Embalagem Finalizada: ${totalAssignedQty} de ${itemDb?.name || "Item"} (${activePack.color || "-"} | ${activePack.size || "-"})`,
+        message: `Embalagem Finalizada: ${totalAssignedQty} de ${itemDb?.name || "Item"} (${activePack.color || "-"} | ${activePack.size || "-"}) por ${currentUser.name}${ordersSuffix}`,
         read: false,
+        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
       });
     }
 

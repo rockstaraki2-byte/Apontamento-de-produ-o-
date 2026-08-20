@@ -294,6 +294,7 @@ export function RepresentanteScreen({
         itemId: numItemId,
         customerName: resolvedCustomerName,
         representativeName: currentUser.name,
+        representativeId: currentUser.id,
         color: itemInfo.color || "-",
         size: itemInfo.size || "-",
         variation: itemInfo.variation || "-",

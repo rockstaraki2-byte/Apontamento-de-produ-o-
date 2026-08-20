@@ -624,6 +624,12 @@ export function ProducaoScreen({
           customProductName: activePack.customProductName,
         },
       ]);
+      const opName = operator?.name || currentUser.name;
+      db.addNotification?.({
+        message: `Produção Avulsa Finalizada: ${qtyToAllocate} un. de "${activePack.customProductName || "Item Avulso"}" por ${opName} [${activePack.processName || "Produção"}]`,
+        read: false,
+        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
+      });
       if (isPartial) {
         db.addActivePack({
           ...activePack,
@@ -809,21 +815,40 @@ export function ProducaoScreen({
       });
       db.addLogs(logsToAdd);
 
-      if (isRetratil) {
-        const itemDb = db.items.find((i) => i.id === activePack.itemId);
-        db.addNotification?.({
-          message: `Montagem de Retrátil Finalizada diretamente em Estoque Acabado: ${totalAssignedQty} de ${itemDb?.name || "Item"} (${activePack.color || "-"} | ${activePack.size || "-"})`,
-          read: false,
-        });
-      }
+      const itemDb = db.items.find((i) => i.id === activePack.itemId);
+      const opName = operator?.name || currentUser.name;
+      const procName = activePack.processName || "Produção";
+      const attendedOrdersText = changedOrders.map((o) => o.orderCode ? `#${o.orderCode}` : `#${o.id}`).filter(Boolean);
+      const ordersSuffix = attendedOrdersText.length > 0 ? ` (Pedidos: ${attendedOrdersText.join(", ")})` : "";
 
-      if (currentUser.role === "MONTAGEM_RODRIGO") {
-        const itemDb = db.items.find((i) => i.id === activePack.itemId);
+      if (isRetratil) {
+        db.addNotification?.({
+          message: `Montagem de Retrátil Finalizada: ${totalAssignedQty} de ${itemDb?.name || "Item"} (${activePack.color || "-"} | ${activePack.size || "-"}) por ${opName}${ordersSuffix}`,
+          read: false,
+          tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
+        });
+      } else if (currentUser.role === "MONTAGEM_RODRIGO") {
         db.addNotification?.({
           message: `Pendurar Barra chata Finalizado por Renata (Encaminhado para Pintura): ${totalAssignedQty} de ${itemDb?.name || "Item"} (${activePack.color || "-"} | ${activePack.size || "-"})`,
           read: false,
+          tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
+        });
+      } else {
+        db.addNotification?.({
+          message: `Produção Finalizada [${procName}]: ${totalAssignedQty} un. de ${itemDb?.name || activePack.customProductName || "Item"} (${activePack.color || "-"} | ${activePack.size || "-"}) por ${opName}${ordersSuffix}`,
+          read: false,
+          tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
         });
       }
+    } else if (qtyToAllocate > 0) {
+      const itemDb = db.items.find((i) => i.id === activePack.itemId);
+      const opName = operator?.name || currentUser.name;
+      const procName = activePack.processName || "Produção";
+      db.addNotification?.({
+        message: `Produção Concluída (Estoque Intermediário) [${procName}]: ${qtyToAllocate} un. de ${itemDb?.name || activePack.customProductName || "Item"} (${activePack.color || "-"} | ${activePack.size || "-"}) por ${opName}`,
+        read: false,
+        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
+      });
     }
 
     const itemDbForConsumption = db.items.find(

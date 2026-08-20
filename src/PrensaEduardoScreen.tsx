@@ -271,12 +271,8 @@ export function PrensaEduardoScreen({
       },
     ]);
 
-    if (isManual && mParent) {
-      db.addNotification({
-        message: `Prensa: ${qty} un. de ${mTitle} p/ produto ${db.items.find((i) => i.id === mParent)?.name} (${mProcess}) via ${finalOperatorName}`,
-        read: false,
-      });
-    } else if (!isManual && updateOS) {
+    let changedOrders: any[] = [];
+    if (!isManual && updateOS) {
       let ordersForProduct = pendingOrders.filter(
         (o) =>
           o.itemId === activePack.itemId &&
@@ -311,14 +307,12 @@ export function PrensaEduardoScreen({
       });
 
       let qtyToAllocate = qty;
-      let changedOrders: any[] = [];
       for (const o of ordersForProduct) {
         if (qtyToAllocate <= 0) break;
         const remaining = Math.max(
           0,
           o.totalQuantity - (o.producedQuantity || 0) - (o.corteQuantity || 0),
         );
-        // Wait, previous code just added to producedQuantity, but if this is Prensa it might just be part of production.
         if (remaining > 0) {
           const alloc = Math.min(remaining, qtyToAllocate);
           qtyToAllocate -= alloc;
@@ -330,11 +324,26 @@ export function PrensaEduardoScreen({
       }
       if (changedOrders.length > 0) {
         db.updateOrders(changedOrders);
-        db.addNotification({
-          message: `Prensa: ${qty} un. (${db.items.find((i) => i.id === activePack.itemId)?.name}) FINALIZADAS por ${finalOperatorName}`,
-          read: false,
-        });
       }
+    }
+
+    const attendedOrdersText = changedOrders.map((o) => o.orderCode ? `#${o.orderCode}` : `#${o.id}`).filter(Boolean);
+    const ordersSuffix = attendedOrdersText.length > 0 ? ` (Pedidos: ${attendedOrdersText.join(", ")})` : "";
+
+    if (isManual) {
+      const parentName = mParent ? db.items.find((i) => i.id === mParent)?.name : "";
+      db.addNotification({
+        message: `Prensa: ${qty} un. de "${mTitle}" ${parentName ? `p/ produto ${parentName} ` : ""}(${mProcess}) via ${finalOperatorName}`,
+        read: false,
+        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
+      });
+    } else {
+      const itemName = db.items.find((i) => i.id === activePack.itemId)?.name || "Item";
+      db.addNotification({
+        message: `Prensa: ${qty} un. de ${itemName} FINALIZADAS por ${finalOperatorName}${ordersSuffix}`,
+        read: false,
+        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
+      });
     }
   };
 

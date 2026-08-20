@@ -137,6 +137,7 @@ const INITIAL_USERS: User[] = [
     id: "representante_kesse",
     name: "Kesse Representante",
     role: "REPRESENTANTE",
+    password: "1111",
     phone: "",
     tenantId: "imperio",
   },
@@ -144,6 +145,7 @@ const INITIAL_USERS: User[] = [
     id: "representante_imperio",
     name: "Império Representante",
     role: "REPRESENTANTE",
+    password: "1111",
     phone: "",
     tenantId: "imperio",
   },
@@ -151,6 +153,7 @@ const INITIAL_USERS: User[] = [
     id: "representante_andre",
     name: "André Representante",
     role: "REPRESENTANTE",
+    password: "1111",
     phone: "",
     tenantId: "imperio",
   },
@@ -158,6 +161,39 @@ const INITIAL_USERS: User[] = [
     id: "representante_danilo",
     name: "Danilo Representante",
     role: "REPRESENTANTE",
+    password: "1111",
+    phone: "",
+    tenantId: "imperio",
+  },
+  {
+    id: "representante_angelo",
+    name: "Ângelo representante",
+    role: "REPRESENTANTE",
+    password: "1111",
+    phone: "",
+    tenantId: "imperio",
+  },
+  {
+    id: "pedidos_loja_imperio",
+    name: "Pedidos LOJA Imperio",
+    role: "REPRESENTANTE",
+    password: "1111",
+    phone: "",
+    tenantId: "imperio",
+  },
+  {
+    id: "representante_lilian",
+    name: "Lilian Representante",
+    role: "REPRESENTANTE",
+    password: "1111",
+    phone: "",
+    tenantId: "imperio",
+  },
+  {
+    id: "pedidos_ddesigner",
+    name: "Pedidos DDesigner",
+    role: "REPRESENTANTE",
+    password: "1111",
     phone: "",
     tenantId: "imperio",
   },
@@ -224,16 +260,22 @@ export function useDatabase(currentUser?: User | null) {
       try {
         const parsed = JSON.parse(saved);
         // Garante que novos campos nos INITIAL_USERS sejam mesclados caso não existam no salvo
-        return INITIAL_USERS.map((initU) => {
+        const merged = INITIAL_USERS.map((initU) => {
           const match = parsed.find((p: User) => p.id === initU.id);
-          const merged = match ? { ...initU, ...match } : initU;
+          const mergedU = match ? { ...initU, ...match } : initU;
           if (initU.id === "raul") {
-            merged.password = "230213";
-            merged.role = "ADMIN";
-            merged.tenantId = "global";
+            mergedU.password = "230213";
+            mergedU.role = "ADMIN";
+            mergedU.tenantId = "global";
           }
-          return merged;
+          return mergedU;
         });
+        parsed.forEach((p: User) => {
+          if (!merged.some((u) => u.id === p.id)) {
+            merged.push(p);
+          }
+        });
+        return merged;
       } catch (e) {
         return INITIAL_USERS;
       }

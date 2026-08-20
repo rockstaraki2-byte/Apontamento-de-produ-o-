@@ -260,6 +260,11 @@ export function PinturaScreen({
           customProductName: activePack.customProductName,
         },
       ]);
+      db.addNotification?.({
+        message: `Pintura Finalizada (Avulso): ${qtyToAllocate} un. de "${activePack.customProductName || "Item Avulso"}" por ${currentUser.name}`,
+        read: false,
+        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
+      });
       db.removeActivePack(activePack.id);
       setSelectedPackId(null);
       setPackQuantity("");
@@ -376,6 +381,22 @@ export function PinturaScreen({
         log.id = Date.now() + Math.random();
       });
       db.addLogs(logsToAdd);
+
+      const itemDb = db.items.find((i) => i.id === activePack.itemId);
+      const attendedOrdersText = changedOrders.map((o) => o.orderCode ? `#${o.orderCode}` : `#${o.id}`).filter(Boolean);
+      const ordersSuffix = attendedOrdersText.length > 0 ? ` (Pedidos: ${attendedOrdersText.join(", ")})` : "";
+      db.addNotification?.({
+        message: `Pintura Finalizada: ${totalAssignedQty} de ${itemDb?.name || "Item"} (${activePack.color || "-"} | ${activePack.size || "-"}) por ${currentUser.name}${ordersSuffix}`,
+        read: false,
+        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
+      });
+    } else if (qtyToAllocate > 0) {
+      const itemDb = db.items.find((i) => i.id === activePack.itemId);
+      db.addNotification?.({
+        message: `Pintura Finalizada (Estoque Intermediário): ${qtyToAllocate} de ${itemDb?.name || "Item"} (${activePack.color || "-"} | ${activePack.size || "-"}) por ${currentUser.name}`,
+        read: false,
+        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
+      });
     }
 
     if (changedOrders.length > 0) db.updateOrders(changedOrders);

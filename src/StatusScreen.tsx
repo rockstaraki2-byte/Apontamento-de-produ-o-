@@ -2,8 +2,9 @@ import React, { useState, useMemo } from "react";
 import { useDatabase } from "./useDatabase";
 import type { OrderStatus, Order } from "./types";
 import { motion, AnimatePresence } from "motion/react";
-import { X, Trash2, Phone, Copy, Printer, Loader2 } from "lucide-react";
+import { X, Trash2, Phone, Copy, Printer, Loader2, Edit2 } from "lucide-react";
 import { normalizeString } from "./searchUtils";
+import { OrderEditModal } from "./components/OrderEditModal";
 
 export function StatusScreen({
   db,
@@ -18,6 +19,7 @@ export function StatusScreen({
   const [selectedBatchFilter, setSelectedBatchFilter] = useState<"TODOS" | "COM_LOTE" | "SEM_LOTE" | number>("TODOS");
   const [quickInvoiceCode, setQuickInvoiceCode] = useState<string | null>(null);
   const [quickInvoiceQty, setQuickInvoiceQty] = useState<{ [orderId: number]: number | "" }>({});
+  const [editingOrderGroupCode, setEditingOrderGroupCode] = useState<string | null>(null);
 
   React.useEffect(() => {
     const handler = setTimeout(() => {
@@ -234,25 +236,87 @@ export function StatusScreen({
 
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
 
-  const handleBulkDelete = async () => {
-    const canDelete =
+  const isKesseOwnOrder = (o: Order | undefined) => {
+    if (!o) return false;
+    if (currentUser.id === "representante_kesse") {
+      return (
+        o.representativeId === "representante_kesse" ||
+        o.representativeId === currentUser.id ||
+        (o.representativeName && o.representativeName.toLowerCase().includes("kesse"))
+      );
+    }
+    return false;
+  };
+
+  const isKesseOwnGroup = (ordersInGroup: Order[]) => {
+    if (currentUser.id !== "representante_kesse") return false;
+    return ordersInGroup.some(isKesseOwnOrder);
+  };
+
+  const canDeleteOrder = (o: Order | undefined) => {
+    if (currentUser.role === "LEITURA") return false;
+    if (
       currentUser.id === "raul" ||
       currentUser.role === "ADMIN" ||
       currentUser.role === "GERENCIA" ||
-      currentUser.permissions?.canDeleteOrders ||
-      currentUser.permissions?.canBulkDelete;
-
-    if (!canDelete) {
-      alert("Acesso negado: Você não possui permissão para realizar exclusão de pedidos em massa.");
-      return;
+      currentUser.permissions?.canDeleteOrders
+    ) {
+      return true;
     }
+    if (isKesseOwnOrder(o)) return true;
+    return false;
+  };
 
-    if (currentUser.role === "LEITURA" || currentUser.role === "REPRESENTANTE") return;
+  const canDeleteGroup = (ordersInGroup: Order[]) => {
+    if (currentUser.role === "LEITURA") return false;
+    if (
+      currentUser.id === "raul" ||
+      currentUser.role === "ADMIN" ||
+      currentUser.role === "GERENCIA" ||
+      currentUser.permissions?.canDeleteOrders
+    ) {
+      return true;
+    }
+    if (isKesseOwnGroup(ordersInGroup)) return true;
+    return false;
+  };
+
+  const canEditGroup = (ordersInGroup: Order[]) => {
+    if (currentUser.role === "LEITURA") return false;
+    if (
+      currentUser.id === "raul" ||
+      currentUser.role === "ADMIN" ||
+      currentUser.role === "GERENCIA" ||
+      currentUser.role === "PCP" ||
+      currentUser.permissions?.canEditOrders
+    ) {
+      return true;
+    }
+    if (isKesseOwnGroup(ordersInGroup)) return true;
+    return false;
+  };
+
+  const handleBulkDelete = async () => {
     if (selectedOrderCodesForPrint.length === 0) return;
 
     const ordersToDelete = db.orders.filter((o) =>
       selectedOrderCodesForPrint.includes(o.orderCode)
     );
+
+    const isAuthorized =
+      currentUser.id === "raul" ||
+      currentUser.role === "ADMIN" ||
+      currentUser.role === "GERENCIA" ||
+      currentUser.permissions?.canDeleteOrders ||
+      currentUser.permissions?.canBulkDelete ||
+      (currentUser.id === "representante_kesse" && ordersToDelete.every(isKesseOwnOrder));
+
+    if (!isAuthorized) {
+      alert("Acesso negado: Você não possui permissão para realizar exclusão de pedidos em massa.");
+      return;
+    }
+
+    if (currentUser.role === "LEITURA") return;
 
     const msg = `Tem certeza que deseja excluir em massa os ${selectedOrderCodesForPrint.length} pedidos selecionados (totalizando ${ordersToDelete.length} itens)?\n\nEssa ação é irreversível e removerá permanentemente os pedidos e seus dados de produção do sistema.`;
 
@@ -277,18 +341,12 @@ export function StatusScreen({
   };
 
   const handleDeleteOrder = (orderId: number, orderCode: string) => {
-    const canDelete =
-      currentUser.id === "raul" ||
-      currentUser.role === "ADMIN" ||
-      currentUser.role === "GERENCIA" ||
-      currentUser.permissions?.canDeleteOrders;
-
-    if (!canDelete) {
-      alert("Acesso negado: Você não possui permissão para excluir pedidos.");
+    const targetOrder = db.orders.find((o) => o.id === orderId);
+    if (!canDeleteOrder(targetOrder)) {
+      alert("Acesso negado: Você não possui permissão para excluir este pedido ou item.");
       return;
     }
 
-    if (currentUser.role === "LEITURA" || currentUser.role === "REPRESENTANTE") return;
     if (confirm(`Tem certeza que deseja excluir este item do pedido #${orderCode}?`)) {
       db.deleteOrder(orderId);
       const remainingForCode = db.orders.filter(o => o.orderCode === orderCode && o.id !== orderId);
@@ -299,24 +357,20 @@ export function StatusScreen({
   };
 
   const handleDeleteWholeGroup = async (code: string, ordersInGroup: Order[]) => {
-    const canDelete =
-      currentUser.id === "raul" ||
-      currentUser.role === "ADMIN" ||
-      currentUser.role === "GERENCIA" ||
-      currentUser.permissions?.canDeleteOrders;
-
-    if (!canDelete) {
-      alert("Acesso negado: Você não possui permissão para excluir pedidos.");
+    if (!canDeleteGroup(ordersInGroup)) {
+      alert("Acesso negado: Você não possui permissão para excluir este pedido.");
       return;
     }
 
-    if (currentUser.role === "LEITURA" || currentUser.role === "REPRESENTANTE") return;
     const msg = ordersInGroup.length > 1 
       ? `Tem certeza que deseja excluir o pedido #${code} por completo (contendo ${ordersInGroup.length} itens)?` 
       : `Tem certeza que deseja excluir o pedido #${code}?`;
     if (confirm(msg)) {
       for (const o of ordersInGroup) {
         await db.deleteOrder(o.id);
+      }
+      if (selectedOrderCode === code) {
+        setSelectedOrderCode(null);
       }
     }
   };
@@ -331,6 +385,8 @@ export function StatusScreen({
         await db.addOrder({
           ...rest,
           orderCode: newCode,
+          representativeName: currentUser.role === "REPRESENTANTE" ? currentUser.name : rest.representativeName,
+          representativeId: currentUser.role === "REPRESENTANTE" ? currentUser.id : rest.representativeId,
         });
       }
       alert(`Pedido ${code} replicado com sucesso como ${newCode}!`);
@@ -1543,13 +1599,23 @@ export function StatusScreen({
                   className="flex items-center justify-end gap-2 mt-3 pt-2.5 border-t border-slate-100"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {currentUser.role !== "LEITURA" && currentUser.role !== "REPRESENTANTE" && (
+                  {canDeleteGroup(orders) && (
                     <button
                       type="button"
                       onClick={() => handleDeleteWholeGroup(code, orders)}
-                      className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[10px] rounded-lg transition active:scale-95 flex items-center gap-1 cursor-pointer mr-auto"
+                      className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[10px] rounded-lg transition active:scale-95 flex items-center gap-1 cursor-pointer mr-auto border border-rose-200"
                     >
                       <Trash2 size={12} /> Excluir Pedido
+                    </button>
+                  )}
+                  {canEditGroup(orders) && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingOrderGroupCode(code)}
+                      className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-[10px] rounded-lg transition active:scale-95 flex items-center gap-1 cursor-pointer border border-amber-200"
+                      title="Editar cabeçalho, condições e itens do pedido"
+                    >
+                      <Edit2 size={12} /> Editar Pedido
                     </button>
                   )}
                   {currentUser.role !== "LEITURA" && (
@@ -1772,9 +1838,27 @@ export function StatusScreen({
               className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
             >
               <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-indigo-50/50">
-                <h3 className="font-bold text-xl text-gray-800">
-                  Detalhes do Pedido: {selectedOrderCode}
-                </h3>
+                <div className="flex items-center gap-3">
+                  <h3 className="font-bold text-xl text-gray-800">
+                    Detalhes do Pedido: {selectedOrderCode}
+                  </h3>
+                  {(() => {
+                    const currentGroup = groupedOrders.find(([code]) => code === selectedOrderCode)?.[1] || [];
+                    if (canEditGroup(currentGroup)) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setEditingOrderGroupCode(selectedOrderCode)}
+                          className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold text-xs rounded-lg transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs"
+                          title="Editar cabeçalho, condições de pagamento e itens"
+                        >
+                          <Edit2 size={13} /> Editar Pedido
+                        </button>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
                 <button
                   onClick={() => setSelectedOrderCode(null)}
                   className="p-1 rounded-full hover:bg-gray-200 transition"
@@ -1921,7 +2005,7 @@ export function StatusScreen({
                               <option value="FATURADO_PARCIAL">Faturado Parcial</option>
                               <option value="FATURADO">Faturado</option>
                             </select>
-                            {currentUser.role !== "LEITURA" && currentUser.role !== "REPRESENTANTE" && (
+                            {canDeleteOrder(o) && (
                               <button
                                 type="button"
                                 onClick={() => handleDeleteOrder(o.id, selectedOrderCode)}
@@ -2368,6 +2452,20 @@ _Mensagem do Sistema Império Jomarci_`;
             </div>
           </div>
         </div>
+      )}
+      {/* Modal de Edição Completa de Pedido */}
+      {editingOrderGroupCode && (
+        <OrderEditModal
+          orderCode={editingOrderGroupCode}
+          db={db}
+          currentUser={currentUser}
+          onClose={() => setEditingOrderGroupCode(null)}
+          onSaveSuccess={(newCode) => {
+            if (selectedOrderCode === editingOrderGroupCode) {
+              setSelectedOrderCode(newCode);
+            }
+          }}
+        />
       )}
     </div>
   );
