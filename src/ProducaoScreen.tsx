@@ -217,46 +217,60 @@ export function ProducaoScreen({
     setView("LIST_ACTIVE");
   };
 
-  const activePacksList = db.activePacks.filter((p) => {
-    if (isRetratil || currentUser.role === "MONTAGEM_RETRATIL") {
-      if (p.type !== "MONTAGEM_RETRATIL") return false;
+  const activePacksList = React.useMemo(() => {
+    return db.activePacks.filter((p) => {
+      if (isRetratil || currentUser.role === "MONTAGEM_RETRATIL") {
+        if (p.type !== "MONTAGEM_RETRATIL") return false;
+        return (
+          p.operatorId === currentUser.id ||
+          p.operatorId.startsWith(currentUser.id + " - ")
+        );
+      }
       return (
-        p.operatorId === currentUser.id ||
-        p.operatorId.startsWith(currentUser.id + " - ")
+        (p.type === "PRODUCAO" || p.type === "MONTAGEM_RETRATIL") &&
+        (currentUser.role === "ADMIN" || currentUser.role === "GERENCIA"
+          ? true
+          : p.operatorId === currentUser.id ||
+            p.operatorId.startsWith(currentUser.id + " - "))
       );
-    }
-    return (
-      (p.type === "PRODUCAO" || p.type === "MONTAGEM_RETRATIL") &&
-      (currentUser.role === "ADMIN" || currentUser.role === "GERENCIA"
-        ? true
-        : p.operatorId === currentUser.id ||
-          p.operatorId.startsWith(currentUser.id + " - "))
-    );
-  });
-
-  const getPackProgress = (pack: any) => {
-    if (pack.itemId === 0) return null;
-    const key = getProductKey(
-      pack.itemId,
-      pack.color,
-      pack.size,
-      pack.variation,
-    );
-    const matchedOrders = db.orders.filter((o) => {
-      if (o.status === "EMBALADO" || o.status === "FATURADO") return false;
-      return getProductKey(o.itemId, o.color, o.size, o.variation) === key;
     });
-    if (matchedOrders.length === 0) return null;
-    const total = matchedOrders.reduce(
-      (sum, o) => sum + parseQty(o.totalQuantity ?? (o as any).quantity),
-      0,
-    );
-    const produced = matchedOrders.reduce(
-      (sum, o) => sum + parseQty(o.producedQuantity),
-      0,
-    );
-    return { produced, total };
-  };
+  }, [db.activePacks, isRetratil, currentUser.role, currentUser.id]);
+
+  const packProgressMap = React.useMemo(() => {
+    const progressByKey = new Map<string, { produced: number; total: number }>();
+    if (!db.orders || db.orders.length === 0) return progressByKey;
+
+    db.orders.forEach((o) => {
+      if (o.status === "EMBALADO" || o.status === "FATURADO") return;
+      const key = getProductKey(o.itemId, o.color, o.size, o.variation);
+      const totalQty = parseQty(o.totalQuantity ?? (o as any).quantity);
+      const prodQty = parseQty(o.producedQuantity);
+
+      const existing = progressByKey.get(key);
+      if (existing) {
+        existing.total += totalQty;
+        existing.produced += prodQty;
+      } else {
+        progressByKey.set(key, { produced: prodQty, total: totalQty });
+      }
+    });
+
+    return progressByKey;
+  }, [db.orders]);
+
+  const getPackProgress = React.useCallback(
+    (pack: any) => {
+      if (!pack || pack.itemId === 0) return null;
+      const key = getProductKey(
+        pack.itemId,
+        pack.color,
+        pack.size,
+        pack.variation,
+      );
+      return packProgressMap.get(key) || null;
+    },
+    [packProgressMap],
+  );
 
   const userSectors = React.useMemo(
     () => (db.sectors || []).filter((s) => userSectorIds.includes(s.id)),
@@ -320,19 +334,44 @@ export function ProducaoScreen({
     retratilPcpPlans,
   ]);
 
-  const getLotesForGroup = (itemId: number) => {
-    if (!db.productionBatches || db.productionBatches.length === 0) return [];
-    return db.productionBatches.filter((b) => {
-      if (b.itemIds?.includes(itemId)) return true;
+  const batchesByItemId = React.useMemo(() => {
+    const map = new Map<number, typeof db.productionBatches>();
+    if (!db.productionBatches || db.productionBatches.length === 0) return map;
+
+    const orderItemMap = new Map<number, number>();
+    if (db.orders && db.orders.length > 0) {
+      db.orders.forEach((o) => {
+        if (o.id && o.itemId) {
+          orderItemMap.set(Number(o.id), Number(o.itemId));
+        }
+      });
+    }
+
+    db.productionBatches.forEach((b) => {
+      const itemIdsInBatch = new Set<number>();
+      if (b.itemIds && b.itemIds.length > 0) {
+        b.itemIds.forEach((id) => itemIdsInBatch.add(Number(id)));
+      }
       if (b.orderIds && b.orderIds.length > 0) {
-        return b.orderIds.some((oid) => {
-          const ord = db.orders.find((o) => Number(o.id) === Number(oid));
-          return ord && Number(ord.itemId) === Number(itemId);
+        b.orderIds.forEach((oid) => {
+          const itemId = orderItemMap.get(Number(oid));
+          if (itemId) itemIdsInBatch.add(itemId);
         });
       }
-      return false;
+      itemIdsInBatch.forEach((itemId) => {
+        if (!map.has(itemId)) {
+          map.set(itemId, []);
+        }
+        map.get(itemId)!.push(b);
+      });
     });
-  };
+
+    return map;
+  }, [db.productionBatches, db.orders]);
+
+  const getLotesForGroup = React.useCallback((itemId: number) => {
+    return batchesByItemId.get(Number(itemId)) || [];
+  }, [batchesByItemId]);
 
   const productGroups = React.useMemo(() => {
     const groups = new Map<
@@ -1754,16 +1793,27 @@ export function ProducaoScreen({
     );
   }
 
-  if (view === "NEW_PACK") {
-    const filteredGroups = productGroups.filter((g) => {
-      if (!debouncedSearchTerm) return true;
-      const item = db.items.find((i) => i.id === g.itemId);
+  const itemsById = React.useMemo(() => {
+    const map = new Map<number, (typeof db.items)[0]>();
+    (db.items || []).forEach((item) => {
+      map.set(item.id, item);
+    });
+    return map;
+  }, [db.items]);
+
+  const filteredProductGroups = React.useMemo(() => {
+    if (!debouncedSearchTerm) return productGroups;
+    const normalizedTerm = normalizeString(debouncedSearchTerm);
+    return productGroups.filter((g) => {
+      const item = itemsById.get(g.itemId);
       const searchStr = normalizeString(
         `${item?.name || ""} ${g.color} ${g.size} ${g.variation}`,
       );
-      return searchStr.includes(normalizeString(debouncedSearchTerm));
+      return searchStr.includes(normalizedTerm);
     });
+  }, [productGroups, debouncedSearchTerm, itemsById]);
 
+  if (view === "NEW_PACK") {
     return (
       <div className="flex flex-col h-full p-2 w-full max-w-lg mx-auto">
         <button
@@ -1783,17 +1833,18 @@ export function ProducaoScreen({
           className="border border-gray-300 p-2 rounded-lg mb-4"
         />
         <div className="flex-1 overflow-y-auto w-full">
-          {filteredGroups.length === 0 ? (
+          {filteredProductGroups.length === 0 ? (
             <p className="text-gray-500 text-center mt-4">
               Nenhum produto encontrado.
             </p>
           ) : (
             <div className="grid gap-3">
-              {filteredGroups.map((g, idx) => {
-                const item = db.items.find((i) => i.id === g.itemId);
+              {filteredProductGroups.map((g, idx) => {
+                const item = itemsById.get(g.itemId);
+                const lotes = getLotesForGroup(g.itemId);
                 return (
                   <div
-                    key={idx}
+                    key={`${g.itemId}-${g.color}-${g.size}-${g.variation}-${idx}`}
                     onClick={() => startPackaging(g)}
                     className="bg-white p-4 border border-gray-200 flex justify-between items-center rounded-lg shadow-sm cursor-pointer hover:border-blue-400 hover:shadow-md transition gap-3"
                   >
@@ -1816,20 +1867,14 @@ export function ProducaoScreen({
                         {g.color || "-"} | {g.size || "-"} |{" "}
                         {g.variation || "-"}
                       </span>
-                      {(() => {
-                        const lotes = getLotesForGroup(g.itemId);
-                        if (lotes.length > 0) {
-                          return (
-                            <div className="mt-1 flex items-center gap-1.5 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md w-fit">
-                              <Package size={12} className="text-emerald-600 shrink-0" />
-                              <span className="truncate">
-                                {lotes.map((l) => `Lote #${l.code || l.id}`).join(", ")}
-                              </span>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })()}
+                      {lotes.length > 0 && (
+                        <div className="mt-1 flex items-center gap-1.5 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md w-fit">
+                          <Package size={12} className="text-emerald-600 shrink-0" />
+                          <span className="truncate">
+                            {lotes.map((l) => `Lote #${l.code || l.id}`).join(", ")}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div className="flex flex-col items-end">
                       <span className="text-xs text-gray-500 mb-1">
