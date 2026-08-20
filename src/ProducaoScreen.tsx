@@ -368,9 +368,11 @@ export function ProducaoScreen({
     welderName?: string,
     directGroup?: any,
     directIsManual?: boolean,
+    customOperatorName?: string,
   ) => {
-    const operatorId = welderName
-      ? `${currentUser.id} - ${welderName}`
+    const effectiveOperatorName = welderName || customOperatorName || (selectedOperator && selectedOperator !== currentUser.name ? selectedOperator : undefined);
+    const operatorId = effectiveOperatorName
+      ? `${currentUser.id} - ${effectiveOperatorName}`
       : currentUser.id;
 
     const isManual =
@@ -466,6 +468,8 @@ export function ProducaoScreen({
     setSelectedWelder("");
     setSelectedOperator("");
     setSelectedProcess("");
+    setSelectedSectorId(null);
+    setSelectedSectorName("");
   };
 
   const handleStartManualProduction = () => {
@@ -967,6 +971,7 @@ export function ProducaoScreen({
     if (db.activeTenantId === "imperio") {
       return [
         { id: 1, name: "Setor Solda (Cabine)", department: "Com escolha de soldador e sub-processo" },
+        { id: 5, name: "Setor de Acabamento", department: "Lixamento, escovação e preparação para pintura" },
         { id: 2, name: "Montagem de Retrátil", department: "Montar, conificar, embalar" },
         { id: 3, name: "Montagem Rodrigo (Barra Chata)", department: "Renata / Pendurar barra chata" },
         { id: 4, name: "Geral / Outros Setores", department: "Operador livre e confirmação simples" },
@@ -1351,6 +1356,12 @@ export function ProducaoScreen({
               <p className="text-sm text-gray-500 text-center">
                 Deseja iniciar a operação para este item?
               </p>
+              {selectedSectorName && (
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-xs font-bold text-emerald-800">
+                  <span>{getSectorIcon(selectedSectorName)}</span>
+                  <span>{selectedSectorName}</span>
+                </div>
+              )}
             </div>
 
             <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl flex items-center gap-4">
@@ -2016,15 +2027,27 @@ export function ProducaoScreen({
                             </span>
                           )}
                           {pack.operatorId.includes(" - ") && (
-                            <div className="flex items-center gap-1.5 mt-0.5">
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                               <span className="text-[10px] font-bold text-indigo-700 flex items-center gap-1 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded self-start">
-                                🔧 Soldador: {pack.operatorId.split(" - ")[1]}
+                                👤 Executante: {pack.operatorId.split(" - ")[1]}
                               </span>
-                              {pack.processName && (
+                              {pack.sectorName && (
+                                <span className="text-[10px] font-bold text-emerald-800 flex items-center gap-1 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded self-start">
+                                  {getSectorIcon(pack.sectorName)} {pack.sectorName}
+                                </span>
+                              )}
+                              {pack.processName && pack.processName !== pack.sectorName && (
                                 <span className="text-[10px] font-bold text-amber-800 flex items-center gap-1 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded self-start">
                                   ⚡ {pack.processName}
                                 </span>
                               )}
+                            </div>
+                          )}
+                          {!pack.operatorId.includes(" - ") && pack.sectorName && (
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-[10px] font-bold text-emerald-800 flex items-center gap-1 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded self-start">
+                                {getSectorIcon(pack.sectorName)} {pack.sectorName}
+                              </span>
                             </div>
                           )}
                           {(() => {
