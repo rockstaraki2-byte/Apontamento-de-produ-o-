@@ -15978,7 +15978,11 @@ export default function App() {
               currentUser.id === "projetista_marcos") && (
               <Route
                 path="/lotes"
-                element={<LotesScreen db={db} currentUser={currentUser} />}
+                element={
+                  <ScreenErrorBoundary screenName="Lotes de Gerência">
+                    <LotesScreen db={db} currentUser={currentUser} />
+                  </ScreenErrorBoundary>
+                }
               />
             )}
             {(currentUser.role === "ADMIN" ||

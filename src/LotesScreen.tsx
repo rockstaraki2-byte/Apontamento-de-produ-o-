@@ -122,8 +122,19 @@ export function LotesScreen({
   }, [currentUser]);
 
   const getOrderSectorTracking = (order: Order, batchId: number) => {
+    if (!order) {
+      return {
+        isActive: false,
+        hasHistory: false,
+        sectorName: "",
+        operatorName: "",
+        timestamp: "",
+      };
+    }
+
     // 1. Check if the order/item is currently active in db.activePacks
-    const activeTask = db.activePacks?.find((t) => {
+    const activeTask = (db.activePacks || []).find((t) => {
+      if (!t) return false;
       if (t.taskId && (t.taskId === order.id || String(t.taskId) === String(order.id))) return true;
       if (t.associatedBatchId === batchId && t.itemId === order.itemId) return true;
       if (t.itemId === order.itemId && (!t.associatedBatchId || t.associatedBatchId === batchId)) return true;
@@ -131,23 +142,24 @@ export function LotesScreen({
     });
 
     if (activeTask) {
-      const rawOp = (activeTask.operatorId || "").trim().toLowerCase();
+      const rawOp = String(activeTask.operatorId || "").trim().toLowerCase();
       const baseOp = rawOp.split(" - ")[0].trim();
-      const operator = db.users.find(
+      const operator = (db.users || []).find(
         (u) =>
-          u.id.toLowerCase() === baseOp ||
-          u.id.toLowerCase() === rawOp ||
-          (u.name && u.name.toLowerCase() === baseOp) ||
-          (u.name && u.name.toLowerCase() === rawOp)
+          u &&
+          (String(u.id || "").toLowerCase() === baseOp ||
+            String(u.id || "").toLowerCase() === rawOp ||
+            (u.name && u.name.toLowerCase() === baseOp) ||
+            (u.name && u.name.toLowerCase() === rawOp))
       );
 
       let sectorName = activeTask.sectorName;
       if (!sectorName && activeTask.sectorId) {
-        const sec = db.sectors.find((s) => String(s.id) === String(activeTask.sectorId));
+        const sec = (db.sectors || []).find((s) => s && String(s.id) === String(activeTask.sectorId));
         if (sec) sectorName = sec.name;
       }
-      if (!sectorName && operator?.sectorIds && operator.sectorIds.length > 0) {
-        const sec = db.sectors.find((s) => operator.sectorIds?.some((sid) => String(sid) === String(s.id)));
+      if (!sectorName && operator && Array.isArray(operator.sectorIds) && operator.sectorIds.length > 0) {
+        const sec = (db.sectors || []).find((s) => s && operator.sectorIds?.some((sid) => String(sid) === String(s.id)));
         if (sec) sectorName = sec.name;
       }
       if (!sectorName && operator?.role) {
@@ -195,24 +207,25 @@ export function LotesScreen({
 
     // 2. Check the most recent production log in db.logs
     const relevantLogs = (db.logs || []).filter(
-      (l) => l.orderId === order.id || l.itemId === order.itemId
+      (l) => l && (l.orderId === order.id || l.itemId === order.itemId)
     );
 
     if (relevantLogs.length > 0) {
-      const lastLog = [...relevantLogs].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))[0];
-      const rawOp = (lastLog.operatorId || "").trim().toLowerCase();
+      const lastLog = [...relevantLogs].sort((a, b) => (b?.timestamp || 0) - (a?.timestamp || 0))[0];
+      const rawOp = String(lastLog?.operatorId || "").trim().toLowerCase();
       const baseOp = rawOp.split(" - ")[0].trim();
-      const operator = db.users.find(
+      const operator = (db.users || []).find(
         (u) =>
-          u.id.toLowerCase() === baseOp ||
-          u.id.toLowerCase() === rawOp ||
-          (u.name && u.name.toLowerCase() === baseOp) ||
-          (u.name && u.name.toLowerCase() === rawOp)
+          u &&
+          (String(u.id || "").toLowerCase() === baseOp ||
+            String(u.id || "").toLowerCase() === rawOp ||
+            (u.name && u.name.toLowerCase() === baseOp) ||
+            (u.name && u.name.toLowerCase() === rawOp))
       );
 
       let sectorName = "";
-      if (operator?.sectorIds && operator.sectorIds.length > 0) {
-        const sec = db.sectors.find((s) => operator.sectorIds?.some((sid) => String(sid) === String(s.id)));
+      if (operator && Array.isArray(operator.sectorIds) && operator.sectorIds.length > 0) {
+        const sec = (db.sectors || []).find((s) => s && operator.sectorIds?.some((sid) => String(sid) === String(s.id)));
         if (sec) sectorName = sec.name;
       }
       if (!sectorName && operator?.role) {
@@ -232,7 +245,7 @@ export function LotesScreen({
         };
         if (roleMap[operator.role]) sectorName = roleMap[operator.role];
       }
-      if (!sectorName && lastLog.type) {
+      if (!sectorName && lastLog?.type) {
         const typeMap: Record<string, string> = {
           PINTURA: "Pintura",
           CORTE_LASER: "Corte Laser",
@@ -249,15 +262,23 @@ export function LotesScreen({
         sectorName = typeMap[lastLog.type] || lastLog.processName || "Produção";
       }
 
-      const formattedTime = lastLog.timestamp
-        ? new Date(lastLog.timestamp).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
-        : "";
+      let formattedTime = "";
+      if (lastLog?.timestamp) {
+        try {
+          const d = new Date(lastLog.timestamp);
+          if (!isNaN(d.getTime())) {
+            formattedTime = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+          }
+        } catch {
+          formattedTime = "";
+        }
+      }
 
       return {
         isActive: false,
         hasHistory: true,
         sectorName: sectorName || "Produção",
-        operatorName: operator?.name || lastLog.operatorId || "Operador",
+        operatorName: operator?.name || lastLog?.operatorId || "Operador",
         timestamp: formattedTime,
       };
     }
@@ -336,9 +357,10 @@ export function LotesScreen({
 
   // Filter batches according to target user permissions
   const batches = useMemo(() => {
-    const baseList = db.productionBatches;
+    const baseList = Array.isArray(db.productionBatches) ? db.productionBatches : [];
 
     if (
+      !currentUser ||
       currentUser.role === "ADMIN" ||
       currentUser.role === "PCP" ||
       currentUser.role === "GERENCIA" ||
@@ -348,16 +370,17 @@ export function LotesScreen({
     }
     
     // For operators with assigned batches, show assigned, otherwise show baseList
-    const assigned = baseList.filter((b) => b.assignedOperatorIds?.includes(currentUser.id));
+    const assigned = baseList.filter((b) => b && Array.isArray(b.assignedOperatorIds) && b.assignedOperatorIds.includes(currentUser.id));
     return assigned.length > 0 ? assigned : baseList;
   }, [db.productionBatches, currentUser]);
 
   // Apply search term and status filters
   const filteredBatches = useMemo(() => {
-    let result = batches;
+    let result = Array.isArray(batches) ? batches : [];
 
     if (statusFilter !== "ALL") {
       result = result.filter((b) => {
+        if (!b) return false;
         if (statusFilter === "PENDING") return b.status === "PENDENTE" || !b.status;
         if (statusFilter === "IN_PRODUCTION") return b.status === "EM_PRODUCAO";
         if (statusFilter === "COMPLETED") return b.status === "CONCLUIDO";
@@ -368,15 +391,16 @@ export function LotesScreen({
     if (searchTerm.trim() !== "") {
       const term = searchTerm.toLowerCase();
       result = result.filter((b) => {
-        const matchesBatchName = b.name.toLowerCase().includes(term);
-        const matchesOrders = b.orderIds.some((oid) => {
-          const o = db.orders.find((x) => x.id === oid);
+        if (!b) return false;
+        const matchesBatchName = (b.name || "").toLowerCase().includes(term);
+        const matchesOrders = Array.isArray(b.orderIds) && b.orderIds.some((oid) => {
+          const o = (db.orders || []).find((x) => x && x.id === oid);
           if (!o) return false;
           
-          const item = db.items.find((i) => i.id === o.itemId);
+          const item = (db.items || []).find((i) => i && i.id === o.itemId);
           return (
-            o.orderCode.toLowerCase().includes(term) ||
-            o.customerName.toLowerCase().includes(term) ||
+            (o.orderCode || "").toLowerCase().includes(term) ||
+            (o.customerName || "").toLowerCase().includes(term) ||
             (item?.name && item.name.toLowerCase().includes(term))
           );
         });
@@ -387,26 +411,36 @@ export function LotesScreen({
 
     if (dateStart || dateEnd) {
       result = result.filter((b) => {
-        const batchDate = new Date(b.createdAt).toISOString().split("T")[0];
-        if (dateStart && batchDate < dateStart) return false;
-        if (dateEnd && batchDate > dateEnd) return false;
-        return true;
+        if (!b || !b.createdAt) return false;
+        try {
+          const d = new Date(b.createdAt);
+          if (isNaN(d.getTime())) return false;
+          const batchDate = d.toISOString().split("T")[0];
+          if (dateStart && batchDate < dateStart) return false;
+          if (dateEnd && batchDate > dateEnd) return false;
+          return true;
+        } catch {
+          return false;
+        }
       });
     }
 
     // Sort: Active/non-completed batches first (newest to oldest), completed batches last (newest to oldest)
     return [...result].sort((a, b) => {
+      if (!a || !b) return 0;
       const compA = a.status === "CONCLUIDO";
       const compB = b.status === "CONCLUIDO";
       if (compA !== compB) {
         return compA ? 1 : -1; // Completed goes to the bottom
       }
-      return b.createdAt - a.createdAt; // Within same group, show newest first
+      const timeA = typeof a.createdAt === "number" ? a.createdAt : (new Date(a.createdAt || 0).getTime() || 0);
+      const timeB = typeof b.createdAt === "number" ? b.createdAt : (new Date(b.createdAt || 0).getTime() || 0);
+      return timeB - timeA; // Within same group, show newest first
     });
   }, [batches, searchTerm, statusFilter, db.orders, db.items, dateStart, dateEnd]);
 
   const paginatedBatches = useMemo(() => {
-    return filteredBatches.slice(0, visibleCount);
+    return (filteredBatches || []).slice(0, visibleCount);
   }, [filteredBatches, visibleCount]);
 
   // General Statistics
@@ -415,15 +449,17 @@ export function LotesScreen({
     let checkedItems = 0;
     let liberatedItems = 0;
 
-    batches.forEach((b) => {
-      totalItems += b.orderIds.length;
-      checkedItems += b.checkedOrderIds?.length || 0;
-      liberatedItems += b.liberatedOrderIds?.length || 0;
+    (batches || []).forEach((b) => {
+      if (!b) return;
+      const orderCount = Array.isArray(b.orderIds) ? b.orderIds.length : 0;
+      totalItems += orderCount;
+      checkedItems += Array.isArray(b.checkedOrderIds) ? b.checkedOrderIds.length : 0;
+      liberatedItems += Array.isArray(b.liberatedOrderIds) ? b.liberatedOrderIds.length : 0;
     });
 
     return {
-      activeBatches: batches.length,
-      pendingLiberation: totalItems - liberatedItems,
+      activeBatches: (batches || []).length,
+      pendingLiberation: Math.max(0, totalItems - liberatedItems),
       liberatedItems,
       checkedItems,
       totalItems
@@ -1065,10 +1101,24 @@ export function LotesScreen({
             </div>
           ) : (
             paginatedBatches.map((b) => {
-              const total = b.orderIds.length;
-              const checkCount = b.checkedOrderIds?.length || 0;
-              const libCount = b.liberatedOrderIds?.length || 0;
-              const isFullyLiberated = libCount === total;
+              if (!b) return null;
+              const batchOrderIds = Array.isArray(b.orderIds) ? b.orderIds : [];
+              const total = batchOrderIds.length;
+              const checkCount = Array.isArray(b.checkedOrderIds) ? b.checkedOrderIds.length : 0;
+              const libCount = Array.isArray(b.liberatedOrderIds) ? b.liberatedOrderIds.length : 0;
+              const isFullyLiberated = total > 0 && libCount === total;
+
+              let formattedCreatedAt = "-";
+              if (b.createdAt) {
+                try {
+                  const d = new Date(b.createdAt);
+                  if (!isNaN(d.getTime())) {
+                    formattedCreatedAt = d.toLocaleString();
+                  }
+                } catch {
+                  formattedCreatedAt = "-";
+                }
+              }
 
               return (
                 <div
@@ -1080,7 +1130,7 @@ export function LotesScreen({
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <strong className="text-slate-800 text-base font-extrabold tracking-tight">
-                          {b.name}
+                          {b.name || "Lote sem nome"}
                         </strong>
                         <span className="text-[10px] bg-indigo-150 text-indigo-850 px-2.5 py-0.5 rounded-full font-black uppercase tracking-wider">
                           LOTE DE GERÊNCIA
@@ -1094,7 +1144,7 @@ export function LotesScreen({
                       <div className="flex items-center gap-4 text-slate-400 text-[10px] uppercase font-bold tracking-tight">
                         <span className="flex items-center gap-1">
                           <Calendar size={13} />
-                          Enviado em {new Date(b.createdAt).toLocaleString()}
+                          Enviado em {formattedCreatedAt}
                         </span>
                         {b.notes && (
                           <span className="text-indigo-650 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded italic">
@@ -1109,7 +1159,7 @@ export function LotesScreen({
                       <button
                         onClick={() => {
                           setPreviewBatch(b);
-                          setPdfItems(b.orderIds);
+                          setPdfItems(batchOrderIds);
                           setCustomPrintDeadline(b.deadline || "");
                           setCustomPrintNotes(b.notes || "");
                         }}
@@ -1124,7 +1174,7 @@ export function LotesScreen({
                         disabled={isGeneratingAcomp}
                         onClick={() => {
                           setPreviewAcompBatch(b);
-                          setAcompSelectedOrderIds(b.orderIds || []);
+                          setAcompSelectedOrderIds(batchOrderIds);
                           setIsPreviewAcompOpen(true);
                         }}
                         className={`border text-[10px] font-black px-3 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer transition active:scale-[0.98] uppercase tracking-wide bg-indigo-50 border-indigo-200/80 text-indigo-855 hover:bg-indigo-100/80`}
@@ -1137,7 +1187,7 @@ export function LotesScreen({
                       <button
                         onClick={() => {
                           setPreviewEtiquetasBatch(b);
-                          setEtiquetasSelectedOrderIds(b.orderIds || []);
+                          setEtiquetasSelectedOrderIds(batchOrderIds);
                           setEtiquetasSearchTerm("");
                           setIsPreviewEtiquetasOpen(true);
                         }}
@@ -1187,7 +1237,7 @@ export function LotesScreen({
                             Checagem
                           </span>
                           <strong className="text-xs font-extrabold text-slate-700">
-                            {checkCount} / {total} <span className="text-slate-400 font-normal">({Math.round((checkCount / total) * 100)}%)</span>
+                            {checkCount} / {total} <span className="text-slate-400 font-normal">({total > 0 ? Math.round((checkCount / total) * 100) : 0}%)</span>
                           </strong>
                         </div>
                         <div className="text-right border-l pl-4 border-slate-200">
@@ -1195,7 +1245,7 @@ export function LotesScreen({
                             Liberação Fábrica
                           </span>
                           <strong className="text-xs font-extrabold text-[#00b14f]">
-                            {libCount} / {total} <span className="text-slate-400 font-normal">({Math.round((libCount / total) * 100)}%)</span>
+                            {libCount} / {total} <span className="text-slate-400 font-normal">({total > 0 ? Math.round((libCount / total) * 100) : 0}%)</span>
                           </strong>
                         </div>
                       </div>
@@ -1217,13 +1267,13 @@ export function LotesScreen({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-xs">
-                        {b.orderIds.map((oid) => {
-                          const o = db.orders.find((x) => x.id === oid);
+                        {batchOrderIds.map((oid) => {
+                          const o = (db.orders || []).find((x) => x && x.id === oid);
                           if (!o) return null;
-                          const item = db.items.find((i) => i.id === o.itemId);
+                          const item = (db.items || []).find((i) => i && i.id === o.itemId);
 
-                          const isChecked = b.checkedOrderIds?.includes(oid) || false;
-                          const isLiberated = b.liberatedOrderIds?.includes(oid) || false;
+                          const isChecked = (Array.isArray(b.checkedOrderIds) && b.checkedOrderIds.includes(oid)) || false;
+                          const isLiberated = (Array.isArray(b.liberatedOrderIds) && b.liberatedOrderIds.includes(oid)) || false;
                           const sectorInfo = getOrderSectorTracking(o, b.id);
 
                           return (
@@ -1628,23 +1678,24 @@ export function LotesScreen({
                     </span>
                     <button
                       onClick={() => {
-                        if (pdfItems.length === previewBatch.orderIds.length) {
+                        const batchOrderIds = Array.isArray(previewBatch?.orderIds) ? previewBatch.orderIds : [];
+                        if (pdfItems.length === batchOrderIds.length) {
                           setPdfItems([]);
                         } else {
-                          setPdfItems(previewBatch.orderIds);
+                          setPdfItems(batchOrderIds);
                         }
                       }}
                       className="text-[9px] text-emerald-400 font-black hover:underline uppercase cursor-pointer bg-transparent border-0"
                     >
-                      {pdfItems.length === previewBatch.orderIds.length ? "Nenhum" : "Todos"}
+                      {pdfItems.length === (Array.isArray(previewBatch?.orderIds) ? previewBatch.orderIds.length : 0) ? "Nenhum" : "Todos"}
                     </button>
                   </div>
 
                   <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 bg-slate-900/50 p-2 rounded-lg border border-slate-900">
-                    {previewBatch.orderIds.map((oid) => {
-                      const o = db.orders.find((x) => x.id === oid);
+                    {(Array.isArray(previewBatch?.orderIds) ? previewBatch.orderIds : []).map((oid) => {
+                      const o = (db.orders || []).find((x) => x && x.id === oid);
                       if (!o) return null;
-                      const it = db.items.find((i) => i.id === o.itemId);
+                      const it = (db.items || []).find((i) => i && i.id === o.itemId);
                       const isIncluded = pdfItems.includes(oid);
 
                       return (
@@ -1764,12 +1815,12 @@ export function LotesScreen({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-150">
-                        {previewBatch.orderIds
+                        {(Array.isArray(previewBatch?.orderIds) ? previewBatch.orderIds : [])
                           .filter((oid) => pdfItems.includes(oid))
                           .map((oid) => {
-                            const o = db.orders.find((x) => x.id === oid);
+                            const o = (db.orders || []).find((x) => x && x.id === oid);
                             if (!o) return null;
-                            const item = db.items.find((i) => i.id === o.itemId);
+                            const item = (db.items || []).find((i) => i && i.id === o.itemId);
 
                             return (
                               <tr key={oid} className="hover:bg-slate-50/50">
@@ -1824,9 +1875,9 @@ export function LotesScreen({
                       </span>
                       <strong className="text-slate-900 text-sm font-black">
                         Total Geral:{" "}
-                        {previewBatch.orderIds
+                        {(Array.isArray(previewBatch?.orderIds) ? previewBatch.orderIds : [])
                           .filter((oid) => pdfItems.includes(oid))
-                          .map((oid) => db.orders.find((x) => x.id === oid))
+                          .map((oid) => (db.orders || []).find((x) => x && x.id === oid))
                           .filter(Boolean)
                           .reduce((sum, o) => sum + (o?.totalQuantity || 0), 0)}{" "}
                         pçs
@@ -1874,9 +1925,9 @@ export function LotesScreen({
                 <button
                   disabled={isGeneratingPdf}
                   onClick={async () => {
-                    const ordersToPrint = previewBatch.orderIds
+                    const ordersToPrint = (Array.isArray(previewBatch?.orderIds) ? previewBatch.orderIds : [])
                       .filter((oid) => pdfItems.includes(oid))
-                      .map((oid) => db.orders.find((x) => x.id === oid))
+                      .map((oid) => (db.orders || []).find((x) => x && x.id === oid))
                       .filter(Boolean) as Order[];
 
                     if (ordersToPrint.length === 0) {
@@ -2081,12 +2132,12 @@ export function LotesScreen({
                           Peças / Pedidos na Ficha
                         </span>
                         <span className="text-[11px] text-indigo-600 font-bold">
-                          {acompSelectedOrderIds.length} de {previewAcompBatch.orderIds.length} selecionados
+                          {acompSelectedOrderIds.length} de {(Array.isArray(previewAcompBatch?.orderIds) ? previewAcompBatch.orderIds.length : 0)} selecionados
                         </span>
                       </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => setAcompSelectedOrderIds(previewAcompBatch.orderIds)}
+                          onClick={() => setAcompSelectedOrderIds(Array.isArray(previewAcompBatch?.orderIds) ? previewAcompBatch.orderIds : [])}
                           className="text-[10px] text-indigo-600 font-extrabold hover:underline uppercase cursor-pointer bg-indigo-50 px-2 py-1 rounded"
                         >
                           Todos
@@ -2101,10 +2152,10 @@ export function LotesScreen({
                     </div>
 
                     <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                      {previewAcompBatch.orderIds.map((oid) => {
-                        const o = db.orders.find((x) => x.id === oid);
+                      {(Array.isArray(previewAcompBatch?.orderIds) ? previewAcompBatch.orderIds : []).map((oid) => {
+                        const o = (db.orders || []).find((x) => x && x.id === oid);
                         if (!o) return null;
-                        const it = db.items.find((i) => i.id === o.itemId);
+                        const it = (db.items || []).find((i) => i && i.id === o.itemId);
                         const isIncluded = acompSelectedOrderIds.includes(oid);
 
                         return (
@@ -2149,7 +2200,7 @@ export function LotesScreen({
                         );
                       })}
 
-                      {previewAcompBatch.orderIds.length === 0 && (
+                      {(!Array.isArray(previewAcompBatch?.orderIds) || previewAcompBatch.orderIds.length === 0) && (
                         <div className="text-center p-4 text-slate-400 text-xs italic">
                           Nenhum pedido encontrado neste lote.
                         </div>
@@ -2385,12 +2436,12 @@ export function LotesScreen({
                           Peças no Lote
                         </span>
                         <span className="text-[11px] text-amber-700 font-bold">
-                          {etiquetasSelectedOrderIds.length} de {previewEtiquetasBatch.orderIds.length} selecionados
+                          {etiquetasSelectedOrderIds.length} de {(Array.isArray(previewEtiquetasBatch?.orderIds) ? previewEtiquetasBatch.orderIds.length : 0)} selecionados
                         </span>
                       </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => setEtiquetasSelectedOrderIds(previewEtiquetasBatch.orderIds)}
+                          onClick={() => setEtiquetasSelectedOrderIds(Array.isArray(previewEtiquetasBatch?.orderIds) ? previewEtiquetasBatch.orderIds : [])}
                           className="text-[10px] text-amber-700 font-extrabold hover:underline uppercase cursor-pointer bg-amber-50 px-2 py-1 rounded"
                         >
                           Todos
@@ -2417,12 +2468,12 @@ export function LotesScreen({
                     </div>
 
                     <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
-                      {previewEtiquetasBatch.orderIds
+                      {(Array.isArray(previewEtiquetasBatch?.orderIds) ? previewEtiquetasBatch.orderIds : [])
                         .filter((oid) => {
                           if (!etiquetasSearchTerm.trim()) return true;
-                          const o = db.orders.find((x) => x.id === oid);
+                          const o = (db.orders || []).find((x) => x && x.id === oid);
                           if (!o) return false;
-                          const it = db.items.find((i) => i.id === o.itemId);
+                          const it = (db.items || []).find((i) => i && i.id === o.itemId);
                           const term = etiquetasSearchTerm.toLowerCase();
                           return (
                             (o.orderCode && o.orderCode.toLowerCase().includes(term)) ||
@@ -2432,9 +2483,9 @@ export function LotesScreen({
                           );
                         })
                         .map((oid) => {
-                          const o = db.orders.find((x) => x.id === oid);
+                          const o = (db.orders || []).find((x) => x && x.id === oid);
                           if (!o) return null;
-                          const it = db.items.find((i) => i.id === o.itemId);
+                          const it = (db.items || []).find((i) => i && i.id === o.itemId);
                           const isIncluded = etiquetasSelectedOrderIds.includes(oid);
 
                           return (
@@ -2479,7 +2530,7 @@ export function LotesScreen({
                           );
                         })}
 
-                      {previewEtiquetasBatch.orderIds.length === 0 && (
+                      {(!Array.isArray(previewEtiquetasBatch?.orderIds) || previewEtiquetasBatch.orderIds.length === 0) && (
                         <div className="text-center p-4 text-slate-400 text-xs italic">
                           Nenhum pedido encontrado neste lote.
                         </div>

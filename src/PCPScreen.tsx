@@ -1311,14 +1311,16 @@ export function PCPScreen({
     const orderIds = new Set<number>();
     const itemIds = new Set<number>();
     
-    db.productionBatches.forEach((b) => {
-      b.orderIds.forEach((oid) => {
-        orderIds.add(oid);
-      });
+    (db.productionBatches || []).forEach((b) => {
+      if (b && Array.isArray(b.orderIds)) {
+        b.orderIds.forEach((oid) => {
+          if (oid !== undefined && oid !== null) orderIds.add(oid);
+        });
+      }
     });
 
-    db.orders.forEach((o) => {
-      if (orderIds.has(o.id)) {
+    (db.orders || []).forEach((o) => {
+      if (o && orderIds.has(o.id) && o.itemId !== undefined && o.itemId !== null) {
         itemIds.add(o.itemId);
       }
     });
@@ -1327,33 +1329,41 @@ export function PCPScreen({
   }, [db.productionBatches, db.orders]);
 
   const processedBatches = React.useMemo(() => {
-    let list = [...db.productionBatches];
+    let list = Array.isArray(db.productionBatches) ? [...db.productionBatches] : [];
 
     // Filter by date
     if (lotesDateStart || lotesDateEnd) {
       list = list.filter((b) => {
-        const dateStr = new Date(b.createdAt).toISOString().split("T")[0];
-        if (lotesDateStart && dateStr < lotesDateStart) return false;
-        if (lotesDateEnd && dateStr > lotesDateEnd) return false;
-        return true;
+        if (!b || !b.createdAt) return false;
+        try {
+          const d = new Date(b.createdAt);
+          if (isNaN(d.getTime())) return false;
+          const dateStr = d.toISOString().split("T")[0];
+          if (lotesDateStart && dateStr < lotesDateStart) return false;
+          if (lotesDateEnd && dateStr > lotesDateEnd) return false;
+          return true;
+        } catch {
+          return false;
+        }
       });
     }
 
     // Filter by search term (name, order code, or product name)
     if (lotesSearchTerm.trim() !== "") {
       const term = lotesSearchTerm.trim().toLowerCase();
-      const ordersMap = new Map<number, any>(db.orders.map((o) => [o.id, o]));
-      const itemsMap = new Map<number, any>(db.items.map((i) => [i.id, i]));
+      const ordersMap = new Map<number, any>((db.orders || []).map((o) => [o?.id, o]));
+      const itemsMap = new Map<number, any>((db.items || []).map((i) => [i?.id, i]));
 
       list = list.filter((b) => {
-        const nameMatch = b.name.toLowerCase().includes(term);
-        const orderMatch = b.orderIds.some((oid) => {
+        if (!b) return false;
+        const nameMatch = (b.name || "").toLowerCase().includes(term);
+        const orderMatch = Array.isArray(b.orderIds) && b.orderIds.some((oid) => {
           const o = ordersMap.get(oid);
           if (!o) return false;
           const item = itemsMap.get(o.itemId);
           return (
-            o.orderCode.toLowerCase().includes(term) ||
-            o.customerName.toLowerCase().includes(term) ||
+            (o.orderCode || "").toLowerCase().includes(term) ||
+            (o.customerName || "").toLowerCase().includes(term) ||
             (item?.name && item.name.toLowerCase().includes(term))
           );
         });
@@ -1363,17 +1373,20 @@ export function PCPScreen({
 
     // Sort: non-completed first (newest to oldest), completed last (newest to oldest)
     return list.sort((a, b) => {
+      if (!a || !b) return 0;
       const compA = a.status === "CONCLUIDO";
       const compB = b.status === "CONCLUIDO";
       if (compA !== compB) {
         return compA ? 1 : -1; // completed goes to bottom
       }
-      return b.createdAt - a.createdAt; // newest first
+      const timeA = typeof a.createdAt === "number" ? a.createdAt : (new Date(a.createdAt || 0).getTime() || 0);
+      const timeB = typeof b.createdAt === "number" ? b.createdAt : (new Date(b.createdAt || 0).getTime() || 0);
+      return timeB - timeA; // newest first
     });
   }, [db.productionBatches, lotesDateStart, lotesDateEnd, lotesSearchTerm, db.orders, db.items]);
 
   const visibleLotes = React.useMemo(() => {
-    return processedBatches.slice(0, lotesVisibleCount);
+    return (processedBatches || []).slice(0, lotesVisibleCount);
   }, [processedBatches, lotesVisibleCount]);
 
 
@@ -3578,20 +3591,34 @@ export function PCPScreen({
                 <div className="flex flex-col gap-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {visibleLotes.map((b) => {
+                      if (!b) return null;
                       const sector =
-                        b.sectorId === 0
+                        b.sectorId === 0 || !b.sectorId
                           ? null
-                          : db.sectors.find((s) => s.id === b.sectorId);
-                      const batchOrders = b.orderIds
-                        .map((oid) => db.orders.find((o) => o.id === oid))
-                        .filter((o) => o !== undefined);
+                          : (db.sectors || []).find((s) => s && s.id === b.sectorId);
+                      const batchOrderIds = Array.isArray(b.orderIds) ? b.orderIds : [];
+                      const batchOrders = batchOrderIds
+                        .map((oid) => (db.orders || []).find((o) => o && o.id === oid))
+                        .filter((o): o is Order => !!o);
                       const totalQuantity = batchOrders.reduce(
                         (sum, o) => sum + (o?.totalQuantity || 0),
                         0,
                       );
                       const capacity = sector?.dailyCapacity || 1000;
-                      const pct = Math.min((totalQuantity / capacity) * 100, 100);
+                      const pct = capacity > 0 ? Math.min((totalQuantity / capacity) * 100, 100) : 0;
                       const isOverloaded = totalQuantity > capacity;
+
+                      let formattedCreatedAt = "-";
+                      if (b.createdAt) {
+                        try {
+                          const d = new Date(b.createdAt);
+                          if (!isNaN(d.getTime())) {
+                            formattedCreatedAt = d.toLocaleDateString();
+                          }
+                        } catch {
+                          formattedCreatedAt = "-";
+                        }
+                      }
 
                       const statusColors = {
                         PENDENTE:
@@ -3611,17 +3638,16 @@ export function PCPScreen({
                           <div className="flex justify-between items-start gap-2">
                             <div>
                               <h4 className="font-bold text-lg text-indigo-950 flex items-center gap-1.5">
-                                {b.name}
+                                {b.name || "Lote sem nome"}
                               </h4>
                               <p className="text-xs text-slate-500 mt-0.5">
-                                Criado em:{" "}
-                                {new Date(b.createdAt).toLocaleDateString()}
+                                Criado em: {formattedCreatedAt}
                               </p>
                             </div>
                             <span
                               className={`text-[10px] px-2.5 py-1 rounded-full font-extrabold uppercase tracking-wide shrink-0 ${statusColors[b.status as keyof typeof statusColors] || "bg-indigo-100 text-indigo-850"}`}
                             >
-                              {b.status}
+                              {b.status || "PENDENTE"}
                             </span>
                           </div>
 
@@ -3639,7 +3665,7 @@ export function PCPScreen({
                                 Carga do Lote
                               </span>
                               <strong className="text-slate-800 text-sm">
-                                {b.orderIds.length} Pedidos ({totalQuantity} pçs)
+                                {batchOrderIds.length} Pedidos ({totalQuantity} pçs)
                               </strong>
                             </div>
                           </div>
@@ -3649,9 +3675,11 @@ export function PCPScreen({
                               Pedidos de Produção
                             </p>
                             <ul className="text-xs text-gray-600 flex flex-col gap-1 max-h-36 overflow-y-auto">
-                              {batchOrders.map((o) => (
+                              {batchOrders.map((o) => {
+                                const prodItem = (db.items || []).find((i) => i && i.id === o?.itemId);
+                                return (
                                 <li
-                                  key={o?.id}
+                                  key={o.id}
                                   className={`flex flex-col sm:flex-row sm:justify-between p-2 rounded-lg border shadow-xs gap-1.5 ${o?.isUrgent ? "bg-red-50/80 border-red-200" : "bg-white border-slate-200/60"}`}
                                 >
                                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -3679,8 +3707,7 @@ export function PCPScreen({
                                     <span className="text-[11px] text-slate-500 font-medium">
                                       (
                                       {
-                                        db.items.find((i) => i.id === o?.itemId)
-                                          ?.code
+                                        prodItem?.code || "-"
                                       }
                                       )
                                     </span>
@@ -3690,16 +3717,16 @@ export function PCPScreen({
                                   </span>
                                   <div className="flex items-center justify-between sm:justify-end gap-3 text-right">
                                     <span className="text-slate-500 font-semibold bg-slate-100/80 px-1.5 py-0.5 rounded text-[10px]">
-                                      📅 Prazo: {o?.deliveryDate}
+                                      📅 Prazo: {o?.deliveryDate || "-"}
                                     </span>
                                     <span
                                       className={`font-bold ${o?.isUrgent ? "text-red-900 text-sm" : "text-slate-800"}`}
                                     >
-                                      {o?.totalQuantity} pçs
+                                      {o?.totalQuantity || 0} pçs
                                     </span>
                                   </div>
                                 </li>
-                              ))}
+                              );})}
                             </ul>
                           </div>
 

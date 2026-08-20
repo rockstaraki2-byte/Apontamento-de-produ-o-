@@ -130,51 +130,54 @@ export function buildBatchLabelItemsData({
   const dateToday = new Date().toLocaleDateString("pt-BR");
 
   (orderIds || []).forEach((oid) => {
-    const order = db.orders.find((o) => o.id === oid);
+    const order = (db.orders || []).find((o) => o && (o.id === oid || String(o.id) === String(oid)));
     if (!order) return;
 
-    const item = db.items.find((i) => i.id === order.itemId);
+    const item = (db.items || []).find((i) => i && (i.id === order.itemId || String(i.id) === String(order.itemId)));
 
     const resolvedCustomerName = (() => {
       if (!order.customerName) return "CLIENTE NÃO INFORMADO";
-      const foundCust = db.customers?.find(
+      const targetCustomerName = (order.customerName || "").toLowerCase().trim();
+      const foundCust = (db.customers || []).find(
         (c) =>
-          c.name.toLowerCase().trim() === order.customerName.toLowerCase().trim() ||
-          (c.tradeName && c.tradeName.toLowerCase().trim() === order.customerName.toLowerCase().trim())
+          c &&
+          ((c.name && c.name.toLowerCase().trim() === targetCustomerName) ||
+          (c.tradeName && c.tradeName.toLowerCase().trim() === targetCustomerName))
       );
-      return foundCust?.tradeName || order.customerName;
+      return foundCust?.tradeName || foundCust?.name || order.customerName;
     })();
 
-    const hasComponents = item?.components && item.components.length > 0;
+    const hasComponents = Array.isArray(item?.components) && item.components.length > 0;
 
-    if (destrincharComposicoes && hasComponents) {
+    if (destrincharComposicoes && hasComponents && item) {
       if (!ocultarPaiComposicao) {
         list.push({
           id: `ord-${order.id}-parent`,
           orderCode: order.orderCode || `${order.id}`,
-          batchName: batch.name || `LOTE #${batch.id}`,
+          batchName: batch?.name || `LOTE #${batch?.id || ''}`,
           customerName: resolvedCustomerName,
           itemName: item?.name || "Produto Sem Nome",
           itemCode: item?.code || "S/C",
           color: order.color || "-",
           size: order.size || "-",
           variation: order.variation || "-",
-          quantity: order.totalQuantity,
+          quantity: order.totalQuantity || 0,
           unitLabel: getItemUnit(item, order),
           imageUrl: item?.imageUrl || null,
-          barcodeData: `${item?.code || 'ITEM'}|${order.orderCode || order.id}|${order.totalQuantity}`,
+          barcodeData: `${item?.code || 'ITEM'}|${order.orderCode || order.id}|${order.totalQuantity || 0}`,
           dateStr: dateToday,
         });
       }
 
       item.components!.forEach((comp, idx) => {
-        const compItem = db.items.find((i) => i.id === comp.itemId);
-        const compQty = order.totalQuantity * comp.quantity;
+        if (!comp) return;
+        const compItem = (db.items || []).find((i) => i && (i.id === comp.itemId || String(i.id) === String(comp.itemId)));
+        const compQty = (order.totalQuantity || 0) * (comp.quantity || 1);
 
         list.push({
           id: `ord-${order.id}-comp-${comp.itemId}-${idx}`,
           orderCode: order.orderCode || `${order.id}`,
-          batchName: batch.name || `LOTE #${batch.id}`,
+          batchName: batch?.name || `LOTE #${batch?.id || ''}`,
           customerName: resolvedCustomerName,
           itemName: compItem?.name ? `[COMP] ${compItem.name}` : `Componente #${comp.itemId}`,
           itemCode: compItem?.code || "S/C",
@@ -192,17 +195,17 @@ export function buildBatchLabelItemsData({
       list.push({
         id: `ord-${order.id}`,
         orderCode: order.orderCode || `${order.id}`,
-        batchName: batch.name || `LOTE #${batch.id}`,
+        batchName: batch?.name || `LOTE #${batch?.id || ''}`,
         customerName: resolvedCustomerName,
         itemName: item?.name || "Produto Sem Nome",
         itemCode: item?.code || "S/C",
         color: order.color || "-",
         size: order.size || "-",
         variation: order.variation || "-",
-        quantity: order.totalQuantity,
+        quantity: order.totalQuantity || 0,
         unitLabel: getItemUnit(item, order),
         imageUrl: item?.imageUrl || null,
-        barcodeData: `${item?.code || 'ITEM'}|${order.orderCode || order.id}|${order.totalQuantity}`,
+        barcodeData: `${item?.code || 'ITEM'}|${order.orderCode || order.id}|${order.totalQuantity || 0}`,
         dateStr: dateToday,
       });
     }

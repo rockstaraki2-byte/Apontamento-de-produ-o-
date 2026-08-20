@@ -86,18 +86,19 @@ const formatDateShort = (dateString?: string) => {
 };
 
 export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>((props, ref) => {
-  const { batch, orderIds, customDeadline, customNotes, db, currentUser } = props;
+  const { batch, orderIds = [], customDeadline, customNotes, db, currentUser } = props;
 
-  const logoUrl = db.activeTenant?.logoUrl || "/icon.png";
-  const companyName = db.activeTenant?.name || "SUA EMPRESA";
+  const logoUrl = (db as any).activeTenant?.logoUrl || "/icon.png";
+  const companyName = (db as any).activeTenant?.name || "SUA EMPRESA";
 
   // Filter orders
-  const ordersToPrint = batch.orderIds
-    .filter((oid) => orderIds.includes(oid))
-    .map((oid) => db.orders.find((x) => x.id === oid))
+  const batchOrderIds = Array.isArray(batch?.orderIds) ? batch.orderIds : [];
+  const ordersToPrint = batchOrderIds
+    .filter((oid) => (orderIds || []).includes(oid))
+    .map((oid) => (db.orders || []).find((x) => x && (x.id === oid || String(x.id) === String(oid))))
     .filter((o): o is Order => !!o);
 
-  const totalQuantity = ordersToPrint.reduce((acc, o) => acc + (o.totalQuantity || 0), 0);
+  const totalQuantity = ordersToPrint.reduce((acc, o) => acc + (o?.totalQuantity || 0), 0);
   const totalOrders = ordersToPrint.length;
 
   // Current formatted timestamp
@@ -149,7 +150,7 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
                     {companyName}
                   </span>
                   <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                    {batch.name} {pages.length > 1 && `(Folha ${pageIndex + 1}/${pages.length})`}
+                    {batch?.name || `Lote #${batch?.id || ''}`} {pages.length > 1 && `(Folha ${pageIndex + 1}/${pages.length})`}
                   </h2>
                 </div>
               </div>
@@ -196,13 +197,13 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
                   </div>
                 </div>
 
-                {(customNotes || batch.notes) && (
+                {(customNotes || batch?.notes) && (
                   <div className="bg-amber-50/50 border border-amber-200 rounded-lg p-3 mb-5">
                     <span className="text-[8px] text-amber-750 font-extrabold uppercase tracking-wider block mb-1">
                       📝 Observações do Lote
                     </span>
                     <p className="text-xs text-slate-700 leading-relaxed font-semibold">
-                      {customNotes || batch.notes}
+                      {customNotes || batch?.notes}
                     </p>
                   </div>
                 )}
@@ -224,14 +225,15 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
                 </thead>
                 <tbody className="divide-y divide-slate-150">
                   {pageOrders.map((o) => {
-                    const item = db.items.find((i) => i.id === o.itemId);
+                    if (!o) return null;
+                    const item = (db.items || []).find((i) => i && (i.id === o.itemId || String(i.id) === String(o.itemId)));
                     const customerObj = findCustomerForOrder(o, db.customers);
-                    const resolvedCustomerName = customerObj?.tradeName?.trim() || customerObj?.name?.trim() || o.customerName;
+                    const resolvedCustomerName = customerObj?.tradeName?.trim() || customerObj?.name?.trim() || o.customerName || "Cliente";
 
                     return (
                       <tr key={o.id} className="border-b border-slate-150">
                         <td className="py-3 px-3 font-mono font-bold text-indigo-700">
-                          #{o.orderCode}
+                          #{o.orderCode || o.id}
                         </td>
                         <td className="py-3 px-3 font-extrabold text-slate-800">
                           <div>{resolvedCustomerName}</div>
@@ -258,7 +260,7 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
                           {o.color || "-"}
                         </td>
                         <td className="py-3 px-2 text-center font-bold text-slate-900">
-                          {o.totalQuantity}
+                          {o.totalQuantity || 0}
                         </td>
                         <td className="py-3 px-3 text-center border-l border-slate-150">
                           <div className="w-5 h-5 border border-slate-400 rounded-sm mx-auto bg-transparent"></div>
@@ -282,7 +284,7 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
             {pageIndex === pages.length - 1 && pageOrders.length > 0 && (
               <div className="mt-4 pt-3 border-t border-slate-250 flex justify-between items-center">
                 <span className="text-slate-450 uppercase font-bold text-[9px] tracking-wider">
-                  Imperio Acessórios
+                  {companyName}
                 </span>
                 <strong className="text-slate-900 text-sm font-black">
                   Total Geral: {totalQuantity}
@@ -305,8 +307,8 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
              {/* Footnote matching preview */}
              <div className="mt-6 pt-3 border-t border-slate-100 flex justify-between items-center text-[9px] text-slate-400">
                <div className="flex items-center gap-2">
-                 <ReportHeaderLogo logoUrl={logoUrl} className="w-4 h-4 object-contain opacity-50" alt="Imperio Logo" />
-                 <span>Impresso por: {currentUser.name}</span>
+                 <ReportHeaderLogo logoUrl={logoUrl} className="w-4 h-4 object-contain opacity-50" alt="Logo" />
+                 <span>Impresso por: {currentUser?.name || "Usuário"}</span>
                </div>
                <span>Página {pageIndex + 1}/{pages.length} &bull; © PCP Lotes de Gerência</span>
              </div>

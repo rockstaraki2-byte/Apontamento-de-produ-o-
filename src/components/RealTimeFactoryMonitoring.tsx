@@ -154,7 +154,7 @@ function RealTimeFactoryMonitoringContent({
 
   // Helper to calculate duration in hours for long-running alert
   const getElapsedHours = (startTime: number) => {
-    if (!startTime || isNaN(startTime)) return 0;
+    if (!startTime || isNaN(startTime) || typeof startTime !== "number") return 0;
     return (now - startTime) / (1000 * 60 * 60);
   };
 
@@ -192,8 +192,8 @@ function RealTimeFactoryMonitoringContent({
 
     // Merge registered sectors or use default archetypes if none configured
     const mergedSectorsList: Sector[] = (sectors && sectors.length > 0)
-      ? [...sectors]
-      : [...defaultSectors];
+      ? sectors.filter(Boolean)
+      : defaultSectors;
 
     const getSectorVisuals = (name: string, index: number) => {
       const norm = String(name || "").toLowerCase();
@@ -229,7 +229,7 @@ function RealTimeFactoryMonitoringContent({
         { icon: Layers, bgBadge: "bg-amber-600", textAccent: "text-amber-700", borderAccent: "border-amber-200", bgCard: "bg-amber-50/50 hover:bg-amber-50" },
         { icon: Hammer, bgBadge: "bg-rose-600", textAccent: "text-rose-700", borderAccent: "border-rose-200", bgCard: "bg-rose-50/50 hover:bg-rose-50" },
       ];
-      return genericPalette[index % genericPalette.length];
+      return genericPalette[Math.abs(index) % genericPalette.length] || genericPalette[0];
     };
 
     return mergedSectorsList.map((s, idx) => {
@@ -244,11 +244,11 @@ function RealTimeFactoryMonitoringContent({
         id: s?.id,
         title: s?.name || "Setor",
         subtitle: (s as any)?.department || "Setor Operacional da Fábrica",
-        icon: visuals.icon,
-        bgBadge: visuals.bgBadge,
-        textAccent: visuals.textAccent,
-        borderAccent: visuals.borderAccent,
-        bgCard: visuals.bgCard,
+        icon: visuals.icon || Activity,
+        bgBadge: visuals.bgBadge || "bg-blue-600",
+        textAccent: visuals.textAccent || "text-blue-700",
+        borderAccent: visuals.borderAccent || "border-blue-200",
+        bgCard: visuals.bgCard || "bg-blue-50/50 hover:bg-blue-50",
         matchesPack: (p: ActiveTask) => {
           if (!p) return false;
           // 1. Direct sectorId match on task
@@ -694,7 +694,7 @@ function RealTimeFactoryMonitoringContent({
             </div>
           ) : (
             activeTenantSectors.map((cat) => {
-              const CAT_ICON = cat.icon;
+              const CAT_ICON = cat.icon || Activity;
 
               // Find matching active packs for this sector using cat.matchesPack
               const sectorPacks = filteredActivePacks.filter((p) => cat.matchesPack(p));
@@ -867,8 +867,8 @@ function RealTimeFactoryMonitoringContent({
       {activeSubTab === "STATIONS" && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {activeTenantSectors.map((cat) => {
-            const CAT_ICON = cat.icon;
-            const activeSectorPacks = activePacks.filter((p) => cat.matchesPack(p));
+            const CAT_ICON = cat.icon || Layers;
+            const activeSectorPacks = (activePacks || []).filter((p) => cat.matchesPack(p));
 
             const isOperating = activeSectorPacks.length > 0;
 
@@ -906,7 +906,7 @@ function RealTimeFactoryMonitoringContent({
                       Tarefas em Execução ({activeSectorPacks.length}):
                     </span>
                     {activeSectorPacks.map((pack) => {
-                      const item = items.find((i) => i.id === pack.itemId);
+                      const item = (items || []).find((i) => i && i.id === pack.itemId);
                       return (
                         <div
                           key={pack.id}
@@ -915,10 +915,10 @@ function RealTimeFactoryMonitoringContent({
                         >
                           <div className="flex flex-col">
                             <span className="font-bold text-slate-800 text-xs truncate max-w-[160px]">
-                              {pack.partName || pack.customProductName || item?.name}
+                              {pack.partName || pack.customProductName || item?.name || "Peça em produção"}
                             </span>
                             <span className="text-[10px] text-slate-500 font-medium">
-                              Op: {pack.operatorId}
+                              Op: {pack.operatorId || "Operador"}
                             </span>
                           </div>
 
@@ -997,7 +997,7 @@ function RealTimeFactoryMonitoringContent({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-xl bg-slate-900 text-white font-black text-xs flex items-center justify-center uppercase shadow-2xs">
-                          {operatorId[0]}
+                          {(String(operatorId || "OP"))[0]}
                         </div>
                         <div>
                           <h4 className="font-extrabold text-slate-800 text-xs">{operatorId}</h4>
@@ -1018,7 +1018,7 @@ function RealTimeFactoryMonitoringContent({
 
                     <div className="space-y-2 border-t border-slate-200 pt-2.5">
                       {tasks.map((task) => {
-                        const item = items.find((i) => i.id === task.itemId);
+                        const item = (items || []).find((i) => i && i.id === task.itemId);
                         return (
                           <div
                             key={task.id}
@@ -1027,10 +1027,10 @@ function RealTimeFactoryMonitoringContent({
                           >
                             <div className="flex flex-col">
                               <span className="font-bold text-slate-800">
-                                {task.partName || task.customProductName || item?.name}
+                                {task.partName || task.customProductName || item?.name || "Peça em produção"}
                               </span>
                               <span className="text-[10px] font-semibold text-slate-500 uppercase">
-                                {task.type?.replace("_", " ")}
+                                {String(task.type || "PRODUCAO").replace("_", " ")}
                               </span>
                             </div>
 

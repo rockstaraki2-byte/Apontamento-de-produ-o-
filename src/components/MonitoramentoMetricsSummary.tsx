@@ -18,12 +18,12 @@ interface MonitoramentoMetricsSummaryProps {
 
 type TimeRange = "ALL" | "TODAY" | "7DAYS" | "30DAYS";
 
-export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummaryProps) {
+export function MonitoramentoMetricsSummary({ logs = [] }: MonitoramentoMetricsSummaryProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("ALL");
 
   // Helper to format ms into human-readable duration
   const formatDurationText = (ms: number): string => {
-    if (ms <= 0) return "N/A";
+    if (!ms || isNaN(ms) || typeof ms !== "number" || ms <= 0) return "N/A";
     const totalSeconds = Math.round(ms / 1000);
     if (totalSeconds < 60) return `${totalSeconds}s`;
     
@@ -59,7 +59,9 @@ export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummar
       }
     })();
 
-    const filteredLogs = logs.filter(l => l.timestamp >= rangeStart);
+    const filteredLogs = (logs || []).filter(
+      (l) => l && typeof l.timestamp === "number" && l.timestamp >= rangeStart
+    );
 
     // Stage configurations
     const stages = [
@@ -69,7 +71,7 @@ export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummar
         title: "Corte",
         color: "teal",
         icon: Scissors,
-        getQty: (l: ProductionLog) => l.quantityCut || l.quantityProcessed || 0,
+        getQty: (l: ProductionLog) => l?.quantityCut || l?.quantityProcessed || 0,
       },
       {
         key: "Produção",
@@ -77,7 +79,7 @@ export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummar
         title: "Produção",
         color: "blue",
         icon: Settings,
-        getQty: (l: ProductionLog) => l.quantityProcessed || 0,
+        getQty: (l: ProductionLog) => l?.quantityProcessed || 0,
       },
       {
         key: "Pintura",
@@ -85,7 +87,7 @@ export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummar
         title: "Pintura",
         color: "pink",
         icon: Paintbrush,
-        getQty: (l: ProductionLog) => l.quantityPainted || l.quantityProcessed || 0,
+        getQty: (l: ProductionLog) => l?.quantityPainted || l?.quantityProcessed || 0,
       },
       {
         key: "Embalagem",
@@ -93,17 +95,17 @@ export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummar
         title: "Embalagem",
         color: "green",
         icon: Package,
-        getQty: (l: ProductionLog) => l.quantityPacked || l.quantityProcessed || 0,
+        getQty: (l: ProductionLog) => l?.quantityPacked || l?.quantityProcessed || 0,
       }
     ];
 
     const results = stages.map(stage => {
       // Find logs of this type that have positive duration
       const stageLogs = filteredLogs.filter(
-        l => l.type === stage.type && l.durationMillis > 0
+        l => l && l.type === stage.type && typeof l.durationMillis === "number" && l.durationMillis > 0
       );
 
-      const totalDuration = stageLogs.reduce((sum, l) => sum + l.durationMillis, 0);
+      const totalDuration = stageLogs.reduce((sum, l) => sum + (l.durationMillis || 0), 0);
       const totalQuantity = stageLogs.reduce((sum, l) => sum + stage.getQty(l), 0);
       const totalBatches = stageLogs.length;
 
@@ -158,25 +160,25 @@ export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummar
         <div className="flex rounded-lg border border-slate-200 bg-white p-1 shadow-2xs w-fit">
           <button
             onClick={() => setTimeRange("ALL")}
-            className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${timeRange === "ALL" ? "bg-slate-800 text-white" : "text-slate-600 hover:text-slate-805"}`}
+            className={`px-3 py-1 text-[10px] font-bold rounded-md transition cursor-pointer ${timeRange === "ALL" ? "bg-slate-800 text-white" : "text-slate-600 hover:text-slate-800"}`}
           >
             Tudo
           </button>
           <button
             onClick={() => setTimeRange("30DAYS")}
-            className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${timeRange === "30DAYS" ? "bg-slate-800 text-white" : "text-slate-600 hover:text-slate-805"}`}
+            className={`px-3 py-1 text-[10px] font-bold rounded-md transition cursor-pointer ${timeRange === "30DAYS" ? "bg-slate-800 text-white" : "text-slate-600 hover:text-slate-800"}`}
           >
             30d
           </button>
           <button
             onClick={() => setTimeRange("7DAYS")}
-            className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${timeRange === "7DAYS" ? "bg-slate-800 text-white" : "text-slate-600 hover:text-slate-805"}`}
+            className={`px-3 py-1 text-[10px] font-bold rounded-md transition cursor-pointer ${timeRange === "7DAYS" ? "bg-slate-800 text-white" : "text-slate-600 hover:text-slate-800"}`}
           >
             7d
           </button>
           <button
             onClick={() => setTimeRange("TODAY")}
-            className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${timeRange === "TODAY" ? "bg-slate-800 text-white" : "text-slate-600 hover:text-slate-805"}`}
+            className={`px-3 py-1 text-[10px] font-bold rounded-md transition cursor-pointer ${timeRange === "TODAY" ? "bg-slate-800 text-white" : "text-slate-600 hover:text-slate-800"}`}
           >
             Hoje
           </button>
@@ -186,31 +188,33 @@ export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummar
       {/* Grid of Stages */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {stagesData.map((stage) => {
-          const STAGE_ICON = stage.icon;
+          const STAGE_ICON = stage.icon || BarChart2;
           const isBottleneck = stage.key === bottleneckKey && stage.avgPieceTime > 0;
 
-          const colorClasses = {
+          const colorMap: Record<string, { card: string; badge: string; icon: string }> = {
             teal: {
-              card: "border-teal-150 bg-teal-50/40 hover:bg-teal-50/60",
+              card: "border-teal-200 bg-teal-50/40 hover:bg-teal-50/60",
               badge: "bg-teal-100 text-teal-800",
               icon: "text-teal-600"
             },
             blue: {
-              card: "border-blue-150 bg-blue-50/40 hover:bg-blue-50/60",
+              card: "border-blue-200 bg-blue-50/40 hover:bg-blue-50/60",
               badge: "bg-blue-100 text-blue-800",
               icon: "text-blue-600"
             },
             pink: {
-              card: "border-pink-150 bg-pink-50/40 hover:bg-pink-50/60",
+              card: "border-pink-200 bg-pink-50/40 hover:bg-pink-50/60",
               badge: "bg-pink-100 text-pink-800",
               icon: "text-pink-600"
             },
             green: {
-              card: "border-green-150 bg-green-50/40 hover:bg-green-50/60",
+              card: "border-green-200 bg-green-50/40 hover:bg-green-50/60",
               badge: "bg-green-100 text-green-800",
               icon: "text-green-600"
             }
-          }[stage.color as "teal" | "blue" | "pink" | "green"];
+          };
+
+          const colorClasses = colorMap[stage.color] || colorMap.blue;
 
           return (
             <div
@@ -223,7 +227,7 @@ export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummar
             >
               {/* Highlight ribbon for bottleneck */}
               {isBottleneck && (
-                <div className="absolute top-0 right-0 bg-amber-505 text-white bg-amber-500 text-[9px] font-black tracking-wider px-2 py-0.5 rounded-bl">
+                <div className="absolute top-0 right-0 bg-amber-500 text-white text-[9px] font-black tracking-wider px-2 py-0.5 rounded-bl">
                   ⚠️ GARGALO
                 </div>
               )}
@@ -243,7 +247,7 @@ export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummar
               <div className="flex flex-col gap-1.5 mt-1 border-t border-slate-200/50 pt-2.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-500 font-medium">Tempo/peça:</span>
-                  <span className={`font-black ${isBottleneck ? "text-amber-750 text-sm" : "text-slate-800"}`}>
+                  <span className={`font-black ${isBottleneck ? "text-amber-700 text-sm" : "text-slate-800"}`}>
                     {stage.avgPieceTime > 0 ? formatDurationText(stage.avgPieceTime) : "S/ dados"}
                   </span>
                 </div>
@@ -266,7 +270,7 @@ export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummar
       </div>
 
       {/* Visual Bar Comparison / Insight Section */}
-      <div className="bg-white border border-slate-150 rounded-xl p-4 flex flex-col gap-3.5">
+      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col gap-3.5">
         <h5 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
           <Activity size={14} className="text-blue-500" />
           Análise Operacional de Fluxo e Gargalos
@@ -278,14 +282,16 @@ export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummar
             const pct = highestAvgPiece > 0 ? (stage.avgPieceTime / highestAvgPiece) * 100 : 0;
             const isBottleneck = stage.key === bottleneckKey && stage.avgPieceTime > 0;
 
+            const barColorMap: Record<string, string> = {
+              teal: "bg-teal-500",
+              blue: "bg-blue-500",
+              pink: "bg-pink-500",
+              green: "bg-green-500"
+            };
+
             const barColor = isBottleneck 
               ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]" 
-              : {
-                  teal: "bg-teal-500",
-                  blue: "bg-blue-500",
-                  pink: "bg-pink-500",
-                  green: "bg-green-500"
-                }[stage.color as "teal" | "blue" | "pink" | "green"];
+              : barColorMap[stage.color] || "bg-blue-500";
 
             return (
               <div key={stage.key} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
@@ -314,7 +320,7 @@ export function MonitoramentoMetricsSummary({ logs }: MonitoramentoMetricsSummar
           <div className="bg-amber-50 border border-amber-200/60 p-3 rounded-lg flex items-start gap-2.5 mt-1.5 text-amber-900 text-xs">
             <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={16} />
             <div className="flex flex-col gap-1">
-              <span className="font-extrabold text-amber-955">
+              <span className="font-extrabold text-amber-900">
                 Gargalo Operacional Identificado: {bottleneckKey}
               </span>
               <p className="text-amber-800 font-medium leading-relaxed">

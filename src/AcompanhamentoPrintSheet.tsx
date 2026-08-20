@@ -38,46 +38,46 @@ export const AcompanhamentoPrintSheet = forwardRef<
     }[] = [];
 
     (orderIds || []).forEach((oid) => {
-      const order = db.orders.find((o) => o.id === oid);
+      const order = (db.orders || []).find((o) => o && (o.id === oid || String(o.id) === String(oid)));
       if (!order) return;
 
-      const item = db.items.find((it) => it.id === order.itemId);
-      const hasComponents = item?.components && item.components.length > 0;
+      const item = (db.items || []).find((it) => it && (it.id === order.itemId || String(it.id) === String(order.itemId)));
+      const hasComponents = Array.isArray(item?.components) && item.components.length > 0;
 
-      if (destrincharComposicoes && hasComponents) {
+      if (destrincharComposicoes && hasComponents && item) {
         // First, add the parent product itself if we shouldn't hide it
         if (!ocultarPaiComposicao) {
           const existingParent = list.find(
             (p) =>
               !p.isComponent &&
               p.itemId === order.itemId &&
-              p.color === order.color &&
-              p.size === order.size &&
-              p.variation === order.variation
+              p.color === (order.color || "-") &&
+              p.size === (order.size || "-") &&
+              p.variation === (order.variation || "-")
           );
 
           if (existingParent) {
-            existingParent.totalQuantity += order.totalQuantity;
+            existingParent.totalQuantity += (order.totalQuantity || 0);
             existingParent.orders.push({
               id: order.id,
-              orderCode: order.orderCode,
-              customerName: order.customerName,
+              orderCode: order.orderCode || `${order.id}`,
+              customerName: order.customerName || "Cliente",
               deliveryDate: order.deliveryDate,
-              totalQuantity: order.totalQuantity,
+              totalQuantity: order.totalQuantity || 0,
             });
           } else {
             list.push({
               itemId: order.itemId,
-              color: order.color,
-              size: order.size,
-              variation: order.variation,
-              totalQuantity: order.totalQuantity,
+              color: order.color || "-",
+              size: order.size || "-",
+              variation: order.variation || "-",
+              totalQuantity: order.totalQuantity || 0,
               orders: [{
                 id: order.id,
-                orderCode: order.orderCode,
-                customerName: order.customerName,
+                orderCode: order.orderCode || `${order.id}`,
+                customerName: order.customerName || "Cliente",
                 deliveryDate: order.deliveryDate,
-                totalQuantity: order.totalQuantity,
+                totalQuantity: order.totalQuantity || 0,
               }],
             });
           }
@@ -85,45 +85,46 @@ export const AcompanhamentoPrintSheet = forwardRef<
 
         // Add each sub-component
         item.components!.forEach((comp) => {
-          const childQty = order.totalQuantity * comp.quantity;
+          if (!comp) return;
+          const childQty = (order.totalQuantity || 0) * (comp.quantity || 1);
 
           const existingComponent = list.find(
             (p) =>
               p.isComponent &&
               p.itemId === comp.itemId &&
-              p.parentItemCode === item.code &&
-              p.color === order.color &&
-              p.size === order.size &&
-              p.variation === order.variation
+              p.parentItemCode === (item.code || "") &&
+              p.color === (order.color || "-") &&
+              p.size === (order.size || "-") &&
+              p.variation === (order.variation || "-")
           );
 
           if (existingComponent) {
             existingComponent.totalQuantity += childQty;
             existingComponent.orders.push({
               id: order.id,
-              orderCode: order.orderCode,
-              customerName: order.customerName,
+              orderCode: order.orderCode || `${order.id}`,
+              customerName: order.customerName || "Cliente",
               deliveryDate: order.deliveryDate,
               totalQuantity: childQty,
             });
           } else {
             list.push({
               itemId: comp.itemId,
-              color: order.color,
-              size: order.size,
-              variation: order.variation,
+              color: order.color || "-",
+              size: order.size || "-",
+              variation: order.variation || "-",
               totalQuantity: childQty,
               orders: [{
                 id: order.id,
-                orderCode: order.orderCode,
-                customerName: order.customerName,
+                orderCode: order.orderCode || `${order.id}`,
+                customerName: order.customerName || "Cliente",
                 deliveryDate: order.deliveryDate,
                 totalQuantity: childQty,
               }],
               isComponent: true,
-              parentItemCode: item.code,
-              parentItemName: item.name,
-              componentUnitQty: comp.quantity,
+              parentItemCode: item.code || "S/C",
+              parentItemName: item.name || "Sem Nome",
+              componentUnitQty: comp.quantity || 1,
             });
           }
         });
@@ -134,33 +135,33 @@ export const AcompanhamentoPrintSheet = forwardRef<
           (p) =>
             !p.isComponent &&
             p.itemId === order.itemId &&
-            p.color === order.color &&
-            p.size === order.size &&
-            p.variation === order.variation
+            p.color === (order.color || "-") &&
+            p.size === (order.size || "-") &&
+            p.variation === (order.variation || "-")
         );
 
         if (existing) {
-          existing.totalQuantity += order.totalQuantity;
+          existing.totalQuantity += (order.totalQuantity || 0);
           existing.orders.push({
             id: order.id,
-            orderCode: order.orderCode,
-            customerName: order.customerName,
+            orderCode: order.orderCode || `${order.id}`,
+            customerName: order.customerName || "Cliente",
             deliveryDate: order.deliveryDate,
-            totalQuantity: order.totalQuantity,
+            totalQuantity: order.totalQuantity || 0,
           });
         } else {
           list.push({
             itemId: order.itemId,
-            color: order.color,
-            size: order.size,
-            variation: order.variation,
-            totalQuantity: order.totalQuantity,
+            color: order.color || "-",
+            size: order.size || "-",
+            variation: order.variation || "-",
+            totalQuantity: order.totalQuantity || 0,
             orders: [{
               id: order.id,
-              orderCode: order.orderCode,
-              customerName: order.customerName,
+              orderCode: order.orderCode || `${order.id}`,
+              customerName: order.customerName || "Cliente",
               deliveryDate: order.deliveryDate,
-              totalQuantity: order.totalQuantity,
+              totalQuantity: order.totalQuantity || 0,
             }],
           });
         }
@@ -214,8 +215,8 @@ export const AcompanhamentoPrintSheet = forwardRef<
             >
               {chunk.map((p, indexInChunk) => {
                 const globalIndex = chunkIdx * 2 + indexInChunk;
-                const item = db.items.find((it) => it.id === p.itemId);
-                const sector = db.sectors.find((s) => s.id === batch.sectorId);
+                const item = (db.items || []).find((it) => it && (it.id === p.itemId || String(it.id) === String(p.itemId)));
+                const sector = (db.sectors || []).find((s) => s && s.id === batch?.sectorId);
 
                 return (
                   <React.Fragment key={`acomp-item-frag-${globalIndex}`}>
@@ -243,7 +244,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
                           </div>
                           <div className="text-right">
                             <span className="text-[8.5px] border border-slate-950 text-slate-950 bg-slate-50 px-2.5 py-1 rounded-md font-extrabold uppercase inline-block tracking-wide leading-none shadow-sm text-center">
-                              {batch.name || "GERAL"}
+                              {batch?.name || "GERAL"}
                             </span>
                             <p className="text-[8px] text-slate-400 font-semibold mt-1.5 leading-none">
                               Item #{globalIndex + 1} de {groupedProducts.length}
@@ -308,13 +309,13 @@ export const AcompanhamentoPrintSheet = forwardRef<
                               <div className="grid grid-cols-1 gap-y-1 text-[9px] overflow-y-auto max-h-[160px] pr-1">
                                 {p.orders.map((o, oIdx) => {
                                   const customerObj = findCustomerForOrder(o, db.customers);
-                                  const resolvedCustomerName = customerObj?.tradeName?.trim() || customerObj?.name?.trim() || o.customerName;
+                                  const resolvedCustomerName = customerObj?.tradeName?.trim() || customerObj?.name?.trim() || o.customerName || "Cliente";
 
                                   return (
                                     <div key={oIdx} className="flex justify-between items-center bg-white border border-slate-150 p-1.5 px-2 rounded-md shadow-2xs gap-2 min-w-0">
                                       <div className="font-mono text-slate-800 leading-normal min-w-0 flex-1 break-words">
                                         <div className="font-bold">
-                                          #{o.orderCode} <span className="text-slate-500 font-normal text-[9px]">({resolvedCustomerName})</span>
+                                          #{o.orderCode || o.id} <span className="text-slate-500 font-normal text-[9px]">({resolvedCustomerName})</span>
                                         </div>
                                         <div className="text-[8.5px] text-indigo-700 font-semibold mt-0.5">
                                           📅 Prazo: {o.deliveryDate ? o.deliveryDate.split("-").reverse().join("/") : "-"}
@@ -342,7 +343,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
                             <div className="col-span-2">
                               <span className="text-[7.5px] uppercase text-slate-400 font-extrabold block">Setor Responsável</span>
                               <strong className="text-slate-800 truncate block">
-                                {batch.isGerenciaLote || batch.sectorId === 999 
+                                {batch?.isGerenciaLote || batch?.sectorId === 999 
                                   ? "⚡ Corte a Laser (Gerência)" 
                                   : (sector ? sector.name : "📦 Geral / Sem Setor")}
                               </strong>
@@ -350,19 +351,19 @@ export const AcompanhamentoPrintSheet = forwardRef<
                             <div>
                               <span className="text-[7.5px] uppercase text-slate-400 font-extrabold block">Criação</span>
                               <strong className="text-slate-800">
-                                {new Date(batch.createdAt).toLocaleDateString("pt-BR")}
+                                {batch?.createdAt ? new Date(batch.createdAt).toLocaleDateString("pt-BR") : new Date().toLocaleDateString("pt-BR")}
                               </strong>
                             </div>
                             <div>
                               <span className="text-[7.5px] uppercase text-slate-400 font-extrabold block">Total Produzir</span>
                               <span className="text-blue-800 font-black">
-                                {p.totalQuantity} <span className="text-[8px] font-bold">{getItemUnit(item, p.orders[0])}</span>
+                                {p.totalQuantity} <span className="text-[8px] font-bold">{getItemUnit(item, p.orders?.[0])}</span>
                               </span>
                             </div>
                             <div className="col-span-2 border-t border-dashed border-slate-200 pt-1 mt-1">
                               <span className="text-[7.5px] uppercase text-indigo-500 font-black block leading-none">PRAZO DE ENTREGA (PEDIDO)</span>
                               <strong className="text-indigo-700 text-[10px] font-black font-mono mt-1 block">
-                                {p.orders.map(o => o.deliveryDate).filter(Boolean).sort()[0]?.split("-").reverse().join("/") || "Não Definido"}
+                                {(p.orders || []).map(o => o?.deliveryDate).filter(Boolean).sort()[0]?.split("-").reverse().join("/") || "Não Definido"}
                               </strong>
                             </div>
                             {item?.productionPoints && (
@@ -370,11 +371,11 @@ export const AcompanhamentoPrintSheet = forwardRef<
                                 <div>
                                   <span className="text-[7px] font-bold text-slate-400 block leading-none">PONTOS TOTAL</span>
                                   <span className="text-[10px] text-indigo-700 font-black font-mono leading-none">
-                                    {(Number(item.productionPoints) * p.totalQuantity).toLocaleString("pt-BR")} pts
+                                    {(Number(item.productionPoints) * (p.totalQuantity || 0)).toLocaleString("pt-BR")} pts
                                   </span>
                                 </div>
                                 <span className="text-[7px] text-slate-400 font-semibold mb-0.5 leading-none">
-                                  ({item.productionPoints} pts/{getItemUnit(item, p.orders[0])})
+                                  ({item.productionPoints} pts/{getItemUnit(item, p.orders?.[0])})
                                 </span>
                               </div>
                             )}
@@ -391,7 +392,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
                               <div className="flex flex-col items-center justify-center w-full h-full p-0.5 relative">
                                 <img
                                   src={item.imageUrl}
-                                  alt={item.name}
+                                  alt={item.name || "Imagem do item"}
                                   referrerPolicy="no-referrer"
                                   className="max-w-full max-h-[130px] object-contain rounded-lg shadow-sm border border-slate-100"
                                 />
