@@ -403,6 +403,26 @@ export function ProducaoScreen({
     return Array.from(groups.values());
   }, [pendingOrders]);
 
+  const itemsById = React.useMemo(() => {
+    const map = new Map<number, (typeof db.items)[0]>();
+    (db.items || []).forEach((item) => {
+      map.set(item.id, item);
+    });
+    return map;
+  }, [db.items]);
+
+  const filteredProductGroups = React.useMemo(() => {
+    if (!debouncedSearchTerm) return productGroups;
+    const normalizedTerm = normalizeString(debouncedSearchTerm);
+    return productGroups.filter((g) => {
+      const item = itemsById.get(g.itemId);
+      const searchStr = normalizeString(
+        `${item?.name || ""} ${g.color} ${g.size} ${g.variation}`,
+      );
+      return searchStr.includes(normalizedTerm);
+    });
+  }, [productGroups, debouncedSearchTerm, itemsById]);
+
   const proceedWithStart = (
     welderName?: string,
     directGroup?: any,
@@ -1792,26 +1812,6 @@ export function ProducaoScreen({
       </div>
     );
   }
-
-  const itemsById = React.useMemo(() => {
-    const map = new Map<number, (typeof db.items)[0]>();
-    (db.items || []).forEach((item) => {
-      map.set(item.id, item);
-    });
-    return map;
-  }, [db.items]);
-
-  const filteredProductGroups = React.useMemo(() => {
-    if (!debouncedSearchTerm) return productGroups;
-    const normalizedTerm = normalizeString(debouncedSearchTerm);
-    return productGroups.filter((g) => {
-      const item = itemsById.get(g.itemId);
-      const searchStr = normalizeString(
-        `${item?.name || ""} ${g.color} ${g.size} ${g.variation}`,
-      );
-      return searchStr.includes(normalizedTerm);
-    });
-  }, [productGroups, debouncedSearchTerm, itemsById]);
 
   if (view === "NEW_PACK") {
     return (
