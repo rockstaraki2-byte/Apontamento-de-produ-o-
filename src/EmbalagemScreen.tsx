@@ -199,99 +199,32 @@ export function EmbalagemScreen({
       const packedQty = parseQty(o.packedQuantity);
       if (packedQty >= availableQty && availableQty > 0) return false;
 
-      // Check if the order/item HAS ALREADY BEEN PRODUCED in production
-      const hasBeenProduced = () => {
-        // Direct produced quantity or status on Order
-        if ((o.producedQuantity || 0) > 0) return true;
-        if (o.status === "PRODUZIDO" || o.status === "EM_PRODUCAO" || o.status === "EMBALANDO") return true;
-        if ((o as any).qualidadeAprovada === true) return true;
-
-        // Production logs recorded by operators
-        const matchingLog = logs.some((l: any) => {
-          const matchOrder = Number(l.orderId) === Number(o.id);
-          const matchItem = Number(l.itemId) === Number(o.itemId);
-          const isProdType = String(l.type || "").toUpperCase() !== "QUALIDADE";
-          const qty =
-            (l.quantityProcessed || 0) +
-            (l.quantityCut || 0) +
-            (l.quantityPainted || 0) +
-            (l.quantityPacked || 0) ||
-            l.quantity ||
-            0;
-          return (matchOrder || matchItem) && isProdType && qty > 0;
-        });
-        if (matchingLog) return true;
-
-        // Production steps in manufacturing sectors specifically for THIS order or item
+      // Se a empresa exige qualidade, a gente barra, exceto se já foi aprovado ou se está embalando.
+      if (exigeQualidade) {
+        if ((o as any).qualidadeAprovada === true || o.status === "EMBALANDO") {
+          return true;
+        }
+        
         const itemSteps = steps.filter(
-          (s) => Number(s.orderId) === Number(o.id) || Number(s.itemId) === Number(o.itemId)
+          (s) => Number(s.orderId) === Number(o.id) || (s.loteId && (o as any).loteId && String(s.loteId) === String((o as any).loteId))
         );
-        const hasProdStep = itemSteps.some(
-          (s) =>
-            (s.quantidadeProduzida || 0) > 0 ||
-            s.status === "concluido" ||
-            s.status === "finalizado" ||
-            s.status === "aprovado" ||
-            s.status === "aguardando_qualidade" ||
-            s.status === "em_inspecao"
+        const hasApprovedQualityStep = itemSteps.some(
+          (s) => s.status === "aprovado" || (s as any).qualidadeAprovada === true
         );
-        if (hasProdStep) return true;
+        if (hasApprovedQualityStep) return true;
 
-        return false;
-      };
+        const hasApprovedQualityLog = logs.some((l: any) => {
+          const matchOrder = l.orderId && Number(l.orderId) === Number(o.id);
+          const matchItem = l.itemId && Number(l.itemId) === Number(o.itemId);
+          return (matchOrder || matchItem) && String(l.type || "").toUpperCase() === "QUALIDADE" && (l.result === "APROVADO" || String(l.result || "").toUpperCase().includes("APROV"));
+        });
+        if (hasApprovedQualityLog) return true;
 
-      // Item MUST have been produced in manufacturing to enter Embalagem
-      if (!hasBeenProduced()) {
+        // Se exige qualidade e não tem aprovação, bloqueia
         return false;
       }
 
-      // If company DOES NOT require Quality approval for packing, allow direct packing flow once produced
-      if (!exigeQualidade) {
-        return true;
-      }
-
-      // Quality Gate Validation:
-      // 1. Check if the order object itself has 'qualidadeAprovada: true' or status 'EMBALANDO'
-      if ((o as any).qualidadeAprovada === true || o.status === "EMBALANDO") {
-        return true;
-      }
-
-      // 2. Check steps in db.productionSteps strictly associated with THIS order or batch
-      const itemSteps = steps.filter(
-        (s) => Number(s.orderId) === Number(o.id) || (s.loteId && (o as any).loteId && String(s.loteId) === String((o as any).loteId))
-      );
-
-      // Check if there is an explicit step approved by quality for THIS order
-      const hasApprovedQualityStep = itemSteps.some(
-        (s) => s.status === "aprovado" || (s as any).qualidadeAprovada === true
-      );
-
-      if (hasApprovedQualityStep) {
-        return true;
-      }
-
-      // Check if there is a quality log approving this order or item
-      const hasApprovedQualityLog = logs.some((l: any) => {
-        const matchOrder = l.orderId && Number(l.orderId) === Number(o.id);
-        const matchItem = l.itemId && Number(l.itemId) === Number(o.itemId);
-        return (matchOrder || matchItem) && String(l.type || "").toUpperCase() === "QUALIDADE" && (l.result === "APROVADO" || String(l.result || "").toUpperCase().includes("APROV"));
-      });
-
-      if (hasApprovedQualityLog) {
-        return true;
-      }
-
-      // Block if any step for this order is currently awaiting quality, under evaluation, reproved, or in rework
-      const isBlockedByQuality = itemSteps.some(
-        (s) =>
-          s.status === "aguardando_qualidade" ||
-          s.status === "em_inspecao" ||
-          s.status === "reprovado" ||
-          s.status === "retrabalho"
-      );
-      if (isBlockedByQuality) return false;
-
-      return false;
+      return true;
     });
   }, [db.orders, db.productionSteps, db.logs, (db as any).productionLogs, db.activeTenant]);
 
@@ -1281,64 +1214,75 @@ export function EmbalagemScreen({
     });
 
     return (
-      <div className="flex flex-col h-full overflow-y-auto animate-fade-in p-2">
+      <div className="flex flex-col h-full overflow-y-auto animate-fade-in p-2 sm:p-4 max-w-4xl mx-auto w-full">
         <button
           onClick={() => setView("LIST_ACTIVE")}
-          className="flex items-center gap-2 self-start text-blue-600 font-semibold mb-3 hover:text-blue-800 text-sm"
+          className="flex items-center gap-2 self-start text-blue-600 font-semibold mb-3 hover:text-blue-800 text-sm transition"
         >
           <ArrowLeft size={16} /> Embalagens Ativas
         </button>
-        <h2 className="text-sm font-bold mb-3 text-gray-800 uppercase">
-          Lista de Produção (Por Produto)
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-3">
+          <h2 className="text-sm sm:text-base font-bold text-gray-800 uppercase">
+            Lista de Produção (Por Produto)
+          </h2>
+          <span className="text-xs text-gray-500 font-medium">
+            {filteredGroups.length} {filteredGroups.length === 1 ? "produto para embalar" : "produtos para embalar"}
+          </span>
+        </div>
         <input
           type="text"
           placeholder="Pesquisar produto..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="border border-gray-300 p-2 rounded-lg mb-3 text-sm bg-white text-slate-900"
+          className="border border-gray-300 p-2.5 rounded-lg mb-3 text-sm bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none w-full"
         />
         <div className="flex-1 overflow-y-auto w-full pb-6">
           {filteredGroups.length === 0 ? (
-            <p className="text-gray-500 text-center mt-4 text-sm">
-              Nenhum produto encontrado.
+            <p className="text-gray-500 text-center py-8 text-sm">
+              Nenhum produto encontrado para embalar.
             </p>
           ) : (
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3">
               {filteredGroups.map((g, idx) => {
                 const item = db.items.find((i) => i.id === g.itemId);
                 return (
                   <div
                     key={idx}
                     onClick={() => setConfirmingGroup(g)}
-                    className="bg-white p-2.5 border border-gray-200 flex justify-between items-center rounded-lg shadow-sm cursor-pointer hover:border-blue-400 hover:shadow-md transition gap-2"
+                    className="bg-white p-3 border border-gray-200 flex justify-between items-center rounded-xl shadow-xs cursor-pointer hover:border-blue-400 hover:shadow-md transition gap-2.5 w-full"
                   >
-                    {item?.imageUrl && (
-                      <img
-                        src={item.imageUrl}
-                        alt={item.name}
-                        className="w-10 h-10 object-cover rounded shadow-sm border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setFullSizeImage(item.imageUrl || null);
-                        }}
-                      />
-                    )}
-                    <div className="flex flex-col flex-1 shrink min-w-0">
-                      <span className="font-bold text-xs text-gray-800 truncate">
-                        {item?.name || "Item"}
-                      </span>
-                      <span className="text-[10px] text-gray-500 flex flex-wrap items-center gap-1.5 mt-0.5">
-                        <ColorBadgeWithImage color={g.color} attributes={db.attributes} size="sm" />
-                        <span className="bg-slate-100 px-1 rounded">Tam: {g.size || "-"}</span>
-                        <span className="bg-slate-100 px-1 rounded">Var: {g.variation || "-"}</span>
-                      </span>
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      {item?.imageUrl ? (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.name}
+                          className="w-11 h-11 object-cover rounded-lg shadow-2xs border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFullSizeImage(item.imageUrl || null);
+                          }}
+                        />
+                      ) : (
+                        <div className="w-11 h-11 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
+                          <Package size={18} />
+                        </div>
+                      )}
+                      <div className="flex flex-col min-w-0 flex-1 text-left">
+                        <span className="font-bold text-xs sm:text-sm text-gray-800 truncate" title={item?.name || "Item"}>
+                          {item?.name || "Item"}
+                        </span>
+                        <span className="text-[10px] sm:text-xs text-gray-500 flex flex-wrap items-center gap-1 mt-0.5">
+                          <ColorBadgeWithImage color={g.color} attributes={db.attributes} size="sm" />
+                          <span className="bg-slate-100 px-1 py-0.5 rounded text-[10px] font-medium text-slate-700">Tam: {g.size || "-"}</span>
+                          <span className="bg-slate-100 px-1 py-0.5 rounded text-[10px] font-medium text-slate-700">Var: {g.variation || "-"}</span>
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex flex-col items-end shrink-0 pl-2">
-                      <span className="text-[9px] text-gray-500 uppercase tracking-widest mb-0.5">
+                    <div className="flex flex-col items-end shrink-0 pl-2 border-l border-slate-100">
+                      <span className="text-[9px] text-gray-500 uppercase tracking-wider mb-0.5 font-semibold">
                         Embalar
                       </span>
-                      <span className="font-bold text-sm text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                      <span className="font-extrabold text-sm sm:text-base text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-md">
                         {g.totalRemaining}
                       </span>
                     </div>

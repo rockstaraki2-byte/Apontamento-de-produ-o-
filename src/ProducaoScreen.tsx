@@ -1840,30 +1840,35 @@ export function ProducaoScreen({
 
   if (view === "NEW_PACK") {
     return (
-      <div className="flex flex-col h-full p-2 w-full max-w-lg mx-auto">
+      <div className="flex flex-col h-full p-2 sm:p-4 w-full max-w-4xl mx-auto overflow-hidden">
         <button
           onClick={() => setView("LIST_ACTIVE")}
-          className="flex items-center gap-2 self-start text-blue-600 font-semibold mb-4 hover:text-blue-800"
+          className="flex items-center gap-2 self-start text-blue-600 font-semibold mb-3 hover:text-blue-800 text-sm transition"
         >
-          <ArrowLeft size={20} /> Produções Ativas
+          <ArrowLeft size={18} /> Produções Ativas
         </button>
-        <h2 className="text-xl font-bold mb-4 text-gray-800">
-          Lista de Produção
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+          <h2 className="text-lg sm:text-xl font-bold text-gray-800">
+            Lista de Produção
+          </h2>
+          <span className="text-xs text-gray-500 font-medium">
+            {filteredProductGroups.length} {filteredProductGroups.length === 1 ? "item disponível" : "itens disponíveis"}
+          </span>
+        </div>
         <input
           type="text"
           placeholder="Pesquisar produto..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="border border-gray-300 p-2 rounded-lg mb-4"
+          className="w-full border border-gray-300 p-2.5 rounded-lg mb-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-gray-800"
         />
-        <div className="flex-1 overflow-y-auto w-full">
+        <div className="flex-1 overflow-y-auto w-full pr-0.5">
           {filteredProductGroups.length === 0 ? (
-            <p className="text-gray-500 text-center mt-4">
+            <p className="text-gray-500 text-center py-8 text-sm">
               Nenhum produto encontrado.
             </p>
           ) : (
-            <div className="grid gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3">
               {filteredProductGroups.map((g, idx) => {
                 const item = itemsById.get(g.itemId);
                 const lotes = getLotesForGroup(g.itemId);
@@ -1871,41 +1876,61 @@ export function ProducaoScreen({
                   <div
                     key={`${g.itemId}-${g.color}-${g.size}-${g.variation}-${idx}`}
                     onClick={() => startPackaging(g)}
-                    className="bg-white p-4 border border-gray-200 flex justify-between items-center rounded-lg shadow-sm cursor-pointer hover:border-blue-400 hover:shadow-md transition gap-3"
+                    className="bg-white p-3 sm:p-4 border border-gray-200 flex items-center justify-between rounded-xl shadow-xs cursor-pointer hover:border-blue-400 hover:shadow-md transition gap-3 w-full"
                   >
-                    {item?.imageUrl && (
-                      <img
-                        src={item.imageUrl}
-                        alt={item.name}
-                        className="w-12 h-12 object-cover rounded shadow-sm border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setFullSizeImage(item.imageUrl || null);
-                        }}
-                      />
-                    )}
-                    <div className="flex flex-col flex-1 shrink min-w-0">
-                      <span className="font-bold text-gray-800 truncate">
-                        {item?.name || "Item"}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {g.color || "-"} | {g.size || "-"} |{" "}
-                        {g.variation || "-"}
-                      </span>
-                      {lotes.length > 0 && (
-                        <div className="mt-1 flex items-center gap-1.5 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md w-fit">
-                          <Package size={12} className="text-emerald-600 shrink-0" />
-                          <span className="truncate">
-                            {lotes.map((l) => `Lote #${l.code || l.id}`).join(", ")}
-                          </span>
+                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                      {item?.imageUrl ? (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.name}
+                          className="w-12 h-12 sm:w-14 sm:h-14 object-cover rounded-lg shadow-2xs border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFullSizeImage(item.imageUrl || null);
+                          }}
+                        />
+                      ) : (
+                        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
+                          <Package size={22} />
                         </div>
                       )}
+                      <div className="flex flex-col min-w-0 flex-1 text-left">
+                        <span className="font-bold text-sm sm:text-base text-gray-800 truncate" title={item?.name || "Item"}>
+                          {item?.name || "Item"}
+                        </span>
+                        <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1 mt-0.5">
+                          {g.color && g.color !== "-" && (
+                            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-700">
+                              Cor: {g.color}
+                            </span>
+                          )}
+                          {g.size && g.size !== "-" && (
+                            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-700">
+                              Tam: {g.size}
+                            </span>
+                          )}
+                          {g.variation && g.variation !== "-" && (
+                            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-700">
+                              Var: {g.variation}
+                            </span>
+                          )}
+                          {!g.color && !g.size && !g.variation && <span>-</span>}
+                        </div>
+                        {lotes.length > 0 && (
+                          <div className="mt-1 flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md w-fit max-w-full">
+                            <Package size={11} className="text-emerald-600 shrink-0" />
+                            <span className="truncate">
+                              {lotes.map((l) => `Lote #${l.code || l.id}`).join(", ")}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex flex-col items-end">
-                      <span className="text-xs text-gray-500 mb-1">
+                    <div className="flex flex-col items-end shrink-0 pl-2 border-l border-slate-100">
+                      <span className="text-[10px] sm:text-xs text-gray-500 font-medium whitespace-nowrap mb-0.5">
                         Para Produzir
                       </span>
-                      <span className="font-bold text-lg text-blue-600">
+                      <span className="font-extrabold text-base sm:text-xl text-blue-600 leading-tight">
                         {g.totalRemaining}
                       </span>
                     </div>

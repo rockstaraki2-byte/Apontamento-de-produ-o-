@@ -260,6 +260,7 @@ export function InjetoraScreen({
       db.addNotification({
         message: `Apontamento Parcial Injeção: ${prod} peças computadas. Lote ${plan.name} segue ativo.`,
         read: false,
+        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
       });
       alert(`Apontamento parcial inserido com sucesso!`);
     } else {
@@ -267,6 +268,7 @@ export function InjetoraScreen({
       db.addNotification({
         message: `Injeção Finalizada: ${prod} peças injetadas (${qtyBags} sacos x ${qtyPerBag} un).`,
         read: false,
+        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
       });
     }
 

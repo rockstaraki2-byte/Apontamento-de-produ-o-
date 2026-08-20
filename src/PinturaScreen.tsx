@@ -682,64 +682,89 @@ export function PinturaScreen({
             });
 
             return (
-              <div className="flex flex-col gap-2.5 p-1 w-full">
+              <div className="flex flex-col h-full overflow-y-auto animate-fade-in p-2 sm:p-4 max-w-4xl mx-auto w-full">
                 <button
                   onClick={() => setView("LIST_ACTIVE")}
-                  className="flex items-center gap-1.5 self-start text-pink-600 font-bold hover:text-pink-800 text-[10px] uppercase"
+                  className="flex items-center gap-2 self-start text-pink-600 font-semibold mb-3 hover:text-pink-800 text-sm transition"
                 >
-                  <ArrowLeft size={14} /> Pinturas Ativas
+                  <ArrowLeft size={18} /> Pinturas Ativas
                 </button>
-                <h2 className="text-xs font-bold text-gray-800">
-                  Lista de Pinturas Pendentes (Pedidos)
-                </h2>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                  <h2 className="text-lg sm:text-xl font-bold text-gray-800">
+                    Lista de Pinturas Pendentes (Pedidos)
+                  </h2>
+                  <span className="text-xs text-gray-500 font-medium">
+                    {filteredGroups.length} {filteredGroups.length === 1 ? "produto para pintura" : "produtos para pintura"}
+                  </span>
+                </div>
                 <input
                   type="text"
                   placeholder="Pesquisar produto associado nos pedidos..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="border border-gray-300 p-2 rounded focus:outline-pink-500 text-xs w-full"
+                  className="w-full border border-gray-300 p-2.5 rounded-lg mb-3 text-sm focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white text-gray-800"
                 />
-                <div className="overflow-y-auto max-h-[300px] w-full mt-1">
+                <div className="flex-1 overflow-y-auto w-full pr-0.5">
                   {filteredGroups.length === 0 ? (
-                    <p className="text-gray-500 text-center mt-2 text-[10px]">
+                    <p className="text-gray-500 text-center py-8 text-sm">
                       Nenhum produto em aberto para pintura encontrado nos
                       pedidos.
                     </p>
                   ) : (
-                    <div className="grid gap-1.5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3">
                       {filteredGroups.map((g, idx) => {
                         const item = db.items.find((i) => i.id === g.itemId);
                         return (
                           <div
                             key={idx}
                             onClick={() => startPackaging(g)}
-                            className="bg-white p-2 border border-gray-200 flex justify-between items-center rounded-lg shadow-3xs cursor-pointer hover:border-pink-400 hover:shadow-2xs transition gap-2"
+                            className="bg-white p-3 sm:p-4 border border-gray-200 flex items-center justify-between rounded-xl shadow-xs cursor-pointer hover:border-pink-400 hover:shadow-md transition gap-3 w-full"
                           >
-                            {item?.imageUrl && (
-                              <img
-                                src={item.imageUrl}
-                                alt={item.name}
-                                className="w-10 h-10 object-cover rounded shadow-3xs border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setFullSizeImage(item.imageUrl || null);
-                                }}
-                              />
-                            )}
-                            <div className="flex flex-col min-w-0 flex-1 pr-2">
-                              <span className="font-bold text-gray-800 text-[11px] truncate">
-                                {item?.name || "Item"}
-                              </span>
-                              <span className="text-[9px] text-gray-500 truncate">
-                                Cor: {g.color || "-"} | Tam: {g.size || "-"} |
-                                Var: {g.variation || "-"}
-                              </span>
+                            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                              {item?.imageUrl ? (
+                                <img
+                                  src={item.imageUrl}
+                                  alt={item.name}
+                                  className="w-12 h-12 sm:w-14 sm:h-14 object-cover rounded-lg shadow-2xs border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setFullSizeImage(item.imageUrl || null);
+                                  }}
+                                />
+                              ) : (
+                                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
+                                  <PaintRoller size={22} />
+                                </div>
+                              )}
+                              <div className="flex flex-col min-w-0 flex-1 text-left">
+                                <span className="font-bold text-sm sm:text-base text-gray-800 truncate" title={item?.name || "Item"}>
+                                  {item?.name || "Item"}
+                                </span>
+                                <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1 mt-0.5">
+                                  {g.color && g.color !== "-" && (
+                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-700">
+                                      Cor: {g.color}
+                                    </span>
+                                  )}
+                                  {g.size && g.size !== "-" && (
+                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-700">
+                                      Tam: {g.size}
+                                    </span>
+                                  )}
+                                  {g.variation && g.variation !== "-" && (
+                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-700">
+                                      Var: {g.variation}
+                                    </span>
+                                  )}
+                                  {!g.color && !g.size && !g.variation && <span>-</span>}
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex flex-col items-end shrink-0">
-                              <span className="text-[9px] text-gray-400">
-                                Pendente
+                            <div className="flex flex-col items-end shrink-0 pl-2 border-l border-slate-100">
+                              <span className="text-[10px] sm:text-xs text-gray-500 font-medium whitespace-nowrap mb-0.5">
+                                Para Pintar
                               </span>
-                              <span className="font-extrabold text-xs text-pink-600 leading-none">
+                              <span className="font-extrabold text-base sm:text-xl text-pink-600 leading-tight">
                                 {g.totalRemaining}
                               </span>
                             </div>

@@ -232,6 +232,7 @@ export function PrensaRafaelScreen({
       db.addNotification({
         message: `Apontamento Parcial Prensa Rafael: ${prod} peças computadas. O lote ${plan.name} continua.`,
         read: false,
+        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
       });
       alert(`Apontamento parcial concluído com sucesso!`);
     } else {
@@ -240,8 +241,9 @@ export function PrensaRafaelScreen({
       // 4. Cleanup
       db.removeActivePack(activeTask.id);
       db.addNotification({
-        message: `Corte Finalizado: ${producedQuantity} peças geradas.`,
+        message: `Corte Finalizado (Prensa Rafael): ${producedQuantity} peças geradas (Plano: ${plan.name}).`,
         read: false,
+        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
       });
     }
 
