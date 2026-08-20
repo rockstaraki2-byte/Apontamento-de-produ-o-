@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { parseQty } from "./quantityUtils";
 import {
   Package,
   Clock,
@@ -181,18 +182,120 @@ export function EmbalagemScreen({
     );
   }, [db.activePacks, currentUser.role, currentUser.id]);
 
-  const getAvailableForPacking = (o: Order) => o.totalQuantity;
+  const getAvailableForPacking = (o: Order) => {
+    const raw = (o as any).totalQuantity ?? (o as any).quantity ?? (o as any).quantidade;
+    const parsed = parseQty(raw);
+    return parsed > 0 ? parsed : 1;
+  };
 
   const pendingOrders = useMemo(() => {
-    return db.orders.filter(
-      (o) =>
-        o.status !== "EMBALADO" &&
-        o.status !== "FATURADO" &&
-        (o.packedQuantity || 0) < getAvailableForPacking(o),
-    );
-  }, [db.orders]);
+    const steps = db.productionSteps || [];
+    const logs = db.logs || (db as any).productionLogs || [];
+    const exigeQualidade = db.activeTenant?.exigirQualidadeNaEmbalagem !== false;
 
-  // Group pending orders by product
+    return db.orders.filter((o) => {
+      if (o.status === "EMBALADO" || o.status === "FATURADO") return false;
+      const availableQty = getAvailableForPacking(o);
+      const packedQty = parseQty(o.packedQuantity);
+      if (packedQty >= availableQty && availableQty > 0) return false;
+
+      // Check if the order/item HAS ALREADY BEEN PRODUCED in production
+      const hasBeenProduced = () => {
+        // Direct produced quantity or status on Order
+        if ((o.producedQuantity || 0) > 0) return true;
+        if (o.status === "PRODUZIDO" || o.status === "EM_PRODUCAO" || o.status === "EMBALANDO") return true;
+        if ((o as any).qualidadeAprovada === true) return true;
+
+        // Production logs recorded by operators
+        const matchingLog = logs.some((l: any) => {
+          const matchOrder = Number(l.orderId) === Number(o.id);
+          const matchItem = Number(l.itemId) === Number(o.itemId);
+          const isProdType = String(l.type || "").toUpperCase() !== "QUALIDADE";
+          const qty =
+            (l.quantityProcessed || 0) +
+            (l.quantityCut || 0) +
+            (l.quantityPainted || 0) +
+            (l.quantityPacked || 0) ||
+            l.quantity ||
+            0;
+          return (matchOrder || matchItem) && isProdType && qty > 0;
+        });
+        if (matchingLog) return true;
+
+        // Production steps in manufacturing sectors specifically for THIS order or item
+        const itemSteps = steps.filter(
+          (s) => Number(s.orderId) === Number(o.id) || Number(s.itemId) === Number(o.itemId)
+        );
+        const hasProdStep = itemSteps.some(
+          (s) =>
+            (s.quantidadeProduzida || 0) > 0 ||
+            s.status === "concluido" ||
+            s.status === "finalizado" ||
+            s.status === "aprovado" ||
+            s.status === "aguardando_qualidade" ||
+            s.status === "em_inspecao"
+        );
+        if (hasProdStep) return true;
+
+        return false;
+      };
+
+      // Item MUST have been produced in manufacturing to enter Embalagem
+      if (!hasBeenProduced()) {
+        return false;
+      }
+
+      // If company DOES NOT require Quality approval for packing, allow direct packing flow once produced
+      if (!exigeQualidade) {
+        return true;
+      }
+
+      // Quality Gate Validation:
+      // 1. Check if the order object itself has 'qualidadeAprovada: true' or status 'EMBALANDO'
+      if ((o as any).qualidadeAprovada === true || o.status === "EMBALANDO") {
+        return true;
+      }
+
+      // 2. Check steps in db.productionSteps strictly associated with THIS order or batch
+      const itemSteps = steps.filter(
+        (s) => Number(s.orderId) === Number(o.id) || (s.loteId && (o as any).loteId && String(s.loteId) === String((o as any).loteId))
+      );
+
+      // Check if there is an explicit step approved by quality for THIS order
+      const hasApprovedQualityStep = itemSteps.some(
+        (s) => s.status === "aprovado" || (s as any).qualidadeAprovada === true
+      );
+
+      if (hasApprovedQualityStep) {
+        return true;
+      }
+
+      // Check if there is a quality log approving this order or item
+      const hasApprovedQualityLog = logs.some((l: any) => {
+        const matchOrder = l.orderId && Number(l.orderId) === Number(o.id);
+        const matchItem = l.itemId && Number(l.itemId) === Number(o.itemId);
+        return (matchOrder || matchItem) && String(l.type || "").toUpperCase() === "QUALIDADE" && (l.result === "APROVADO" || String(l.result || "").toUpperCase().includes("APROV"));
+      });
+
+      if (hasApprovedQualityLog) {
+        return true;
+      }
+
+      // Block if any step for this order is currently awaiting quality, under evaluation, reproved, or in rework
+      const isBlockedByQuality = itemSteps.some(
+        (s) =>
+          s.status === "aguardando_qualidade" ||
+          s.status === "em_inspecao" ||
+          s.status === "reprovado" ||
+          s.status === "retrabalho"
+      );
+      if (isBlockedByQuality) return false;
+
+      return false;
+    });
+  }, [db.orders, db.productionSteps, db.logs, (db as any).productionLogs, db.activeTenant]);
+
+  // Group pending orders, approved production steps and quality approvals by product
   const productGroups = useMemo(() => {
     const groups = new Map<
       string,
@@ -202,25 +305,122 @@ export function EmbalagemScreen({
         size: string;
         variation: string;
         totalRemaining: number;
+        orderIds?: (string | number)[];
+        stepIds?: string[];
       }
     >();
+
+    const steps = db.productionSteps || [];
+    const logs = db.logs || (db as any).productionLogs || [];
+    const packedLogs = logs.filter((l: any) => String(l.type || "").toUpperCase() === "EMBALAGEM");
+
+    // 1. Add all pending orders that passed the filter
     pendingOrders.forEach((o) => {
-      const displayColor = o.paintedColor || o.color;
-      const key = getProductKey(o.itemId, displayColor, o.size, o.variation);
+      const displayColor = o.paintedColor || o.color || "-";
+      const displaySize = o.size || "-";
+      const displayVariation = o.variation || "-";
+      const key = getProductKey(o.itemId, displayColor, displaySize, displayVariation);
       if (!groups.has(key)) {
         groups.set(key, {
           itemId: o.itemId,
           color: displayColor,
-          size: o.size,
-          variation: o.variation,
+          size: displaySize,
+          variation: displayVariation,
           totalRemaining: 0,
+          orderIds: [],
+          stepIds: [],
         });
       }
-      groups.get(key)!.totalRemaining +=
-        (getAvailableForPacking(o) || 0) - (o.packedQuantity || 0);
+      const avail = getAvailableForPacking(o);
+      const packed = parseQty(o.packedQuantity);
+      const rem = Math.max(0, avail - packed);
+      groups.get(key)!.totalRemaining += isNaN(rem) ? 0 : rem;
+      if (o.id && groups.get(key)!.orderIds) {
+        groups.get(key)!.orderIds!.push(o.id);
+      }
     });
+
+    // 2. Add approved production steps that are NOT already linked to an order in pendingOrders
+    const approvedSteps = steps.filter(
+      (s) => s.status === "aprovado" || (s as any).qualidadeAprovada === true
+    );
+
+    approvedSteps.forEach((step) => {
+      // If step has an orderId that is already in pendingOrders, it's already accounted for
+      if (step.orderId && pendingOrders.some((o) => Number(o.id) === Number(step.orderId))) {
+        return;
+      }
+
+      const displayColor = (step as any).color || (step as any).paintedColor || "-";
+      const displaySize = (step as any).size || "-";
+      const displayVariation = (step as any).variation || "-";
+      const key = getProductKey(step.itemId, displayColor, displaySize, displayVariation);
+
+      const stepProducedQty = parseQty(step.quantidadeProduzida || (step as any).quantity || 1);
+      const stepPackedQty = packedLogs
+        .filter((l: any) => (step.id && l.taskId === step.id) || (step.orderId && Number(l.orderId) === Number(step.orderId)))
+        .reduce((sum: number, l: any) => sum + parseQty(l.quantityPacked || l.quantity || 0), 0);
+
+      const stepRemaining = Math.max(0, stepProducedQty - stepPackedQty);
+      if (stepRemaining > 0) {
+        if (!groups.has(key)) {
+          groups.set(key, {
+            itemId: step.itemId,
+            color: displayColor,
+            size: displaySize,
+            variation: displayVariation,
+            totalRemaining: 0,
+            orderIds: [],
+            stepIds: [],
+          });
+        }
+        groups.get(key)!.totalRemaining += stepRemaining;
+        if (step.id && groups.get(key)!.stepIds) {
+          groups.get(key)!.stepIds!.push(step.id);
+        }
+      }
+    });
+
+    // 3. Add Quality inspection logs that approved items not yet covered in groups
+    const approvedQualityLogs = logs.filter(
+      (l: any) =>
+        String(l.type || "").toUpperCase() === "QUALIDADE" &&
+        (l.result === "APROVADO" || String(l.result || "").toUpperCase().includes("APROV"))
+    );
+
+    approvedQualityLogs.forEach((qLog: any) => {
+      if (!qLog.itemId) return;
+      if (qLog.orderId && pendingOrders.some((o) => Number(o.id) === Number(qLog.orderId))) return;
+      if (approvedSteps.some((s) => s.id === qLog.taskId || (qLog.orderId && Number(s.orderId) === Number(qLog.orderId)))) return;
+
+      const displayColor = qLog.color || "-";
+      const displaySize = qLog.size || "-";
+      const displayVariation = qLog.variation || "-";
+      const key = getProductKey(qLog.itemId, displayColor, displaySize, displayVariation);
+
+      if (!groups.has(key)) {
+        const logQty = parseQty(qLog.quantityProcessed || qLog.quantity || 1);
+        const logPackedQty = packedLogs
+          .filter((l: any) => Number(l.itemId) === Number(qLog.itemId) && l.timestamp > (qLog.createdAt || qLog.timestamp || 0))
+          .reduce((sum: number, l: any) => sum + parseQty(l.quantityPacked || l.quantity || 0), 0);
+
+        const logRemaining = Math.max(0, logQty - logPackedQty);
+        if (logRemaining > 0) {
+          groups.set(key, {
+            itemId: qLog.itemId,
+            color: displayColor,
+            size: displaySize,
+            variation: displayVariation,
+            totalRemaining: logRemaining,
+            orderIds: [],
+            stepIds: [],
+          });
+        }
+      }
+    });
+
     return Array.from(groups.values());
-  }, [pendingOrders]);
+  }, [pendingOrders, db.productionSteps, db.logs, (db as any).productionLogs]);
 
   const startPackaging = (group: (typeof productGroups)[0]) => {
     setOperatorModalTarget(group);

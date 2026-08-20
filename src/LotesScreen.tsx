@@ -121,6 +121,156 @@ export function LotesScreen({
     );
   }, [currentUser]);
 
+  const getOrderSectorTracking = (order: Order, batchId: number) => {
+    // 1. Check if the order/item is currently active in db.activePacks
+    const activeTask = db.activePacks?.find((t) => {
+      if (t.taskId && (t.taskId === order.id || String(t.taskId) === String(order.id))) return true;
+      if (t.associatedBatchId === batchId && t.itemId === order.itemId) return true;
+      if (t.itemId === order.itemId && (!t.associatedBatchId || t.associatedBatchId === batchId)) return true;
+      return false;
+    });
+
+    if (activeTask) {
+      const rawOp = (activeTask.operatorId || "").trim().toLowerCase();
+      const baseOp = rawOp.split(" - ")[0].trim();
+      const operator = db.users.find(
+        (u) =>
+          u.id.toLowerCase() === baseOp ||
+          u.id.toLowerCase() === rawOp ||
+          (u.name && u.name.toLowerCase() === baseOp) ||
+          (u.name && u.name.toLowerCase() === rawOp)
+      );
+
+      let sectorName = activeTask.sectorName;
+      if (!sectorName && activeTask.sectorId) {
+        const sec = db.sectors.find((s) => String(s.id) === String(activeTask.sectorId));
+        if (sec) sectorName = sec.name;
+      }
+      if (!sectorName && operator?.sectorIds && operator.sectorIds.length > 0) {
+        const sec = db.sectors.find((s) => operator.sectorIds?.some((sid) => String(sid) === String(s.id)));
+        if (sec) sectorName = sec.name;
+      }
+      if (!sectorName && operator?.role) {
+        const roleMap: Record<string, string> = {
+          SOLDA: "Solda",
+          PINTURA: "Pintura",
+          EMBALAGEM: "Embalagem",
+          CORTE_LASER: "Corte Laser",
+          PRENSA_EDUARDO: "Prensa (Eduardo)",
+          PRENSA_RAFAEL: "Prensa (Rafael)",
+          TORNO_CNC_WILLIAN: "Torno CNC (Willian)",
+          TORNO_CNC_HENRIQUE: "Torno CNC (Henrique)",
+          INJETORA: "Injetora",
+          BANHO_QUIMICO: "Banho Químico",
+          MONTAGEM_RETRATIL: "Montagem Retrátil",
+          QUALIDADE: "Controle de Qualidade",
+        };
+        if (roleMap[operator.role]) sectorName = roleMap[operator.role];
+      }
+      if (!sectorName && activeTask.type) {
+        const typeMap: Record<string, string> = {
+          PINTURA: "Pintura",
+          CORTE_LASER: "Corte Laser",
+          EMBALAGEM: "Embalagem",
+          PRENSA_EDUARDO: "Prensa (Eduardo)",
+          PRENSA_RAFAEL: "Prensa (Rafael)",
+          TORNO_CNC_WILLIAN: "Torno CNC (Willian)",
+          TORNO_CNC_HENRIQUE: "Torno CNC (Henrique)",
+          BANHO_QUIMICO: "Banho Químico",
+          INJETORA: "Injetora",
+          MONTAGEM_RETRATIL: "Montagem Retrátil",
+          SOLDA: "Solda",
+        };
+        sectorName = typeMap[activeTask.type] || activeTask.processName || "Produção";
+      }
+
+      return {
+        isActive: true,
+        hasHistory: true,
+        sectorName: sectorName || "Fábrica",
+        operatorName: operator?.name || activeTask.operatorId || "Operador",
+        timestamp: "",
+      };
+    }
+
+    // 2. Check the most recent production log in db.logs
+    const relevantLogs = (db.logs || []).filter(
+      (l) => l.orderId === order.id || l.itemId === order.itemId
+    );
+
+    if (relevantLogs.length > 0) {
+      const lastLog = [...relevantLogs].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))[0];
+      const rawOp = (lastLog.operatorId || "").trim().toLowerCase();
+      const baseOp = rawOp.split(" - ")[0].trim();
+      const operator = db.users.find(
+        (u) =>
+          u.id.toLowerCase() === baseOp ||
+          u.id.toLowerCase() === rawOp ||
+          (u.name && u.name.toLowerCase() === baseOp) ||
+          (u.name && u.name.toLowerCase() === rawOp)
+      );
+
+      let sectorName = "";
+      if (operator?.sectorIds && operator.sectorIds.length > 0) {
+        const sec = db.sectors.find((s) => operator.sectorIds?.some((sid) => String(sid) === String(s.id)));
+        if (sec) sectorName = sec.name;
+      }
+      if (!sectorName && operator?.role) {
+        const roleMap: Record<string, string> = {
+          SOLDA: "Solda",
+          PINTURA: "Pintura",
+          EMBALAGEM: "Embalagem",
+          CORTE_LASER: "Corte Laser",
+          PRENSA_EDUARDO: "Prensa (Eduardo)",
+          PRENSA_RAFAEL: "Prensa (Rafael)",
+          TORNO_CNC_WILLIAN: "Torno CNC (Willian)",
+          TORNO_CNC_HENRIQUE: "Torno CNC (Henrique)",
+          INJETORA: "Injetora",
+          BANHO_QUIMICO: "Banho Químico",
+          MONTAGEM_RETRATIL: "Montagem Retrátil",
+          QUALIDADE: "Controle de Qualidade",
+        };
+        if (roleMap[operator.role]) sectorName = roleMap[operator.role];
+      }
+      if (!sectorName && lastLog.type) {
+        const typeMap: Record<string, string> = {
+          PINTURA: "Pintura",
+          CORTE_LASER: "Corte Laser",
+          EMBALAGEM: "Embalagem",
+          PRENSA_EDUARDO: "Prensa (Eduardo)",
+          PRENSA_RAFAEL: "Prensa (Rafael)",
+          TORNO_CNC_WILLIAN: "Torno CNC (Willian)",
+          TORNO_CNC_HENRIQUE: "Torno CNC (Henrique)",
+          BANHO_QUIMICO: "Banho Químico",
+          INJETORA: "Injetora",
+          MONTAGEM_RETRATIL: "Montagem Retrátil",
+          SOLDA: "Solda",
+        };
+        sectorName = typeMap[lastLog.type] || lastLog.processName || "Produção";
+      }
+
+      const formattedTime = lastLog.timestamp
+        ? new Date(lastLog.timestamp).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+        : "";
+
+      return {
+        isActive: false,
+        hasHistory: true,
+        sectorName: sectorName || "Produção",
+        operatorName: operator?.name || lastLog.operatorId || "Operador",
+        timestamp: formattedTime,
+      };
+    }
+
+    return {
+      isActive: false,
+      hasHistory: false,
+      sectorName: "",
+      operatorName: "",
+      timestamp: "",
+    };
+  };
+
   const handleGenerateAcompPdf = async (b: ProductionBatch, selectedIds?: number[]) => {
     setIsGeneratingAcomp(true);
     setAcompBatch(b);
@@ -186,20 +336,20 @@ export function LotesScreen({
 
   // Filter batches according to target user permissions
   const batches = useMemo(() => {
-    const baseList = db.productionBatches.filter(
-      (b) => b.isGerenciaLote || b.sectorId === 999
-    );
+    const baseList = db.productionBatches;
 
     if (
       currentUser.role === "ADMIN" ||
       currentUser.role === "PCP" ||
+      currentUser.role === "GERENCIA" ||
       currentUser.id === "gerencia"
     ) {
       return baseList;
     }
     
-    // For Encarregado (dinei) or Projetista (projetista_marcos)
-    return baseList.filter((b) => b.assignedOperatorIds?.includes(currentUser.id));
+    // For operators with assigned batches, show assigned, otherwise show baseList
+    const assigned = baseList.filter((b) => b.assignedOperatorIds?.includes(currentUser.id));
+    return assigned.length > 0 ? assigned : baseList;
   }, [db.productionBatches, currentUser]);
 
   // Apply search term and status filters
@@ -1074,6 +1224,7 @@ export function LotesScreen({
 
                           const isChecked = b.checkedOrderIds?.includes(oid) || false;
                           const isLiberated = b.liberatedOrderIds?.includes(oid) || false;
+                          const sectorInfo = getOrderSectorTracking(o, b.id);
 
                           return (
                             <tr
@@ -1141,20 +1292,51 @@ export function LotesScreen({
                                     )}
                                   </div>
 
-                                  {/* Current status in the order */}
-                                  <div className="text-[9px] bg-slate-50 border border-slate-200/80 rounded-lg p-1.5 w-full max-w-[140px] text-center shadow-3xs">
-                                    <span className="text-[8px] text-slate-400 block font-extrabold uppercase tracking-wider leading-none mb-1">Status do Pedido:</span>
-                                    <span className={`text-[9px] font-black uppercase inline-block px-1.5 py-0.5 rounded border ${
-                                      o.status === "PRODUZIDO" ? "bg-green-100 text-green-800 border-green-200" :
-                                      o.status === "EM_PRODUCAO" ? "bg-amber-100 text-amber-800 border-amber-250 animate-pulse" :
-                                      o.status === "CORTADO" ? "bg-teal-100 text-teal-800 border-teal-250" :
-                                      "bg-slate-100 text-slate-650 border-slate-200"
-                                    }`}>
-                                      {o.status === "PRODUZIDO" ? "PRODUZIDO" :
-                                       o.status === "EM_PRODUCAO" ? "EM PRODUÇÃO" :
-                                       o.status === "CORTADO" ? "CORTADO" :
-                                       (o.status || "PENDENTE")}
+                                  {/* Current status & active / last produced sector */}
+                                  <div className="text-[9px] bg-slate-50 border border-slate-200/80 rounded-lg p-1.5 w-full max-w-[160px] text-center shadow-3xs flex flex-col gap-1">
+                                    <span className="text-[8px] text-slate-400 block font-extrabold uppercase tracking-wider leading-none">
+                                      Status / Setor:
                                     </span>
+
+                                    {sectorInfo.isActive ? (
+                                      <div className="bg-amber-500 text-white font-black px-1.5 py-1 rounded shadow-2xs text-[9px] uppercase leading-tight animate-pulse flex flex-col items-center">
+                                        <span>⚡ EM PRODUÇÃO</span>
+                                        <span className="text-[8px] font-bold text-amber-100 mt-0.5">
+                                          Setor: {sectorInfo.sectorName}
+                                        </span>
+                                        {sectorInfo.operatorName && (
+                                          <span className="text-[7.5px] font-medium text-amber-200">
+                                            Op: {sectorInfo.operatorName}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : sectorInfo.hasHistory ? (
+                                      <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-1.5 py-1 rounded text-[8.5px] font-extrabold flex flex-col items-center leading-tight">
+                                        <span className="text-[9px] font-black text-emerald-800">
+                                          {o.status === "PRODUZIDO" ? "✓ PRODUZIDO" : "✓ ÚLTIMO SETOR"}
+                                        </span>
+                                        <span className="text-[8px] font-bold text-emerald-700 mt-0.5">
+                                          {sectorInfo.sectorName}
+                                        </span>
+                                        {sectorInfo.operatorName && (
+                                          <span className="text-[7.5px] text-slate-500 font-medium">
+                                            por {sectorInfo.operatorName} {sectorInfo.timestamp ? `(${sectorInfo.timestamp})` : ""}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className={`text-[9px] font-black uppercase inline-block px-1.5 py-0.5 rounded border ${
+                                        o.status === "PRODUZIDO" ? "bg-green-100 text-green-800 border-green-200" :
+                                        o.status === "EM_PRODUCAO" ? "bg-amber-100 text-amber-800 border-amber-250 animate-pulse" :
+                                        o.status === "CORTADO" ? "bg-teal-100 text-teal-800 border-teal-250" :
+                                        "bg-slate-100 text-slate-650 border-slate-200"
+                                      }`}>
+                                        {o.status === "PRODUZIDO" ? "PRODUZIDO" :
+                                         o.status === "EM_PRODUCAO" ? "EM PRODUÇÃO" :
+                                         o.status === "CORTADO" ? "CORTADO" :
+                                         (o.status || "PENDENTE")}
+                                      </span>
+                                    )}
                                   </div>
 
                                   {/* Authorization transition buttons */}

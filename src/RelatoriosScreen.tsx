@@ -619,101 +619,83 @@ export function RelatoriosScreen({
     }
 
     const getLogQty = (l: ProductionLog) => {
-      return (
-        l.quantityCut ||
+      const qty = (
         l.quantityProcessed ||
+        l.quantityCut ||
         l.quantityPainted ||
         l.quantityPacked ||
         l.quantityInvoiced ||
+        (l as any).quantity ||
+        (l as any).quantityProduced ||
         0
       );
+      return typeof qty === "number" && qty > 0 ? qty : 1;
     };
 
     const getLogHours = (l: ProductionLog) => {
-      const d = l.durationMillis || 10 * 60 * 1000;
-      return d / (1000 * 60 * 60);
+      const d = l.durationMillis || (l as any).duration || 10 * 60 * 1000;
+      return Math.max(d / (1000 * 60 * 60), 0.05); // min ~3 minutes
     };
 
-    const getLogMatches = (l: ProductionLog, sectorId: string) => {
-      const baseOperatorId = (l.operatorId || "").split(" - ")[0];
+    const getLogMatches = (l: ProductionLog, sectorId: string, sectorName: string) => {
+      // Direct sectorId comparison
+      if ((l as any).sectorId && String((l as any).sectorId) === String(sectorId)) return true;
+
+      const pName = (l.processName || "").toLowerCase();
+      const sName = (sectorName || "").toLowerCase();
+      const sId = (sectorId || "").toLowerCase();
+
+      // Direct processName matching
+      if (pName && sName && (pName.includes(sName) || sName.includes(pName))) return true;
+
+      const baseOperatorId = (l.operatorId || "").split(" - ")[0].toLowerCase();
       const u = db.users.find((usr) => usr.id === baseOperatorId);
-      const role = u?.role || "";
+      const role = (u?.role || "").toLowerCase();
+      const lType = (l.type || "").toLowerCase();
 
-      if (sectorId.startsWith("SOLDA_")) {
-        if (sectorId !== "SOLDA_GERAL") {
-          const welderName = sectorId.substring(6);
-          return l.operatorId === `solda - ${welderName}`;
-        } else {
-          return (
-            l.operatorId === "solda" ||
-            (!l.operatorId.includes(" - ") &&
-              l.type === "PRODUCAO" &&
-              role === "SOLDA")
-          );
-        }
-      }
-
-      if (sectorId === "SOLDA") {
+      if (sName.includes("solda") || sId.includes("solda")) {
         return (
-          l.type === "PRODUCAO" &&
-          (role === "SOLDA" ||
-            l.operatorId === "solda" ||
-            l.operatorId.startsWith("solda - "))
+          lType === "solda" ||
+          (lType === "producao" && (role === "solda" || baseOperatorId.includes("solda") || pName.includes("solda"))) ||
+          l.operatorId.includes("solda")
         );
       }
 
-      if (sectorId === "CORTE_LASER")
-        return l.type === "CORTE_LASER" || role === "CORTE_LASER";
-      if (sectorId === "PINTURA")
-        return l.type === "PINTURA" || role === "PINTURA";
-      if (sectorId === "EMBALAGEM")
-        return l.type === "EMBALAGEM" || role === "EMBALAGEM";
-      if (sectorId === "MONTAGEM_RETRATIL") {
-        return (
-          (l.type === "PRODUCAO" && role === "MONTAGEM_RETRATIL") ||
-          l.operatorId === "montagem_retratil"
-        );
+      if (sName.includes("corte") || sName.includes("laser") || sId.includes("corte") || sId.includes("laser")) {
+        return lType === "corte_laser" || role === "corte_laser" || pName.includes("corte") || pName.includes("laser");
       }
-      if (sectorId === "MONTAGEM_RODRIGO") {
-        return (
-          (l.type === "PRODUCAO" && role === "MONTAGEM_RODRIGO") ||
-          l.operatorId === "montagem_rodrigo"
-        );
+
+      if (sName.includes("pintura") || sName.includes("primer") || sId.includes("pintura")) {
+        return lType === "pintura" || role === "pintura" || pName.includes("pintura") || pName.includes("primer");
       }
-      if (sectorId === "PRENSA_EDUARDO") {
-        return (
-          l.type === "PRENSA_EDUARDO" ||
-          role === "PRENSA_EDUARDO" ||
-          l.operatorId === "prensa_eduardo"
-        );
+
+      if (sName.includes("embalagem") || sId.includes("embalagem")) {
+        return lType === "embalagem" || role === "embalagem" || pName.includes("embalagem");
       }
-      if (sectorId === "PRENSA_RAFAEL") {
+
+      if (sName.includes("montagem") || sId.includes("montagem")) {
         return (
-          l.type === "PRENSA_RAFAEL" ||
-          role === "PRENSA_RAFAEL" ||
-          l.operatorId === "prensa_rafael"
-        );
-      }
-      if (sectorId === "INJETORA") {
-        return (
-          l.type === "INJETORA" ||
-          role === "INJETORA" ||
-          l.operatorId === "injetora"
-        );
-      }
-      if (sectorId === "BANHO_QUIMICO") {
-        return (
-          l.type === "BANHO_QUIMICO" ||
-          role === "BANHO_QUIMICO" ||
-          l.operatorId === "banho_quimico"
+          lType === "producao" ||
+          lType === "montagem" ||
+          role.includes("montagem") ||
+          baseOperatorId.includes("montagem") ||
+          pName.includes("montagem")
         );
       }
 
-      return l.type === sectorId;
+      if (sName.includes("qualidade") || sId.includes("qualidade")) {
+        return lType === "qualidade" || pName.includes("qualidade");
+      }
+
+      return (
+        lType === sId ||
+        lType === sName ||
+        pName === sName
+      );
     };
 
     return list.map((sect) => {
-      const sectLogs = db.logs.filter((l) => getLogMatches(l, sect.id));
+      const sectLogs = db.logs.filter((l) => getLogMatches(l, sect.id, sect.name));
 
       // Turno Atual (last 24h)
       const shiftLogs = sectLogs.filter((l) => l.timestamp >= now - oneDayMs);
@@ -726,12 +708,12 @@ export function RelatoriosScreen({
         shiftHoursSum = shiftLogs.reduce((sum, l) => sum + getLogHours(l), 0);
         shiftPPH = shiftHoursSum > 0 ? shiftQtySum / shiftHoursSum : 0;
       } else {
-        // Fallback to latest single log
+        // Fallback to average of recent logs if no logs in last 24h
         const sorted = [...sectLogs].sort((a, b) => b.timestamp - a.timestamp);
         if (sorted.length > 0) {
-          const l = sorted[0];
-          shiftQtySum = getLogQty(l);
-          shiftHoursSum = getLogHours(l);
+          const recent = sorted.slice(0, 10);
+          shiftQtySum = recent.reduce((sum, l) => sum + getLogQty(l), 0);
+          shiftHoursSum = recent.reduce((sum, l) => sum + getLogHours(l), 0);
           shiftPPH = shiftHoursSum > 0 ? shiftQtySum / shiftHoursSum : 0;
         }
       }
@@ -771,7 +753,7 @@ export function RelatoriosScreen({
         hasData: sectLogs.length > 0,
       };
     });
-  }, [db.logs, db.users]);
+  }, [db.logs, db.users, db.sectors]);
 
   // Simulator State
   const [simulatorSector, setSimulatorSector] = useState("CORTE_LASER");
@@ -1247,12 +1229,13 @@ export function RelatoriosScreen({
       titleStr = "Historico de Movimentacoes de Estoque";
     }
 
-    doc.setFillColor(0, 177, 79); // Império Green #00b14f
+    doc.setFillColor(0, 177, 79); // Accent Green #00b14f
     doc.rect(0, 0, 210, 5, "F");
 
     doc.setFontSize(8);
     doc.setTextColor(100);
-    doc.text("IMPÉRIO JOMARCI - ACESSÓRIOS PARA MÓVEIS", 14, 12);
+    const companyHeader = (db.activeTenant?.name || db.systemSettings?.[0]?.companyName || (db.activeTenantId === "cyrnedecor" ? "CYRNE DECOR" : "IMPÉRIO JOMARCI - ACESSÓRIOS PARA MÓVEIS")).toUpperCase();
+    doc.text(companyHeader, 14, 12);
 
     doc.setFontSize(14);
     doc.setTextColor(20, 20, 20);

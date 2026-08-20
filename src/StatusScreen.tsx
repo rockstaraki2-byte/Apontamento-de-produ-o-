@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useDatabase } from "./useDatabase";
 import type { OrderStatus, Order } from "./types";
 import { motion, AnimatePresence } from "motion/react";
-import { X, Trash2, Phone, Copy, Printer } from "lucide-react";
+import { X, Trash2, Phone, Copy, Printer, Loader2 } from "lucide-react";
 import { normalizeString } from "./searchUtils";
 
 export function StatusScreen({
@@ -42,6 +42,20 @@ export function StatusScreen({
   );
   const [selectedOrderCodesForPrint, setSelectedOrderCodesForPrint] = useState<string[]>([]);
   const [isUpdating, setIsUpdating] = useState<number | null>(null);
+  const [ordersLimit, setOrdersLimit] = useState<number>(20);
+
+  React.useEffect(() => {
+    setOrdersLimit(20);
+  }, [
+    debouncedSearchTerm,
+    deliveryFilter,
+    printedFilter,
+    deliveryDateStart,
+    deliveryDateEnd,
+    orderRangeStart,
+    orderRangeEnd,
+    filterByRangeActive,
+  ]);
 
   const markOrdersAsPrinted = (codes: string[]) => {
     if (!codes || codes.length === 0) return;
@@ -218,7 +232,62 @@ export function StatusScreen({
     alert(`Pedido desvinculado do Lote com sucesso!`);
   };
 
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
+
+  const handleBulkDelete = async () => {
+    const canDelete =
+      currentUser.id === "raul" ||
+      currentUser.role === "ADMIN" ||
+      currentUser.role === "GERENCIA" ||
+      currentUser.permissions?.canDeleteOrders ||
+      currentUser.permissions?.canBulkDelete;
+
+    if (!canDelete) {
+      alert("Acesso negado: Você não possui permissão para realizar exclusão de pedidos em massa.");
+      return;
+    }
+
+    if (currentUser.role === "LEITURA" || currentUser.role === "REPRESENTANTE") return;
+    if (selectedOrderCodesForPrint.length === 0) return;
+
+    const ordersToDelete = db.orders.filter((o) =>
+      selectedOrderCodesForPrint.includes(o.orderCode)
+    );
+
+    const msg = `Tem certeza que deseja excluir em massa os ${selectedOrderCodesForPrint.length} pedidos selecionados (totalizando ${ordersToDelete.length} itens)?\n\nEssa ação é irreversível e removerá permanentemente os pedidos e seus dados de produção do sistema.`;
+
+    if (confirm(msg)) {
+      setIsDeletingBulk(true);
+      try {
+        const countCodes = selectedOrderCodesForPrint.length;
+        const countItems = ordersToDelete.length;
+
+        for (const order of ordersToDelete) {
+          await db.deleteOrder(order.id);
+        }
+
+        setSelectedOrderCodesForPrint([]);
+        alert(`✅ ${countCodes} pedido(s) (${countItems} itens) excluídos em massa com sucesso!`);
+      } catch (err: any) {
+        alert("Erro ao excluir pedidos em massa: " + err.message);
+      } finally {
+        setIsDeletingBulk(false);
+      }
+    }
+  };
+
   const handleDeleteOrder = (orderId: number, orderCode: string) => {
+    const canDelete =
+      currentUser.id === "raul" ||
+      currentUser.role === "ADMIN" ||
+      currentUser.role === "GERENCIA" ||
+      currentUser.permissions?.canDeleteOrders;
+
+    if (!canDelete) {
+      alert("Acesso negado: Você não possui permissão para excluir pedidos.");
+      return;
+    }
+
     if (currentUser.role === "LEITURA" || currentUser.role === "REPRESENTANTE") return;
     if (confirm(`Tem certeza que deseja excluir este item do pedido #${orderCode}?`)) {
       db.deleteOrder(orderId);
@@ -230,6 +299,17 @@ export function StatusScreen({
   };
 
   const handleDeleteWholeGroup = async (code: string, ordersInGroup: Order[]) => {
+    const canDelete =
+      currentUser.id === "raul" ||
+      currentUser.role === "ADMIN" ||
+      currentUser.role === "GERENCIA" ||
+      currentUser.permissions?.canDeleteOrders;
+
+    if (!canDelete) {
+      alert("Acesso negado: Você não possui permissão para excluir pedidos.");
+      return;
+    }
+
     if (currentUser.role === "LEITURA" || currentUser.role === "REPRESENTANTE") return;
     const msg = ordersInGroup.length > 1 
       ? `Tem certeza que deseja excluir o pedido #${code} por completo (contendo ${ordersInGroup.length} itens)?` 
@@ -1210,12 +1290,31 @@ export function StatusScreen({
                   >
                     <Printer size={15} /> Imprimir Folha Inteira ({selectedOrderCodesForPrint.length})
                   </button>
+
+                  {currentUser.role !== "LEITURA" && currentUser.role !== "REPRESENTANTE" && (
+                    <button
+                      type="button"
+                      disabled={isDeletingBulk}
+                      onClick={handleBulkDelete}
+                      className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-rose-500/30 active:scale-95 disabled:opacity-50"
+                    >
+                      {isDeletingBulk ? (
+                        <>
+                          <Loader2 size={15} className="animate-spin" /> Excluindo...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 size={15} /> Excluir Selecionados ({selectedOrderCodesForPrint.length})
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pb-4">
-              {groupedOrders.map(([code, orders]) => {
+              {groupedOrders.slice(0, ordersLimit).map(([code, orders]) => {
                 const isSelectedForPrint = selectedOrderCodesForPrint.includes(code);
                 return (
                   <motion.div
@@ -1563,6 +1662,29 @@ export function StatusScreen({
             );
           })}
           </div>
+          {groupedOrders.length > ordersLimit && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-indigo-150 my-2 shadow-2xs">
+              <div className="text-xs text-slate-600 font-medium">
+                Exibindo <span className="font-extrabold text-slate-900">{Math.min(ordersLimit, groupedOrders.length)}</span> de <span className="font-extrabold text-slate-900">{groupedOrders.length}</span> pedidos
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOrdersLimit((prev) => prev + 20)}
+                  className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl border border-indigo-200 transition cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-95"
+                >
+                  🔄 Carregar mais 20 pedidos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrdersLimit(groupedOrders.length)}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-250 transition cursor-pointer active:scale-95"
+                >
+                  Mostrar Todos ({groupedOrders.length})
+                </button>
+              </div>
+            </div>
+          )}
         </>
         )}
       </div>

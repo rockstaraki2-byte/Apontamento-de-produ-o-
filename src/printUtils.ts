@@ -574,9 +574,9 @@ export function exportRepresentativeBillingPdf(
     // green header line on the new page
     doc.setFillColor(0, 177, 79);
     doc.rect(14, 12, 182, 1.5, "F");
-    drawSignatures(doc, 25, details.totalValue, details.orders.length, details.totalItems);
+    drawSignatures(doc, 25, details.totalValue, details.orders.length, details.totalItems, companyName);
   } else {
-    drawSignatures(doc, finalY + 10, details.totalValue, details.orders.length, details.totalItems);
+    drawSignatures(doc, finalY + 10, details.totalValue, details.orders.length, details.totalItems, companyName);
   }
 
   // Save the PDF

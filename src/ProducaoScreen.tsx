@@ -18,6 +18,7 @@ import {
 import { useDatabase } from "./useDatabase";
 import { ColorBadgeWithImage } from "./components/ColorBadgeWithImage";
 import type { User, OrderStatus } from "./types";
+import { getSetoresElegiveisParaItem } from "./types";
 import { calculateWorkingMillis } from "./timeUtils";
 import { LoteGeralWidget } from "./components/LoteGeralWidget";
 import { DailySummaryWidget } from "./components/DailySummaryWidget";
@@ -31,6 +32,7 @@ import {
 } from "./components/Layout";
 import { ProductivityCard } from "./components/ProductivityCard";
 import { MachineStopWidget } from "./components/OperatorActions";
+import { parseQty } from "./quantityUtils";
 
 const getProductKey = (
   itemId: number,
@@ -117,26 +119,32 @@ export function ProducaoScreen({
   // If user has NO explicit sectors linked, they fallback to checking role
   const hasLinkedSectors = (currentUser?.sectorIds || []).length > 0;
 
+  const userSectorIds = currentUser?.sectorIds || [];
+  const hasMultipleSectors = userSectorIds.length > 1;
+
   const isSolda = React.useMemo(() => {
+    if (hasMultipleSectors) return false;
     if (hasLinkedSectors) {
       return userSectorNames.some(n => n.toLowerCase().includes("solda"));
     }
     return currentUser.role === "SOLDA";
-  }, [hasLinkedSectors, userSectorNames, currentUser.role]);
+  }, [hasMultipleSectors, hasLinkedSectors, userSectorNames, currentUser.role]);
 
   const isRetratil = React.useMemo(() => {
+    if (hasMultipleSectors) return false;
     if (hasLinkedSectors) {
       return userSectorNames.some(n => n.toLowerCase().includes("retrátil") || n.toLowerCase().includes("retratil"));
     }
     return currentUser.role === "MONTAGEM_RETRATIL";
-  }, [hasLinkedSectors, userSectorNames, currentUser.role]);
+  }, [hasMultipleSectors, hasLinkedSectors, userSectorNames, currentUser.role]);
 
   const isRodrigo = React.useMemo(() => {
+    if (hasMultipleSectors) return false;
     if (hasLinkedSectors) {
       return userSectorNames.some(n => n.toLowerCase().includes("rodrigo"));
     }
     return currentUser.role === "MONTAGEM_RODRIGO";
-  }, [hasLinkedSectors, userSectorNames, currentUser.role]);
+  }, [hasMultipleSectors, hasLinkedSectors, userSectorNames, currentUser.role]);
 
   const isAdminOrGerencia = currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.role === "PCP";
 
@@ -171,6 +179,8 @@ export function ProducaoScreen({
   const [pendingIsManual, setPendingIsManual] = useState(false);
   const [selectedWelder, setSelectedWelder] = useState<string>("");
   const [selectedProcess, setSelectedProcess] = useState<string>("");
+  const [selectedSectorId, setSelectedSectorId] = useState<number | string | null>(null);
+  const [selectedSectorName, setSelectedSectorName] = useState<string>("");
 
   const [confirmStartModalOpen, setConfirmStartModalOpen] = useState(false);
   const [retratilModalOpen, setRetratilModalOpen] = useState(false);
@@ -238,47 +248,91 @@ export function ProducaoScreen({
     });
     if (matchedOrders.length === 0) return null;
     const total = matchedOrders.reduce(
-      (sum, o) => sum + (o.totalQuantity || 0),
+      (sum, o) => sum + parseQty(o.totalQuantity ?? (o as any).quantity),
       0,
     );
     const produced = matchedOrders.reduce(
-      (sum, o) => sum + (o.producedQuantity || 0),
+      (sum, o) => sum + parseQty(o.producedQuantity),
       0,
     );
     return { produced, total };
   };
 
-  const pendingOrders = db.orders.filter((o) => {
-    if (
-      o.status === "EMBALADO" ||
-      o.status === "FATURADO" ||
-      (o.producedQuantity || 0) >= o.totalQuantity
-    )
-      return false;
+  const userSectors = React.useMemo(
+    () => (db.sectors || []).filter((s) => userSectorIds.includes(s.id)),
+    [db.sectors, userSectorIds]
+  );
+  const isGlobalUser = currentUser.role === "ADMIN" || currentUser.role === "GERENCIA";
 
-    if (isRodrigo) {
-      const item = db.items.find((i) => i.id === o.itemId);
-      if (!item) return false;
-      const lowerName = item.name.toLowerCase();
+  const pendingOrders = React.useMemo(() => {
+    return db.orders.filter((o) => {
+      const totalQty = parseQty(o.totalQuantity ?? (o as any).quantity);
+      const prodQty = parseQty(o.producedQuantity);
       if (
-        !lowerName.includes("barra chata") &&
-        !lowerName.includes("barrachata")
-      ) {
+        o.status === "EMBALADO" ||
+        o.status === "FATURADO" ||
+        (prodQty >= totalQty && totalQty > 0)
+      )
         return false;
+
+      // Filter orders based on the user's assigned sectors and item flows
+      if (!isGlobalUser && userSectors.length > 0) {
+        const item = db.items.find((i) => i.id === o.itemId);
+        if (item) {
+          const eligibleSectors = getSetoresElegiveisParaItem(item, userSectors, db.flows || []);
+          if (eligibleSectors.length === 0) {
+            return false;
+          }
+        }
       }
-    }
-    if (isRetratil) {
-      const item = db.items.find((i) => i.id === o.itemId);
-      if (!item) return false;
-      const lowerName = item.name.toLowerCase();
-      const isRetratilItem = lowerName.includes("retrátil") || lowerName.includes("retratil");
-      const isPlanItem = retratilPcpPlans.some((p) => p.targetItemIds?.includes(o.itemId));
-      if (!isRetratilItem && !isPlanItem) {
-        return false;
+
+      if (isRodrigo) {
+        const item = db.items.find((i) => i.id === o.itemId);
+        if (!item) return false;
+        const lowerName = item.name.toLowerCase();
+        if (
+          !lowerName.includes("barra chata") &&
+          !lowerName.includes("barrachata")
+        ) {
+          return false;
+        }
       }
-    }
-    return true;
-  });
+      if (isRetratil) {
+        const item = db.items.find((i) => i.id === o.itemId);
+        if (!item) return false;
+        const lowerName = item.name.toLowerCase();
+        const isRetratilItem = lowerName.includes("retrátil") || lowerName.includes("retratil");
+        const isPlanItem = retratilPcpPlans.some((p) => p.targetItemIds?.includes(o.itemId));
+        if (!isRetratilItem && !isPlanItem) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [
+    db.orders,
+    db.items,
+    db.flows,
+    userSectors,
+    isGlobalUser,
+    isRodrigo,
+    isRetratil,
+    retratilPcpPlans,
+  ]);
+
+  const getLotesForGroup = (itemId: number) => {
+    if (!db.productionBatches || db.productionBatches.length === 0) return [];
+    return db.productionBatches.filter((b) => {
+      if (b.itemIds?.includes(itemId)) return true;
+      if (b.orderIds && b.orderIds.length > 0) {
+        return b.orderIds.some((oid) => {
+          const ord = db.orders.find((o) => Number(o.id) === Number(oid));
+          return ord && Number(ord.itemId) === Number(itemId);
+        });
+      }
+      return false;
+    });
+  };
 
   const productGroups = React.useMemo(() => {
     const groups = new Map<
@@ -302,8 +356,10 @@ export function ProducaoScreen({
           totalRemaining: 0,
         });
       }
-      groups.get(key)!.totalRemaining +=
-        (o.totalQuantity || 0) - (o.producedQuantity || 0);
+      const totalQty = parseQty(o.totalQuantity ?? (o as any).quantity);
+      const prodQty = parseQty(o.producedQuantity);
+      const remaining = Math.max(0, totalQty - prodQty);
+      groups.get(key)!.totalRemaining += remaining;
     });
     return Array.from(groups.values());
   }, [pendingOrders]);
@@ -321,6 +377,9 @@ export function ProducaoScreen({
       directIsManual !== undefined ? directIsManual : pendingIsManual;
     const group = directGroup !== undefined ? directGroup : pendingGroupToStart;
 
+    const targetSectorId = selectedSectorId || (currentUser.sectorIds && currentUser.sectorIds.length === 1 ? currentUser.sectorIds[0] : undefined);
+    const targetSectorName = selectedSectorName || (targetSectorId ? db.sectors?.find(s => s.id === targetSectorId)?.name : selectedProcess);
+
     if (isManual) {
       if (!manualTitle || !manualProduct) return;
 
@@ -337,6 +396,8 @@ export function ProducaoScreen({
         thirdPartyName: manualTitle,
         customProductName: manualProduct,
         processName: selectedProcess || undefined,
+        sectorId: targetSectorId,
+        sectorName: targetSectorName || undefined,
       });
 
       alert("Produção avulsa iniciada com sucesso!");
@@ -375,6 +436,8 @@ export function ProducaoScreen({
         startTime: Date.now(),
         type: isRetratil || currentUser.role === "MONTAGEM_RETRATIL" ? "MONTAGEM_RETRATIL" : "PRODUCAO",
         processName: selectedProcess || undefined,
+        sectorId: targetSectorId,
+        sectorName: targetSectorName || undefined,
       });
 
       const changedOrders: any[] = [];
@@ -408,7 +471,11 @@ export function ProducaoScreen({
   const handleStartManualProduction = () => {
     if (!manualTitle || !manualProduct) return;
 
-    if (isSolda) {
+    if (hasMultipleSectors || isAdminOrGerencia) {
+      setPendingIsManual(true);
+      setPendingGroupToStart(null);
+      setSectorModalOpen(true);
+    } else if (isSolda) {
       setPendingIsManual(true);
       setPendingGroupToStart(null);
       setSelectedWelder("");
@@ -420,10 +487,6 @@ export function ProducaoScreen({
       setSelectedOperator("Walter José");
       setSelectedProcess("Conificar");
       setRetratilModalOpen(true);
-    } else if (isAdminOrGerencia) {
-      setPendingIsManual(true);
-      setPendingGroupToStart(null);
-      setSectorModalOpen(true);
     } else {
       proceedWithStart(undefined, null, true);
     }
@@ -432,7 +495,10 @@ export function ProducaoScreen({
   const startPackaging = (group: (typeof productGroups)[0]) => {
     setPendingGroupToStart(group);
 
-    if (isSolda) {
+    if (hasMultipleSectors || isAdminOrGerencia) {
+      setPendingIsManual(false);
+      setSectorModalOpen(true);
+    } else if (isSolda) {
       setPendingIsManual(false);
       setSelectedWelder("");
       setSelectedProcess("");
@@ -446,9 +512,6 @@ export function ProducaoScreen({
       setPendingIsManual(false);
       setSelectedOperator("Renata");
       setConfirmStartModalOpen(true);
-    } else if (isAdminOrGerencia) {
-      setPendingIsManual(false);
-      setSectorModalOpen(true);
     } else {
       setConfirmStartModalOpen(true);
     }
@@ -795,6 +858,22 @@ export function ProducaoScreen({
           db.updateCoilCuttingPlan({ ...associatedPlan, status: "CONCLUIDO" });
         }
       }
+
+      // Explicitly send produced items from Montagem/Produção to Qualidade queue
+      if (db.addProductionStep && activePack.itemId) {
+        db.addProductionStep({
+          itemId: activePack.itemId,
+          orderId: activePack.orderId,
+          loteId: activePack.loteId,
+          setorId: 1,
+          setorExecutorId: 1,
+          status: "aguardando_qualidade",
+          quantidadeProduzida: Number(packQuantity) || 1,
+          isRetrabalho: false,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+      }
     }
 
     setSelectedPackId(null);
@@ -856,6 +935,68 @@ export function ProducaoScreen({
     setNextProcess("");
   };
 
+  const availableSectorsList = React.useMemo(() => {
+    const userSectorIds = currentUser?.sectorIds || [];
+    const isMultiSectorOperator = userSectorIds.length > 1 && !isAdminOrGerencia;
+
+    // If user is an operator linked to specific sectors, show their assigned sectors
+    if (isMultiSectorOperator && db.sectors && db.sectors.length > 0) {
+      const assignedSectors = db.sectors.filter((s) => userSectorIds.includes(s.id) && s.active !== false);
+      if (assignedSectors.length > 0) {
+        return assignedSectors.map((s) => ({
+          id: s.id,
+          name: s.name,
+          department: s.department || s.description || "Seu posto de trabalho vinculado",
+        }));
+      }
+    }
+
+    // 1. If sectors exist for this active tenant, pull them dynamically
+    if (db.sectors && db.sectors.length > 0) {
+      const activeSectors = db.sectors.filter((s) => s.active !== false);
+      if (activeSectors.length > 0) {
+        return activeSectors.map((s) => ({
+          id: s.id,
+          name: s.name,
+          department: s.department || s.description || "Posto de trabalho de produção",
+        }));
+      }
+    }
+
+    // 2. Fallbacks based on active tenant
+    if (db.activeTenantId === "imperio") {
+      return [
+        { id: 1, name: "Setor Solda (Cabine)", department: "Com escolha de soldador e sub-processo" },
+        { id: 2, name: "Montagem de Retrátil", department: "Montar, conificar, embalar" },
+        { id: 3, name: "Montagem Rodrigo (Barra Chata)", department: "Renata / Pendurar barra chata" },
+        { id: 4, name: "Geral / Outros Setores", department: "Operador livre e confirmação simples" },
+      ];
+    }
+
+    // Default sectors for Cyrne Decor and other tenants
+    return [
+      { id: 101, name: "Setor de Corte", department: "Corte e preparação de peças e tubos" },
+      { id: 102, name: "Setor de Solda", department: "Soldagem, serralheria e estruturas" },
+      { id: 103, name: "Setor de Pintura", department: "Pintura epóxi, verniz e acabamento" },
+      { id: 104, name: "Setor de Montagem", department: "Montagem de móveis e montagem final" },
+      { id: 105, name: "Controle de Qualidade", department: "Inspeção técnica e aprovação de lotes" },
+      { id: 106, name: "Setor de Embalagem", department: "Embalagem e preparação para expedição" },
+      { id: 107, name: "Geral / Outros Setores", department: "Operador livre e confirmação simples" },
+    ];
+  }, [db.sectors, db.activeTenantId, currentUser?.sectorIds, isAdminOrGerencia]);
+
+  const getSectorIcon = (name: string) => {
+    const lower = name.toLowerCase();
+    if (lower.includes("solda")) return "⚡";
+    if (lower.includes("corte") || lower.includes("laser")) return "✂️";
+    if (lower.includes("pintura") || lower.includes("acabamento")) return "🎨";
+    if (lower.includes("montagem")) return "🔧";
+    if (lower.includes("qualidade")) return "🛡️";
+    if (lower.includes("embalagem")) return "📦";
+    if (lower.includes("retrátil") || lower.includes("retratil")) return "⚙️";
+    return "🏭";
+  };
+
   const renderModals = () => (
     <>
       {sectorModalOpen && (
@@ -866,84 +1007,45 @@ export function ProducaoScreen({
                 Selecione o Setor / Processo
               </h3>
               <p className="text-xs text-gray-500 text-center">
-                Para qual posto de trabalho deseja iniciar este programa?
+                Para qual posto de trabalho deseja iniciar este programa ({db.activeTenant?.name || "Unidade Ativa"})?
               </p>
             </div>
 
             <div className="flex-1 overflow-y-auto flex flex-col gap-2.5">
-              <button
-                onClick={() => {
-                  setSectorModalOpen(false);
-                  setSelectedWelder("");
-                  setSelectedProcess("Solda");
-                  setWelderModalOpen(true);
-                }}
-                className="w-full text-left p-3.5 rounded-xl border border-gray-200 hover:border-blue-400 bg-white hover:bg-blue-50/30 transition flex items-center justify-between cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">⚡</span>
-                  <div className="flex flex-col">
-                    <span className="font-bold text-sm text-gray-800">Setor Solda (Cabine)</span>
-                    <span className="text-[11px] text-gray-500">Com escolha de soldador e sub-processo</span>
-                  </div>
-                </div>
-                <ChevronRight size={16} className="text-gray-400" />
-              </button>
-
-              <button
-                onClick={() => {
-                  setSectorModalOpen(false);
-                  setSelectedOperator("Walter José");
-                  setSelectedProcess("Conificar");
-                  setRetratilModalOpen(true);
-                }}
-                className="w-full text-left p-3.5 rounded-xl border border-gray-200 hover:border-purple-400 bg-white hover:bg-purple-50/30 transition flex items-center justify-between cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">⚙️</span>
-                  <div className="flex flex-col">
-                    <span className="font-bold text-sm text-gray-800">Montagem de Retrátil</span>
-                    <span className="text-[11px] text-gray-500">Montar, conificar, embalar</span>
-                  </div>
-                </div>
-                <ChevronRight size={16} className="text-gray-400" />
-              </button>
-
-              <button
-                onClick={() => {
-                  setSectorModalOpen(false);
-                  setSelectedOperator("Renata");
-                  setConfirmStartModalOpen(true);
-                }}
-                className="w-full text-left p-3.5 rounded-xl border border-gray-200 hover:border-indigo-400 bg-white hover:bg-indigo-50/30 transition flex items-center justify-between cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">🔧</span>
-                  <div className="flex flex-col">
-                    <span className="font-bold text-sm text-gray-800">Montagem Rodrigo (Barra Chata)</span>
-                    <span className="text-[11px] text-gray-500">Renata / Pendurar barra chata</span>
-                  </div>
-                </div>
-                <ChevronRight size={16} className="text-gray-400" />
-              </button>
-
-              <button
-                onClick={() => {
-                  setSectorModalOpen(false);
-                  setSelectedOperator("");
-                  setConfirmStartModalOpen(true);
-                }}
-                className="w-full text-left p-3.5 rounded-xl border border-gray-200 hover:border-emerald-400 bg-white hover:bg-emerald-50/30 transition flex items-center justify-between cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">📦</span>
-                  <div className="flex flex-col">
-                    <span className="font-bold text-sm text-gray-800">Geral / Outros Setores</span>
-                    <span className="text-[11px] text-gray-500">Operador livre e confirmação simples</span>
-                  </div>
-                </div>
-                <ChevronRight size={16} className="text-gray-400" />
-              </button>
+              {availableSectorsList.map((sector) => {
+                const lowerName = sector.name.toLowerCase();
+                return (
+                  <button
+                    key={sector.id}
+                    onClick={() => {
+                      setSectorModalOpen(false);
+                      setSelectedProcess(sector.name);
+                      setSelectedSectorId(sector.id);
+                      setSelectedSectorName(sector.name);
+                      if (lowerName.includes("solda")) {
+                        setSelectedWelder("");
+                        setWelderModalOpen(true);
+                      } else if (lowerName.includes("retrátil") || lowerName.includes("retratil")) {
+                        setSelectedOperator(currentUser?.name || "");
+                        setRetratilModalOpen(true);
+                      } else {
+                        setSelectedOperator(currentUser?.name || "");
+                        setConfirmStartModalOpen(true);
+                      }
+                    }}
+                    className="w-full text-left p-3.5 rounded-xl border border-gray-200 hover:border-[#00b14f] bg-white hover:bg-emerald-50/30 transition flex items-center justify-between cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">{getSectorIcon(sector.name)}</span>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-sm text-gray-800">{sector.name}</span>
+                        <span className="text-[11px] text-gray-500">{sector.department}</span>
+                      </div>
+                    </div>
+                    <ChevronRight size={16} className="text-gray-400" />
+                  </button>
+                );
+              })}
             </div>
 
             <div className="border-t pt-3 flex flex-col shrink-0 mt-1">
@@ -975,36 +1077,64 @@ export function ProducaoScreen({
 
             <div className="flex-1 overflow-y-auto flex flex-col gap-4 pr-1 scrollbar-thin">
               {!pendingIsManual && pendingGroupToStart && (
-                <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl flex items-center gap-3">
-                  {(() => {
-                    const itemObj = db.items.find(
-                      (i) => i.id === pendingGroupToStart.itemId,
-                    );
-                    return (
-                      <>
-                        {itemObj?.imageUrl ? (
-                          <img
-                            src={itemObj.imageUrl}
-                            alt={itemObj.name}
-                            className="w-14 h-14 object-cover rounded-md shadow-sm border border-blue-200 cursor-pointer hover:opacity-80 transition"
-                            onClick={() =>
-                              setFullSizeImage(itemObj.imageUrl || null)
-                            }
-                          />
-                        ) : (
-                          <div className="w-14 h-14 bg-white rounded-md border border-blue-200 flex items-center justify-center text-blue-300">
-                            <Package size={20} />
+                <div className="flex flex-col gap-2">
+                  <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl flex items-center gap-3">
+                    {(() => {
+                      const itemObj = db.items.find(
+                        (i) => i.id === pendingGroupToStart.itemId,
+                      );
+                      return (
+                        <>
+                          {itemObj?.imageUrl ? (
+                            <img
+                              src={itemObj.imageUrl}
+                              alt={itemObj.name}
+                              className="w-14 h-14 object-cover rounded-md shadow-sm border border-blue-200 cursor-pointer hover:opacity-80 transition shrink-0"
+                              onClick={() =>
+                                setFullSizeImage(itemObj.imageUrl || null)
+                              }
+                            />
+                          ) : (
+                            <div className="w-14 h-14 bg-white rounded-md border border-blue-200 flex items-center justify-center text-blue-300 shrink-0">
+                              <Package size={20} />
+                            </div>
+                          )}
+                          <div className="flex flex-col flex-1 min-w-0">
+                            <span className="font-bold text-gray-900 leading-tight text-sm truncate">
+                              {itemObj?.name || "Desconhecido"}
+                            </span>
+                            <span className="text-[10px] font-mono text-blue-700">
+                              {itemObj?.code}
+                            </span>
                           </div>
-                        )}
-                        <div className="flex flex-col flex-1">
-                          <span className="font-bold text-gray-900 leading-tight text-sm">
-                            {itemObj?.name || "Desconhecido"}
-                          </span>
-                          <span className="text-[10px] font-mono text-blue-700">
-                            {itemObj?.code}
-                          </span>
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Dynamic Lote Banner */}
+                  {(() => {
+                    const lotes = getLotesForGroup(pendingGroupToStart.itemId);
+                    if (lotes.length > 0) {
+                      return (
+                        <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl flex items-center gap-2 text-xs font-bold text-emerald-950 shadow-2xs">
+                          <Package size={16} className="text-emerald-600 shrink-0" />
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[9.5px] uppercase text-emerald-700 font-black tracking-wide">
+                              Lote de Produção
+                            </span>
+                            <span className="text-xs text-emerald-900 truncate font-extrabold">
+                              {lotes.map((l) => `Lote #${l.code || l.id} - ${l.name}`).join(", ")}
+                            </span>
+                          </div>
                         </div>
-                      </>
+                      );
+                    }
+                    return (
+                      <div className="bg-slate-50 border border-slate-200 p-2 rounded-xl flex items-center gap-2 text-xs text-slate-600 font-medium">
+                        <Package size={15} className="text-slate-400 shrink-0" />
+                        <span>Sem Lote específico vinculado</span>
+                      </div>
                     );
                   })()}
                 </div>
@@ -1056,14 +1186,11 @@ export function ProducaoScreen({
                   2. Selecione o Processo:
                 </h4>
                 <div className="grid grid-cols-2 gap-2">
-                  {[
-                    "Solda",
-                    "Enchimento",
-                    "Desempeno",
-                    "Furação",
-                    "Viradeira",
-                    "Outro",
-                  ].map((proc) => {
+                  {(
+                    (db.activeTenant?.soldaProcesses && db.activeTenant.soldaProcesses.length > 0)
+                      ? db.activeTenant.soldaProcesses
+                      : ["Solda", "Enchimento", "Desempeno", "Furação", "Viradeira", "Outro"]
+                  ).map((proc) => {
                     const isSelected = selectedProcess === proc;
                     return (
                       <button
@@ -1071,7 +1198,7 @@ export function ProducaoScreen({
                         onClick={() => setSelectedProcess(proc)}
                         className={`text-left py-2 px-3 rounded-lg border transition active:scale-98 cursor-pointer flex items-center justify-center text-xs font-semibold ${
                           isSelected
-                            ? "border-amber-500 bg-amber-50 text-amber-900"
+                            ? "border-amber-500 bg-amber-50 text-amber-900 font-bold shadow-xs"
                             : "border-gray-200 hover:border-gray-300 bg-white text-gray-700"
                         }`}
                       >
@@ -1678,6 +1805,20 @@ export function ProducaoScreen({
                         {g.color || "-"} | {g.size || "-"} |{" "}
                         {g.variation || "-"}
                       </span>
+                      {(() => {
+                        const lotes = getLotesForGroup(g.itemId);
+                        if (lotes.length > 0) {
+                          return (
+                            <div className="mt-1 flex items-center gap-1.5 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md w-fit">
+                              <Package size={12} className="text-emerald-600 shrink-0" />
+                              <span className="truncate">
+                                {lotes.map((l) => `Lote #${l.code || l.id}`).join(", ")}
+                              </span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                     <div className="flex flex-col items-end">
                       <span className="text-xs text-gray-500 mb-1">

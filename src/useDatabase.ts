@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import type {
   User,
   Item,
@@ -170,6 +170,13 @@ const INITIAL_USERS: User[] = [
     tenantId: "imperio",
   },
   {
+    id: "eric.imperio",
+    name: "Eric",
+    role: "TORNO_CNC_WILLIAN",
+    password: "0000",
+    tenantId: "imperio",
+  },
+  {
     id: "torno_cnc_henrique",
     name: "Torno CNC Henrique",
     role: "TORNO_CNC_HENRIQUE",
@@ -177,6 +184,9 @@ const INITIAL_USERS: User[] = [
   },
   { id: "injetora", name: "Injetora", role: "INJETORA", tenantId: "imperio" },
   { id: "banho_quimico", name: "Banho Químico", role: "BANHO_QUIMICO", tenantId: "imperio" },
+  { id: "gerencia.cyrnedecor", name: "Gerência Cyrne Decor", role: "GERENCIA", password: "1111", tenantId: "cyrnedecor" },
+  { id: "flavio.cyrnedecor", name: "Flávio Cyrne Decor", role: "EMBALAGEM", password: "1111", tenantId: "cyrnedecor" },
+  { id: "rayane.cyrnedecor", name: "Rayane Cyrne Decor", role: "QUALIDADE", password: "1111", tenantId: "cyrnedecor" },
 ];
 
 export function useDatabase(currentUser?: User | null) {
@@ -498,6 +508,9 @@ export function useDatabase(currentUser?: User | null) {
   const [customers, setCustomers] = useState<Customer[]>(() => loadCache("customers", []));
   const [sectors, setSectors] = useState<Sector[]>(() => loadCache("sectors", []));
   const [productFlows, setProductFlows] = useState<ProductFlow[]>([]);
+  const [flows, setFlows] = useState<import("./types").Flow[]>([]);
+  const [rejectionReasons, setRejectionReasons] = useState<import("./types").RejectionReason[]>([]);
+  const [productionSteps, setProductionSteps] = useState<import("./types").ProductionStep[]>([]);
   const [productionBatches, setProductionBatches] = useState<ProductionBatch[]>(
     () => loadCache("batches", [])
   );
@@ -712,6 +725,21 @@ export function useDatabase(currentUser?: User | null) {
       collection(db, "productFlows"),
       (snap) => setProductFlows(snap.docs.map((d) => d.data() as ProductFlow)),
       (err) => handleSnapshotError("productFlows", err),
+    );
+    const unsubFlows = onSnapshot(
+      collection(db, "flows"),
+      (snap) => setFlows(snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").Flow))),
+      (err) => handleSnapshotError("flows", err),
+    );
+    const unsubRejectionReasons = onSnapshot(
+      collection(db, "rejectionReasons"),
+      (snap) => setRejectionReasons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").RejectionReason))),
+      (err) => handleSnapshotError("rejectionReasons", err),
+    );
+    const unsubProductionSteps = onSnapshot(
+      collection(db, "productionSteps"),
+      (snap) => setProductionSteps(snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").ProductionStep))),
+      (err) => handleSnapshotError("productionSteps", err),
     );
     const unsubBatches = onSnapshot(
       collection(db, "productionBatches"),
@@ -943,20 +971,22 @@ export function useDatabase(currentUser?: User | null) {
     await runWrite("Cadastrar Item", async () => {
       await setDoc(
         doc(db, "items", id.toString()),
-        cleanUndefined({ ...item, id }),
+        cleanUndefined({ ...item, id, tenantId: (item as any).tenantId || activeTenantId }),
       );
     });
+    return id;
   };
 
   const updateItem = async (updatedItem: Item) => {
     const current = items.find((i) => i.id === updatedItem.id);
-    if (current && JSON.stringify(current) === JSON.stringify(updatedItem)) {
+    const itemToSave = { ...updatedItem, tenantId: (updatedItem as any).tenantId || activeTenantId };
+    if (current && JSON.stringify(current) === JSON.stringify(itemToSave)) {
       return;
     }
     await runWrite("Atualizar Item", async () => {
       await setDoc(
         doc(db, "items", updatedItem.id.toString()),
-        cleanUndefined(updatedItem),
+        cleanUndefined(itemToSave),
         { merge: true },
       );
     });
@@ -970,7 +1000,7 @@ export function useDatabase(currentUser?: User | null) {
 
   const addOrder = async (order: Omit<Order, "id">) => {
     const id = getUniqueNumericId();
-    let updatedOrder = { ...order };
+    let updatedOrder = { ...order, tenantId: (order as any).tenantId || activeTenantId };
 
     if (updatedOrder.representativeName) {
       const searchName = updatedOrder.representativeName.toLowerCase();
@@ -1010,11 +1040,52 @@ export function useDatabase(currentUser?: User | null) {
         },
       });
     }
+    return id;
   };
 
   const deleteOrder = async (id: number) => {
     await runWrite("Excluir Pedido", async () => {
+      // 1. Delete order doc
       await deleteDoc(doc(db, "orders", id.toString()));
+
+      // 2. Cascade delete steps linked to this order
+      const matchingSteps = (filteredProductionSteps || []).filter(
+        (s) => Number(s.orderId) === Number(id)
+      );
+      for (const s of matchingSteps) {
+        if (s.id) {
+          await deleteDoc(doc(db, "productionSteps", s.id.toString()));
+        }
+      }
+
+      // 3. Cascade delete logs linked to this order
+      const matchingLogs = (filteredLogs || []).filter(
+        (l) => Number(l.orderId) === Number(id)
+      );
+      for (const l of matchingLogs) {
+        if (l.id) {
+          await deleteDoc(doc(db, "logs", l.id.toString()));
+        }
+      }
+
+      // 4. Remove order ID from any production batches
+      const matchingBatches = (filteredProductionBatches || []).filter((b) =>
+        (b.orderIds || []).some((oid) => Number(oid) === Number(id))
+      );
+      for (const b of matchingBatches) {
+        const updatedOrderIds = (b.orderIds || []).filter(
+          (oid) => Number(oid) !== Number(id)
+        );
+        if (updatedOrderIds.length === 0) {
+          await deleteDoc(doc(db, "productionBatches", b.id.toString()));
+        } else {
+          await setDoc(
+            doc(db, "productionBatches", b.id.toString()),
+            { orderIds: updatedOrderIds },
+            { merge: true }
+          );
+        }
+      }
     });
   };
 
@@ -1653,10 +1724,31 @@ export function useDatabase(currentUser?: User | null) {
     notification: Omit<AppNotification, "id" | "createdAt">,
   ) => {
     const id = getUniqueNumericId();
+    let notifTenantId = notification.tenantId;
+    if (!notifTenantId && notification.orderId) {
+      const matchedOrder = orders.find((o) => String(o.id) === String(notification.orderId) || o.orderCode === String(notification.orderId));
+      if (matchedOrder?.tenantId) {
+        notifTenantId = matchedOrder.tenantId;
+      }
+    }
+    if (!notifTenantId && notification.message) {
+      const orderMatch = notification.message.match(/#(?:Pedido\s*)?(\d{3,8})\b/i) || notification.message.match(/\bPedido\s+(\d{3,8})\b/i);
+      if (orderMatch && orderMatch[1]) {
+        const foundOrder = orders.find((o) => o.orderCode === orderMatch[1] || String(o.id) === orderMatch[1]);
+        if (foundOrder?.tenantId) {
+          notifTenantId = foundOrder.tenantId;
+        }
+      }
+    }
+    if (!notifTenantId) {
+      notifTenantId = activeTenantId;
+    }
+
     await setDoc(
       doc(db, "notifications", id.toString()),
       cleanUndefined({
         ...notification,
+        tenantId: notifTenantId,
         id,
         createdAt: id,
       }),
@@ -1779,42 +1871,78 @@ export function useDatabase(currentUser?: User | null) {
     runSync();
   };
 
+  const matchesTenant = useCallback(
+    (itemTenantId?: string) => {
+      if (currentUser?.tenantId === "global" || activeTenantId === "global") return true;
+      const t = itemTenantId || "imperio";
+      return t === activeTenantId || t === "global";
+    },
+    [currentUser, activeTenantId]
+  );
+
   const filteredUsers = useMemo(() => {
     if (currentUser?.tenantId === "global") return users;
-    return users.filter((u) => (u.tenantId || "imperio") === activeTenantId);
-  }, [users, currentUser, activeTenantId]);
+    return users.filter((u) => matchesTenant(u.tenantId || (u as any).companyId));
+  }, [users, currentUser, matchesTenant]);
 
-  const filteredItems = useMemo(() => items.filter((x) => (x.tenantId || "imperio") === activeTenantId), [items, activeTenantId]);
-  const filteredOrders = useMemo(() => orders.filter((x) => (x.tenantId || "imperio") === activeTenantId), [orders, activeTenantId]);
-  const filteredLogs = useMemo(() => logs.filter((x) => (x.tenantId || "imperio") === activeTenantId), [logs, activeTenantId]);
-  const filteredAttributes = useMemo(() => attributes.filter((x) => (x.tenantId || "imperio") === activeTenantId), [attributes, activeTenantId]);
-  const filteredActivePacks = useMemo(() => activePacks.filter((x) => (x.tenantId || "imperio") === activeTenantId), [activePacks, activeTenantId]);
-  const filteredNestTasks = useMemo(() => nestTasks.filter((x) => (x.tenantId || "imperio") === activeTenantId), [nestTasks, activeTenantId]);
-  const filteredNotifications = useMemo(() => notifications.filter((x) => (x.tenantId || "imperio") === activeTenantId), [notifications, activeTenantId]);
-  const filteredStocks = useMemo(() => stocks.filter((x) => (x.tenantId || "imperio") === activeTenantId), [stocks, activeTenantId]);
-  const filteredStockMovements = useMemo(() => stockMovements.filter((x) => (x.tenantId || "imperio") === activeTenantId), [stockMovements, activeTenantId]);
-  const filteredEmployees = useMemo(() => employees.filter((x) => (x.tenantId || "imperio") === activeTenantId), [employees, activeTenantId]);
-  const filteredEpiDistributions = useMemo(() => epiDistributions.filter((x) => (x.tenantId || "imperio") === activeTenantId), [epiDistributions, activeTenantId]);
-  const filteredUniforms = useMemo(() => uniforms.filter((x) => (x.tenantId || "imperio") === activeTenantId), [uniforms, activeTenantId]);
-  const filteredUniformDistributions = useMemo(() => uniformDistributions.filter((x) => (x.tenantId || "imperio") === activeTenantId), [uniformDistributions, activeTenantId]);
-  const filteredCustomers = useMemo(() => customers.filter((x) => (x.tenantId || "imperio") === activeTenantId), [customers, activeTenantId]);
-  const filteredSectors = useMemo(() => sectors.filter((x) => (x.tenantId || "imperio") === activeTenantId), [sectors, activeTenantId]);
-  const filteredProductFlows = useMemo(() => productFlows.filter((x) => (x.tenantId || "imperio") === activeTenantId), [productFlows, activeTenantId]);
-  const filteredProductionBatches = useMemo(() => productionBatches.filter((x) => (x.tenantId || "imperio") === activeTenantId), [productionBatches, activeTenantId]);
-  const filteredProductionAgendas = useMemo(() => productionAgendas.filter((x) => (x.tenantId || "imperio") === activeTenantId), [productionAgendas, activeTenantId]);
-  const filteredCoilCuttingPlans = useMemo(() => coilCuttingPlans.filter((x) => (x.tenantId || "imperio") === activeTenantId), [coilCuttingPlans, activeTenantId]);
-  const filteredCargas = useMemo(() => cargas.filter((x) => (x.tenantId || "imperio") === activeTenantId), [cargas, activeTenantId]);
-  const filteredExtraHours = useMemo(() => extraHours.filter((x) => (x.tenantId || "imperio") === activeTenantId), [extraHours, activeTenantId]);
-  const filteredPriceHistories = useMemo(() => priceHistories.filter((x) => (x.tenantId || "imperio") === activeTenantId), [priceHistories, activeTenantId]);
-  const filteredSystemSettings = useMemo(() => systemSettings.filter((x) => (x.tenantId || "imperio") === activeTenantId), [systemSettings, activeTenantId]);
-  const filteredTornoEvents = useMemo(() => tornoEvents.filter((x) => (x.tenantId || "imperio") === activeTenantId), [tornoEvents, activeTenantId]);
-  const filteredMachineStops = useMemo(() => machineStops.filter((x) => (x.tenantId || "imperio") === activeTenantId), [machineStops, activeTenantId]);
-  const filteredPerformanceQuestions = useMemo(() => performanceQuestions.filter((x) => (x.tenantId || "imperio") === activeTenantId), [performanceQuestions, activeTenantId]);
-  const filteredPerformanceReviews = useMemo(() => performanceReviews.filter((x) => (x.tenantId || "imperio") === activeTenantId), [performanceReviews, activeTenantId]);
-  const filteredAttendances = useMemo(() => attendances.filter((x) => (x.tenantId || "imperio") === activeTenantId), [attendances, activeTenantId]);
-  const filteredLaserQuotes = useMemo(() => laserQuotes.filter((x) => (x.tenantId || "imperio") === activeTenantId), [laserQuotes, activeTenantId]);
-  const filteredSheetStocks = useMemo(() => sheetStocks.filter((x) => (x.tenantId || "imperio") === activeTenantId), [sheetStocks, activeTenantId]);
-  const filteredSheetStockMovements = useMemo(() => sheetStockMovements.filter((x) => (x.tenantId || "imperio") === activeTenantId), [sheetStockMovements, activeTenantId]);
+  const filteredItems = useMemo(() => items.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [items, matchesTenant]);
+  const filteredOrders = useMemo(() => orders.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [orders, matchesTenant]);
+  const filteredLogs = useMemo(() => logs.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [logs, matchesTenant]);
+  const filteredAttributes = useMemo(() => attributes.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [attributes, matchesTenant]);
+  const filteredActivePacks = useMemo(() => activePacks.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [activePacks, matchesTenant]);
+  const filteredNestTasks = useMemo(() => nestTasks.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [nestTasks, matchesTenant]);
+  const filteredNotifications = useMemo(() => {
+    return notifications.filter((x) => {
+      if (currentUser?.tenantId === "global" || activeTenantId === "global") return true;
+      if (x.tenantId) {
+        return x.tenantId === activeTenantId || x.tenantId === "global";
+      }
+      if (x.orderId) {
+        const order = orders.find((o) => String(o.id) === String(x.orderId) || o.orderCode === String(x.orderId));
+        if (order && order.tenantId) {
+          return order.tenantId === activeTenantId || order.tenantId === "global";
+        }
+      }
+      if (x.message) {
+        const orderMatch = x.message.match(/#(?:Pedido\s*)?(\d{3,8})\b/i) || x.message.match(/\bPedido\s+(\d{3,8})\b/i);
+        if (orderMatch && orderMatch[1]) {
+          const foundOrder = orders.find((o) => o.orderCode === orderMatch[1] || String(o.id) === orderMatch[1]);
+          if (foundOrder && foundOrder.tenantId) {
+            return foundOrder.tenantId === activeTenantId || foundOrder.tenantId === "global";
+          }
+        }
+      }
+      const t = (x as any).companyId || "imperio";
+      return t === activeTenantId || t === "global";
+    });
+  }, [notifications, orders, currentUser, activeTenantId]);
+  const filteredStocks = useMemo(() => stocks.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [stocks, matchesTenant]);
+  const filteredStockMovements = useMemo(() => stockMovements.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [stockMovements, matchesTenant]);
+  const filteredEmployees = useMemo(() => employees.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [employees, matchesTenant]);
+  const filteredEpiDistributions = useMemo(() => epiDistributions.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [epiDistributions, matchesTenant]);
+  const filteredUniforms = useMemo(() => uniforms.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [uniforms, matchesTenant]);
+  const filteredUniformDistributions = useMemo(() => uniformDistributions.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [uniformDistributions, matchesTenant]);
+  const filteredCustomers = useMemo(() => customers.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [customers, matchesTenant]);
+  const filteredSectors = useMemo(() => sectors.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [sectors, matchesTenant]);
+  const filteredProductFlows = useMemo(() => productFlows.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [productFlows, matchesTenant]);
+  const filteredFlows = useMemo(() => flows.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [flows, matchesTenant]);
+  const filteredRejectionReasons = useMemo(() => rejectionReasons.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [rejectionReasons, matchesTenant]);
+  const filteredProductionSteps = useMemo(() => productionSteps.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [productionSteps, matchesTenant]);
+  const filteredProductionBatches = useMemo(() => productionBatches.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [productionBatches, matchesTenant]);
+  const filteredProductionAgendas = useMemo(() => productionAgendas.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [productionAgendas, matchesTenant]);
+  const filteredCoilCuttingPlans = useMemo(() => coilCuttingPlans.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [coilCuttingPlans, matchesTenant]);
+  const filteredCargas = useMemo(() => cargas.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [cargas, matchesTenant]);
+  const filteredExtraHours = useMemo(() => extraHours.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [extraHours, matchesTenant]);
+  const filteredPriceHistories = useMemo(() => priceHistories.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [priceHistories, matchesTenant]);
+  const filteredSystemSettings = useMemo(() => systemSettings.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [systemSettings, matchesTenant]);
+  const filteredTornoEvents = useMemo(() => tornoEvents.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [tornoEvents, matchesTenant]);
+  const filteredMachineStops = useMemo(() => machineStops.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [machineStops, matchesTenant]);
+  const filteredPerformanceQuestions = useMemo(() => performanceQuestions.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [performanceQuestions, matchesTenant]);
+  const filteredPerformanceReviews = useMemo(() => performanceReviews.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [performanceReviews, matchesTenant]);
+  const filteredAttendances = useMemo(() => attendances.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [attendances, matchesTenant]);
+  const filteredLaserQuotes = useMemo(() => laserQuotes.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [laserQuotes, matchesTenant]);
+  const filteredSheetStocks = useMemo(() => sheetStocks.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [sheetStocks, matchesTenant]);
+  const filteredSheetStockMovements = useMemo(() => sheetStockMovements.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [sheetStockMovements, matchesTenant]);
 
   const activeTenant = useMemo(() => {
     return tenants.find((t) => t.id === activeTenantId) || tenants.find((t) => t.id === "imperio") || { id: "imperio", name: "Império Jomarci", logoUrl: "/icon.png", primaryColor: "#00b14f", systemName: "Apontador de Produção" };
@@ -1881,13 +2009,15 @@ export function useDatabase(currentUser?: User | null) {
       await runWrite("Cadastrar Colaborador", async () => {
         await setDoc(
           doc(db, "employees", id),
-          cleanUndefined({ ...employee, id }),
+          cleanUndefined({ ...employee, id, tenantId: (employee as any).tenantId || activeTenantId }),
         );
       });
     },
     updateEmployee: async (id: string, updates: Partial<Employee>) => {
       await runWrite("Atualizar Colaborador", async () => {
-        await updateDoc(doc(db, "employees", id), cleanUndefined(updates));
+        const current = employees.find((e) => e.id === id);
+        const tenantToKeep = (updates as any).tenantId || current?.tenantId || activeTenantId;
+        await updateDoc(doc(db, "employees", id), cleanUndefined({ ...updates, tenantId: tenantToKeep }));
       });
     },
     deleteEmployee: async (id: string) => {
@@ -1901,7 +2031,7 @@ export function useDatabase(currentUser?: User | null) {
       await runWrite("Distribuir EPI", async () => {
         await setDoc(
           doc(db, "epiDistributions", id),
-          cleanUndefined({ ...dist, id }),
+          cleanUndefined({ ...dist, id, tenantId: (dist as any).tenantId || activeTenantId }),
         );
       });
     },
@@ -1909,7 +2039,7 @@ export function useDatabase(currentUser?: User | null) {
     addUniform: async (u: Omit<Uniform, "id">) => {
       const id = Date.now().toString();
       await runWrite("Cadastrar Uniforme", async () => {
-        await setDoc(doc(db, "uniforms", id), cleanUndefined({ ...u, id }));
+        await setDoc(doc(db, "uniforms", id), cleanUndefined({ ...u, id, tenantId: (u as any).tenantId || activeTenantId }));
       });
     },
     updateUniform: async (id: string, updates: Partial<Uniform>) => {
@@ -1928,7 +2058,7 @@ export function useDatabase(currentUser?: User | null) {
       await runWrite("Distribuir Uniforme", async () => {
         await setDoc(
           doc(db, "uniformDistributions", id),
-          cleanUndefined({ ...dist, id }),
+          cleanUndefined({ ...dist, id, tenantId: (dist as any).tenantId || activeTenantId }),
         );
       });
     },
@@ -1943,7 +2073,7 @@ export function useDatabase(currentUser?: User | null) {
       await runWrite("Histórico de Preço", async () => {
         await setDoc(
           doc(db, "priceHistories", id),
-          cleanUndefined({ ...ph, id }),
+          cleanUndefined({ ...ph, id, tenantId: (ph as any).tenantId || activeTenantId }),
         );
       });
     },
@@ -1962,7 +2092,7 @@ export function useDatabase(currentUser?: User | null) {
       }
       await setDoc(
         doc(db, "customers", id.toString()),
-        cleanUndefined({ ...customer, tradeName, id }),
+        cleanUndefined({ ...customer, tradeName, id, tenantId: (customer as any).tenantId || activeTenantId }),
       );
     },
     updateCustomer: async (customer: Customer, oldId?: number) => {
@@ -1971,7 +2101,7 @@ export function useDatabase(currentUser?: User | null) {
         const words = customer.name.trim().split(/\s+/);
         tradeName = words.slice(0, 3).join(" ");
       }
-      const updated = { ...customer, tradeName };
+      const updated = { ...customer, tradeName, tenantId: (customer as any).tenantId || activeTenantId };
       const actualOldId = oldId !== undefined ? oldId : customer.id;
       
       if (actualOldId !== customer.id) {
@@ -2001,15 +2131,16 @@ export function useDatabase(currentUser?: User | null) {
       const id = getUniqueNumericId();
       await setDoc(
         doc(db, "sectors", id.toString()),
-        cleanUndefined({ ...sector, id }),
+        cleanUndefined({ ...sector, id, tenantId: (sector as any).tenantId || activeTenantId }),
       );
     },
     updateSector: async (sector: Sector) => {
       const current = sectors.find((s) => s.id === sector.id);
-      if (current && JSON.stringify(current) === JSON.stringify(sector)) return;
+      const updatedSector = { ...sector, tenantId: (sector as any).tenantId || activeTenantId };
+      if (current && JSON.stringify(current) === JSON.stringify(updatedSector)) return;
       await setDoc(
         doc(db, "sectors", sector.id.toString()),
-        cleanUndefined(sector),
+        cleanUndefined(updatedSector),
         { merge: true },
       );
     },
@@ -2022,15 +2153,16 @@ export function useDatabase(currentUser?: User | null) {
       const id = getUniqueNumericId();
       await setDoc(
         doc(db, "productFlows", id.toString()),
-        cleanUndefined({ ...flow, id }),
+        cleanUndefined({ ...flow, id, tenantId: (flow as any).tenantId || activeTenantId }),
       );
     },
     updateProductFlow: async (flow: ProductFlow) => {
       const current = productFlows.find((f) => f.id === flow.id);
-      if (current && JSON.stringify(current) === JSON.stringify(flow)) return;
+      const updatedFlow = { ...flow, tenantId: (flow as any).tenantId || activeTenantId };
+      if (current && JSON.stringify(current) === JSON.stringify(updatedFlow)) return;
       await setDoc(
         doc(db, "productFlows", flow.id.toString()),
-        cleanUndefined(flow),
+        cleanUndefined(updatedFlow),
         { merge: true },
       );
     },
@@ -2038,25 +2170,124 @@ export function useDatabase(currentUser?: User | null) {
       await deleteDoc(doc(db, "productFlows", id.toString()));
     },
 
+    flows: filteredFlows,
+    addFlow: async (flow: Omit<import("./types").Flow, "id">) => {
+      const id = "flow_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+      const newFlow = cleanUndefined({
+        ...flow,
+        id,
+        tenantId: (flow as any).tenantId || activeTenantId,
+        createdAt: flow.createdAt || Date.now(),
+        updatedAt: Date.now(),
+      });
+      await setDoc(doc(db, "flows", id), newFlow);
+      return id;
+    },
+    updateFlow: async (flow: import("./types").Flow) => {
+      const updatedFlow = cleanUndefined({
+        ...flow,
+        tenantId: (flow as any).tenantId || activeTenantId,
+        updatedAt: Date.now(),
+      });
+      await setDoc(doc(db, "flows", String(flow.id)), updatedFlow, { merge: true });
+    },
+    deleteFlow: async (id: string) => {
+      await deleteDoc(doc(db, "flows", String(id)));
+    },
+
+    rejectionReasons: filteredRejectionReasons,
+    addRejectionReason: async (reason: Omit<import("./types").RejectionReason, "id">) => {
+      const id = "motivo_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+      const newReason = cleanUndefined({
+        ...reason,
+        id,
+        tenantId: (reason as any).tenantId || activeTenantId,
+        createdAt: reason.createdAt || Date.now(),
+      });
+      await setDoc(doc(db, "rejectionReasons", id), newReason);
+      return id;
+    },
+    updateRejectionReason: async (reason: import("./types").RejectionReason) => {
+      const updated = cleanUndefined({
+        ...reason,
+        tenantId: (reason as any).tenantId || activeTenantId,
+      });
+      await setDoc(doc(db, "rejectionReasons", String(reason.id)), updated, { merge: true });
+    },
+    deleteRejectionReason: async (id: string) => {
+      await deleteDoc(doc(db, "rejectionReasons", String(id)));
+    },
+
+    productionSteps: filteredProductionSteps,
+    addProductionStep: async (step: Omit<import("./types").ProductionStep, "id">) => {
+      const id = "step_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+      const newStep = cleanUndefined({
+        ...step,
+        id,
+        tenantId: (step as any).tenantId || activeTenantId,
+        createdAt: step.createdAt || Date.now(),
+        updatedAt: Date.now(),
+      });
+      await setDoc(doc(db, "productionSteps", id), newStep);
+      return id;
+    },
+    updateProductionStep: async (step: import("./types").ProductionStep) => {
+      const updated = cleanUndefined({
+        ...step,
+        tenantId: (step as any).tenantId || activeTenantId,
+        updatedAt: Date.now(),
+      });
+      await setDoc(doc(db, "productionSteps", String(step.id)), updated, { merge: true });
+    },
+    deleteProductionStep: async (id: string) => {
+      await deleteDoc(doc(db, "productionSteps", String(id)));
+    },
+
     productionBatches: filteredProductionBatches,
     addProductionBatch: async (batch: Omit<ProductionBatch, "id">) => {
       const id = getUniqueNumericId();
       await setDoc(
         doc(db, "productionBatches", id.toString()),
-        cleanUndefined({ ...batch, id }),
+        cleanUndefined({ ...batch, id, tenantId: (batch as any).tenantId || activeTenantId }),
       );
+      return id;
     },
     updateProductionBatch: async (batch: ProductionBatch) => {
       const current = productionBatches.find((b) => b.id === batch.id);
-      if (current && JSON.stringify(current) === JSON.stringify(batch)) return;
+      const tenantToKeep = (batch as any).tenantId || (current as any)?.tenantId || activeTenantId;
+      const updatedBatch = { ...batch, tenantId: tenantToKeep };
+      if (current && JSON.stringify(current) === JSON.stringify(updatedBatch)) return;
       await setDoc(
         doc(db, "productionBatches", batch.id.toString()),
-        cleanUndefined(batch),
+        cleanUndefined(updatedBatch),
         { merge: true },
       );
     },
     deleteProductionBatch: async (id: number) => {
-      await deleteDoc(doc(db, "productionBatches", id.toString()));
+      await runWrite("Excluir Lote de Produção", async () => {
+        // 1. Delete the batch document
+        await deleteDoc(doc(db, "productionBatches", id.toString()));
+
+        // 2. Cascade delete steps linked to this batch
+        const matchingSteps = (filteredProductionSteps || []).filter(
+          (s) => Number(s.loteId) === Number(id) || String(s.loteId) === String(id)
+        );
+        for (const s of matchingSteps) {
+          if (s.id) {
+            await deleteDoc(doc(db, "productionSteps", s.id.toString()));
+          }
+        }
+
+        // 3. Cascade delete logs linked to this batch
+        const matchingLogs = (filteredLogs || []).filter(
+          (l) => Number(l.loteId) === Number(id) || String(l.loteId) === String(id)
+        );
+        for (const l of matchingLogs) {
+          if (l.id) {
+            await deleteDoc(doc(db, "logs", l.id.toString()));
+          }
+        }
+      });
     },
 
     productionAgendas: filteredProductionAgendas,
@@ -2064,7 +2295,7 @@ export function useDatabase(currentUser?: User | null) {
       const id = getUniqueNumericId();
       await setDoc(
         doc(db, "productionAgendas", id.toString()),
-        cleanUndefined({ ...agenda, id }),
+        cleanUndefined({ ...agenda, id, tenantId: (agenda as any).tenantId || activeTenantId }),
       );
     },
     updateProductionAgenda: async (agenda: ProductionAgenda) => {

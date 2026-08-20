@@ -156,6 +156,17 @@ export function HistoricoProducaoScreen({
     if (selectedLog.quantityPacked !== undefined) updatedLog.quantityPacked = qtyNum;
     if (selectedLog.quantityInvoiced !== undefined) updatedLog.quantityInvoiced = qtyNum;
 
+    const canEditLogPerm =
+      currentUser.id === "raul" ||
+      currentUser.role === "ADMIN" ||
+      currentUser.role === "GERENCIA" ||
+      currentUser.permissions?.canEditLogs;
+
+    if (!canEditLogPerm) {
+      alert("Acesso negado: Você não possui permissão para editar lançamentos.");
+      return;
+    }
+
     try {
       if (db.updateLog) {
         await db.updateLog(updatedLog);
@@ -172,6 +183,18 @@ export function HistoricoProducaoScreen({
 
   const handleDeleteLog = async () => {
     if (!selectedLog) return;
+
+    const canDeleteLogPerm =
+      currentUser.id === "raul" ||
+      currentUser.role === "ADMIN" ||
+      currentUser.role === "GERENCIA" ||
+      currentUser.permissions?.canDeleteLogs;
+
+    if (!canDeleteLogPerm) {
+      alert("Acesso negado: Você não possui permissão para excluir lançamentos.");
+      return;
+    }
+
     if (!window.confirm("Deseja realmente excluir este lançamento do histórico? Esta ação é irreversível.")) {
       return;
     }
@@ -848,32 +871,59 @@ export function HistoricoProducaoScreen({
     }
   };
 
+  const matchesOperator = (
+    log: any,
+    operatorIdOrName: string,
+    usersList: any[]
+  ): boolean => {
+    if (!operatorIdOrName || operatorIdOrName === "ALL") return true;
+
+    const normTarget = normalizeString(operatorIdOrName);
+    const targetUser = usersList.find(
+      (u) =>
+        u.id === operatorIdOrName ||
+        normalizeString(u.id) === normTarget ||
+        normalizeString(u.name) === normTarget
+    );
+
+    const targetIdNorm = normalizeString(targetUser ? targetUser.id : operatorIdOrName);
+    const targetNameNorm = normalizeString(targetUser ? targetUser.name : operatorIdOrName);
+
+    const logOpIdNorm = normalizeString(log.operatorId || "");
+    const logOpNameNorm = normalizeString(log.customOperatorName || "");
+
+    // Exact or normalized equals
+    if (logOpIdNorm && (logOpIdNorm === targetIdNorm || logOpIdNorm === targetNameNorm)) return true;
+    if (logOpNameNorm && (logOpNameNorm === targetIdNorm || logOpNameNorm === targetNameNorm)) return true;
+
+    // Substring matches (e.g. "solda - Raul", "cortelaser_giovani")
+    if (targetIdNorm && (logOpIdNorm.includes(targetIdNorm) || targetIdNorm.includes(logOpIdNorm))) return true;
+    if (targetNameNorm && (logOpIdNorm.includes(targetNameNorm) || targetNameNorm.includes(logOpIdNorm))) return true;
+    if (targetIdNorm && (logOpNameNorm.includes(targetIdNorm) || targetIdNorm.includes(logOpNameNorm))) return true;
+    if (targetNameNorm && (logOpNameNorm.includes(targetNameNorm) || targetNameNorm.includes(logOpNameNorm))) return true;
+
+    return false;
+  };
+
   const logs = useMemo(() => {
     let filtered = [...db.logs];
 
-    // Filtra pelo usuário se não for Admin ou Projetista
-    if (
-      currentUser.role !== "ADMIN" &&
-      currentUser.role !== "GERENCIA" &&
-      currentUser.role !== "LEITURA" &&
-      currentUser.role !== "PROJETISTA" &&
-      currentUser.role !== "PCP"
-    ) {
-      if (currentUser.role === "REPRESENTANTE") {
-        const orderIds = db.orders
-          .filter((o) => o.representativeName === currentUser.name)
-          .map((o) => o.id);
-        filtered = filtered.filter(
-          (l) =>
-            orderIds.includes(l.orderId) || l.operatorId === currentUser.id,
-        );
-      } else {
-        filtered = filtered.filter((l) => l.operatorId === currentUser.id);
-      }
+    // Se for representante, limita aos seus pedidos ou lançados por ele
+    if (currentUser.role === "REPRESENTANTE") {
+      const orderIds = db.orders
+        .filter((o) => o.representativeName === currentUser.name)
+        .map((o) => o.id);
+      filtered = filtered.filter(
+        (l) =>
+          orderIds.includes(l.orderId) ||
+          matchesOperator(l, currentUser.id, db.users)
+      );
     }
 
     if (selectedOperatorId && selectedOperatorId !== "ALL") {
-      filtered = filtered.filter((l) => l.operatorId === selectedOperatorId);
+      filtered = filtered.filter((l) =>
+        matchesOperator(l, selectedOperatorId, db.users)
+      );
     }
 
     filtered = filtered.sort((a, b) => b.timestamp - a.timestamp);
@@ -933,8 +983,14 @@ export function HistoricoProducaoScreen({
         }
 
         const operatorName =
-          db.users.find((u) => u.id === l.operatorId)?.name ||
+          db.users.find(
+            (u) =>
+              u.id === l.operatorId ||
+              normalizeString(u.id) === normalizeString(l.operatorId || "") ||
+              normalizeString(u.name) === normalizeString(l.operatorId || "")
+          )?.name ||
           l.customOperatorName ||
+          l.operatorId ||
           "";
 
         const searchTarget = normalizeString(
@@ -2107,7 +2163,12 @@ export function HistoricoProducaoScreen({
                 else title = "Apontamento de Produção";
               }
 
-              const operator = db.users.find((u) => u.id === l.operatorId);
+              const operator = db.users.find(
+                (u) =>
+                  u.id === l.operatorId ||
+                  normalizeString(u.id) === normalizeString(l.operatorId || "") ||
+                  normalizeString(u.name) === normalizeString(l.operatorId || "")
+              );
 
               const qty =
                 l.quantityCut ||
@@ -2214,6 +2275,7 @@ export function HistoricoProducaoScreen({
                         >
                           {operator?.name ||
                             l.customOperatorName ||
+                            l.operatorId ||
                             "Desconhecido"}
                         </span>
                       </span>
@@ -2375,7 +2437,10 @@ export function HistoricoProducaoScreen({
           }
 
           const operator = db.users.find(
-            (u) => u.id === selectedLog.operatorId,
+            (u) =>
+              u.id === selectedLog.operatorId ||
+              normalizeString(u.id) === normalizeString(selectedLog.operatorId || "") ||
+              normalizeString(u.name) === normalizeString(selectedLog.operatorId || "")
           );
           const qty =
             selectedLog.quantityCut ||
@@ -2793,12 +2858,14 @@ export function HistoricoProducaoScreen({
                         <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-base shadow-inner">
                           {(operator?.name ||
                             selectedLog.customOperatorName ||
+                            selectedLog.operatorId ||
                             "U")[0].toUpperCase()}
                         </div>
                         <div>
                           <div className="font-bold text-slate-700 text-sm">
                             {operator?.name ||
                               selectedLog.customOperatorName ||
+                              selectedLog.operatorId ||
                               "Operador Desconhecido"}
                           </div>
                           <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">

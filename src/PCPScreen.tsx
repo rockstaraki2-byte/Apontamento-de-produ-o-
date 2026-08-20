@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
+import { parseQty } from "./quantityUtils";
 import { useDatabase } from "./useDatabase";
-import { User, Sector, ProductFlow, Customer, Order, isSubTabAllowed } from "./types";
+import { User, Sector, ProductFlow, Customer, Order, isSubTabAllowed, getSetoresElegiveisParaItem } from "./types";
 import {
   Users,
   Building,
@@ -29,6 +30,8 @@ import {
 } from "lucide-react";
 import { ScreenLayout, ScrollContainer } from "./components/Layout";
 import { ComposicaoProdutosTab } from "./components/ComposicaoProdutosTab";
+import { CadastroFluxosTab } from "./components/CadastroFluxosTab";
+import { CadastroMotivosTab } from "./components/CadastroMotivosTab";
 
 function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [newPlanName, setNewPlanName] = React.useState("");
@@ -1105,7 +1108,7 @@ export function PCPScreen({
   subScreen?: "CADASTROS" | "LOTES";
 }) {
   const [cadastroTab, setCadastroTab] = useState<
-    "CLIENTES" | "SETORES" | "FLUXOS" | "PLANOS_CORTE" | "COLABORADORES" | "CONFIGURACOES" | "REPRESENTANTES" | "COMPOSICAO"
+    "CLIENTES" | "SETORES" | "FLUXOS" | "MOTIVOS_REPROVACAO" | "PLANOS_CORTE" | "COLABORADORES" | "CONFIGURACOES" | "REPRESENTANTES" | "COMPOSICAO"
   >("CLIENTES");
 
   const [sysConfigCompanyName, setSysConfigCompanyName] = useState("");
@@ -1113,6 +1116,11 @@ export function PCPScreen({
   const [sysConfigSystemName, setSysConfigSystemName] = useState("");
   const [sysConfigPrimaryColor, setSysConfigPrimaryColor] = useState("");
   const [sysConfigMonthlyBillingGoal, setSysConfigMonthlyBillingGoal] = useState("");
+  const [sysConfigExigirQualidade, setSysConfigExigirQualidade] = useState(true);
+  const [sysConfigSoldaProcesses, setSysConfigSoldaProcesses] = useState<string[]>([
+    "Solda", "Enchimento", "Desempeno", "Furação", "Viradeira", "Outro"
+  ]);
+  const [newSoldaProcessInput, setNewSoldaProcessInput] = useState("");
   
   React.useEffect(() => {
     if (db.systemSettings?.[0]) {
@@ -1122,7 +1130,13 @@ export function PCPScreen({
       setSysConfigPrimaryColor(db.systemSettings[0].primaryColor || "#00b14f");
       setSysConfigMonthlyBillingGoal(db.systemSettings[0].monthlyBillingGoal?.toString() || "");
     }
-  }, [db.systemSettings]);
+    if (db.activeTenant) {
+      setSysConfigExigirQualidade(db.activeTenant.exigirQualidadeNaEmbalagem !== false);
+      if (db.activeTenant.soldaProcesses && db.activeTenant.soldaProcesses.length > 0) {
+        setSysConfigSoldaProcesses(db.activeTenant.soldaProcesses);
+      }
+    }
+  }, [db.systemSettings, db.activeTenant]);
 
   const handleSaveSystemConfig = async () => {
     try {
@@ -1134,6 +1148,15 @@ export function PCPScreen({
          primaryColor: sysConfigPrimaryColor,
          monthlyBillingGoal: sysConfigMonthlyBillingGoal ? parseFloat(sysConfigMonthlyBillingGoal) : undefined
       });
+
+      if (db.activeTenant && db.addTenant) {
+        await db.addTenant({
+          ...db.activeTenant,
+          exigirQualidadeNaEmbalagem: sysConfigExigirQualidade,
+          soldaProcesses: sysConfigSoldaProcesses,
+        });
+      }
+
       alert("Configurações do sistema salvas com sucesso!");
     } catch(err) {
       alert("Erro ao salvar: " + err);
@@ -1153,9 +1176,12 @@ export function PCPScreen({
   const [editCustomerUF, setEditCustomerUF] = useState("");
 
   const [sectorName, setSectorName] = useState("");
+  const [sectorCapacity, setSectorCapacity] = useState("");
+  const [sectorFluxos, setSectorFluxos] = useState<string[]>([]);
   const [editingSectorId, setEditingSectorId] = useState<number | null>(null);
   const [editSectorName, setEditSectorName] = useState("");
   const [editSectorCapacity, setEditSectorCapacity] = useState("");
+  const [editSectorFluxos, setEditSectorFluxos] = useState<string[]>([]);
 
   const [employeeName, setEmployeeName] = useState("");
   const [employeeSectorId, setEmployeeSectorId] = useState<number | "">("");
@@ -1182,7 +1208,6 @@ export function PCPScreen({
   const [flowSectors, setFlowSectors] = useState<number[]>([]);
   const [sectorTimes, setSectorTimes] = useState<Record<string, number>>({});
   const [draggedSectorIdx, setDraggedSectorIdx] = useState<number | null>(null);
-  const [sectorCapacity, setSectorCapacity] = useState("");
 
   // Lotes state
   const [batchName, setBatchName] = useState("");
@@ -1222,6 +1247,8 @@ export function PCPScreen({
   const [manualProductSearch, setManualProductSearch] = useState("");
   const [manualProductQty, setManualProductQty] = useState(0);
   const [manualProductColor, setManualProductColor] = useState("-");
+  const [manualProductVariation, setManualProductVariation] = useState("-");
+  const [manualProductSize, setManualProductSize] = useState("-");
   const [manualProductDeliveryDate, setManualProductDeliveryDate] = useState("");
 
   // Gerência batch custom states
@@ -1247,6 +1274,8 @@ export function PCPScreen({
   const [csvRawText, setCsvRawText] = useState("");
   const [isParsingCsv, setIsParsingCsv] = useState(false);
   const [parsedCsvResult, setParsedCsvResult] = useState<any | null>(null);
+  const [csvImportProgress, setCsvImportProgress] = useState(0);
+  const [csvImportStage, setCsvImportStage] = useState("");
 
   React.useEffect(() => {
     setLotesVisibleCount(10);
@@ -1411,9 +1440,9 @@ export function PCPScreen({
         id: newOrderId,
         orderCode: `PCP-INT-${Math.floor(Math.random() * 10000)}`,
         itemId: manualProductId,
-        color: manualProductColor,
-        size: "-",
-        variation: "-",
+        color: manualProductColor || "-",
+        size: manualProductSize || "-",
+        variation: manualProductVariation || "-",
         customerName: "Estoque Interno (PCP)",
         totalQuantity: manualProductQty,
         packedQuantity: 0,
@@ -1428,6 +1457,8 @@ export function PCPScreen({
     setManualProductSearch("");
     setManualProductQty(0);
     setManualProductColor("-");
+    setManualProductVariation("-");
+    setManualProductSize("-");
     setManualProductDeliveryDate("");
   };
 
@@ -1494,6 +1525,15 @@ export function PCPScreen({
   const [editBatchNotes, setEditBatchNotes] = useState("");
   const [editBatchOperatorId, setEditBatchOperatorId] = useState("");
 
+  // Add new item/product to existing batch states
+  const [newBatchItemSearch, setNewBatchItemSearch] = useState("");
+  const [newBatchSelectedItemId, setNewBatchSelectedItemId] = useState<number | "">("");
+  const [newBatchItemQuantity, setNewBatchItemQuantity] = useState<number>(1);
+  const [newBatchItemColor, setNewBatchItemColor] = useState("");
+  const [newBatchItemSize, setNewBatchItemSize] = useState("");
+  const [newBatchItemVariation, setNewBatchItemVariation] = useState("");
+  const [isAddingNewItemToBatch, setIsAddingNewItemToBatch] = useState(false);
+
   const handleOpenBatchDetails = (b: any) => {
     setSelectedBatch(b);
     setEditBatchName(b.name || "");
@@ -1508,6 +1548,12 @@ export function PCPScreen({
     setAddOrderSearch("");
     setAddOrderDeliveryFilter("TODOS");
     setAddOrderExcludeInProduction(true);
+    setNewBatchItemSearch("");
+    setNewBatchSelectedItemId("");
+    setNewBatchItemQuantity(1);
+    setNewBatchItemColor("");
+    setNewBatchItemSize("");
+    setNewBatchItemVariation("");
     setIsEditingBatch(false);
 
     const initialQuantities: Record<number, number> = {};
@@ -1520,6 +1566,66 @@ export function PCPScreen({
       });
     }
     setCustomEditBatchQuantities(initialQuantities);
+  };
+
+  const handleAddNewProductToBatch = async () => {
+    if (!selectedBatch) return;
+    if (!newBatchSelectedItemId) {
+      alert("Por favor, selecione um produto para adicionar ao lote.");
+      return;
+    }
+    const qty = Math.max(1, Number(newBatchItemQuantity) || 1);
+    const item = db.items.find((i) => i.id === Number(newBatchSelectedItemId));
+    if (!item) {
+      alert("Produto selecionado não encontrado.");
+      return;
+    }
+
+    try {
+      setIsAddingNewItemToBatch(true);
+      const generatedOrderCode = `${selectedBatch.code || "LOTE"}-${editBatchOrderIds.length + 1}`;
+      const newOrderId = await db.addOrder({
+        orderCode: generatedOrderCode,
+        customerName: selectedBatch.name || `Lote ${selectedBatch.code || ""}`,
+        itemId: item.id,
+        totalQuantity: qty,
+        color: newBatchItemColor.trim() || undefined,
+        size: newBatchItemSize.trim() || undefined,
+        variation: newBatchItemVariation.trim() || undefined,
+        deliveryDate: selectedBatch.deliveryDate || editBatchDeadline || "",
+        status: "PENDENTE",
+        isActive: true,
+      } as any);
+
+      const nextOrderIds = [...editBatchOrderIds, newOrderId];
+      setEditBatchOrderIds(nextOrderIds);
+      setCustomEditBatchQuantities((prev) => ({
+        ...prev,
+        [newOrderId]: qty,
+      }));
+
+      if (selectedBatch) {
+        const updated = {
+          ...selectedBatch,
+          orderIds: nextOrderIds,
+        };
+        await db.updateProductionBatch(updated);
+        setSelectedBatch(updated);
+      }
+
+      // Reset item creation form
+      setNewBatchSelectedItemId("");
+      setNewBatchItemSearch("");
+      setNewBatchItemQuantity(1);
+      setNewBatchItemColor("");
+      setNewBatchItemSize("");
+      setNewBatchItemVariation("");
+      alert(`✅ Produto "${item.name}" adicionado ao lote com sucesso!`);
+    } catch (err: any) {
+      alert("Erro ao adicionar produto ao lote: " + err.message);
+    } finally {
+      setIsAddingNewItemToBatch(false);
+    }
   };
 
   const handleSaveBatchAdjustments = async () => {
@@ -1585,6 +1691,17 @@ export function PCPScreen({
   };
 
   const handleDeleteBatch = async (batchId: number) => {
+    const canDeleteBatch =
+      currentUser?.id === "raul" ||
+      currentUser?.role === "ADMIN" ||
+      currentUser?.role === "GERENCIA" ||
+      currentUser?.permissions?.canDeleteBatches;
+
+    if (!canDeleteBatch) {
+      alert("Acesso negado: Você não possui permissão para excluir Lotes de Produção.");
+      return;
+    }
+
     if (
       !window.confirm(
         "Deseja realmente excluir este lote? Os pedidos voltando a ficar disponíveis para planejamento.",
@@ -1856,15 +1973,18 @@ export function PCPScreen({
     db.addSector({
       name: sectorName,
       dailyCapacity: Number(sectorCapacity) || 1000,
+      fluxos: sectorFluxos,
     });
     setSectorName("");
     setSectorCapacity("");
+    setSectorFluxos([]);
   };
 
   const handleStartEditSector = (s: Sector) => {
     setEditingSectorId(s.id);
     setEditSectorName(s.name);
     setEditSectorCapacity(s.dailyCapacity?.toString() ?? "0");
+    setEditSectorFluxos(s.fluxos || []);
   };
 
   const handleSaveSector = async () => {
@@ -1873,10 +1993,12 @@ export function PCPScreen({
       id: editingSectorId,
       name: editSectorName.trim(),
       dailyCapacity: Number(editSectorCapacity) || 0,
+      fluxos: editSectorFluxos,
     });
     setEditingSectorId(null);
     setEditSectorName("");
     setEditSectorCapacity("");
+    setEditSectorFluxos([]);
   };
 
   const averageTimesBySector = useMemo(() => {
@@ -2034,9 +2156,14 @@ export function PCPScreen({
 
     const sectorOrderMap = new Map<number, Order[]>();
     for (const order of unbatchedOrders) {
-      const flow = db.productFlows.find((f) => f.itemId === order.itemId);
-      const sectorId =
-        flow && flow.sectorIds.length > 0 ? flow.sectorIds[0] : 0; // 0 represents Geral / Sem Setor
+      const item = db.items.find((i) => i.id === order.itemId);
+      let sectorId = 0;
+      if (item) {
+        const eligible = getSetoresElegiveisParaItem(item, db.sectors, db.flows || []);
+        if (eligible.length > 0) {
+          sectorId = Number(eligible[0].id);
+        }
+      }
       if (!sectorOrderMap.has(sectorId)) sectorOrderMap.set(sectorId, []);
       sectorOrderMap.get(sectorId)!.push(order);
     }
@@ -2237,20 +2364,48 @@ export function PCPScreen({
       return;
     }
     setIsParsingCsv(true);
+    setCsvImportProgress(15);
+    setCsvImportStage("📖 Lendo e preparando o conteúdo do arquivo CSV...");
+
     try {
+      setCsvImportProgress(35);
+      setCsvImportStage("🤖 Enviando dados para a Inteligência Artificial Gemini...");
+
+      let currentProgress = 35;
+      const progressTimer = setInterval(() => {
+        currentProgress = Math.min(85, currentProgress + 10);
+        setCsvImportProgress(currentProgress);
+        if (currentProgress > 65) {
+          setCsvImportStage("🔍 Mapeando colunas, produtos e quantidades...");
+        } else if (currentProgress > 45) {
+          setCsvImportStage("🤖 Processando resposta e estrutura do lote via IA...");
+        }
+      }, 700);
+
       const res = await fetch("/api/ai-parse-lote-csv", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ csvText: csvRawText }),
       });
+
+      clearInterval(progressTimer);
+
       if (!res.ok) {
         throw new Error("Erro na requisição ao servidor");
       }
+
+      setCsvImportProgress(95);
+      setCsvImportStage("✨ Estruturando produtos e montando resumo do lote...");
+
       const data = await res.json();
       if (!data.items || data.items.length === 0) {
         alert("Não foi possível identificar itens válidos no arquivo CSV.");
       } else {
-        setParsedCsvResult(data);
+        setCsvImportProgress(100);
+        setCsvImportStage("🎉 Lote analisado com sucesso!");
+        setTimeout(() => {
+          setParsedCsvResult(data);
+        }, 300);
       }
     } catch (err: any) {
       alert("Erro ao analisar arquivo CSV via Gemini: " + err.message);
@@ -2263,10 +2418,20 @@ export function PCPScreen({
     if (!parsedCsvResult || !parsedCsvResult.items || parsedCsvResult.items.length === 0) {
       return;
     }
+    setIsParsingCsv(true);
+    setCsvImportProgress(10);
+    setCsvImportStage("📦 Criando produtos e salvando no banco de dados...");
+
     try {
       const createdOrderIds: number[] = [];
+      const totalItems = parsedCsvResult.items.length;
 
-      for (const item of parsedCsvResult.items) {
+      for (let idx = 0; idx < totalItems; idx++) {
+        const item = parsedCsvResult.items[idx];
+        const stepPct = Math.round(10 + ((idx + 1) / totalItems) * 75);
+        setCsvImportProgress(stepPct);
+        setCsvImportStage(`📦 Cadastrando/Processando item ${idx + 1} de ${totalItems}: ${item.code || item.description || ''}`);
+
         let existingItem = db.items.find(
           (i) => i.code.toLowerCase() === item.code?.toLowerCase() || i.name.toLowerCase() === item.description?.toLowerCase()
         );
@@ -2285,13 +2450,17 @@ export function PCPScreen({
           orderCode: `LOTE-${parsedCsvResult.loteNum}-${createdOrderIds.length + 1}`,
           customerName: parsedCsvResult.loteDesc || `LOTE ${parsedCsvResult.loteNum}`,
           itemId: itemId,
-          totalQuantity: item.quantity || 1,
+          totalQuantity: parseQty(item.quantity) || 1,
           deliveryDate: parsedCsvResult.endDate || "",
           status: "PENDENTE",
-        });
+          isActive: true,
+        } as any);
 
         createdOrderIds.push(newOrderId);
       }
+
+      setCsvImportProgress(90);
+      setCsvImportStage("✨ Vinculando itens ao Lote de Produção...");
 
       await db.addProductionBatch({
         name: parsedCsvResult.loteDesc || `LOTE ${parsedCsvResult.loteNum}`,
@@ -2300,14 +2469,23 @@ export function PCPScreen({
         deliveryDate: parsedCsvResult.endDate || "",
         startDate: parsedCsvResult.startDate || "",
         notes: `Importado via CSV (IA Gemini). Contém ${createdOrderIds.length} produtos.`,
-      });
+        status: "PENDENTE",
+        createdAt: Date.now(),
+      } as any);
 
-      alert(`✅ Lote "${parsedCsvResult.loteDesc || parsedCsvResult.loteNum}" criado com sucesso com ${createdOrderIds.length} produtos!`);
-      setIsCsvImportModalOpen(false);
-      setCsvRawText("");
-      setParsedCsvResult(null);
+      setCsvImportProgress(100);
+      setCsvImportStage("✅ Lote de produção criado com sucesso!");
+
+      setTimeout(() => {
+        alert(`✅ Lote "${parsedCsvResult.loteDesc || parsedCsvResult.loteNum}" criado com sucesso com ${createdOrderIds.length} produtos!`);
+        setIsCsvImportModalOpen(false);
+        setParsedCsvResult(null);
+        setCsvRawText("");
+      }, 300);
     } catch (err: any) {
-      alert("Erro ao criar lote importado: " + err.message);
+      alert("Erro ao criar lote a partir do CSV: " + err.message);
+    } finally {
+      setIsParsingCsv(false);
     }
   };
 
@@ -2339,6 +2517,14 @@ export function PCPScreen({
                   className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "FLUXOS" ? "bg-gray-800 text-white" : "bg-white text-gray-600 border"}`}
                 >
                   <Route size={16} className="inline mr-2" /> Fluxos por Produto
+                </button>
+              )}
+              {isSubTabAllowed(db.activeTenant, "pcp:cadastro_motivos_reprovacao") && (
+                <button
+                  onClick={() => setCadastroTab("MOTIVOS_REPROVACAO")}
+                  className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "MOTIVOS_REPROVACAO" ? "bg-amber-700 text-white shadow-md" : "bg-white text-amber-700 border border-amber-200"}`}
+                >
+                  <XCircle size={16} className="inline mr-2" /> Motivos de Reprovação
                 </button>
               )}
               {isSubTabAllowed(db.activeTenant, "pcp:cadastro_planos_corte") && (
@@ -2376,7 +2562,7 @@ export function PCPScreen({
               )}
             </div>
 
-            <ScrollContainer paddingSize="none" className="w-full">
+            <div className="w-full">
               {cadastroTab === "REPRESENTANTES" && (
                 <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 flex flex-col gap-5 max-w-2xl mx-auto mt-4 text-left">
                   <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
@@ -2469,6 +2655,98 @@ export function PCPScreen({
                         onChange={(e) => setSysConfigMonthlyBillingGoal(e.target.value)}
                         className="w-full border p-2.5 rounded focus:ring-1 focus:ring-blue-500 outline-none text-sm font-medium bg-gray-50 text-gray-900"
                       />
+                    </div>
+
+                    {/* Fluxo de Qualidade na Embalagem Toggle */}
+                    <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-lg flex items-start gap-3 mt-1">
+                      <input
+                        type="checkbox"
+                        id="pcpExigirQualidade"
+                        checked={sysConfigExigirQualidade}
+                        onChange={(e) => setSysConfigExigirQualidade(e.target.checked)}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 mt-0.5 shrink-0 cursor-pointer"
+                      />
+                      <div className="flex-1">
+                        <label htmlFor="pcpExigirQualidade" className="text-xs font-bold text-gray-900 cursor-pointer block">
+                          Exigir Liberação da Qualidade para Envio à Embalagem
+                        </label>
+                        <p className="text-[11px] text-gray-600 mt-0.5 leading-relaxed">
+                          <strong>Ativado:</strong> Os itens produzidos precisam ser inspecionados e aprovados pela Qualidade para ficarem disponíveis no setor de Embalagem.<br />
+                          <strong>Desativado:</strong> O setor de Embalagem recebe os produtos diretamente das áreas de produção sem travar na inspeção de qualidade.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Processos do Setor/Role Solda Config */}
+                    <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-lg flex flex-col gap-2 mt-1">
+                      <div className="flex flex-col gap-0.5">
+                        <label className="text-xs font-bold text-amber-950 block">
+                          🔥 Processos Visíveis no Modal da Solda (Setor / Role Solda)
+                        </label>
+                        <p className="text-[11px] text-amber-800 leading-relaxed">
+                          Selecione quais opções de processos aparecerão para o operador no momento de iniciar uma soldagem:
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {sysConfigSoldaProcesses.map((proc) => (
+                          <span
+                            key={proc}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300"
+                          >
+                            {proc}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (sysConfigSoldaProcesses.length <= 1) {
+                                  alert("É necessário manter ao menos 1 processo de solda.");
+                                  return;
+                                }
+                                setSysConfigSoldaProcesses(
+                                  sysConfigSoldaProcesses.filter((p) => p !== proc)
+                                );
+                              }}
+                              className="text-amber-700 hover:text-red-700 font-black cursor-pointer text-xs ml-0.5"
+                              title="Remover processo"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="flex gap-2 mt-2">
+                        <input
+                          type="text"
+                          placeholder="Adicionar novo processo (ex: Solda TIG)..."
+                          value={newSoldaProcessInput}
+                          onChange={(e) => setNewSoldaProcessInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              const val = newSoldaProcessInput.trim();
+                              if (val && !sysConfigSoldaProcesses.includes(val)) {
+                                setSysConfigSoldaProcesses([...sysConfigSoldaProcesses, val]);
+                                setNewSoldaProcessInput("");
+                              }
+                            }
+                          }}
+                          className="flex-1 text-xs border border-amber-300 bg-white p-2 rounded focus:ring-1 focus:ring-amber-500 outline-none text-amber-950"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const val = newSoldaProcessInput.trim();
+                            if (val && !sysConfigSoldaProcesses.includes(val)) {
+                              setSysConfigSoldaProcesses([...sysConfigSoldaProcesses, val]);
+                              setNewSoldaProcessInput("");
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded transition cursor-pointer"
+                        >
+                          + Adicionar
+                        </button>
+                      </div>
                     </div>
 
                     <div>
@@ -2979,28 +3257,72 @@ export function PCPScreen({
                   <h3 className="font-bold text-gray-700 mb-3 block">
                     Novo Setor
                   </h3>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Nome do Setor (ex: Corte, Pintura)"
-                      value={sectorName}
-                      onChange={(e) => setSectorName(e.target.value)}
-                      className="flex-1 border p-2 rounded"
-                    />
-                    <input
-                      type="number"
-                      placeholder="Capacidade Diária"
-                      value={sectorCapacity}
-                      onChange={(e) => setSectorCapacity(e.target.value)}
-                      className="w-40 border p-2 rounded"
-                    />
-                    <button
-                      onClick={handleAddSector}
-                      className="bg-indigo-600 text-white px-4 rounded font-bold hover:bg-indigo-700"
-                    >
-                      Adicionar
-                    </button>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Nome do Setor (ex: Corte, Pintura)"
+                        value={sectorName}
+                        onChange={(e) => setSectorName(e.target.value)}
+                        className="flex-1 border p-2 rounded"
+                      />
+                      <input
+                        type="number"
+                        placeholder="Capacidade Diária"
+                        value={sectorCapacity}
+                        onChange={(e) => setSectorCapacity(e.target.value)}
+                        className="w-40 border p-2 rounded"
+                      />
+                      <button
+                        onClick={handleAddSector}
+                        className="bg-indigo-600 text-white px-4 rounded font-bold hover:bg-indigo-700"
+                      >
+                        Adicionar
+                      </button>
+                    </div>
+
+                    {(() => {
+                      const flowsToRender = (db.flows && db.flows.length > 0) ? db.flows : [
+                        { id: 1, codigo: "FLUXO_A", nome: "Fluxo A" },
+                        { id: 2, codigo: "FLUXO_B", nome: "Fluxo B" },
+                        { id: 3, codigo: "FLUXO_AB", nome: "Fluxo AB" }
+                      ];
+                      return (
+                        <div className="bg-slate-50 p-2.5 rounded border border-slate-200">
+                          <label className="block text-xs font-bold text-slate-600 mb-1">
+                            Fluxos de Produção Suportados neste Setor:
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {flowsToRender.map((f: any) => {
+                              const isSelected = sectorFluxos.includes(f.codigo) || sectorFluxos.includes(f.nome);
+                              return (
+                                <button
+                                  key={f.id || f.codigo}
+                                  type="button"
+                                  onClick={() => {
+                                    const code = f.codigo;
+                                    setSectorFluxos((prev) =>
+                                      prev.includes(code)
+                                        ? prev.filter((x) => x !== code)
+                                        : [...prev, code]
+                                    );
+                                  }}
+                                  className={`text-xs px-2.5 py-1 rounded-full border font-semibold transition ${
+                                    isSelected
+                                      ? "bg-indigo-600 text-white border-indigo-600"
+                                      : "bg-white text-slate-600 border-slate-300 hover:bg-slate-100"
+                                  }`}
+                                >
+                                  {f.nome} ({f.codigo})
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
+
                   <div className="mt-4 flex flex-col gap-2">
                     {db.sectors.map((s) => (
                       <div
@@ -3008,49 +3330,92 @@ export function PCPScreen({
                         className="p-4 border rounded-lg flex justify-between items-center bg-gray-50 hover:bg-gray-100"
                       >
                         {editingSectorId === s.id ? (
-                          <div className="flex flex-1 gap-2 mr-3 flex-wrap sm:flex-nowrap items-center">
-                            <div className="flex-1 min-w-[120px]">
-                              <label className="block text-[9px] font-bold text-gray-400 uppercase mb-0.5">
-                                Nome do Setor
-                              </label>
-                              <input
-                                type="text"
-                                value={editSectorName}
-                                onChange={(e) =>
-                                  setEditSectorName(e.target.value)
-                                }
-                                className="w-full border p-1 rounded text-sm bg-white"
-                                placeholder="Nome do Setor"
-                              />
+                          <div className="flex flex-col flex-1 gap-2 mr-3">
+                            <div className="flex gap-2 flex-wrap sm:flex-nowrap items-center">
+                              <div className="flex-1 min-w-[120px]">
+                                <label className="block text-[9px] font-bold text-gray-400 uppercase mb-0.5">
+                                  Nome do Setor
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editSectorName}
+                                  onChange={(e) =>
+                                    setEditSectorName(e.target.value)
+                                  }
+                                  className="w-full border p-1 rounded text-sm bg-white"
+                                  placeholder="Nome do Setor"
+                                />
+                              </div>
+                              <div className="w-28 shrink-0">
+                                <label className="block text-[9px] font-bold text-gray-400 uppercase mb-0.5">
+                                  Capac. Diária
+                                </label>
+                                <input
+                                  type="number"
+                                  value={editSectorCapacity}
+                                  onChange={(e) =>
+                                    setEditSectorCapacity(e.target.value)
+                                  }
+                                  className="w-full border p-1 rounded text-sm bg-white"
+                                  placeholder="Capacidade"
+                                />
+                              </div>
+                              <div className="flex gap-1.5 self-end pb-0.5">
+                                <button
+                                  onClick={handleSaveSector}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2.5 py-1.5 rounded transition"
+                                >
+                                  Salvar
+                                </button>
+                                <button
+                                  onClick={() => setEditingSectorId(null)}
+                                  className="bg-gray-300 hover:bg-gray-400 text-gray-700 font-bold text-xs px-2.5 py-1.5 rounded transition"
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
                             </div>
-                            <div className="w-28 shrink-0">
-                              <label className="block text-[9px] font-bold text-gray-400 uppercase mb-0.5">
-                                Capac. Diária
-                              </label>
-                              <input
-                                type="number"
-                                value={editSectorCapacity}
-                                onChange={(e) =>
-                                  setEditSectorCapacity(e.target.value)
-                                }
-                                className="w-full border p-1 rounded text-sm bg-white"
-                                placeholder="Capacidade"
-                              />
-                            </div>
-                            <div className="flex gap-1.5 self-end pb-0.5">
-                              <button
-                                onClick={handleSaveSector}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2.5 py-1.5 rounded transition"
-                              >
-                                Salvar
-                              </button>
-                              <button
-                                onClick={() => setEditingSectorId(null)}
-                                className="bg-gray-300 hover:bg-gray-400 text-gray-700 font-bold text-xs px-2.5 py-1.5 rounded transition"
-                              >
-                                Cancelar
-                              </button>
-                            </div>
+
+                            {(() => {
+                              const editFlowsToRender = (db.flows && db.flows.length > 0) ? db.flows : [
+                                { id: 1, codigo: "FLUXO_A", nome: "Fluxo A" },
+                                { id: 2, codigo: "FLUXO_B", nome: "Fluxo B" },
+                                { id: 3, codigo: "FLUXO_AB", nome: "Fluxo AB" }
+                              ];
+                              return (
+                                <div className="bg-white p-2 rounded border mt-1">
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                                    Editar Fluxos Permitidos:
+                                  </label>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {editFlowsToRender.map((f: any) => {
+                                      const isSelected = editSectorFluxos.includes(f.codigo) || editSectorFluxos.includes(f.nome);
+                                      return (
+                                        <button
+                                          key={f.id || f.codigo}
+                                          type="button"
+                                          onClick={() => {
+                                            const code = f.codigo;
+                                            setEditSectorFluxos((prev) =>
+                                              prev.includes(code)
+                                                ? prev.filter((x) => x !== code)
+                                                : [...prev, code]
+                                            );
+                                          }}
+                                          className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold transition ${
+                                            isSelected
+                                              ? "bg-indigo-600 text-white border-indigo-600"
+                                              : "bg-slate-100 text-slate-600 border-slate-200"
+                                          }`}
+                                        >
+                                          {f.codigo}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         ) : (
                           <div className="flex flex-col gap-1 text-left">
@@ -3070,6 +3435,20 @@ export function PCPScreen({
                                 </span>
                               )}
                             </div>
+
+                            {/* Render assigned Fluxos */}
+                            {s.fluxos && s.fluxos.length > 0 ? (
+                              <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">Fluxos:</span>
+                                {s.fluxos.map((flCode) => (
+                                  <span key={flCode} className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full">
+                                    {flCode}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 italic">Todos os fluxos permitidos</span>
+                            )}
                           </div>
                         )}
 
@@ -3104,399 +3483,19 @@ export function PCPScreen({
                 </div>
               )}
 
-              {cadastroTab === "FLUXOS" && (
-                <div className="bg-white p-4 rounded shadow-sm border mb-4">
-                  <h3 className="font-bold text-gray-700 mb-3 block">
-                    Novo Fluxo Produtivo
-                  </h3>
-                  <div className="flex flex-col gap-3">
-                    {/* SEARCHABLE SELECTION WITH REDUCED OPTION LIST FOR OPTIMAL DESIGN */}
-                    <div className="relative z-40 bg-white">
-                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">
-                        Produto (Código ou Nome)
-                      </label>
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <input
-                            type="text"
-                            placeholder="Digite para buscar produto... (Ex: 1010)"
-                            value={
-                              flowItemId
-                                ? db.items.find((i) => i.id === flowItemId)
-                                  ? `${db.items.find((i) => i.id === flowItemId)?.code} - ${db.items.find((i) => i.id === flowItemId)?.name}`
-                                  : flowItemSearchTerm
-                                : flowItemSearchTerm
-                            }
-                            onChange={(e) => {
-                              setFlowItemSearchTerm(e.target.value);
-                              setFlowItemSearchOpen(true);
-                              if (flowItemId) {
-                                setFlowItemId(""); // clear selected if typing further
-                              }
-                            }}
-                            onFocus={() => setFlowItemSearchOpen(true)}
-                            className="w-full border p-2.5 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-gray-800"
-                          />
-                          {flowItemId && (
-                            <span
-                              className="absolute right-3 top-3.5 h-2.5 w-2.5 bg-emerald-500 rounded-full animate-ping"
-                              title="Produto Selecionado"
-                            />
-                          )}
-                        </div>
-                        {(flowItemId || flowItemSearchTerm) && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setFlowItemId("");
-                              setFlowItemSearchTerm("");
-                              setFlowItemSearchOpen(false);
-                            }}
-                            className="px-3 border rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100 text-sm font-semibold active:scale-95 transition"
-                          >
-                            Limpar
-                          </button>
-                        )}
-                      </div>
-
-                      {flowItemSearchOpen && (
-                        <div className="absolute left-0 right-0 mt-1.5 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden max-h-60 overflow-y-auto">
-                          <div className="p-2 border-b border-gray-50 bg-gray-50/50 flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                              Opções Sugeridas (Pesquisa Inteligente)
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setFlowItemSearchOpen(false)}
-                              className="text-xs font-bold text-indigo-600 hover:underline"
-                            >
-                              Fechar
-                            </button>
-                          </div>
-                          {matchingFlowItems.length === 0 ? (
-                            <div className="p-3 text-sm text-gray-400 italic">
-                              Nenhum produto cadastrado corresponde à pesquisa
-                            </div>
-                          ) : (
-                            matchingFlowItems.map((i) => {
-                              const isSelected = i.id === flowItemId;
-                              return (
-                                <button
-                                  key={i.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setFlowItemId(i.id);
-                                    setFlowItemSearchTerm(
-                                      `${i.code} - ${i.name}`,
-                                    );
-                                    setFlowItemSearchOpen(false);
-                                    const existing = db.productFlows.find((f) => f.itemId === i.id);
-                                    if (existing) {
-                                      setFlowSectors(existing.sectorIds);
-                                      setSectorTimes(existing.sectorTimes || {});
-                                    } else {
-                                      setFlowSectors([]);
-                                      setSectorTimes({});
-                                    }
-                                  }}
-                                  className={`w-full text-left px-3.5 py-2.5 border-b border-gray-100 text-xs font-medium transition-all ${isSelected ? "bg-indigo-50 text-indigo-900 border-l-4 border-l-indigo-600 font-bold" : "hover:bg-slate-50 text-gray-700"}`}
-                                >
-                                  {i.code} - {i.name}
-                                </button>
-                              );
-                            })
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="border p-3 rounded">
-                      <label className="text-sm font-bold text-gray-600 block mb-2">
-                        Selecione e Ordene os Setores (Arraste para Ordernar):
-                      </label>
-                      <div className="flex flex-col gap-2 mb-4">
-                        {db.sectors.map((s) => (
-                          <label key={s.id} className="flex gap-2 items-center">
-                            <input
-                              type="checkbox"
-                              checked={flowSectors.includes(s.id)}
-                              onChange={(e) => {
-                                if (e.target.checked)
-                                  setFlowSectors([...flowSectors, s.id]);
-                                else
-                                  setFlowSectors(
-                                    flowSectors.filter((id) => id !== s.id),
-                                  );
-                              }}
-                            />
-                            {s.name}
-                          </label>
-                        ))}
-                      </div>
-                      {flowSectors.length > 0 && (
-                        <div className="bg-slate-50 border rounded-lg p-3 flex flex-col gap-2.5">
-                          <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block">
-                            Ordem Final do Fluxo & Tempos Padrão:
-                          </span>
-                          {flowSectors.map((sid, idx) => {
-                            const sector = db.sectors.find((s) => s.id === sid);
-                            const avgSec = averageTimesBySector[sid];
-                            return (
-                              <div
-                                key={sid}
-                                draggable
-                                onDragStart={(e) => {
-                                  setDraggedSectorIdx(idx);
-                                  e.dataTransfer.effectAllowed = "move";
-                                }}
-                                onDragOver={(e) => {
-                                  e.preventDefault();
-                                  if (
-                                    draggedSectorIdx === null ||
-                                    draggedSectorIdx === idx
-                                  )
-                                    return;
-                                  const newFlow = [...flowSectors];
-                                  const dragged = newFlow[draggedSectorIdx];
-                                  newFlow.splice(draggedSectorIdx, 1);
-                                  newFlow.splice(idx, 0, dragged);
-                                  setDraggedSectorIdx(idx);
-                                  setFlowSectors(newFlow);
-                                }}
-                                onDragEnd={() => setDraggedSectorIdx(null)}
-                                className="bg-white p-3 border border-slate-200 rounded-lg shadow-xs cursor-grab flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-bold active:cursor-grabbing hover:border-indigo-200 transition-colors"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <span className="text-gray-400 font-mono">☰ {idx + 1}.</span>
-                                  <span className="text-slate-700 font-bold">{sector?.name}</span>
-                                  {avgSec !== undefined && (
-                                    <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono" title="Média calculada a partir de apontamentos anteriores">
-                                      Média Histórica: {avgSec >= 60 ? `${Math.floor(avgSec / 60)}m ${avgSec % 60}s` : `${avgSec}s`}/unid
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-1.5 self-end sm:self-auto">
-                                  <span className="text-[11px] text-slate-500 font-medium">Tempo Padrão:</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    placeholder={avgSec ? String(avgSec) : "Ex: 30"}
-                                    value={sectorTimes[sid] ?? ""}
-                                    onChange={(e) => {
-                                      const val = e.target.value === "" ? 0 : Number(e.target.value);
-                                      setSectorTimes({
-                                        ...sectorTimes,
-                                        [sid]: val,
-                                      });
-                                    }}
-                                    className="w-16 p-1 text-xs border rounded text-right focus:ring-1 focus:ring-indigo-500 focus:outline-none bg-slate-50 text-slate-800 font-black"
-                                  />
-                                  <span className="text-[10px] text-slate-400 font-mono font-bold">seg/unid</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={handleAddFlow}
-                      className="bg-indigo-600 text-white p-3 rounded font-bold hover:bg-indigo-700 shadow-sm mt-2 cursor-pointer active:scale-95 transition"
-                    >
-                      Salvar Fluxo
-                    </button>
-                  </div>
-
-                  {/* WORKFLOW REPLICATION COMPONENT */}
-                  <div className="bg-slate-50/80 rounded-xl border border-indigo-150 p-4.5 mt-6 shadow-xs">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-base">📋</span>
-                      <h4 className="font-extrabold text-sm text-indigo-950 tracking-tight">
-                        Replicar Fluxo de Setores
-                      </h4>
-                    </div>
-                    <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                      Copie a sequência ordenada de setores estruturada de um
-                      produto e replique-a para outro produto instantaneamente.
-                    </p>
-
-                    {replicateSuccessMsg && (
-                      <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold mb-4 animate-bounce">
-                        {replicateSuccessMsg}
-                      </div>
-                    )}
-
-                    <div className="flex flex-col gap-3">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                        {/* SOURCE PRODUCT SELECTOR */}
-                        <div className="flex flex-col">
-                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">
-                            Produto de Origem (Com Fluxo Ativo)
-                          </label>
-                          <select
-                            value={replicateSourceItemId}
-                            onChange={(e) =>
-                              setReplicateSourceItemId(
-                                e.target.value ? Number(e.target.value) : "",
-                              )
-                            }
-                            className="w-full border border-gray-200 p-2 text-xs bg-white rounded-lg focus:ring-1 focus:ring-indigo-500 text-gray-700 font-semibold cursor-pointer"
-                          >
-                            <option value="">-- Selecione Origem --</option>
-                            {db.productFlows.map((f) => {
-                              const it = db.items.find(
-                                (i) => i.id === f.itemId,
-                              );
-                              const sectorsPreview = f.sectorIds
-                                .map(
-                                  (sid) =>
-                                    db.sectors.find((s) => s.id === sid)
-                                      ?.name || "",
-                                )
-                                .filter(Boolean)
-                                .join(" ➔ ");
-                              return (
-                                <option key={f.id} value={f.itemId}>
-                                  {it
-                                    ? `${it.code} - ${it.name}`
-                                    : `ID ${f.itemId}`}{" "}
-                                  (
-                                  {sectorsPreview
-                                    ? sectorsPreview.substring(0, 30)
-                                    : ""}
-                                  ...)
-                                </option>
-                              );
-                            })}
-                          </select>
-                        </div>
-
-                        {/* TARGET PRODUCT SEARCHABLE */}
-                        <div className="flex flex-col relative">
-                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">
-                            Produto de Destino (Receberá o Fluxo)
-                          </label>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              placeholder="Buscar produto destino... (Ex: 1010)"
-                              value={
-                                replicateTargetItemId
-                                  ? db.items.find(
-                                      (i) => i.id === replicateTargetItemId,
-                                    )
-                                    ? `${db.items.find((i) => i.id === replicateTargetItemId)?.code} - ${db.items.find((i) => i.id === replicateTargetItemId)?.name}`
-                                    : replicateTargetSearchTerm
-                                  : replicateTargetSearchTerm
-                              }
-                              onChange={(e) => {
-                                setReplicateTargetSearchTerm(e.target.value);
-                                setReplicateTargetSearchOpen(true);
-                                if (replicateTargetItemId) {
-                                  setReplicateTargetItemId("");
-                                }
-                              }}
-                              onFocus={() => setReplicateTargetSearchOpen(true)}
-                              className="w-full border border-gray-200 p-2 text-xs bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-700 font-semibold"
-                            />
-
-                            {replicateTargetSearchOpen && (
-                              <div className="absolute left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-36 overflow-y-auto">
-                                <div className="p-1 px-2 border-b border-gray-50 bg-gray-50/50 text-[9px] font-bold text-gray-400 uppercase">
-                                  Sugestões
-                                </div>
-                                {matchingReplicateTargetItems.length === 0 ? (
-                                  <div className="p-2 text-xs text-gray-400 italic">
-                                    Nenhum produto correspondente
-                                  </div>
-                                ) : (
-                                  matchingReplicateTargetItems.map((i) => (
-                                    <button
-                                      key={i.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setReplicateTargetItemId(i.id);
-                                        setReplicateTargetSearchTerm(
-                                          `${i.code} - ${i.name}`,
-                                        );
-                                        setReplicateTargetSearchOpen(false);
-                                      }}
-                                      className="w-full text-left px-3 py-1.5 border-b border-gray-50 text-xs hover:bg-slate-50 font-medium"
-                                    >
-                                      {i.code} - {i.name}
-                                    </button>
-                                  ))
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleReplicateFlow}
-                        className="w-full py-2.5 mt-1 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-lg active:scale-95 transition-all shadow-xs cursor-pointer"
-                      >
-                        Copiar e Replicar Fluxo Ativo
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 flex flex-col gap-3">
-                    {db.productFlows.map((f) => {
-                      const item = db.items.find((i) => i.id === f.itemId);
-                      const sectors = f.sectorIds
-                        .map((sid) => {
-                          const sec = db.sectors.find((s) => s.id === sid);
-                          const secName = sec?.name || `Setor ${sid}`;
-                          const time = f.sectorTimes?.[String(sid)] || f.sectorTimes?.[sid];
-                          return time ? `${secName} (${time}s)` : secName;
-                        })
-                        .join(" ➔ ");
-                      return (
-                        <div
-                          key={f.id}
-                          className="p-4 border rounded bg-indigo-50 flex flex-col gap-2 relative"
-                        >
-                          <button
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  "Você tem certeza que deseja revogar este fluxo?",
-                                )
-                              )
-                                db.deleteProductFlow(f.id);
-                            }}
-                            className="absolute top-2 right-2 text-red-500 text-sm font-bold hover:underline"
-                          >
-                            Revogar
-                          </button>
-                          <span className="font-bold text-indigo-900">
-                            {item?.code} - {item?.name}
-                          </span>
-                          <span className="text-sm text-indigo-700 font-mono bg-indigo-100 p-2 rounded">
-                            {sectors}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              {cadastroTab === "FLUXOS" && <CadastroFluxosTab db={db} />}
+              {cadastroTab === "MOTIVOS_REPROVACAO" && <CadastroMotivosTab db={db} />}
 
               {cadastroTab === "PLANOS_CORTE" && <PlanosCorteTab db={db} />}
               {cadastroTab === "COMPOSICAO" && <ComposicaoProdutosTab db={db} />}
-            </ScrollContainer>
+            </div>
           </div>
         )}
 
         {subScreen === "LOTES" && (
           <div className="flex-1 flex flex-col min-h-0">
-            <ScrollContainer
-              paddingSize="normal"
-              className="bg-white rounded shadow-sm border"
+            <div
+              className="bg-white rounded shadow-sm border p-4"
             >
               <div className="flex justify-between items-center mb-3">
                 <div className="flex items-center gap-4">
@@ -3751,7 +3750,7 @@ export function PCPScreen({
                   )}
                 </div>
               )}
-            </ScrollContainer>
+            </div>
           </div>
         )}
 
@@ -4174,19 +4173,69 @@ export function PCPScreen({
                           )}
                       </div>
 
-                      {/* Cor / Acabamento and deliveryDate fields */}
-                      <div className="grid grid-cols-2 gap-2.5 mt-1 border-t border-slate-100 pt-2">
+                      {/* Cor, Variação, Tamanho and Data Prev. Entrega fields */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1 border-t border-slate-100 pt-2">
                         <div className="flex flex-col gap-0.5 text-left">
                           <label className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider pl-0.5">
-                            Cor / Acabamento
+                            Cor
                           </label>
                           <input
                             type="text"
+                            list="registered-colors-list-pcp"
                             value={manualProductColor}
                             onChange={(e) => setManualProductColor(e.target.value)}
-                            placeholder="Ex: Zincado, Preto..."
+                            placeholder="Cor..."
                             className="bg-white border border-slate-200 p-1.5 text-xs font-bold text-slate-700 rounded focus:ring-1 focus:ring-indigo-400 focus:outline-none"
                           />
+                          <datalist id="registered-colors-list-pcp">
+                            {(db.attributes || [])
+                              .filter((a) => a.type === "COLOR" && a.value)
+                              .map((a) => (
+                                <option key={a.id} value={a.value.trim().toUpperCase()} />
+                              ))}
+                          </datalist>
+                        </div>
+
+                        <div className="flex flex-col gap-0.5 text-left">
+                          <label className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider pl-0.5">
+                            Variação
+                          </label>
+                          <input
+                            type="text"
+                            list="registered-variations-list-pcp"
+                            value={manualProductVariation}
+                            onChange={(e) => setManualProductVariation(e.target.value)}
+                            placeholder="Variação..."
+                            className="bg-white border border-slate-200 p-1.5 text-xs font-bold text-slate-700 rounded focus:ring-1 focus:ring-indigo-400 focus:outline-none"
+                          />
+                          <datalist id="registered-variations-list-pcp">
+                            {(db.attributes || [])
+                              .filter((a) => a.type === "VARIATION" && a.value)
+                              .map((a) => (
+                                <option key={a.id} value={a.value.trim().toUpperCase()} />
+                              ))}
+                          </datalist>
+                        </div>
+
+                        <div className="flex flex-col gap-0.5 text-left">
+                          <label className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider pl-0.5">
+                            Tamanho
+                          </label>
+                          <input
+                            type="text"
+                            list="registered-sizes-list-pcp"
+                            value={manualProductSize}
+                            onChange={(e) => setManualProductSize(e.target.value)}
+                            placeholder="Tamanho..."
+                            className="bg-white border border-slate-200 p-1.5 text-xs font-bold text-slate-700 rounded focus:ring-1 focus:ring-indigo-400 focus:outline-none"
+                          />
+                          <datalist id="registered-sizes-list-pcp">
+                            {(db.attributes || [])
+                              .filter((a) => a.type === "SIZE" && a.value)
+                              .map((a) => (
+                                <option key={a.id} value={a.value.trim().toUpperCase()} />
+                              ))}
+                          </datalist>
                         </div>
 
                         <div className="flex flex-col gap-0.5 text-left">
@@ -4909,6 +4958,113 @@ export function PCPScreen({
                       </div>
                     </div>
 
+                    {/* Adicionar NOVO Produto / Peça Diretamente ao Lote */}
+                    <div className="border border-emerald-200 p-3 bg-emerald-50/25 rounded-xl flex flex-col gap-3 shadow-xs">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-emerald-950 uppercase tracking-wide flex items-center gap-1.5">
+                          ✨ Adicionar Novo Produto a Este Lote
+                        </span>
+                        <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-100/70 px-2 py-0.5 rounded">
+                          Criação Direta
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 bg-white p-3 rounded-lg border border-emerald-100">
+                        {/* Product Selection / Search */}
+                        <div className="sm:col-span-6 flex flex-col gap-1">
+                          <label className="text-[10px] font-bold text-slate-600 uppercase">
+                            Selecionar Produto *
+                          </label>
+                          <input
+                            type="text"
+                            value={newBatchItemSearch}
+                            onChange={(e) => setNewBatchItemSearch(e.target.value)}
+                            placeholder="Buscar produto por nome ou código..."
+                            className="w-full bg-slate-50 border border-slate-200 p-1.5 rounded text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none"
+                          />
+                          <select
+                            value={newBatchSelectedItemId}
+                            onChange={(e) => setNewBatchSelectedItemId(e.target.value ? Number(e.target.value) : "")}
+                            className="w-full bg-white border border-slate-200 p-1.5 rounded text-xs text-slate-800 font-medium focus:ring-1 focus:ring-emerald-500 outline-none cursor-pointer mt-1"
+                          >
+                            <option value="">-- Escolha o produto cadastrado --</option>
+                            {db.items
+                              .filter((i) => {
+                                if (!newBatchItemSearch.trim()) return true;
+                                const term = newBatchItemSearch.toLowerCase();
+                                return (
+                                  i.name.toLowerCase().includes(term) ||
+                                  (i.code && i.code.toLowerCase().includes(term))
+                                );
+                              })
+                              .slice(0, 50)
+                              .map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.code ? `[${item.code}] ` : ""}{item.name}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+
+                        {/* Quantity */}
+                        <div className="sm:col-span-2 flex flex-col gap-1">
+                          <label className="text-[10px] font-bold text-slate-600 uppercase">
+                            Quantidade *
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={newBatchItemQuantity}
+                            onChange={(e) => setNewBatchItemQuantity(Math.max(1, Number(e.target.value)))}
+                            className="w-full bg-slate-50 border border-slate-200 p-1.5 rounded text-xs text-slate-800 font-bold text-center focus:ring-1 focus:ring-emerald-500 outline-none"
+                          />
+                        </div>
+
+                        {/* Color */}
+                        <div className="sm:col-span-2 flex flex-col gap-1">
+                          <label className="text-[10px] font-bold text-slate-600 uppercase">
+                            Cor (Opcional)
+                          </label>
+                          <input
+                            type="text"
+                            value={newBatchItemColor}
+                            onChange={(e) => setNewBatchItemColor(e.target.value)}
+                            placeholder="Ex: Preto"
+                            className="w-full bg-slate-50 border border-slate-200 p-1.5 rounded text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none"
+                          />
+                        </div>
+
+                        {/* Size / Variation */}
+                        <div className="sm:col-span-2 flex flex-col gap-1">
+                          <label className="text-[10px] font-bold text-slate-600 uppercase">
+                            Tamanho / Var
+                          </label>
+                          <input
+                            type="text"
+                            value={newBatchItemSize}
+                            onChange={(e) => setNewBatchItemSize(e.target.value)}
+                            placeholder="Ex: 50x30"
+                            className="w-full bg-slate-50 border border-slate-200 p-1.5 rounded text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500 outline-none"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-12 flex justify-end mt-1">
+                          <button
+                            type="button"
+                            disabled={isAddingNewItemToBatch || !newBatchSelectedItemId}
+                            onClick={handleAddNewProductToBatch}
+                            className={`px-3.5 py-1.5 text-xs font-extrabold rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95 ${
+                              !newBatchSelectedItemId
+                                ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                                : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                            }`}
+                          >
+                            ➕ Adicionar Produto ao Lote
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Adicionar novos pedidos sobressalentes */}
                     <div className="border border-indigo-100 p-3 bg-indigo-50/20 rounded-xl flex flex-col gap-2.5">
                       <div className="flex justify-between items-center">
@@ -5149,6 +5305,30 @@ export function PCPScreen({
                     A Inteligência Artificial Gemini identificará os campos correspondentes e montará o lote automaticamente.
                   </span>
                 </div>
+
+                {/* Animated Progress Bar */}
+                {isParsingCsv && (
+                  <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex flex-col gap-2.5 animate-fade-in shadow-xs">
+                    <div className="flex justify-between items-center text-xs font-extrabold text-emerald-950">
+                      <span className="flex items-center gap-2">
+                        <Sparkles size={16} className="text-emerald-600 animate-spin" />
+                        {csvImportStage || "Processando importação..."}
+                      </span>
+                      <span className="font-mono bg-emerald-200/80 text-emerald-900 px-2.5 py-0.5 rounded-lg text-xs font-black border border-emerald-300">
+                        {csvImportProgress}%
+                      </span>
+                    </div>
+
+                    <div className="w-full bg-emerald-200/60 h-3.5 rounded-full overflow-hidden p-0.5 border border-emerald-300/60 shadow-inner">
+                      <div
+                        className="bg-gradient-to-r from-emerald-500 to-teal-600 h-full rounded-full transition-all duration-300 ease-out relative overflow-hidden shadow-xs"
+                        style={{ width: `${csvImportProgress}%` }}
+                      >
+                        <div className="absolute inset-0 bg-white/25 animate-pulse" />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {!parsedCsvResult ? (
                   <div className="flex flex-col gap-3">

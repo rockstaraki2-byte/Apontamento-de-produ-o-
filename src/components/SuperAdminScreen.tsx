@@ -13,7 +13,8 @@ import {
   Crown,
   Upload,
   CheckSquare,
-  Square
+  Square,
+  Lock
 } from "lucide-react";
 import type { useDatabase } from "../useDatabase";
 import type { Tenant, User, Role } from "../types";
@@ -21,9 +22,24 @@ import { ALL_AVAILABLE_SCREENS, ALL_AVAILABLE_SUBTABS } from "../types";
 
 interface SuperAdminScreenProps {
   db: ReturnType<typeof useDatabase>;
+  currentUser?: User;
 }
 
-export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
+export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
+  const isGlobalAdmin = (currentUser?.id === "raul" || currentUser?.tenantId === "global") && currentUser?.id !== "gerencia.cyrnedecor" && currentUser?.role === "ADMIN";
+
+  if (!isGlobalAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 bg-white border border-slate-200 rounded-2xl max-w-md mx-auto text-center mt-12 shadow-sm">
+        <ShieldAlert className="w-12 h-12 text-rose-500 mb-3" />
+        <h3 className="text-base font-bold text-slate-800">Acesso Restrito ao Super Admin</h3>
+        <p className="text-xs text-slate-500 mt-1">
+          Este painel é exclusivo para a administração global do sistema multi-tenant.
+        </p>
+      </div>
+    );
+  }
+
   const [activeTab, setActiveTab] = useState<"COMPANIES" | "USERS">("COMPANIES");
   
   // Company Form State
@@ -38,7 +54,9 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
     systemName: "",
     sectorsInput: "",
     machinesInput: "",
+    exigirQualidadeNaEmbalagem: true,
     allowedScreens: ALL_AVAILABLE_SCREENS.map((s) => s.key),
+    allowedSubTabs: ALL_AVAILABLE_SUBTABS.map((st) => st.key),
   });
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -100,6 +118,7 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
     { value: "ADMIN", label: "Administrador (Acesso Total)" },
     { value: "GERENCIA", label: "Gerência" },
     { value: "PCP", label: "PCP" },
+    { value: "QUALIDADE", label: "Controle de Qualidade / Inspeção" },
     { value: "PRODUCAO", label: "Produção (Montagem, Solda, etc)" },
     { value: "CORTE_LASER", label: "Corte Laser / Dobra" },
     { value: "PINTURA", label: "Pintura" },
@@ -140,9 +159,13 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
       primaryColor: companyForm.primaryColor?.trim() || "#00b14f",
       systemName: companyForm.systemName?.trim() || "SISTEMA DE PRODUÇÃO",
       machines: parsedMachines,
-      allowedScreens: Array.isArray(companyForm.allowedScreens) && companyForm.allowedScreens.length > 0
+      exigirQualidadeNaEmbalagem: companyForm.exigirQualidadeNaEmbalagem !== false,
+      allowedScreens: Array.isArray(companyForm.allowedScreens)
         ? companyForm.allowedScreens
         : ALL_AVAILABLE_SCREENS.map((s) => s.key),
+      allowedSubTabs: Array.isArray(companyForm.allowedSubTabs)
+        ? companyForm.allowedSubTabs
+        : ALL_AVAILABLE_SUBTABS.map((st) => st.key),
     };
 
     try {
@@ -175,6 +198,7 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
         systemName: "",
         sectorsInput: "",
         machinesInput: "",
+        exigirQualidadeNaEmbalagem: true,
         allowedScreens: ALL_AVAILABLE_SCREENS.map((s) => s.key),
         allowedSubTabs: ALL_AVAILABLE_SUBTABS.map((st) => st.key),
       });
@@ -194,10 +218,11 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
       ...t,
       sectorsInput: tenantSectors || "",
       machinesInput: t.machines?.join(", ") || "",
-      allowedScreens: t.allowedScreens && t.allowedScreens.length > 0
+      exigirQualidadeNaEmbalagem: t.exigirQualidadeNaEmbalagem !== false,
+      allowedScreens: Array.isArray(t.allowedScreens)
         ? t.allowedScreens
         : ALL_AVAILABLE_SCREENS.map((s) => s.key),
-      allowedSubTabs: t.allowedSubTabs && t.allowedSubTabs.length > 0
+      allowedSubTabs: Array.isArray(t.allowedSubTabs)
         ? t.allowedSubTabs
         : ALL_AVAILABLE_SUBTABS.map((st) => st.key),
     } as any);
@@ -243,6 +268,7 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
       tenantId: userForm.tenantId,
       sectorIds: userForm.sectorIds || [],
       machines: userForm.machines || [],
+      permissions: userForm.permissions || {},
     };
 
     try {
@@ -282,6 +308,7 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
       tenantId: u.tenantId || "imperio",
       sectorIds: u.sectorIds || [],
       machines: u.machines || [],
+      permissions: u.permissions || {},
     });
     setIsAddingUser(true);
   };
@@ -626,6 +653,31 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
                   </p>
                 </div>
 
+                {/* Quality Gate Toggle */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="exigirQualidadeCheckbox"
+                    checked={companyForm.exigirQualidadeNaEmbalagem !== false}
+                    onChange={(e) =>
+                      setCompanyForm((prev: any) => ({
+                        ...prev,
+                        exigirQualidadeNaEmbalagem: e.target.checked,
+                      }))
+                    }
+                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 mt-0.5 shrink-0"
+                  />
+                  <div>
+                    <label htmlFor="exigirQualidadeCheckbox" className="text-xs font-bold text-slate-800 cursor-pointer block">
+                      Exigir Aprovação no Controle de Qualidade para Liberar Peças para Embalagem
+                    </label>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">
+                      <strong>Ativado (Padrão):</strong> Os produtos só ficam disponíveis na tela de Embalagem após serem inspecionados e aprovados pela Qualidade.<br />
+                      <strong>Desativado:</strong> O fluxo da Embalagem opera normalmente liberando produtos direto das áreas de produção sem travar na Qualidade.
+                    </p>
+                  </div>
+                </div>
+
                 <div>
                   <label className="text-[10px] font-extrabold uppercase text-slate-500 block mb-1">
                     Logo da Empresa <span className="text-red-500">*</span>
@@ -734,10 +786,13 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
 
                         <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500 border-t border-slate-100 pt-3">
                           <div>
-                            <span className="text-[7.5px] uppercase block font-extrabold text-slate-400">Hex Cor</span>
-                            <span className="font-mono font-bold text-slate-800 flex items-center gap-1">
-                              <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.primaryColor || '#00b14f' }} />
-                              {t.primaryColor}
+                            <span className="text-[7.5px] uppercase block font-extrabold text-slate-400">Fluxo da Qualidade</span>
+                            <span className={`font-bold px-1.5 py-0.5 rounded border inline-block text-[9px] ${
+                              t.exigirQualidadeNaEmbalagem !== false
+                                ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                                : "text-amber-700 bg-amber-50 border-amber-200"
+                            }`}>
+                              {t.exigirQualidadeNaEmbalagem !== false ? "Obrigatório" : "Opcional / Desativado"}
                             </span>
                           </div>
                           <div>
@@ -942,6 +997,49 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
                         );
                       })()}
                     </div>
+
+                    {/* Permissões Granulares Especiais do Usuário */}
+                    <div className="border-t border-slate-100 pt-3 mt-1">
+                      <label className="text-[10px] font-extrabold uppercase text-slate-500 block mb-2 flex items-center gap-1">
+                        <Lock size={12} className="text-amber-500" />
+                        Permissões Granulares Especiais do Usuário
+                      </label>
+                      <div className="grid grid-cols-1 gap-1.5 bg-amber-50/50 p-2.5 rounded-lg border border-amber-200/80 text-[11px]">
+                        {[
+                          { key: "canDeleteOrders", label: "🗑️ Excluir Pedidos" },
+                          { key: "canEditOrders", label: "✏️ Editar Pedidos" },
+                          { key: "canDeleteBatches", label: "📦 Excluir Lotes de Produção" },
+                          { key: "canDeleteLogs", label: "📊 Excluir Lançamentos" },
+                          { key: "canEditLogs", label: "🛠️ Editar Lançamentos" },
+                          { key: "canManageSettings", label: "⚙️ Gerenciar Configurações" },
+                          { key: "canBulkDelete", label: "⚡ Exclusão em Massa (Status)" },
+                          { key: "canApproveQuality", label: "🛡️ Aprovar na Qualidade" },
+                          { key: "canReproveQuality", label: "🚨 Reprovar na Qualidade" },
+                        ].map((perm) => {
+                          const isChecked = Boolean((userForm.permissions as any)?.[perm.key]);
+                          return (
+                            <label
+                              key={perm.key}
+                              className="flex items-center gap-2 p-1 rounded bg-white border border-amber-200/60 font-semibold text-slate-800 cursor-pointer hover:bg-amber-100/40 select-none"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  const newPerms = {
+                                    ...(userForm.permissions || {}),
+                                    [perm.key]: e.target.checked,
+                                  };
+                                  setUserForm({ ...userForm, permissions: newPerms });
+                                }}
+                                className="rounded border-amber-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5 cursor-pointer"
+                              />
+                              <span>{perm.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </>
                 )}
 
@@ -989,7 +1087,12 @@ export function SuperAdminScreen({ db }: SuperAdminScreenProps) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                      {db.users.map((u) => {
+                      {db.users
+                        .filter((u) => {
+                          if (isGlobalAdmin) return true;
+                          return u.tenantId === db.activeTenantId || u.tenantId === currentUser?.tenantId;
+                        })
+                        .map((u) => {
                         const tenantObj = db.tenants.find(t => t.id === u.tenantId);
                         return (
                           <tr key={u.id} className="hover:bg-slate-50 transition-colors">

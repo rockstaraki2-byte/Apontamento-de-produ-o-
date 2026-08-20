@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useDatabase } from "./useDatabase";
 import type { User, Order, ProductionBatch, ProductionLog, ActiveTask } from "./types";
+import { getSetoresElegiveisParaItem } from "./types";
 import {
   ScreenLayout,
   ScreenHeader,
@@ -176,16 +177,28 @@ export function FilaRitmoScreen({
       }
     });
 
+    const currentSector = db.sectors.find((s) => Number(s.id) === Number(selectedSectorId));
+
     // Find the actual orders
-    return db.orders.filter(
-      (o) => o.isActive && activeIds.has(o.id) && o.status !== "FATURADO" && o.status !== "CANCELADO"
-    ).sort((a, b) => {
+    return db.orders.filter((o) => {
+      if (!o.isActive || !activeIds.has(o.id) || o.status === "FATURADO" || o.status === "CANCELADO") {
+        return false;
+      }
+      if (currentSector) {
+        const item = db.items.find((i) => Number(i.id) === Number(o.itemId));
+        if (item) {
+          const eligibleSectors = getSetoresElegiveisParaItem(item, [currentSector], db.flows || []);
+          if (eligibleSectors.length === 0) return false;
+        }
+      }
+      return true;
+    }).sort((a, b) => {
       // Prioritize urgent orders, then date
       if (a.isUrgent && !b.isUrgent) return -1;
       if (!a.isUrgent && b.isUrgent) return 1;
       return a.createdAt - b.createdAt;
     });
-  }, [db.orders, db.productionBatches, selectedSectorId]);
+  }, [db.orders, db.productionBatches, db.sectors, db.flows, db.items, selectedSectorId]);
 
   // Map to get standard cycle time for each product/sector
   const getStandardTimeForProduct = (itemId: number, sectorId: number) => {

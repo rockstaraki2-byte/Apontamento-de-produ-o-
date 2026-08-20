@@ -1008,7 +1008,7 @@ Retorne obrigatoriamente um array de pedidos de acordo com o esquema JSON especi
 
         const ai = getGeminiClient();
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-3.1-flash-lite",
           contents: promptText,
           config: {
             responseMimeType: "application/json",
@@ -1180,7 +1180,7 @@ Retorne SOMENTE um OBJETO JSON estritamente dentro do request Schema abaixo. Nã
 
         const ai = getGeminiClient();
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-3.1-flash-lite",
           contents: promptText,
           config: {
             responseMimeType: "application/json",
@@ -1503,7 +1503,7 @@ Atenção: Retorne APENAS o JSON puro. Não inclua texto adicional, formataçõe
         parts.push({ text: promptText });
 
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-3.1-flash-lite",
           contents: {
             parts: parts,
           },
@@ -1693,7 +1693,7 @@ Retorne um JSON contendo:
 Não invente IDs de pedido. Retorne somente IDs que estejam presentes na lista enviada. Indique apenas aqueles cujo status não seja FATURADO ou EMBALADO se estiverem perguntando sobre o que produzir (pois estes já estão prontos), a menos que o usuário pergunte explicitamente o histórico geral.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-flash-lite",
         contents: userMessage,
         config: {
           systemInstruction,
@@ -1767,7 +1767,7 @@ Não retorne itens que não sofrerão alterações. Modifique apenas o que foi s
 Além das ações, retorne uma mensagem de "feedback" para ser exibida ao usuário (em pt-BR, confirmando o que foi feito).`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-3.1-flash-lite",
         contents: userMessage,
         config: {
           systemInstruction,
@@ -1848,7 +1848,7 @@ Responda em formato JSON contendo apenas o campo "summary" com a string formatad
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-3.1-flash-lite",
         contents: promptText,
         config: {
           responseMimeType: "application/json",
@@ -1975,7 +1975,7 @@ Retorne ESTRITAMENTE um objeto JSON válido no formato:
 `;
 
         const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
+          model: "gemini-3.1-flash-lite",
           contents: prompt,
           config: {
             responseMimeType: "application/json",
@@ -2191,7 +2191,7 @@ Retorne estritamente um array de objetos JSON que obedeça o formato do response
 `;
 
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-3.1-flash-lite",
           contents: promptText,
           config: {
             responseMimeType: "application/json",
@@ -2293,7 +2293,7 @@ Retorne obrigatoriamente um array de produtos no formato JSON.
 
         const ai = getGeminiClient();
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-3.1-flash-lite",
           contents: [...fileParts, promptText],
           config: {
             responseMimeType: "application/json",

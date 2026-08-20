@@ -37,7 +37,8 @@ export type Role =
   | "MONTAGEM_RETRATIL"
   | "ENCARREGADO"
   | "TORNO_CNC_WILLIAN"
-  | "TORNO_CNC_HENRIQUE";
+  | "TORNO_CNC_HENRIQUE"
+  | "QUALIDADE";
 
 export interface NestTask {
   id: number;
@@ -69,6 +70,18 @@ export type OrderStatus =
   | "FATURADO"
   | "FATURADO_PARCIAL";
 
+export interface UserPermissions {
+  canDeleteOrders?: boolean;
+  canEditOrders?: boolean;
+  canDeleteBatches?: boolean;
+  canDeleteLogs?: boolean;
+  canEditLogs?: boolean;
+  canManageSettings?: boolean;
+  canBulkDelete?: boolean;
+  canApproveQuality?: boolean;
+  canReproveQuality?: boolean;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -80,6 +93,7 @@ export interface User {
   tenantId?: string;
   sectorIds?: number[];
   machines?: string[];
+  permissions?: UserPermissions;
 }
 
 export interface Tenant {
@@ -92,6 +106,8 @@ export interface Tenant {
   machines?: string[];
   allowedScreens?: string[];
   allowedSubTabs?: string[];
+  exigirQualidadeNaEmbalagem?: boolean;
+  soldaProcesses?: string[];
 }
 
 export interface SubTabOption {
@@ -114,6 +130,7 @@ export const ALL_AVAILABLE_SUBTABS: SubTabOption[] = [
   { key: "pcp:cadastro_clientes", label: "Cadastros - Clientes", parentScreen: "pcp" },
   { key: "pcp:cadastro_setores", label: "Cadastros - Setores", parentScreen: "pcp" },
   { key: "pcp:cadastro_fluxos", label: "Cadastros - Fluxos por Produto", parentScreen: "pcp" },
+  { key: "pcp:cadastro_motivos_reprovacao", label: "Cadastros - Motivos de Reprovação", parentScreen: "pcp" },
   { key: "pcp:cadastro_planos_corte", label: "Cadastros - Planos de Corte & Injeção (Prensa e Injetora)", parentScreen: "pcp" },
   { key: "pcp:cadastro_representantes", label: "Cadastros - Contatos Representantes", parentScreen: "pcp" },
   { key: "pcp:cadastro_bom", label: "Cadastros - Composição de Produtos (BOM)", parentScreen: "pcp" },
@@ -141,6 +158,9 @@ export const ALL_AVAILABLE_SUBTABS: SubTabOption[] = [
 export function isSubTabAllowed(tenant: Tenant | null | undefined, subTabKey: string): boolean {
   if (!tenant) return true;
   if (!tenant.allowedSubTabs || tenant.allowedSubTabs.length === 0) return true;
+  if (subTabKey === "pcp:cadastro_fluxos" || subTabKey === "pcp:cadastro_motivos_reprovacao") {
+    return true;
+  }
   return tenant.allowedSubTabs.includes(subTabKey);
 }
 
@@ -170,6 +190,8 @@ export const ALL_AVAILABLE_SCREENS: ScreenOption[] = [
 
   // Produção e Setores
   { key: "producao", label: "Painel da Produção", category: "Produção e Setores", path: "/producao" },
+  { key: "qualidade", label: "Módulo de Qualidade / Inspeção", category: "Produção e Setores", path: "/qualidade" },
+  { key: "relatorios-qualidade", label: "Relatórios de Qualidade & Retrabalho", category: "Geral", path: "/relatorios-qualidade" },
   { key: "cortelaser", label: "Setor Corte Laser", category: "Produção e Setores", path: "/cortelaser" },
   { key: "pintura", label: "Setor Pintura", category: "Produção e Setores", path: "/pintura" },
   { key: "prensa-eduardo", label: "Setor Prensa (E)", category: "Produção e Setores", path: "/prensa-eduardo" },
@@ -204,6 +226,7 @@ export interface Item {
   components?: { itemId: number; quantity: number }[];
   imageUrl?: string;
   standardCycles?: Record<number, number>; // sectorId -> time in minutes
+  fluxos?: string[]; // Vínculo com N fluxos de produção
 }
 
 export interface Employee {
@@ -269,6 +292,7 @@ export interface AppNotification {
   message: string;
   read: boolean;
   createdAt: number;
+  tenantId?: string;
   type?: string;
   recipientId?: string; // If set, only this user sees it
   orderId?: number | string; 
@@ -332,6 +356,8 @@ export interface Order {
   discountPercent?: number;
   discountAmount?: number;
   hasRET?: boolean;
+  qualidadeAprovada?: boolean;
+  statusQualidade?: "AGUARDANDO" | "EM_INSPECAO" | "APROVADO" | "REPROVADO" | "RETRABALHO";
 }
 
 export interface ProductionLog {
@@ -434,6 +460,8 @@ export interface ActiveTask {
   associatedBatchId?: number;
   associatedBatchName?: string;
   partialQuantity?: number;
+  sectorId?: number | string;
+  sectorName?: string;
   tenantId?: string;
 }
 
@@ -455,6 +483,10 @@ export interface Customer {
 export interface Sector {
   id: number | string;
   name: string;
+  department?: string;
+  active?: boolean;
+  role?: string;
+  code?: string;
   dailyCapacity?: number;
   recommendedCount?: number;
   hourlyCost?: number;        // Custo de operação/hora (R$/h)
@@ -465,6 +497,139 @@ export interface Sector {
   zone?: string;
   description?: string;
   rolesIncluded?: string[];
+  fluxos?: string[];          // Vínculo com N fluxos de produção
+}
+
+export interface Flow {
+  id: string;
+  nome: string;               // ex: "Fluxo A", "Fluxo B", "Fluxo AB"
+  codigo: string;             // ex: "FLUXO_A", "FLUXO_B", "FLUXO_AB"
+  ativo: boolean;
+  descricao?: string;
+  fluxosComponentes?: string[]; // Para fluxos compostos, ex: ["FLUXO_A", "FLUXO_B"]
+  createdAt: number;
+  updatedAt: number;
+  tenantId?: string;
+}
+
+export interface RejectionReason {
+  id: string;
+  codigo: string;             // ex: "MOT-001"
+  descricao: string;          // ex: "Solda com trinca/porosa"
+  categoria?: string;
+  ativo: boolean;
+  createdAt: number;
+  tenantId?: string;
+}
+
+export interface ProductionStep {
+  id: string;
+  itemId: number;
+  orderId?: number;
+  ordemProducaoId?: number;
+  loteId?: number | string;
+  setorId?: number;
+  fluxoUtilizado?: string;
+  status:
+    | "pendente"
+    | "em_producao"
+    | "em_inspecao"
+    | "concluido_etapa"
+    | "aguardando_qualidade"
+    | "aprovado"
+    | "reprovado"
+    | "retrabalho"
+    | "finalizado";
+  quantidadeProduzida: number;
+  operadorId?: string;
+  operadorNome?: string;
+  setorExecutorId?: number;
+  fluxoExecutorId?: string;
+  isRetrabalho?: boolean;
+  retrabalhoOrigemId?: string | number;
+  quantidadeRetrabalhos?: number;
+  motivoReprovacao?: string;
+  codigoMotivo?: string;
+  setorDestinoRetorno?: number;
+  iniciadoEm?: number;
+  finalizadoEm?: number;
+  createdAt: number;
+  updatedAt: number;
+  tenantId?: string;
+}
+
+/**
+ * Motor de Elegibilidade (Flow Matching Engine)
+ * Retorna os setores elegíveis para produzir um item com base nos fluxos (resolvendo compostos recursivamente)
+ */
+export function getSetoresElegiveisParaItem(
+  item: { fluxos?: string[] },
+  setores: Sector[],
+  todosFluxos: Flow[] = []
+): Sector[] {
+  if (!item.fluxos || item.fluxos.length === 0) {
+    return setores; // Fallback de retrocompatibilidade: item sem fluxo vai para qualquer setor
+  }
+
+  const normString = (str?: string) => {
+    if (!str) return "";
+    return str
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .trim();
+  };
+
+  const expandirFluxos = (fluxoList: string[], visited = new Set<string>()): Set<string> => {
+    const atomicos = new Set<string>();
+    for (const rawCode of fluxoList) {
+      if (!rawCode || visited.has(rawCode)) continue;
+      visited.add(rawCode);
+      const codeUpper = rawCode.trim().toUpperCase();
+      const codeNorm = normString(rawCode);
+
+      const found = todosFluxos.find(
+        (f) =>
+          String(f.id) === String(rawCode) ||
+          f.codigo?.toUpperCase() === codeUpper ||
+          normString(f.codigo) === codeNorm ||
+          f.nome?.toUpperCase() === codeUpper ||
+          normString(f.nome) === codeNorm
+      );
+
+      if (found && found.fluxosComponentes && found.fluxosComponentes.length > 0) {
+        const sub = expandirFluxos(found.fluxosComponentes, visited);
+        sub.forEach((s) => atomicos.add(s));
+      } else {
+        if (codeUpper) atomicos.add(codeUpper);
+        if (codeNorm) atomicos.add(codeNorm);
+        if (found?.codigo) {
+          atomicos.add(found.codigo.toUpperCase());
+          atomicos.add(normString(found.codigo));
+        }
+        if (found?.nome) {
+          atomicos.add(found.nome.toUpperCase());
+          atomicos.add(normString(found.nome));
+        }
+        if (found?.id) atomicos.add(String(found.id).toUpperCase());
+      }
+    }
+    return atomicos;
+  };
+
+  const fluxosItem = expandirFluxos(item.fluxos);
+
+  return setores.filter((setor) => {
+    if (!setor.fluxos || setor.fluxos.length === 0) {
+      // Se o setor não tiver fluxos restritos, ele aceita itens
+      return true;
+    }
+    const fluxosSetor = expandirFluxos(setor.fluxos);
+    for (const f of fluxosItem) {
+      if (fluxosSetor.has(f)) return true;
+    }
+    return false;
+  });
 }
 
 export interface ProductFlow {

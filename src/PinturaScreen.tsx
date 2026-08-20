@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { ArrowLeft, Activity } from "lucide-react";
 import { useDatabase } from "./useDatabase";
 import type { User, OrderStatus } from "./types";
@@ -8,6 +8,7 @@ import { ScreenLayout, ScrollContainer } from "./components/Layout";
 import { normalizeString } from "./searchUtils";
 import { ProductivityCard } from "./components/ProductivityCard";
 import { MachineStopWidget } from "./components/OperatorActions";
+import { parseQty } from "./quantityUtils";
 
 const getProductKey = (
   itemId: number,
@@ -33,6 +34,18 @@ export function PinturaScreen({
 
   // Manual Production
   const [manualTitle, setManualTitle] = useState("");
+
+  const registeredColorList = useMemo(() => {
+    const attrs = (db.attributes || []).filter((a) => a.type === "COLOR" && a.value);
+    if (attrs.length > 0) {
+      return Array.from(new Set(attrs.map((a) => a.value.trim().toUpperCase())));
+    }
+    return [
+      "INOX", "GRAFITE", "DOURADO", "CINZA", "BRANCO (LEITOSO)",
+      "PRETO FOSCO", "INCOLOR", "ROSÊ", "CHAMPAGNE", "PRATA",
+      "COR DE PREPARACAO", "ZINCADO", "INDEFINIDA"
+    ];
+  }, [db.attributes]);
   const [manualProduct, setManualProduct] = useState("");
   const [selectedManualItemId, setSelectedManualItemId] = useState<number>(0);
   const [showItemSuggestions, setShowItemSuggestions] = useState(false);
@@ -63,12 +76,12 @@ export function PinturaScreen({
       (currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" ? true : p.operatorId === currentUser.id),
   );
 
-  const getAvailableForPainting = (o: (typeof db.orders)[0]) => o.totalQuantity;
+  const getAvailableForPainting = (o: (typeof db.orders)[0]) => parseQty(o.totalQuantity ?? (o as any).quantity);
   const pendingOrders = db.orders.filter((o) => {
     return (
       o.status !== "EMBALADO" &&
       o.status !== "FATURADO" &&
-      (o.paintedQuantity || 0) < getAvailableForPainting(o)
+      parseQty(o.paintedQuantity) < getAvailableForPainting(o)
     );
   });
 
@@ -94,8 +107,8 @@ export function PinturaScreen({
           totalRemaining: 0,
         });
       }
-      groups.get(key)!.totalRemaining +=
-        (getAvailableForPainting(o) || 0) - (o.paintedQuantity || 0);
+      const rem = Math.max(0, getAvailableForPainting(o) - parseQty(o.paintedQuantity));
+      groups.get(key)!.totalRemaining += rem;
     });
     return Array.from(groups.values());
   }, [pendingOrders]);
@@ -922,21 +935,7 @@ export function PinturaScreen({
                   Cores Cadastradas (toque para selecionar):
                 </span>
                 <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1 bg-white border border-slate-200 rounded">
-                  {[
-                    "INOX",
-                    "GRAFITE",
-                    "DOURADO",
-                    "CINZA",
-                    "BRANCO (LEITOSO)",
-                    "PRETO FOSCO",
-                    "INCOLOR",
-                    "ROSÊ",
-                    "CHAMPAGNE",
-                    "PRATA",
-                    "COR DE PREPARACAO",
-                    "ZINCADO",
-                    "INDEFINIDA",
-                  ].map((color) => (
+                  {registeredColorList.map((color) => (
                     <button
                       key={color}
                       type="button"

@@ -83,6 +83,32 @@ function LocalSVGBarcode({ data, codeText }: { data: string; codeText?: string }
   );
 }
 
+// Inline robust Company Logo renderer with fallback and base64 support
+function CompanyLogo({ logoUrl, className = "w-4 h-4" }: { logoUrl?: string; className?: string }) {
+  const [hasError, setHasError] = useState(false);
+
+  if (!logoUrl || hasError) {
+    return (
+      <div className={`${className} rounded bg-emerald-600 flex items-center justify-center shrink-0 text-white font-black text-[9px] shadow-2xs select-none`}>
+        👑
+      </div>
+    );
+  }
+
+  const isDataUri = logoUrl.startsWith("data:");
+
+  return (
+    <img
+      src={logoUrl}
+      alt="logo"
+      {...(!isDataUri ? { crossOrigin: "anonymous" } : {})}
+      loading="eager"
+      className={`${className} object-contain rounded-xs shrink-0`}
+      onError={() => setHasError(true)}
+    />
+  );
+}
+
 export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
   // Filters state
   const [selectedSector, setSelectedSector] = useState<string>("ALL");
@@ -246,8 +272,11 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
   const a4PrintContainerRef = useRef<HTMLDivElement | null>(null);
 
   const systemSettings = db.systemSettings?.[0] || {};
-  const logoUrl = (db.activeTenant?.logoUrl && db.activeTenant.logoUrl !== "/icon.png") ? db.activeTenant.logoUrl : (systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png");
-  const companyName = db.activeTenant?.name || systemSettings.companyName || "SUA EMPRESA";
+  const currentTenant = db.activeTenant || db.tenants?.find((t) => t.id === "imperio");
+  const companyName = currentTenant?.name || systemSettings.companyName || "IMPÉRIO ACESSÓRIOS";
+  const companySubtitle = currentTenant?.systemName || systemSettings.systemName || (currentTenant as any)?.subtitle || "";
+  const rawLogo = currentTenant?.logoUrl || systemSettings.companyLogoUrl;
+  const logoUrl = rawLogo && rawLogo.trim() !== "" ? rawLogo.trim() : "/icon.png";
 
   const handleOpenPreviewModal = () => {
     const list: any[] = [];
@@ -1798,7 +1827,15 @@ ${barcodeBlock}
                         <div className="flex-1 flex flex-col justify-between h-full text-left">
                           <div>
                             <div className="flex justify-between items-center border-b border-slate-200 pb-1 mb-1">
-                              <span className="text-[8px] font-black tracking-wider text-black">{companyName}</span>
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-1">
+                                <CompanyLogo logoUrl={logoUrl} className="w-3.5 h-3.5" />
+                                <div className="flex flex-col min-w-0 leading-none">
+                                  <span className="text-[8px] font-black tracking-tight text-black uppercase truncate leading-tight">{companyName}</span>
+                                  {companySubtitle && (
+                                    <span className="text-[6px] font-bold text-slate-600 uppercase truncate leading-tight">{companySubtitle}</span>
+                                  )}
+                                </div>
+                              </div>
                               <span className="text-[10px] font-black bg-slate-100 text-black px-1 py-0.2 rounded scale-90">{lbl.sectorLabel}</span>
                             </div>
                             <h5 className="text-[10px] font-black text-black leading-tight truncate">{lbl.name}</h5>
@@ -1857,9 +1894,14 @@ ${barcodeBlock}
                                 <div key={idx} className="bg-white text-black border border-slate-200 rounded p-1.5 flex flex-col justify-between" style={{ height: "105px" }}>
                                   <div className="text-left">
                                     <div className="flex justify-between items-center text-[5.5px] border-b pb-0.5 mb-0.5">
-                                      <div className="flex items-center gap-1">
-                                        <img src={logoUrl} crossOrigin="anonymous" alt="logo" className="w-[12px] h-[12px] object-contain rounded-sm" loading="eager" />
-                                        <span className="font-black text-black uppercase">{companyName}</span>
+                                      <div className="flex items-center gap-1 min-w-0 flex-1 mr-1">
+                                        <CompanyLogo logoUrl={logoUrl} className="w-[12px] h-[12px]" />
+                                        <div className="flex flex-col min-w-0 leading-none">
+                                          <span className="font-black text-black uppercase leading-tight truncate">{companyName}</span>
+                                          {companySubtitle && (
+                                            <span className="text-[4.5px] font-bold text-slate-600 uppercase leading-tight truncate">{companySubtitle}</span>
+                                          )}
+                                        </div>
                                       </div>
                                       <span className="font-black text-black bg-slate-100 py-0.2 px-0.5 rounded uppercase scale-90">{lbl.sectorLabel}</span>
                                     </div>
@@ -2047,11 +2089,18 @@ ${barcodeBlock}
                   <div>
                     {/* Header */}
                     <div className="flex justify-between items-center border-b border-slate-300 pb-1 mb-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <img src={logoUrl} crossOrigin="anonymous" alt="logo" className="w-[16px] h-[16px] object-contain rounded-sm" loading="eager" />
-                        <span className="text-[7.5px] font-black tracking-wider text-black uppercase">
-                          {companyName}
-                        </span>
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-1">
+                        <CompanyLogo logoUrl={logoUrl} className="w-[16px] h-[16px]" />
+                        <div className="flex flex-col min-w-0 leading-none">
+                          <span className="text-[7.5px] font-black tracking-tight text-black uppercase truncate leading-tight">
+                            {companyName}
+                          </span>
+                          {companySubtitle && (
+                            <span className="text-[5.5px] font-bold text-slate-600 uppercase truncate leading-tight">
+                              {companySubtitle}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <span className="text-[7px] tracking-wide font-black bg-slate-100 text-black px-1 py-1 rounded font-sans leading-none">
                         {sectorLabel}
@@ -2174,9 +2223,14 @@ ${barcodeBlock}
                           <div className="flex-1 flex flex-col justify-between h-full">
                             <div>
                               <div className="flex justify-between items-center border-b pb-1 mb-1">
-                                <div className="flex items-center gap-1.5">
-                                  <img src={logoUrl} crossOrigin="anonymous" alt="logo" className="w-[14px] h-[14px] object-contain rounded-sm" loading="eager" />
-                                  <span className="text-[6.5px] font-black text-black tracking-wider uppercase">{companyName}</span>
+                                <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-1">
+                                  <CompanyLogo logoUrl={logoUrl} className="w-[14px] h-[14px]" />
+                                  <div className="flex flex-col min-w-0 leading-none">
+                                    <span className="text-[6.5px] font-black text-black tracking-tight uppercase truncate leading-tight">{companyName}</span>
+                                    {companySubtitle && (
+                                      <span className="text-[5px] font-bold text-slate-600 uppercase truncate leading-tight">{companySubtitle}</span>
+                                    )}
+                                  </div>
                                 </div>
                                 <span className="text-[6px] font-black bg-slate-100 text-black px-1 py-0.2 rounded uppercase lg:leading-none">{sectorLabel}</span>
                               </div>

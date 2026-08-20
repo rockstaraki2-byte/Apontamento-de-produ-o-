@@ -96,6 +96,8 @@ import { RepresentanteScreen } from "./RepresentanteScreen";
 import { UploadNestScreen } from "./UploadNestScreen";
 import { HistoricoProducaoScreen } from "./HistoricoProducaoScreen";
 import { PCPScreen } from "./PCPScreen";
+import { QualidadeScreen } from "./components/QualidadeScreen";
+import { RelatoriosProducaoEQualidade } from "./components/RelatoriosProducaoEQualidade";
 import { FilaRitmoScreen } from "./FilaRitmoScreen";
 import { PedidosSemLoteScreen } from "./PedidosSemLoteScreen";
 import { GestaoClientesScreen } from "./GestaoClientesScreen";
@@ -144,10 +146,7 @@ class ScreenErrorBoundary extends React.Component<
   { children: React.ReactNode; screenName?: string },
   { hasError: boolean; error: Error | null }
 > {
-  constructor(props: { children: React.ReactNode; screenName?: string }) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
+  state = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, error };
@@ -163,13 +162,13 @@ class ScreenErrorBoundary extends React.Component<
         <div className="p-6 bg-red-50 border border-red-200 rounded-xl m-4 text-slate-800 flex flex-col items-center justify-center text-center">
           <div className="flex items-center gap-2 font-bold text-red-700 text-base mb-2">
             <AlertCircle size={24} className="text-red-600" />
-            <span>Ocorreu um problema nesta tela ({this.props.screenName || "Itens"})</span>
+            <span>Ocorreu um problema nesta tela ({(this as any).props.screenName || "Itens"})</span>
           </div>
           <p className="text-xs text-slate-600 mb-4 max-w-md">
             {this.state.error?.message || "Erro inesperado ao renderizar."}
           </p>
           <button
-            onClick={() => this.setState({ hasError: false, error: null })}
+            onClick={() => (this as any).setState({ hasError: false, error: null })}
             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-lg transition cursor-pointer"
           >
             Tentar Novamente
@@ -178,7 +177,7 @@ class ScreenErrorBoundary extends React.Component<
       );
     }
 
-    return this.props.children;
+    return (this as any).props.children;
   }
 }
 
@@ -247,6 +246,8 @@ function Welcome({
         navigate("/pedidos");
       } else if (role === "GERENCIA") {
         navigate("/relatorios");
+      } else if (role === "QUALIDADE") {
+        navigate("/qualidade");
       } else if (role === "EMBALAGEM") {
         navigate("/embalagem");
       } else if (role === "CORTE_LASER") {
@@ -1619,6 +1620,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [imageUrl, setImageUrl] = useState<string>("");
   const [standardCycles, setStandardCycles] = useState<Record<number, number>>({});
+  const [itemFluxos, setItemFluxos] = useState<string[]>([]);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageUploadProgress, setImageUploadProgress] = useState(0);
   const [fullSizeImage, setFullSizeImage] = useState<string | null>(null);
@@ -2126,6 +2128,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           type: itemType,
           imageUrl: imageUrl || existing.imageUrl || "",
           standardCycles,
+          fluxos: itemFluxos,
         });
       }
       setEditingId(null);
@@ -2143,6 +2146,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
         type: itemType,
         imageUrl: imageUrl || "",
         standardCycles,
+        fluxos: itemFluxos,
       });
     }
     setCode("");
@@ -2153,6 +2157,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     setProductionPoints("");
     setImageUrl("");
     setStandardCycles({});
+    setItemFluxos([]);
   };
 
   const handleEdit = (it: (typeof db.items)[0]) => {
@@ -2167,6 +2172,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     );
     setImageUrl(it.imageUrl || "");
     setStandardCycles(it.standardCycles || {});
+    setItemFluxos(it.fluxos || []);
     setActiveTab(
       it.type === "PECA" ? "PECAS" : it.type === "EPI" ? "EPIS" : "PRODUTOS",
     );
@@ -2926,6 +2932,46 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
               })()}
             </div>
 
+            {/* Fluxos do Produto */}
+            <div className="mt-2 bg-indigo-50/60 p-3 rounded border border-indigo-100 flex flex-col gap-2">
+              <label className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded text-[10px]">🔀</span>
+                Fluxos de Produção Vínculo ao Produto
+              </label>
+              <p className="text-[10px] text-indigo-700">
+                Selecione os fluxos compatíveis para este produto. Ele apenas será liberado em setores habilitados para estes fluxos.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(db.flows && db.flows.length > 0 ? db.flows : [
+                  { id: 1, codigo: "FLUXO_A", nome: "Fluxo A" },
+                  { id: 2, codigo: "FLUXO_B", nome: "Fluxo B" },
+                  { id: 3, codigo: "FLUXO_AB", nome: "Fluxo AB" }
+                ]).map((f: any) => {
+                  const isSelected = itemFluxos.includes(f.codigo);
+                  return (
+                    <button
+                      key={f.id || f.codigo}
+                      type="button"
+                      onClick={() => {
+                        const code = f.codigo;
+                        setItemFluxos((prev) =>
+                          prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]
+                        );
+                      }}
+                      className={`px-3 py-1 rounded-md text-xs font-bold border transition flex items-center gap-1 ${
+                        isSelected
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                          : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+                      }`}
+                    >
+                      {isSelected && <span>✓</span>}
+                      {f.nome} ({f.codigo})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="flex items-center gap-4 mt-1 bg-gray-50 p-2.5 rounded border border-gray-100">
               {imageUrl ? (
                 <img
@@ -3009,7 +3055,18 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                   </div>
                 )}
                 <div className="flex flex-col">
-                  <span className="font-bold text-gray-800">{it.code}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-gray-800">{it.code}</span>
+                    {it.fluxos && it.fluxos.length > 0 && (
+                      <div className="flex gap-1">
+                        {it.fluxos.map((fl: string) => (
+                          <span key={fl} className="text-[9px] font-bold bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">
+                            {fl}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <span className="text-gray-600 text-sm">{it.name}</span>
                 </div>
               </div>
@@ -3297,6 +3354,23 @@ function PedidosScreen({
   const [orderRangeEnd, setOrderRangeEnd] = useState<string>("");
   const [filterByRangeActive, setFilterByRangeActive] = useState<boolean>(false);
   const [selectedOrderCodesForPrint, setSelectedOrderCodesForPrint] = useState<string[]>([]);
+  const [ordersLimit, setOrdersLimit] = useState<number>(20);
+
+  useEffect(() => {
+    setOrdersLimit(20);
+  }, [
+    debouncedSearchTerm,
+    filterDeadlines,
+    selectedStatuses,
+    filterBatchState,
+    filterNotInvoicedOnly,
+    printedFilter,
+    deliveryDateStart,
+    deliveryDateEnd,
+    filterByRangeActive,
+    orderRangeStart,
+    orderRangeEnd,
+  ]);
 
   const extractOrderNum = (code: string): number | null => {
     if (!code) return null;
@@ -3808,6 +3882,7 @@ function PedidosScreen({
   const [variation, setVariation] = useState("");
   const [totalQuantity, setTotalQuantity] = useState<number | "">("");
   const [unitPrice, setUnitPrice] = useState<number | "">("");
+  const [showPriceHistory, setShowPriceHistory] = useState<boolean>(false);
   const [deliveryDate, setDeliveryDate] = useState("");
   const [paymentCondition, setPaymentCondition] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("");
@@ -6473,6 +6548,34 @@ function PedidosScreen({
     }
   };
 
+  const handleBulkDeleteSelectedOrders = async () => {
+    if (currentUser.role === "LEITURA") return;
+    if (selectedOrderCodesForPrint.length === 0) return;
+
+    const ordersToDelete = db.orders.filter((o) =>
+      selectedOrderCodesForPrint.includes(o.orderCode)
+    );
+
+    if (ordersToDelete.length === 0) return;
+
+    const confirmMsg = `⚠️ ATENÇÃO: Tem certeza que deseja excluir em massa os ${selectedOrderCodesForPrint.length} pedido(s) selecionados (${ordersToDelete.length} itens no total)? Esta ação não pode ser desfeita.`;
+
+    if (confirm(confirmMsg)) {
+      try {
+        for (const o of ordersToDelete) {
+          await db.deleteOrder(o.id);
+        }
+        if (selectedOrderCode && selectedOrderCodesForPrint.includes(selectedOrderCode)) {
+          setSelectedOrderCode(null);
+        }
+        setSelectedOrderCodesForPrint([]);
+        alert(`✅ ${ordersToDelete.length} item(ns) de ${selectedOrderCodesForPrint.length} pedido(s) excluídos com sucesso!`);
+      } catch (err: any) {
+        alert("Erro ao excluir pedidos em massa: " + err.message);
+      }
+    }
+  };
+
   const handleReplicateGroup = async (code: string) => {
     if (currentUser.role === "LEITURA") return;
     const ordersInGroup = db.orders.filter((o) => o.orderCode === code);
@@ -6508,66 +6611,80 @@ function PedidosScreen({
 
   const [visibleCount, setVisibleCount] = useState(30);
 
-  const filteredOrders = db.orders
-    .filter((o) => {
-      const term = normalizeString(debouncedSearchTerm);
+  const filteredOrders = React.useMemo(() => {
+    return db.orders
+      .filter((o) => {
+        const term = normalizeString(debouncedSearchTerm);
 
-      const customer = db.customers.find(
-        (c) => c.name === o.customerName || c.tradeName === o.customerName,
-      );
-      const item = db.items.find((i) => i.id === o.itemId);
+        const customer = db.customers.find(
+          (c) => c.name === o.customerName || c.tradeName === o.customerName,
+        );
+        const item = db.items.find((i) => i.id === o.itemId);
 
-      const searchTarget = normalizeString(
-        `${o.orderCode} ${o.customerName} ${customer?.tradeName || ""} ${item?.name || ""} ${item?.code || ""}`,
-      );
+        const searchTarget = normalizeString(
+          `${o.orderCode} ${o.customerName} ${customer?.tradeName || ""} ${item?.name || ""} ${item?.code || ""}`,
+        );
 
-      const matchesSearch = searchTarget.includes(term);
-      if (!matchesSearch) return false;
+        const matchesSearch = searchTarget.includes(term);
+        if (!matchesSearch) return false;
 
-      if (filterLaserOnly) {
-        const itemNorm = normalizeString(item?.name || "");
-        const isPeOrChapa =
-          itemNorm.includes("pe") || itemNorm.includes("chapa") || itemNorm.includes("barrachata") || itemNorm.includes("barra chata");
-        const isThirdParty = !!o.isThirdPartyLaser;
-        if (!isPeOrChapa && !isThirdParty) return false;
-      }
+        if (filterLaserOnly) {
+          const itemNorm = normalizeString(item?.name || "");
+          const isPeOrChapa =
+            itemNorm.includes("pe") || itemNorm.includes("chapa") || itemNorm.includes("barrachata") || itemNorm.includes("barra chata");
+          const isThirdParty = !!o.isThirdPartyLaser;
+          if (!isPeOrChapa && !isThirdParty) return false;
+        }
 
-      // Filter by delivery date range
-      if (deliveryDateStart || deliveryDateEnd) {
-        if (!o.deliveryDate) return false;
-        const itemDate = o.deliveryDate.split("T")[0];
-        if (deliveryDateStart && itemDate < deliveryDateStart) return false;
-        if (deliveryDateEnd && itemDate > deliveryDateEnd) return false;
-      }
+        // Filter by delivery date range
+        if (deliveryDateStart || deliveryDateEnd) {
+          if (!o.deliveryDate) return false;
+          const itemDate = o.deliveryDate.split("T")[0];
+          if (deliveryDateStart && itemDate < deliveryDateStart) return false;
+          if (deliveryDateEnd && itemDate > deliveryDateEnd) return false;
+        }
 
-      // Filter by custom customer field
-      if (filterCustomer) {
-        const matchesCust = normalizeString(o.customerName).includes(normalizeString(filterCustomer)) || 
-          normalizeString(customer?.tradeName || "").includes(normalizeString(filterCustomer));
-        if (!matchesCust) return false;
-      }
+        // Filter by custom customer field
+        if (filterCustomer) {
+          const matchesCust = normalizeString(o.customerName).includes(normalizeString(filterCustomer)) || 
+            normalizeString(customer?.tradeName || "").includes(normalizeString(filterCustomer));
+          if (!matchesCust) return false;
+        }
 
-      // Filter by item status
-      if (filterStatus && o.status !== filterStatus) {
-        return false;
-      }
+        // Filter by item status
+        if (filterStatus && o.status !== filterStatus) {
+          return false;
+        }
 
-      // Filter by urgency
-      if (filterUrgentOnly && !o.isUrgent) {
-        return false;
-      }
+        // Filter by urgency
+        if (filterUrgentOnly && !o.isUrgent) {
+          return false;
+        }
 
-      // Filter based on activeSubTab
-      if (activeSubTab === "APROVACAO") {
-        return o.status === "AGUARDANDO_APROVACAO";
-      } else if (activeSubTab === "FATURADOS") {
-        return o.status === "FATURADO";
-      } else {
-        // Abertos tabs: everything else that's active/pending
-        return o.status !== "FATURADO" && o.status !== "AGUARDANDO_APROVACAO";
-      }
-    })
-    .sort((a, b) => b.createdAt - a.createdAt);
+        // Filter based on activeSubTab
+        if (activeSubTab === "APROVACAO") {
+          return o.status === "AGUARDANDO_APROVACAO";
+        } else if (activeSubTab === "FATURADOS") {
+          return o.status === "FATURADO";
+        } else {
+          // Abertos tabs: everything else that's active/pending
+          return o.status !== "FATURADO" && o.status !== "AGUARDANDO_APROVACAO";
+        }
+      })
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }, [
+    db.orders,
+    db.customers,
+    db.items,
+    debouncedSearchTerm,
+    filterLaserOnly,
+    deliveryDateStart,
+    deliveryDateEnd,
+    filterCustomer,
+    filterStatus,
+    filterUrgentOnly,
+    activeSubTab,
+  ]);
 
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const listContainerRef = React.useRef<HTMLDivElement>(null);
@@ -8982,9 +9099,6 @@ function PedidosScreen({
                               {u.name}
                             </option>
                           ))}
-                        <option value="Lilian Representante">Lilian Representante</option>
-                        <option value="Angelo Representante">Angelo Representante</option>
-                        <option value="Pedidos LOJA Imperio">Pedidos LOJA Imperio</option>
                       </select>
                     </div>
                   </div>
@@ -9196,7 +9310,10 @@ function PedidosScreen({
                         >
                           <option value="">Cor (opcional)</option>
                           <option value="-">-</option>
-                          {Object.values(COLOR_MAP).map((cName) => (
+                          {((db?.attributes || []).filter((a) => a.type === "COLOR" && a.value).length > 0
+                            ? Array.from(new Set((db?.attributes || []).filter((a) => a.type === "COLOR" && a.value).map((a) => a.value.trim().toUpperCase())))
+                            : Object.values(COLOR_MAP)
+                          ).map((cName) => (
                             <option key={cName} value={cName}>
                               {cName}
                             </option>
@@ -9236,9 +9353,27 @@ function PedidosScreen({
                     </div>
 
                     <div className="flex flex-col gap-0.5 relative">
-                      <label className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">
-                        Preço Unitário (R$)
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">
+                          Preço Unitário (R$)
+                        </label>
+                        {selectedItemObj &&
+                          (selectedItemObj.basePrice ||
+                            lastPrices.length > 0) && (
+                            <button
+                              type="button"
+                              onClick={() => setShowPriceHistory((prev) => !prev)}
+                              className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border transition flex items-center gap-1 cursor-pointer ${
+                                showPriceHistory
+                                  ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                                  : "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                              }`}
+                              title="Alternar histórico e preços de tabela"
+                            >
+                              <span>📊 Histórico</span>
+                            </button>
+                          )}
+                      </div>
                       <div className="relative">
                         <span className="absolute left-2.5 top-1.5 text-slate-400 font-semibold text-[11px]">
                           R$
@@ -9256,29 +9391,69 @@ function PedidosScreen({
                           className="border border-slate-300 text-xs pl-8 pr-2.5 py-1.5 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full bg-white text-slate-800 placeholder-slate-400 font-medium"
                         />
                       </div>
-                      {selectedItemObj &&
+                      {showPriceHistory &&
+                        selectedItemObj &&
                         (selectedItemObj.basePrice ||
                           lastPrices.length > 0) && (
-                          <div className="absolute top-full left-0 mt-1 bg-indigo-50 border border-indigo-200 shadow-md p-1.5 rounded text-[10px] text-indigo-800 z-10 w-full flex flex-col gap-1">
+                          <div className="absolute top-full left-0 mt-1 bg-white border border-indigo-200 shadow-xl p-2 rounded-lg text-[11px] text-slate-800 z-30 w-56 flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between pb-1 border-b border-indigo-100">
+                              <span className="font-extrabold text-indigo-950 text-[10px] uppercase tracking-wider flex items-center gap-1">
+                                📊 Histórico de Preços
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowPriceHistory(false)}
+                                className="text-slate-400 hover:text-slate-600 font-bold px-1 rounded text-xs cursor-pointer"
+                              >
+                                ✕
+                              </button>
+                            </div>
+
                             {selectedItemObj.basePrice && (
-                              <div>
-                                <span className="font-bold">Tabela:</span> R${" "}
-                                {selectedItemObj.basePrice.toFixed(2)}
+                              <div className="flex items-center justify-between bg-slate-50 p-1.5 rounded border border-slate-100">
+                                <span className="text-slate-600 font-medium text-[10px]">Tabela:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setUnitPrice(selectedItemObj.basePrice!);
+                                    setShowPriceHistory(false);
+                                  }}
+                                  className="font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded text-[10px] transition cursor-pointer"
+                                  title="Clique para aplicar o preço de tabela"
+                                >
+                                  R$ {selectedItemObj.basePrice.toFixed(2)} ↵
+                                </button>
                               </div>
                             )}
+
                             {lastPrices.length > 0 && (
-                              <div className="flex flex-col gap-0.5">
-                                <span className="font-bold text-slate-700">
+                              <div className="flex flex-col gap-1">
+                                <span className="font-extrabold text-slate-700 text-[10px] uppercase tracking-wider">
                                   Últimos Preços:
                                 </span>
-                                {lastPrices.map((p, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="text-slate-600 font-medium"
-                                  >
-                                    - R$ {p.toFixed(2)}
-                                  </span>
-                                ))}
+                                <div className="flex flex-col gap-1">
+                                  {lastPrices.map((p, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="flex items-center justify-between bg-indigo-50/50 p-1.5 rounded border border-indigo-100"
+                                    >
+                                      <span className="text-slate-500 font-medium text-[10px]">
+                                        {idx === 0 ? "Último pedido:" : "Penúltimo:"}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setUnitPrice(p);
+                                          setShowPriceHistory(false);
+                                        }}
+                                        className="font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px] transition cursor-pointer"
+                                        title="Clique para aplicar este preço"
+                                      >
+                                        R$ {p.toFixed(2)} ↵
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             )}
                           </div>
@@ -10317,6 +10492,16 @@ function PedidosScreen({
                   >
                     <Printer size={11} /> Folha Inteira
                   </button>
+                  {currentUser.role !== "LEITURA" && (
+                    <button
+                      type="button"
+                      onClick={handleBulkDeleteSelectedOrders}
+                      className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] rounded shadow-xs transition cursor-pointer flex items-center gap-1"
+                      title="Excluir todos os pedidos selecionados em massa"
+                    >
+                      <Trash2 size={11} /> Excluir em Massa
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -10329,7 +10514,7 @@ function PedidosScreen({
               </p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 pb-4">
-                {groupedOrders.map(([code, orders]) => {
+                {groupedOrders.slice(0, ordersLimit).map(([code, orders]) => {
                   const firstOrder = orders[0];
                   const dStatus = getDeliveryStatus(firstOrder);
                   const isSelectedForPrint = selectedOrderCodesForPrint.includes(code);
@@ -10571,6 +10756,30 @@ function PedidosScreen({
                 })}
               </div>
             )}
+
+            {groupedOrders.length > ordersLimit && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200 my-2 mb-4 shadow-2xs">
+                <div className="text-xs text-slate-600 font-medium">
+                  Exibindo <span className="font-extrabold text-slate-900">{Math.min(ordersLimit, groupedOrders.length)}</span> de <span className="font-extrabold text-slate-900">{groupedOrders.length}</span> pedidos
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOrdersLimit((prev) => prev + 20)}
+                    className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl border border-indigo-200 transition cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-95"
+                  >
+                    🔄 Carregar mais 20 pedidos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrdersLimit(groupedOrders.length)}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-250 transition cursor-pointer active:scale-95"
+                  >
+                    Mostrar Todos ({groupedOrders.length})
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -10630,6 +10839,17 @@ function PedidosScreen({
               >
                 <Printer size={14} /> Imprimir Folha Inteira
               </button>
+
+              {currentUser.role !== "LEITURA" && (
+                <button
+                  type="button"
+                  onClick={handleBulkDeleteSelectedOrders}
+                  className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-rose-500/20 active:scale-95"
+                  title="Excluir pedidos selecionados em massa"
+                >
+                  <Trash2 size={14} /> Excluir em Massa
+                </button>
+              )}
 
               <button
                 type="button"
@@ -11156,15 +11376,13 @@ function PedidosScreen({
                     className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800 bg-white"
                   >
                     <option value="">Nenhum Representante</option>
-                    {(db.users || []).map((u) => (
-                      <option key={u.id} value={u.name}>
-                        {u.name}
-                      </option>
-                    ))}
-                    <option value="Lilian Representante">Lilian Representante</option>
-                    <option value="Angelo Representante">Angelo Representante</option>
-                    <option value="Danilo Representante">Danilo Representante</option>
-                    <option value="Pedidos LOJA Imperio">Pedidos LOJA Imperio</option>
+                    {(db.users || [])
+                      .filter((u) => u.role === "REPRESENTANTE")
+                      .map((u) => (
+                        <option key={u.id} value={u.name}>
+                          {u.name}
+                        </option>
+                      ))}
                   </select>
                 </div>
 
@@ -11319,7 +11537,10 @@ function PedidosScreen({
                     className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800 bg-white"
                   >
                     <option value="">Nenhuma / Padrão</option>
-                    {Object.values(COLOR_MAP).map((cName) => (
+                    {((db?.attributes || []).filter((a) => a.type === "COLOR" && a.value).length > 0
+                      ? Array.from(new Set((db?.attributes || []).filter((a) => a.type === "COLOR" && a.value).map((a) => a.value.trim().toUpperCase())))
+                      : Object.values(COLOR_MAP)
+                    ).map((cName) => (
                       <option key={cName} value={cName}>
                         {cName}
                       </option>
@@ -13261,12 +13482,16 @@ function AdminScreen({
     return result;
   }, [db.logs, db.orders, selectedItemId, selectedSector]);
 
-  const logsToday = filteredLogs.filter((l) => l.timestamp >= todayStart);
-  const logsYesterday = filteredLogs.filter(
-    (l) => l.timestamp >= yesterdayStart && l.timestamp < todayStart,
+  const logsToday = React.useMemo(
+    () => filteredLogs.filter((l) => l.timestamp >= todayStart),
+    [filteredLogs, todayStart]
+  );
+  const logsYesterday = React.useMemo(
+    () => filteredLogs.filter((l) => l.timestamp >= yesterdayStart && l.timestamp < todayStart),
+    [filteredLogs, yesterdayStart, todayStart]
   );
 
-  const calcStats = (logs: any[]) => {
+  const calcStats = React.useCallback((logs: any[]) => {
     const totalPacked = logs.reduce(
       (acc, log) =>
         acc +
@@ -13284,10 +13509,10 @@ function AdminScreen({
     const totalHours = totalMillis / 3600000;
     const pph = totalHours > 0 ? Math.round(totalPacked / totalHours) : 0;
     return { totalPacked, totalHours, pph };
-  };
+  }, []);
 
-  const todayStats = calcStats(logsToday);
-  const yesterdayStats = calcStats(logsYesterday);
+  const todayStats = React.useMemo(() => calcStats(logsToday), [calcStats, logsToday]);
+  const yesterdayStats = React.useMemo(() => calcStats(logsYesterday), [calcStats, logsYesterday]);
 
   const todayFaturamento = React.useMemo(() => {
     return db.logs
@@ -13601,7 +13826,7 @@ function AdminScreen({
             </button>
           )}
 
-          {(currentUser.role === "ADMIN" || currentUser.role === "PCP") && (
+          {(currentUser.role === "ADMIN" || currentUser.role === "PCP" || currentUser.role === "GERENCIA") && (
             <>
               {isSubTabAllowed(db.activeTenant, "pcp:cadastros") && (
                 <button
@@ -14262,6 +14487,9 @@ function AdminScreen({
                 items={db.items}
                 sectors={db.sectors}
                 employees={db.employees}
+                users={db.users}
+                activeTenantId={db.activeTenantId}
+                activeTenant={db.activeTenant}
                 productionBatches={db.productionBatches}
                 onOpenModal={handleOpenMonitoringModal}
               />
@@ -15359,6 +15587,20 @@ export default function App() {
 
   const isScreenAllowed = (screenKey: string) => {
     if (currentUser?.id === "raul") return true;
+    if (
+      currentUser?.role === "ADMIN" ||
+      currentUser?.role === "PCP" ||
+      currentUser?.role === "GERENCIA" ||
+      currentUser?.role === "QUALIDADE"
+    ) {
+      if (
+        screenKey === "pcp" ||
+        screenKey === "qualidade" ||
+        screenKey === "relatorios-qualidade"
+      ) {
+        return true;
+      }
+    }
     const allowed = db.activeTenant?.allowedScreens;
     if (!allowed || allowed.length === 0) return true;
     return allowed.includes(screenKey);
@@ -15703,7 +15945,17 @@ export default function App() {
                 }
               />
             )}
-            {currentUser.role === "PCP" && (
+            <Route
+              path="/qualidade"
+              element={<QualidadeScreen db={db} currentUser={currentUser} />}
+            />
+            <Route
+              path="/relatorios-qualidade"
+              element={<RelatoriosProducaoEQualidade db={db} />}
+            />
+            {(currentUser.role === "ADMIN" ||
+              currentUser.role === "PCP" ||
+              currentUser.role === "GERENCIA") && (
               <Route
                 path="/pcp"
                 element={<PCPScreen db={db} currentUser={currentUser} />}
@@ -15736,10 +15988,10 @@ export default function App() {
                 element={<FinanceiroScreen db={db} currentUser={currentUser} />}
               />
             )}
-            {currentUser.id === "raul" && (
+            {(currentUser.id === "raul" || (currentUser.tenantId === "global" && currentUser.id !== "gerencia.cyrnedecor" && currentUser.role === "ADMIN")) && (
               <Route
                 path="/superadmin"
-                element={<SuperAdminScreen db={db} />}
+                element={<SuperAdminScreen db={db} currentUser={currentUser} />}
               />
             )}
           </Routes>
@@ -15767,11 +16019,11 @@ export default function App() {
                 Recolher
               </span>
             </button>
-          {currentUser.id === "raul" && (
+          {(currentUser.id === "raul" || (currentUser.tenantId === "global" && currentUser.id !== "gerencia.cyrnedecor" && currentUser.role === "ADMIN")) && (
             <NavLink
               to="/superadmin"
               icon={<ShieldAlert size={24} className="text-red-650" />}
-              label="SuperAdmin"
+              label="Permissões"
             />
           )}
           {isScreenAllowed("inicio") && (currentUser.role === "ADMIN" ||
@@ -16030,6 +16282,42 @@ export default function App() {
               to="/representante"
               icon={<ClipboardList size={24} />}
               label="Painel"
+            />
+          )}
+
+          {isScreenAllowed("pcp") && (currentUser.role === "ADMIN" ||
+            currentUser.role === "PCP" ||
+            currentUser.role === "GERENCIA") && (
+            <NavLink
+              to="/pcp"
+              icon={<Settings size={24} />}
+              label="Cadastros PCP"
+            />
+          )}
+
+          {isScreenAllowed("qualidade") && (currentUser.role === "ADMIN" ||
+            currentUser.role === "PCP" ||
+            currentUser.role === "GERENCIA" ||
+            currentUser.role === "ENCARREGADO" ||
+            currentUser.role === "PRODUCAO" ||
+            currentUser.role === "QUALIDADE" ||
+            currentUser.id === "raul") && (
+            <NavLink
+              to="/qualidade"
+              icon={<CheckCircle2 size={24} className="text-emerald-500" />}
+              label="Qualidade"
+            />
+          )}
+
+          {isScreenAllowed("relatorios-qualidade") && (currentUser.role === "ADMIN" ||
+            currentUser.role === "PCP" ||
+            currentUser.role === "GERENCIA" ||
+            currentUser.role === "ENCARREGADO" ||
+            currentUser.role === "QUALIDADE") && (
+            <NavLink
+              to="/relatorios-qualidade"
+              icon={<BarChart2 size={24} className="text-indigo-500" />}
+              label="Relat. Qualidade"
             />
           )}
 

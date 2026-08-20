@@ -1112,7 +1112,10 @@ export function RepresentanteScreen({
               >
                 <option value="">Cor</option>
                 <option value="-">-</option>
-                {Object.values(COLOR_MAP).map((cName) => (
+                {((db?.attributes || []).filter((a) => a.type === "COLOR" && a.value).length > 0
+                  ? Array.from(new Set((db?.attributes || []).filter((a) => a.type === "COLOR" && a.value).map((a) => a.value.trim().toUpperCase())))
+                  : Object.values(COLOR_MAP)
+                ).map((cName) => (
                   <option key={cName} value={cName}>
                     {cName}
                   </option>

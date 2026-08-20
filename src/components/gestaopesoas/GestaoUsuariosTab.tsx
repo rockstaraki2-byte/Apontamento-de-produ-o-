@@ -43,6 +43,7 @@ export function GestaoUsuariosTab({
       password: formData.password || "",
       sectorIds: formData.sectorIds || [],
       machines: formData.machines || [],
+      permissions: formData.permissions || {},
       tenantId: db.activeTenantId,
     };
 
@@ -79,6 +80,7 @@ export function GestaoUsuariosTab({
       password: u.password || "",
       sectorIds: u.sectorIds || [],
       machines: u.machines || [],
+      permissions: u.permissions || {},
     });
     setIsAdding(true);
   };
@@ -94,6 +96,7 @@ export function GestaoUsuariosTab({
     { value: "ADMIN", label: "Administrador (Acesso Total)" },
     { value: "GERENCIA", label: "Gerência" },
     { value: "PCP", label: "PCP" },
+    { value: "QUALIDADE", label: "Controle de Qualidade / Inspeção" },
     { value: "PRODUCAO", label: "Produção (Montagem, Solda, etc)" },
     { value: "CORTE_LASER", label: "Corte Laser / Dobra" },
     { value: "PINTURA", label: "Pintura" },
@@ -280,6 +283,49 @@ export function GestaoUsuariosTab({
                   })}
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Permissões Especiais de Acesso */}
+          <div className="border-t border-slate-100 pt-4">
+            <label className="block text-[11px] font-extrabold uppercase text-slate-500 mb-2 flex items-center gap-1.5">
+              <Lock size={14} className="text-amber-500" />
+              Permissões Especiais do Usuário (Exclusão, Edição e Configurações)
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 bg-amber-50/50 p-3.5 rounded-xl border border-amber-200/80 text-xs">
+              {[
+                { key: "canDeleteOrders", label: "🗑️ Permitir Exclusão de Pedidos" },
+                { key: "canEditOrders", label: "✏️ Permitir Edição de Pedidos" },
+                { key: "canDeleteBatches", label: "📦 Permitir Exclusão de Lotes" },
+                { key: "canDeleteLogs", label: "📊 Permitir Exclusão de Lançamentos" },
+                { key: "canEditLogs", label: "🛠️ Permitir Edição de Lançamentos" },
+                { key: "canManageSettings", label: "⚙️ Permitir Configurações do Sistema" },
+                { key: "canBulkDelete", label: "⚡ Permitir Exclusão em Massa (Status)" },
+                { key: "canApproveQuality", label: "🛡️ Permitir Aprovar na Qualidade" },
+                { key: "canReproveQuality", label: "🚨 Permitir Reprovar na Qualidade" },
+              ].map((perm) => {
+                const isChecked = Boolean((formData.permissions as any)?.[perm.key]);
+                return (
+                  <label
+                    key={perm.key}
+                    className="flex items-center gap-2 p-1.5 rounded bg-white border border-amber-200/60 font-semibold text-slate-800 cursor-pointer hover:bg-amber-100/40 select-none"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        const newPerms = {
+                          ...(formData.permissions || {}),
+                          [perm.key]: e.target.checked,
+                        };
+                        setFormData({ ...formData, permissions: newPerms });
+                      }}
+                      className="rounded border-amber-300 text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+                    />
+                    <span>{perm.label}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
 

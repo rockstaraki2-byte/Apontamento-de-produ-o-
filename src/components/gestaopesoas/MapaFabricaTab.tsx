@@ -392,7 +392,7 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
 
     const nameMap = new Map<string, PersonnelItem>();
 
-    const rawUsers = db?.allUsers || db?.users || [];
+    const rawUsers = db?.users || [];
     rawUsers.forEach((u) => {
       if (!u || !u.name) return;
       const normName = normalize(u.name);
@@ -458,7 +458,7 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
     });
 
     return Array.from(nameMap.values());
-  }, [db?.allUsers, db?.users, db?.employees, db?.sectors]);
+  }, [db?.users, db?.employees, db?.sectors]);
 
   // Custom targets map from state / default
   const sectorTargets = useMemo(() => {

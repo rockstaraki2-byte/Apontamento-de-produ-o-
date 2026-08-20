@@ -2560,14 +2560,16 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                         </div>
                         <div>
                           <div className="flex items-center gap-1.5">
-                            <h2 className="text-xl font-black text-slate-900 tracking-tight">IMPÉRIO JOMARCI</h2>
+                            <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                              {(db.activeTenant?.name || db.systemSettings?.[0]?.companyName || (db.activeTenantId === "cyrnedecor" ? "Cyrne Decor" : "Império Jomarci")).toUpperCase()}
+                            </h2>
                             <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md font-extrabold uppercase leading-none">PCP</span>
                           </div>
                           <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mt-0.5">
-                            Indústria e Comércio de Artefatos de Metal Ltda
+                            {db.activeTenant?.description || (db.activeTenantId === "cyrnedecor" ? "Móveis e Decorações" : "Indústria e Comércio de Artefatos de Metal Ltda")}
                           </span>
                           <p className="text-[9px] text-gray-400 mt-0.5 leading-none">
-                            Controle de PCP e Faturamento Consolidado • gerencia.imperiojomarci@gmail.com
+                            Controle de PCP e Faturamento Consolidado • {db.activeTenant?.email || (db.activeTenantId === "cyrnedecor" ? "gerencia.cyrnedecor@gmail.com" : "gerencia.imperiojomarci@gmail.com")}
                           </p>
                         </div>
                       </div>
@@ -2711,7 +2713,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                       <div className="text-[9px] text-gray-400 leading-normal font-medium">
                         <h4 className="font-bold text-slate-800 uppercase tracking-widest text-[8px] mb-1">Notas e Termos de Expedição</h4>
                         <p>O faturamento consolidado acima reflete a conferência física e liberação das peças finalizadas.</p>
-                        <p className="mt-0.5">As baixas de estoque foram processadas de forma irrevogável conforme as diretrizes do regulamento interno Império Jomarci.</p>
+                        <p className="mt-0.5">As baixas de estoque foram processadas de forma irrevogável conforme as diretrizes do regulamento interno {db.activeTenant?.name || db.systemSettings?.[0]?.companyName || (db.activeTenantId === "cyrnedecor" ? "Cyrne Decor" : "Império Jomarci")}.</p>
                       </div>
 
                       <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-1.5 sm:ml-auto w-full sm:max-w-xs justify-center">
@@ -2732,7 +2734,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                         <span>Assinatura Gerencial</span>
                       </div>
                       <div className="flex flex-col items-center gap-1 w-full sm:w-auto font-mono text-[9px] text-gray-400">
-                        <span>PCP Império Jomarci</span>
+                        <span>PCP {db.activeTenant?.name || db.systemSettings?.[0]?.companyName || (db.activeTenantId === "cyrnedecor" ? "Cyrne Decor" : "Império Jomarci")}</span>
                       </div>
                     </div>
                   </div>
@@ -2754,13 +2756,15 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                 <button
                   type="button"
                   onClick={() => {
+                    const currentCompanyName = db.activeTenant?.name || db.systemSettings?.[0]?.companyName || (db.activeTenantId === "cyrnedecor" ? "Cyrne Decor" : "Império Jomarci");
                     import("./printUtils").then(({ exportRepresentativeBillingPdf }) => {
                       exportRepresentativeBillingPdf(
                         selectedRepName,
                         formatRangeLabel(summaryStartDate, summaryEndDate, filterByDate),
                         details,
                         db.items,
-                        (o: any) => getInvoicedQtyInDateRange(o, filterByDate ? summaryStartDate : "", filterByDate ? summaryEndDate : "")
+                        (o: any) => getInvoicedQtyInDateRange(o, filterByDate ? summaryStartDate : "", filterByDate ? summaryEndDate : ""),
+                        currentCompanyName
                       );
                     });
                   }}
@@ -2771,8 +2775,9 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                 <button
                   type="button"
                   onClick={() => {
+                    const currentCompanyName = db.activeTenant?.name || db.systemSettings?.[0]?.companyName || (db.activeTenantId === "cyrnedecor" ? "Cyrne Decor" : "Império Jomarci");
                     import("./printUtils").then(({ printElementById }) => {
-                      printElementById("print-report-modal", `Fechamento_${selectedRepName || "Representante"}`, true);
+                      printElementById("print-report-modal", `Fechamento_${selectedRepName || "Representante"}_${currentCompanyName}`, true);
                     });
                   }}
                   className="px-3.5 py-1.5 bg-[#00b14f] hover:bg-[#009e46] text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-600/10 active:scale-95 duration-100"

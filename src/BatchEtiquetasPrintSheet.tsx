@@ -14,24 +14,26 @@ interface BatchEtiquetasPrintSheetProps {
 }
 
 // Fallback Company Logo with image error handling
-function CompanyLogo({ logoUrl }: { logoUrl?: string }) {
+function CompanyLogo({ logoUrl, className = "w-4 h-4" }: { logoUrl?: string; className?: string }) {
   const [hasError, setHasError] = React.useState(false);
 
   if (!logoUrl || hasError) {
     return (
-      <div className="w-4 h-4 rounded bg-amber-600 flex items-center justify-center shrink-0 text-white font-black text-[9px] shadow-2xs">
+      <div className={`${className} rounded bg-emerald-600 flex items-center justify-center shrink-0 text-white font-black text-[9px] shadow-2xs`}>
         👑
       </div>
     );
   }
 
+  const isDataUri = logoUrl.startsWith("data:");
+
   return (
     <img
       src={logoUrl}
       alt="logo"
-      crossOrigin="anonymous"
+      {...(!isDataUri ? { crossOrigin: "anonymous" } : {})}
       loading="eager"
-      className="w-4 h-4 object-contain rounded-xs shrink-0"
+      className={`${className} object-contain rounded-xs shrink-0`}
       onError={() => setHasError(true)}
     />
   );
@@ -214,10 +216,11 @@ export const BatchEtiquetasPrintSheet = forwardRef<
   BatchEtiquetasPrintSheetProps
 >(({ batch, orderIds = [], db, layoutFormat = "thermal", destrincharComposicoes = false, ocultarPaiComposicao = false, showImage = true }, ref) => {
   const systemSettings = db.systemSettings?.[0] || {};
-  const companyName = db.activeTenant?.name || systemSettings.companyName || "SUA EMPRESA";
-  const logoUrl = (db.activeTenant?.logoUrl && db.activeTenant.logoUrl !== "/icon.png")
-    ? db.activeTenant.logoUrl
-    : (systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png");
+  const currentTenant = db.activeTenant || db.tenants?.find((t) => t.id === "imperio");
+  const companyName = currentTenant?.name || systemSettings.companyName || "IMPÉRIO ACESSÓRIOS";
+  const companySubtitle = currentTenant?.systemName || systemSettings.systemName || (currentTenant as any)?.subtitle || "";
+  const rawLogo = currentTenant?.logoUrl || systemSettings.companyLogoUrl;
+  const logoUrl = rawLogo && rawLogo.trim() !== "" ? rawLogo.trim() : "/icon.png";
 
   // Build the list of labels to render for the selected orders in the batch
   const labelItems = React.useMemo(() => {
@@ -250,11 +253,18 @@ export const BatchEtiquetasPrintSheet = forwardRef<
           <div>
             {/* Header: Company & Batch */}
             <div className="flex justify-between items-center border-b border-slate-300 pb-1 mb-1">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <CompanyLogo logoUrl={logoUrl} />
-                <span className="text-[8px] font-black tracking-wider text-black uppercase truncate">
-                  {companyName}
-                </span>
+              <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-1">
+                <CompanyLogo logoUrl={logoUrl} className="w-4 h-4" />
+                <div className="flex flex-col min-w-0 leading-none">
+                  <span className="text-[8.5px] font-black tracking-tight text-black uppercase truncate leading-tight">
+                    {companyName}
+                  </span>
+                  {companySubtitle && (
+                    <span className="text-[6.5px] font-bold text-slate-600 uppercase truncate leading-tight">
+                      {companySubtitle}
+                    </span>
+                  )}
+                </div>
               </div>
               <span className="text-[7px] tracking-tight font-extrabold bg-slate-900 text-white px-1.5 py-0.5 rounded uppercase shrink-0 max-w-[110px] truncate">
                 {label.batchName}
@@ -362,8 +372,13 @@ export const BatchEtiquetasPrintSheet = forwardRef<
               {/* Header on A4 page */}
               <div className="flex justify-between items-center border-b border-slate-300 pb-2 mb-2 text-xs">
                 <div className="flex items-center gap-2">
-                  <CompanyLogo logoUrl={logoUrl} />
-                  <span className="font-extrabold text-slate-800 uppercase tracking-wide">{companyName}</span>
+                  <CompanyLogo logoUrl={logoUrl} className="w-6 h-6" />
+                  <div className="flex flex-col">
+                    <span className="font-extrabold text-slate-800 uppercase tracking-wide leading-tight">{companyName}</span>
+                    {companySubtitle && (
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-tight">{companySubtitle}</span>
+                    )}
+                  </div>
                 </div>
                 <span className="font-black text-indigo-800 bg-indigo-50 px-2.5 py-1 rounded border border-indigo-200">
                   Etiquetas do Lote: {batch.name} (Pág {pageIdx + 1}/{chunkedA4Pages.length})
