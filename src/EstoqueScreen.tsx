@@ -11,6 +11,9 @@ import {
   Plus,
   Boxes,
   Check,
+  Printer,
+  Download,
+  FileText,
 } from "lucide-react";
 import { StockEntry, isSubTabAllowed } from "./types";
 import {
@@ -23,6 +26,7 @@ import { EMPLOYEE_SIZES } from "./data/employeeSizes";
 import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
 import { RelatorioEpiPrintSheet, DistributionRecord, EmployeeReportData } from "./RelatorioEpiPrintSheet";
+import { resolveCompanyInfo } from "./utils/companyUtils";
 
 export function EstoqueScreen({
   db,
@@ -46,21 +50,27 @@ export function EstoqueScreen({
   const [relatorioEndDate, setRelatorioEndDate] = useState("");
   const [relatorioEmployeeName, setRelatorioEmployeeName] = useState("");
   const [isGeneratingRelatorio, setIsGeneratingRelatorio] = useState(false);
+  const [isDirectPrintingRelatorio, setIsDirectPrintingRelatorio] = useState(false);
   const relatorioPrintRef = React.useRef<HTMLDivElement>(null);
   const [relatorioRecords, setRelatorioRecords] = useState<EmployeeReportData[]>([]);
 
-  const systemSettings = db.systemSettings?.[0] || {};
-  const logoUrl = systemSettings.companyLogoUrl || "/icon.png";
-  const companyName = systemSettings.companyName || "IMPÉRIO JOMARCI - ACESSÓRIOS PARA MOVÉIS";
+  const companyInfo = resolveCompanyInfo(db.activeTenant, db.systemSettings, db.tenants);
+  const logoUrl = companyInfo.logoUrl || "/icon.png";
+  const companyName = companyInfo.companyName;
 
-  const handleGeneratePdf = async () => {
+  const prepareRelatorioData = (): EmployeeReportData[] | null => {
     if (!relatorioStartDate || !relatorioEndDate) {
       alert("Preencha a data inicial e final.");
-      return;
+      return null;
     }
 
     const startTs = new Date(relatorioStartDate + "T00:00:00").getTime();
     const endTs = new Date(relatorioEndDate + "T23:59:59").getTime();
+
+    if (startTs > endTs) {
+      alert("A data inicial não pode ser posterior à data final.");
+      return null;
+    }
 
     const matchedReports: EmployeeReportData[] = [];
 
@@ -69,11 +79,8 @@ export function EstoqueScreen({
       ? [db.employees.find((e) => e.name.toLowerCase() === relatorioEmployeeName.toLowerCase().trim()) || { id: "hardcoded", name: relatorioEmployeeName.trim(), sectorId: 0, isActive: true }]
       : [
           ...db.employees,
-          // E também adicionar os nomes fixos que estão no EMPLOYEE_SIZES se quisermos, 
-          // mas vamos pegar todos os nomes envolvidos nas distribuições
         ];
 
-    // Para "Todos os colaboradores", vamos coletar todos os IDs de funcionários com distribuição neste período
     let employeeIdsToProcess = new Set<string>();
     
     if (relatorioEmployeeName.trim()) {
@@ -84,8 +91,8 @@ export function EstoqueScreen({
     }
 
     if (employeeIdsToProcess.size === 0) {
-      alert("Nenhuma distribuição encontrada para este período.");
-      return;
+      alert("Nenhuma distribuição de EPI ou Uniforme encontrada para este período.");
+      return null;
     }
 
     for (const empId of Array.from(employeeIdsToProcess)) {
@@ -142,11 +149,18 @@ export function EstoqueScreen({
     }
 
     if (matchedReports.length === 0) {
-      alert("Funcionário selecionado não possui distribuições neste período.");
-      return;
+      alert("Nenhum registro de entrega encontrado para o colaborador no período selecionado.");
+      return null;
     }
 
-    setRelatorioRecords(matchedReports); // now we need to update state to handle multiple reports
+    return matchedReports;
+  };
+
+  const handleGeneratePdf = async () => {
+    const matchedReports = prepareRelatorioData();
+    if (!matchedReports) return;
+
+    setRelatorioRecords(matchedReports);
     setIsGeneratingRelatorio(true);
 
     try {
@@ -183,6 +197,37 @@ export function EstoqueScreen({
       alert("Erro ao gerar PDF: " + (e.message || ""));
     } finally {
       setIsGeneratingRelatorio(false);
+    }
+  };
+
+  const handleDirectPrintRelatorio = async () => {
+    const matchedReports = prepareRelatorioData();
+    if (!matchedReports) return;
+
+    setRelatorioRecords(matchedReports);
+    setIsDirectPrintingRelatorio(true);
+
+    try {
+      // Allow state update to propagate and DOM to render the printable sheet
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      const targetId = "relatorio-epi-print-container";
+      const targetEl = document.getElementById(targetId);
+      if (!targetEl) {
+        throw new Error("Elemento de impressão do comprovante não foi encontrado no DOM.");
+      }
+
+      const docTitle = relatorioEmployeeName.trim()
+        ? `Recibo_EPI_${relatorioEmployeeName.trim().replace(/\s+/g, '_')}_${relatorioStartDate}`
+        : `Recibo_EPI_Geral_${relatorioStartDate}`;
+
+      const { printElementById } = await import("./printUtils");
+      printElementById(targetId, docTitle, true);
+    } catch (err: any) {
+      console.error("[Print Relatório EPI] erro:", err);
+      alert(`Erro na impressão direta: ${err.message || err}`);
+    } finally {
+      setIsDirectPrintingRelatorio(false);
     }
   };
 
@@ -2874,19 +2919,40 @@ export function EstoqueScreen({
               </div>
             </div>
 
-            <button 
-              onClick={handleGeneratePdf} 
-              disabled={isGeneratingRelatorio}
-              className="mt-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-lg shadow-sm transition disabled:opacity-50 text-sm flex items-center justify-center gap-2 self-start cursor-pointer"
-            >
-              {isGeneratingRelatorio ? "Gerando PDF..." : "Gerar Comprovante PDF (Meia Folha)"}
-            </button>
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <button 
+                onClick={handleDirectPrintRelatorio} 
+                disabled={isDirectPrintingRelatorio || isGeneratingRelatorio}
+                id="btn-imprimir-direto-epi"
+                className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold py-2.5 px-5 rounded-lg shadow-sm transition disabled:opacity-50 text-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                {isDirectPrintingRelatorio ? "Preparando Impressão..." : "Imprimir Diretamente"}
+              </button>
+
+              <button 
+                onClick={handleGeneratePdf} 
+                disabled={isGeneratingRelatorio || isDirectPrintingRelatorio}
+                id="btn-gerar-pdf-epi"
+                className="bg-slate-700 hover:bg-slate-800 active:bg-slate-900 text-white font-bold py-2.5 px-5 rounded-lg shadow-sm transition disabled:opacity-50 text-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                {isGeneratingRelatorio ? "Gerando PDF..." : "Baixar PDF (Meia Folha)"}
+              </button>
+            </div>
+
+            <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-lg p-3 text-xs text-emerald-900 flex items-start gap-2.5">
+              <FileText className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                <span className="font-bold">Formato Oficial Otimizado:</span> O comprovante é gerado em padrão econômico de 2 recibos individuais por folha A4 com indicação tracejada de corte (meia folha), termos de responsabilidade de uso e campo para assinatura do colaborador.
+              </div>
+            </div>
           </div>
         )}
       </ScrollContainer>
 
       {/* Hidden Relatório Print Target */}
-      {isGeneratingRelatorio && (
+      {(isGeneratingRelatorio || isDirectPrintingRelatorio) && (
         <div style={{ position: 'fixed', top: '-9999px', left: '-9999px', pointerEvents: 'none', opacity: 1, zIndex: -9999 }}>
           <img src={logoUrl} crossOrigin="anonymous" className="fixed top-0 left-0 w-[1px] h-[1px] opacity-0 pointer-events-none" alt="preload" />
           <RelatorioEpiPrintSheet

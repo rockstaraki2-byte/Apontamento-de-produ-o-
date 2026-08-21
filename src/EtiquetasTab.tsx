@@ -20,6 +20,7 @@ import {
 import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
 import { ScrollContainer } from "./components/Layout";
+import { resolveCompanyInfo, CompanyLogo } from "./utils/companyUtils";
 
 interface EtiquetasTabProps {
   db: ReturnType<typeof useDatabase>;
@@ -80,32 +81,6 @@ function LocalSVGBarcode({ data, codeText }: { data: string; codeText?: string }
         {displayCode}
       </span>
     </div>
-  );
-}
-
-// Inline robust Company Logo renderer with fallback and base64 support
-function CompanyLogo({ logoUrl, className = "w-4 h-4" }: { logoUrl?: string; className?: string }) {
-  const [hasError, setHasError] = useState(false);
-
-  if (!logoUrl || hasError) {
-    return (
-      <div className={`${className} rounded bg-emerald-600 flex items-center justify-center shrink-0 text-white font-black text-[9px] shadow-2xs select-none`}>
-        👑
-      </div>
-    );
-  }
-
-  const isDataUri = logoUrl.startsWith("data:");
-
-  return (
-    <img
-      src={logoUrl}
-      alt="logo"
-      {...(!isDataUri ? { crossOrigin: "anonymous" } : {})}
-      loading="eager"
-      className={`${className} object-contain rounded-xs shrink-0`}
-      onError={() => setHasError(true)}
-    />
   );
 }
 
@@ -271,12 +246,13 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
   const thermalPrintContainerRef = useRef<HTMLDivElement | null>(null);
   const a4PrintContainerRef = useRef<HTMLDivElement | null>(null);
 
-  const systemSettings = db.systemSettings?.[0] || {};
-  const currentTenant = db.activeTenant || db.tenants?.find((t) => t.id === "imperio");
-  const companyName = currentTenant?.name || systemSettings.companyName || "IMPÉRIO ACESSÓRIOS";
-  const companySubtitle = currentTenant?.systemName || systemSettings.systemName || (currentTenant as any)?.subtitle || "";
-  const rawLogo = currentTenant?.logoUrl || systemSettings.companyLogoUrl;
-  const logoUrl = rawLogo && rawLogo.trim() !== "" ? rawLogo.trim() : "/icon.png";
+  const companyInfo = useMemo(() => {
+    return resolveCompanyInfo(db.activeTenant, db.systemSettings?.[0], db.tenants);
+  }, [db.activeTenant, db.systemSettings, db.tenants]);
+
+  const companyName = companyInfo.companyName;
+  const companySubtitle = companyInfo.companySubtitle;
+  const logoUrl = companyInfo.logoUrl;
 
   const handleOpenPreviewModal = () => {
     const list: any[] = [];
@@ -1828,7 +1804,7 @@ ${barcodeBlock}
                           <div>
                             <div className="flex justify-between items-center border-b border-slate-200 pb-1 mb-1">
                               <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-1">
-                                <CompanyLogo logoUrl={logoUrl} className="w-3.5 h-3.5" />
+                                <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="w-3.5 h-3.5" />
                                 <div className="flex flex-col min-w-0 leading-none">
                                   <span className="text-[8px] font-black tracking-tight text-black uppercase truncate leading-tight">{companyName}</span>
                                   {companySubtitle && (
@@ -1895,7 +1871,7 @@ ${barcodeBlock}
                                   <div className="text-left">
                                     <div className="flex justify-between items-center text-[5.5px] border-b pb-0.5 mb-0.5">
                                       <div className="flex items-center gap-1 min-w-0 flex-1 mr-1">
-                                        <CompanyLogo logoUrl={logoUrl} className="w-[12px] h-[12px]" />
+                                        <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="w-[12px] h-[12px]" />
                                         <div className="flex flex-col min-w-0 leading-none">
                                           <span className="font-black text-black uppercase leading-tight truncate">{companyName}</span>
                                           {companySubtitle && (
@@ -2090,7 +2066,7 @@ ${barcodeBlock}
                     {/* Header */}
                     <div className="flex justify-between items-center border-b border-slate-300 pb-1 mb-1.5">
                       <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-1">
-                        <CompanyLogo logoUrl={logoUrl} className="w-[16px] h-[16px]" />
+                        <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="w-[16px] h-[16px]" />
                         <div className="flex flex-col min-w-0 leading-none">
                           <span className="text-[7.5px] font-black tracking-tight text-black uppercase truncate leading-tight">
                             {companyName}
@@ -2224,7 +2200,7 @@ ${barcodeBlock}
                             <div>
                               <div className="flex justify-between items-center border-b pb-1 mb-1">
                                 <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-1">
-                                  <CompanyLogo logoUrl={logoUrl} className="w-[14px] h-[14px]" />
+                                  <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="w-[14px] h-[14px]" />
                                   <div className="flex flex-col min-w-0 leading-none">
                                     <span className="text-[6.5px] font-black text-black tracking-tight uppercase truncate leading-tight">{companyName}</span>
                                     {companySubtitle && (

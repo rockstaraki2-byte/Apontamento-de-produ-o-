@@ -2,6 +2,7 @@ import React, { forwardRef } from "react";
 import { ProductionBatch, Order } from "./types";
 import { useDatabase } from "./useDatabase";
 import { getItemUnit } from "./utils/unitUtils";
+import { resolveCompanyInfo, CompanyLogo } from "./utils/companyUtils";
 
 interface BatchEtiquetasPrintSheetProps {
   batch: ProductionBatch;
@@ -11,32 +12,6 @@ interface BatchEtiquetasPrintSheetProps {
   destrincharComposicoes?: boolean;
   ocultarPaiComposicao?: boolean;
   showImage?: boolean;
-}
-
-// Fallback Company Logo with image error handling
-function CompanyLogo({ logoUrl, className = "w-4 h-4" }: { logoUrl?: string; className?: string }) {
-  const [hasError, setHasError] = React.useState(false);
-
-  if (!logoUrl || hasError) {
-    return (
-      <div className={`${className} rounded bg-emerald-600 flex items-center justify-center shrink-0 text-white font-black text-[9px] shadow-2xs`}>
-        👑
-      </div>
-    );
-  }
-
-  const isDataUri = logoUrl.startsWith("data:");
-
-  return (
-    <img
-      src={logoUrl}
-      alt="logo"
-      {...(!isDataUri ? { crossOrigin: "anonymous" } : {})}
-      loading="eager"
-      className={`${className} object-contain rounded-xs shrink-0`}
-      onError={() => setHasError(true)}
-    />
-  );
 }
 
 // Inline deterministic SVG Barcode renderer for crisp label scans
@@ -218,12 +193,13 @@ export const BatchEtiquetasPrintSheet = forwardRef<
   HTMLDivElement,
   BatchEtiquetasPrintSheetProps
 >(({ batch, orderIds = [], db, layoutFormat = "thermal", destrincharComposicoes = false, ocultarPaiComposicao = false, showImage = true }, ref) => {
-  const systemSettings = db.systemSettings?.[0] || {};
-  const currentTenant = db.activeTenant || db.tenants?.find((t) => t.id === "imperio");
-  const companyName = currentTenant?.name || systemSettings.companyName || "IMPÉRIO ACESSÓRIOS";
-  const companySubtitle = currentTenant?.systemName || systemSettings.systemName || (currentTenant as any)?.subtitle || "";
-  const rawLogo = currentTenant?.logoUrl || systemSettings.companyLogoUrl;
-  const logoUrl = rawLogo && rawLogo.trim() !== "" ? rawLogo.trim() : "/icon.png";
+  const companyInfo = React.useMemo(() => {
+    return resolveCompanyInfo(db.activeTenant, db.systemSettings?.[0], db.tenants);
+  }, [db.activeTenant, db.systemSettings, db.tenants]);
+
+  const companyName = companyInfo.companyName;
+  const companySubtitle = companyInfo.companySubtitle;
+  const logoUrl = companyInfo.logoUrl;
 
   // Build the list of labels to render for the selected orders in the batch
   const labelItems = React.useMemo(() => {
@@ -257,7 +233,7 @@ export const BatchEtiquetasPrintSheet = forwardRef<
             {/* Header: Company & Batch */}
             <div className="flex justify-between items-center border-b border-slate-300 pb-1 mb-1">
               <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-1">
-                <CompanyLogo logoUrl={logoUrl} className="w-4 h-4" />
+                <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="w-4 h-4" />
                 <div className="flex flex-col min-w-0 leading-none">
                   <span className="text-[8.5px] font-black tracking-tight text-black uppercase truncate leading-tight">
                     {companyName}
@@ -375,7 +351,7 @@ export const BatchEtiquetasPrintSheet = forwardRef<
               {/* Header on A4 page */}
               <div className="flex justify-between items-center border-b border-slate-300 pb-2 mb-2 text-xs">
                 <div className="flex items-center gap-2">
-                  <CompanyLogo logoUrl={logoUrl} className="w-6 h-6" />
+                  <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="w-6 h-6" />
                   <div className="flex flex-col">
                     <span className="font-extrabold text-slate-800 uppercase tracking-wide leading-tight">{companyName}</span>
                     {companySubtitle && (

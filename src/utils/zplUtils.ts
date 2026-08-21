@@ -116,8 +116,9 @@ export interface ZPLLabelItemData {
 export const generateZPLFromBatchLabels = async (
   labelItems: ZPLLabelItemData[],
   logoUrl?: string,
-  companyName: string = "SUA EMPRESA",
-  showImage: boolean = true
+  companyName: string = "IMPÉRIO ACESSÓRIOS",
+  showImage: boolean = true,
+  companySubtitle?: string
 ): Promise<string> => {
   if (!labelItems || labelItems.length === 0) {
     return "";
@@ -137,6 +138,7 @@ export const generateZPLFromBatchLabels = async (
     : `^FO40,15^GB44,44,2,B,3^FS`;
 
   const companyClean = removeAccents(companyName).toUpperCase();
+  const subtitleClean = companySubtitle ? removeAccents(companySubtitle).toUpperCase().slice(0, 35) : "";
 
   const zplPromises = labelItems.map(async (label) => {
     const cleanName = removeAccents(label.itemName).toUpperCase().slice(0, 48);
@@ -168,13 +170,17 @@ export const generateZPLFromBatchLabels = async (
       barcodeOrImageBlock = `^FO535,110^BY2,3,110^BCN,110,Y,N,N^FD${codeData}^FS`;
     }
 
+    const companyHeaderBlock = subtitleClean
+      ? `^FO100,14^A0N,20,18^FB${maxTitleWidth},1,0,L^FD${companyClean}^FS\n^FO100,36^A0N,16,14^FB${maxTitleWidth},1,0,L^FD${subtitleClean}^FS`
+      : `^FO100,16^A0N,24,22^FB${maxTitleWidth},2,0,L^FD${companyClean}^FS`;
+
     return `^XA
 ^PW800
 ^LL400
 ^CI28
 
 ${logoBlock}
-^FO100,16^A0N,24,22^FB${maxTitleWidth},2,0,L^FD${companyClean}^FS
+${companyHeaderBlock}
 
 ${batchBadgeBlock}
 

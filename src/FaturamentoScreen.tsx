@@ -31,6 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { Order, Carga, User, StockEntry } from "./types";
+import { resolveCompanyInfo, CompanyLogo } from "./utils/companyUtils";
 
 // Simulated lightweight barcode SVG generator for labels
 function SimulatedBarcode({ code }: { code: string }) {
@@ -93,6 +94,12 @@ export function FaturamentoScreen({
   db: ReturnType<typeof useDatabase>;
   currentUser: User;
 }) {
+  const companyInfo = useMemo(() => {
+    return resolveCompanyInfo(db.activeTenant, db.systemSettings?.[0], db.tenants);
+  }, [db.activeTenant, db.systemSettings, db.tenants]);
+  const companyName = companyInfo.companyName;
+  const logoUrl = companyInfo.logoUrl;
+
   // Selection of packed items for Carga or Print
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
 
@@ -1112,7 +1119,7 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                 <div class="label-card">
                   <div>
                     <div class="header">
-                      <span class="logo">${printOptions.showLogo ? "👑 IMPÉRIO ACESSÓRIOS" : ""}</span>
+                      <span class="logo" style="display:inline-flex; align-items:center;">${printOptions.showLogo ? (logoUrl ? `<img src="${logoUrl}" style="height:12px; width:auto; vertical-align:middle; margin-right:4px; object-fit:contain;" />` : "") + companyName : ""}</span>
                       <span class="tag">${item.type === "STOCK" ? "Estoque Acabado" : "Volume Embalado"}</span>
                     </div>
                     <div class="title">${item.itemName}</div>
@@ -1270,8 +1277,8 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                 <div class="left-col">
                   <div>
                     <div class="header">
-                      <span class="logo">${printOptions.showLogo ? "👑 IMPÉRIO ACESSÓRIOS" : ""}</span>
-                      <span class="tag">${item.type === "STOCK" ? "Estoque Império" : "Logística"}</span>
+                      <span class="logo" style="display:inline-flex; align-items:center;">${printOptions.showLogo ? (logoUrl ? `<img src="${logoUrl}" style="height:12px; width:auto; vertical-align:middle; margin-right:4px; object-fit:contain;" />` : "") + companyName : ""}</span>
+                      <span class="tag">${item.type === "STOCK" ? "Estoque Acabado" : "Logística"}</span>
                     </div>
                     <div class="title">${item.itemName}</div>
                     <div class="item-specs">CÓD: ${item.itemCode} | COL: ${item.color} | TAM: ${item.size}</div>
@@ -2563,11 +2570,18 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                         <div className="flex flex-col justify-between w-[205px] h-full text-left">
                           <div>
                             <div className="border-b pb-1.5 flex justify-between items-center text-[9px] font-bold">
-                              <span className="text-slate-800 font-extrabold text-[8px]">
-                                {printOptions.showLogo
-                                  ? "👑 IMPÉRIO ACESSÓRIOS"
-                                  : "ETIQUETA INTERNA"}
-                              </span>
+                              {printOptions.showLogo ? (
+                                <div className="flex items-center gap-1 min-w-0">
+                                  <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="w-3.5 h-3.5" />
+                                  <span className="text-slate-800 font-extrabold text-[8px] truncate max-w-[120px]">
+                                    {companyName}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-slate-800 font-extrabold text-[8px]">
+                                  ETIQUETA INTERNA
+                                </span>
+                              )}
                               <span className="bg-slate-900 text-white font-black px-1.5 py-0.2 text-[6px] tracking-wider uppercase rounded">
                                 {itemsToPrint[0]?.type === "STOCK"
                                   ? "ESTOQUE"
@@ -2655,11 +2669,18 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                       <div className="label-card bg-white text-black p-4 border border-slate-400 rounded-lg shadow-md w-[320px] h-[160px] flex flex-col justify-between">
                         <div>
                           <div className="border-b pb-1.5 flex justify-between items-center text-[9px] font-bold">
-                            <span className="text-slate-800 font-extrabold">
-                              {printOptions.showLogo
-                                ? "👑 IMPÉRIO ACESSÓRIOS"
-                                : "ETIQUETA INTERNA"}
-                            </span>
+                            {printOptions.showLogo ? (
+                              <div className="flex items-center gap-1 min-w-0">
+                                <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="w-3.5 h-3.5" />
+                                <span className="text-slate-800 font-extrabold text-[8px] truncate max-w-[120px]">
+                                  {companyName}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-800 font-extrabold text-[8px]">
+                                ETIQUETA INTERNA
+                              </span>
+                            )}
                             <span className="bg-slate-900 text-white font-black px-1.5 py-0.5 text-[7px] tracking-widest uppercase rounded">
                               PRODUTO
                             </span>

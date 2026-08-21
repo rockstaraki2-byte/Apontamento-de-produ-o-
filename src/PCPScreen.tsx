@@ -1152,6 +1152,9 @@ export function PCPScreen({
       if (db.activeTenant && db.addTenant) {
         await db.addTenant({
           ...db.activeTenant,
+          name: sysConfigCompanyName,
+          logoUrl: sysConfigLogoUrl,
+          systemName: sysConfigSystemName,
           exigirQualidadeNaEmbalagem: sysConfigExigirQualidade,
           soldaProcesses: sysConfigSoldaProcesses,
         });

@@ -189,21 +189,27 @@ export function EmbalagemScreen({
   };
 
   const pendingOrders = useMemo(() => {
-    const steps = db.productionSteps || [];
-    const logs = db.logs || (db as any).productionLogs || [];
-    const exigeQualidade = db.activeTenant?.exigirQualidadeNaEmbalagem !== false;
-
     return db.orders.filter((o) => {
-      if (o.status === "EMBALADO" || o.status === "FATURADO") return false;
+      if (o.status === "EMBALADO" || o.status === "FATURADO" || o.status === "CANCELADO" || (o as any).status === "EXCLUIDO") return false;
+      
+      // If order has sub-items array, check if any sub-item is still not fully packed
+      if (Array.isArray((o as any).items) && (o as any).items.length > 0) {
+        const hasUnpackedSubItem = (o as any).items.some((sub: any) => {
+          if (sub.status === "EMBALADO" || sub.status === "FATURADO") return false;
+          const subAvail = parseQty(sub.totalQuantity ?? sub.quantity ?? sub.quantidade ?? 1);
+          const subPacked = parseQty(sub.packedQuantity ?? 0);
+          return subPacked < subAvail;
+        });
+        if (hasUnpackedSubItem) return true;
+      }
+
       const availableQty = getAvailableForPacking(o);
       const packedQty = parseQty(o.packedQuantity);
       if (packedQty >= availableQty && availableQty > 0) return false;
 
-      // Allow all pending orders to appear in packaging for now to unblock the flow.
-      // Quality Gate check was removed to ensure items appear as requested.
       return true;
     });
-  }, [db.orders, db.productionSteps, db.logs, (db as any).productionLogs, db.activeTenant]);
+  }, [db.orders]);
 
   // Group pending orders, approved production steps and quality approvals by product
   const productGroups = useMemo(() => {
@@ -217,6 +223,8 @@ export function EmbalagemScreen({
         totalRemaining: number;
         orderIds?: (string | number)[];
         stepIds?: string[];
+        customProductName?: string;
+        itemCode?: string;
       }
     >();
 
@@ -224,29 +232,91 @@ export function EmbalagemScreen({
     const logs = db.logs || (db as any).productionLogs || [];
     const packedLogs = logs.filter((l: any) => String(l.type || "").toUpperCase() === "EMBALAGEM");
 
-    // 1. Add all pending orders that passed the filter
+    // 1. Add all pending orders and their items
     pendingOrders.forEach((o) => {
+      // 1.1 Process sub-items if present
+      if (Array.isArray((o as any).items) && (o as any).items.length > 0) {
+        (o as any).items.forEach((sub: any) => {
+          if (sub.status === "EMBALADO" || sub.status === "FATURADO") return;
+          let subItemId = Number(sub.itemId || sub.id) || 0;
+          if (!subItemId && (sub.itemCode || sub.code)) {
+            const found = db.items.find((i) => i.code === (sub.itemCode || sub.code));
+            if (found) subItemId = Number(found.id);
+          }
+          if (!subItemId && (sub.partName || sub.name || sub.customProductName)) {
+            const found = db.items.find((i) => i.name.toLowerCase() === String(sub.partName || sub.name || sub.customProductName).toLowerCase());
+            if (found) subItemId = Number(found.id);
+          }
+
+          const subColor = sub.paintedColor || sub.color || o.paintedColor || o.color || "-";
+          const subSize = sub.size || o.size || "-";
+          const subVariation = sub.variation || o.variation || "-";
+          const key = getProductKey(subItemId, subColor, subSize, subVariation);
+
+          const subAvail = parseQty(sub.totalQuantity ?? sub.quantity ?? sub.quantidade ?? 1);
+          const subPacked = parseQty(sub.packedQuantity ?? 0);
+          const subRem = Math.max(0, subAvail - subPacked);
+
+          if (subRem > 0) {
+            if (!groups.has(key)) {
+              groups.set(key, {
+                itemId: subItemId,
+                color: subColor,
+                size: subSize,
+                variation: subVariation,
+                totalRemaining: 0,
+                orderIds: [],
+                stepIds: [],
+                customProductName: sub.partName || sub.name || sub.customProductName,
+                itemCode: sub.itemCode || sub.code,
+              });
+            }
+            groups.get(key)!.totalRemaining += isNaN(subRem) ? 0 : subRem;
+            if (o.id && groups.get(key)!.orderIds) {
+              groups.get(key)!.orderIds!.push(o.id);
+            }
+          }
+        });
+      }
+
+      // 1.2 Process main/top-level order item
+      let resolvedItemId = Number(o.itemId) || 0;
+      if (!resolvedItemId && (o as any).itemCode) {
+        const found = db.items.find((i) => i.code === (o as any).itemCode);
+        if (found) resolvedItemId = Number(found.id);
+      }
+      if (!resolvedItemId && ((o as any).productName || o.customProductName)) {
+        const found = db.items.find((i) => i.name.toLowerCase() === String((o as any).productName || o.customProductName).toLowerCase());
+        if (found) resolvedItemId = Number(found.id);
+      }
+
       const displayColor = o.paintedColor || o.color || "-";
       const displaySize = o.size || "-";
       const displayVariation = o.variation || "-";
-      const key = getProductKey(o.itemId, displayColor, displaySize, displayVariation);
-      if (!groups.has(key)) {
-        groups.set(key, {
-          itemId: o.itemId,
-          color: displayColor,
-          size: displaySize,
-          variation: displayVariation,
-          totalRemaining: 0,
-          orderIds: [],
-          stepIds: [],
-        });
-      }
+      const key = getProductKey(resolvedItemId, displayColor, displaySize, displayVariation);
+
       const avail = getAvailableForPacking(o);
       const packed = parseQty(o.packedQuantity);
       const rem = Math.max(0, avail - packed);
-      groups.get(key)!.totalRemaining += isNaN(rem) ? 0 : rem;
-      if (o.id && groups.get(key)!.orderIds) {
-        groups.get(key)!.orderIds!.push(o.id);
+
+      if (rem > 0 && (!Array.isArray((o as any).items) || (o as any).items.length === 0)) {
+        if (!groups.has(key)) {
+          groups.set(key, {
+            itemId: resolvedItemId,
+            color: displayColor,
+            size: displaySize,
+            variation: displayVariation,
+            totalRemaining: 0,
+            orderIds: [],
+            stepIds: [],
+            customProductName: o.customProductName || (o as any).productName,
+            itemCode: (o as any).itemCode,
+          });
+        }
+        groups.get(key)!.totalRemaining += isNaN(rem) ? 0 : rem;
+        if (o.id && groups.get(key)!.orderIds) {
+          groups.get(key)!.orderIds!.push(o.id);
+        }
       }
     });
 
@@ -256,15 +326,20 @@ export function EmbalagemScreen({
     );
 
     approvedSteps.forEach((step) => {
-      // If step has an orderId that is already in pendingOrders, it's already accounted for
       if (step.orderId && pendingOrders.some((o) => Number(o.id) === Number(step.orderId))) {
         return;
+      }
+
+      let stepItemId = Number(step.itemId) || 0;
+      if (!stepItemId && (step as any).itemCode) {
+        const found = db.items.find((i) => i.code === (step as any).itemCode);
+        if (found) stepItemId = Number(found.id);
       }
 
       const displayColor = (step as any).color || (step as any).paintedColor || "-";
       const displaySize = (step as any).size || "-";
       const displayVariation = (step as any).variation || "-";
-      const key = getProductKey(step.itemId, displayColor, displaySize, displayVariation);
+      const key = getProductKey(stepItemId, displayColor, displaySize, displayVariation);
 
       const stepProducedQty = parseQty(step.quantidadeProduzida || (step as any).quantity || 1);
       const stepPackedQty = packedLogs
@@ -275,13 +350,15 @@ export function EmbalagemScreen({
       if (stepRemaining > 0) {
         if (!groups.has(key)) {
           groups.set(key, {
-            itemId: step.itemId,
+            itemId: stepItemId,
             color: displayColor,
             size: displaySize,
             variation: displayVariation,
             totalRemaining: 0,
             orderIds: [],
             stepIds: [],
+            customProductName: (step as any).productName || (step as any).customProductName,
+            itemCode: (step as any).itemCode,
           });
         }
         groups.get(key)!.totalRemaining += stepRemaining;
@@ -303,34 +380,36 @@ export function EmbalagemScreen({
       if (qLog.orderId && pendingOrders.some((o) => Number(o.id) === Number(qLog.orderId))) return;
       if (approvedSteps.some((s) => s.id === qLog.taskId || (qLog.orderId && Number(s.orderId) === Number(qLog.orderId)))) return;
 
+      const qItemId = Number(qLog.itemId) || 0;
       const displayColor = qLog.color || "-";
       const displaySize = qLog.size || "-";
       const displayVariation = qLog.variation || "-";
-      const key = getProductKey(qLog.itemId, displayColor, displaySize, displayVariation);
+      const key = getProductKey(qItemId, displayColor, displaySize, displayVariation);
 
       if (!groups.has(key)) {
         const logQty = parseQty(qLog.quantityProcessed || qLog.quantity || 1);
         const logPackedQty = packedLogs
-          .filter((l: any) => Number(l.itemId) === Number(qLog.itemId) && l.timestamp > (qLog.createdAt || qLog.timestamp || 0))
+          .filter((l: any) => Number(l.itemId) === qItemId && l.timestamp > (qLog.createdAt || qLog.timestamp || 0))
           .reduce((sum: number, l: any) => sum + parseQty(l.quantityPacked || l.quantity || 0), 0);
 
         const logRemaining = Math.max(0, logQty - logPackedQty);
         if (logRemaining > 0) {
           groups.set(key, {
-            itemId: qLog.itemId,
+            itemId: qItemId,
             color: displayColor,
             size: displaySize,
             variation: displayVariation,
             totalRemaining: logRemaining,
             orderIds: [],
             stepIds: [],
+            customProductName: qLog.productName || qLog.customProductName,
           });
         }
       }
     });
 
     return Array.from(groups.values());
-  }, [pendingOrders, db.productionSteps, db.logs, (db as any).productionLogs]);
+  }, [pendingOrders, db.productionSteps, db.logs, (db as any).productionLogs, db.items]);
 
   const startPackaging = (group: (typeof productGroups)[0]) => {
     setOperatorModalTarget(group);
@@ -1183,9 +1262,10 @@ export function EmbalagemScreen({
   if (view === "NEW_PACK") {
     const filteredGroups = productGroups.filter((g) => {
       if (!searchTerm) return true;
-      const item = db.items.find((i) => i.id === g.itemId);
+      const item = db.items.find((i) => Number(i.id) === Number(g.itemId) || String(i.id) === String(g.itemId) || (i.code && i.code === g.itemCode));
+      const displayName = item?.name || g.customProductName || `Item #${g.itemId}`;
       const searchStr = normalizeString(
-        `${item?.name || ""} ${g.color} ${g.size} ${g.variation}`,
+        `${displayName} ${g.itemCode || ""} ${g.color} ${g.size} ${g.variation}`,
       );
       return searchStr.includes(normalizeString(searchTerm));
     });
@@ -1221,7 +1301,13 @@ export function EmbalagemScreen({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3">
               {filteredGroups.map((g, idx) => {
-                const item = db.items.find((i) => i.id === g.itemId);
+                const item = db.items.find(
+                  (i) =>
+                    Number(i.id) === Number(g.itemId) ||
+                    String(i.id) === String(g.itemId) ||
+                    (i.code && i.code === g.itemCode)
+                );
+                const displayName = item?.name || g.customProductName || `Item #${g.itemId}`;
                 return (
                   <div
                     key={idx}
@@ -1232,7 +1318,7 @@ export function EmbalagemScreen({
                       {item?.imageUrl ? (
                         <img
                           src={item.imageUrl}
-                          alt={item.name}
+                          alt={displayName}
                           className="w-11 h-11 object-cover rounded-lg shadow-2xs border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1245,8 +1331,8 @@ export function EmbalagemScreen({
                         </div>
                       )}
                       <div className="flex flex-col min-w-0 flex-1 text-left">
-                        <span className="font-bold text-xs sm:text-sm text-gray-800 truncate" title={item?.name || "Item"}>
-                          {item?.name || "Item"}
+                        <span className="font-bold text-xs sm:text-sm text-gray-800 truncate" title={displayName}>
+                          {displayName}
                         </span>
                         <span className="text-[10px] sm:text-xs text-gray-500 flex flex-wrap items-center gap-1 mt-0.5">
                           <ColorBadgeWithImage color={g.color} attributes={db.attributes} size="sm" />
@@ -1270,83 +1356,84 @@ export function EmbalagemScreen({
           )}
         </div>
         {renderModals()}
-        {confirmingGroup && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition-all duration-200">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden border border-slate-100 flex flex-col text-left">
-              <div className="p-4">
-                <div className="flex items-center gap-2 text-amber-600 mb-2">
-                  <span className="text-xl">📦</span>
-                  <h3 className="font-bold text-sm text-gray-900 leading-tight">
-                    Confirmar Início?
-                  </h3>
-                </div>
+        {confirmingGroup && (() => {
+          const item = db.items.find(
+            (i) =>
+              Number(i.id) === Number(confirmingGroup.itemId) ||
+              String(i.id) === String(confirmingGroup.itemId) ||
+              (i.code && i.code === confirmingGroup.itemCode)
+          );
+          const displayName = item?.name || confirmingGroup.customProductName || `Item #${confirmingGroup.itemId}`;
+          return (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 transition-all duration-200">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden border border-slate-100 flex flex-col text-left">
+                <div className="p-4">
+                  <div className="flex items-center gap-2 text-amber-600 mb-2">
+                    <span className="text-xl">📦</span>
+                    <h3 className="font-bold text-sm text-gray-900 leading-tight">
+                      Confirmar Início?
+                    </h3>
+                  </div>
 
-                <p className="text-[11px] text-gray-500 mb-3 leading-relaxed">
-                  Você está prestes a iniciar o registro de embalagem do item:
-                </p>
+                  <p className="text-[11px] text-gray-500 mb-3 leading-relaxed">
+                    Você está prestes a iniciar o registro de embalagem do item:
+                  </p>
 
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 mb-3 flex gap-2.5 items-center">
-                  {db.items.find((i) => i.id === confirmingGroup.itemId)
-                    ?.imageUrl && (
-                    <img
-                      src={
-                        db.items.find((i) => i.id === confirmingGroup.itemId)
-                          ?.imageUrl
-                      }
-                      alt=""
-                      className="w-12 h-12 object-cover rounded shadow-sm border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFullSizeImage(
-                          db.items.find((i) => i.id === confirmingGroup.itemId)
-                            ?.imageUrl || null,
-                        );
-                      }}
-                    />
-                  )}
-                  <div className="flex flex-col gap-1 flex-1 min-w-0">
-                    <span className="font-bold text-xs text-slate-800 line-clamp-1">
-                      {db.items.find((i) => i.id === confirmingGroup.itemId)
-                        ?.name || "Item"}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
-                      <ColorBadgeWithImage color={confirmingGroup.color} attributes={db.attributes} size="sm" />
-                      <span className="font-mono bg-slate-200/60 px-1 py-0.5 rounded">
-                        Tam: {confirmingGroup.size || "-"}
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 mb-3 flex gap-2.5 items-center">
+                    {item?.imageUrl && (
+                      <img
+                        src={item.imageUrl}
+                        alt=""
+                        className="w-12 h-12 object-cover rounded shadow-sm border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFullSizeImage(item.imageUrl || null);
+                        }}
+                      />
+                    )}
+                    <div className="flex flex-col gap-1 flex-1 min-w-0">
+                      <span className="font-bold text-xs text-slate-800 line-clamp-1">
+                        {displayName}
                       </span>
-                    </div>
-                    <div className="text-[10px] font-semibold text-blue-600 mt-0.5">
-                      Pendentes:{" "}
-                      <span className="font-bold text-xs">
-                        {confirmingGroup.totalRemaining}
-                      </span>{" "}
-                      un
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+                        <ColorBadgeWithImage color={confirmingGroup.color} attributes={db.attributes} size="sm" />
+                        <span className="font-mono bg-slate-200/60 px-1 py-0.5 rounded">
+                          Tam: {confirmingGroup.size || "-"}
+                        </span>
+                      </div>
+                      <div className="text-[10px] font-semibold text-blue-600 mt-0.5">
+                        Pendentes:{" "}
+                        <span className="font-bold text-xs">
+                          {confirmingGroup.totalRemaining}
+                        </span>{" "}
+                        un
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex gap-2 mt-1">
-                  <button
-                    onClick={() => setConfirmingGroup(null)}
-                    className="flex-1 bg-slate-100 text-slate-700 font-bold py-2 px-3 rounded-lg text-[11px] hover:bg-slate-200 transition"
-                  >
-                    Voltar
-                  </button>
-                  <button
-                    onClick={() => {
-                      const group = confirmingGroup;
-                      setConfirmingGroup(null);
-                      startPackaging(group);
-                    }}
-                    className="flex-1 bg-blue-600 text-white font-bold py-2 px-3 rounded-lg text-[11px] hover:bg-blue-700 transition shadow-sm"
-                  >
-                    Iniciar Agora
-                  </button>
+                  <div className="flex gap-2 mt-1">
+                    <button
+                      onClick={() => setConfirmingGroup(null)}
+                      className="flex-1 bg-slate-100 text-slate-700 font-bold py-2 px-3 rounded-lg text-[11px] hover:bg-slate-200 transition"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      onClick={() => {
+                        const group = confirmingGroup;
+                        setConfirmingGroup(null);
+                        startPackaging(group);
+                      }}
+                      className="flex-1 bg-blue-600 text-white font-bold py-2 px-3 rounded-lg text-[11px] hover:bg-blue-700 transition shadow-sm"
+                    >
+                      Iniciar Agora
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     );
   }

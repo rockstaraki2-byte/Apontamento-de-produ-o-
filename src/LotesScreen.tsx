@@ -49,6 +49,7 @@ import { AcompanhamentoPrintSheet } from "./AcompanhamentoPrintSheet";
 import { BatchEtiquetasPrintSheet, buildBatchLabelItemsData } from "./BatchEtiquetasPrintSheet";
 import { generateZPLFromBatchLabels } from "./utils/zplUtils";
 import { getItemUnit } from "./utils/unitUtils";
+import { resolveCompanyInfo } from "./utils/companyUtils";
 import html2pdf from "html2pdf.js";
 
 export function LotesScreen({
@@ -796,11 +797,12 @@ export function LotesScreen({
         ocultarPaiComposicao: etiquetasOcultarPai,
       });
 
-      const systemSettings = db.systemSettings?.[0] || {};
-      const logoUrl = (db.activeTenant?.logoUrl && db.activeTenant.logoUrl !== "/icon.png") ? db.activeTenant.logoUrl : (systemSettings.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png");
-      const companyName = db.activeTenant?.name || systemSettings.companyName || "SUA EMPRESA";
+      const companyInfo = resolveCompanyInfo(db.activeTenant, db.systemSettings?.[0], db.tenants);
+      const logoUrl = companyInfo.logoUrl || undefined;
+      const companyName = companyInfo.companyName;
+      const companySubtitle = companyInfo.companySubtitle;
 
-      const zplString = await generateZPLFromBatchLabels(labelItems, logoUrl, companyName, etiquetasShowImage);
+      const zplString = await generateZPLFromBatchLabels(labelItems, logoUrl, companyName, etiquetasShowImage, companySubtitle);
 
       if (!zplString) {
         alert("Não foi possível gerar código ZPL para os itens selecionados.");

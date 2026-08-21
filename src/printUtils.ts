@@ -140,7 +140,8 @@ export function printElementById(elementId: string, docTitle: string = "Document
         overflow: visible !important;
       }
       #print-container-wrapper #batch-printable-sheet-container,
-      #print-container-wrapper #acompanhamento-printable-sheet-container {
+      #print-container-wrapper #acompanhamento-printable-sheet-container,
+      #print-container-wrapper #relatorio-epi-print-container {
         padding: 0 !important;
         margin: 0 !important;
         background: white !important;
@@ -149,6 +150,37 @@ export function printElementById(elementId: string, docTitle: string = "Document
         min-height: 100% !important;
         overflow: visible !important;
         gap: 0 !important;
+      }
+      #print-container-wrapper .relatorio-epi-page {
+        width: 210mm !important;
+        height: 297mm !important;
+        max-height: 297mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+        page-break-after: always !important;
+        break-after: page !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        background: white !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: space-between !important;
+        overflow: hidden !important;
+        position: relative !important;
+      }
+      #print-container-wrapper .relatorio-epi-page:last-child {
+        page-break-after: auto !important;
+        break-after: auto !important;
+      }
+      #print-container-wrapper .relatorio-epi-card {
+        height: 148.5mm !important;
+        max-height: 148.5mm !important;
+        padding: 4mm 6mm !important;
+        box-sizing: border-box !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
       }
       #print-container-wrapper .pdf-page {
         width: 210mm !important;
@@ -188,7 +220,7 @@ export function printElementById(elementId: string, docTitle: string = "Document
         break-inside: avoid !important;
       }
       /* Fallback padding for other standard A4 documents that are not pre-paged */
-      #print-container-wrapper > *:not(#batch-printable-sheet-container):not(#acompanhamento-printable-sheet-container):not(#print-order-sheet) {
+      #print-container-wrapper > *:not(#batch-printable-sheet-container):not(#acompanhamento-printable-sheet-container):not(#print-order-sheet):not(#relatorio-epi-print-container) {
         padding: 12mm !important;
         box-sizing: border-box !important;
       }
