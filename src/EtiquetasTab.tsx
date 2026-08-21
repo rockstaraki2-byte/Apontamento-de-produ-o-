@@ -21,6 +21,7 @@ import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
 import { ScrollContainer } from "./components/Layout";
 import { resolveCompanyInfo, CompanyLogo } from "./utils/companyUtils";
+import { imageToZPLHex } from "./utils/zplUtils";
 
 interface EtiquetasTabProps {
   db: ReturnType<typeof useDatabase>;
@@ -849,94 +850,6 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     } catch (e: any) {
       alert("Erro na impressão direta: " + (e.message || e));
     }
-  };
-
-  // Helper to convert an image URL directly into a monochrome ZPL Hex code string
-  const imageToZPLHex = (imageUrl: string, width: number, height: number): Promise<{ hex: string; bytesPerRow: number; byteCount: number } | null> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        try {
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return resolve(null);
-          
-          // Fill a clean solid white background for alpha transparency support
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, width, height);
-          
-          // Calculate contained drawing dimensions to keep exact aspect ratio
-          const imgRatio = img.width / img.height;
-          const targetRatio = width / height;
-          let drawW = width;
-          let drawH = height;
-          let offsetX = 0;
-          let offsetY = 0;
-          
-          if (imgRatio > targetRatio) {
-            drawH = width / imgRatio;
-            offsetY = (height - drawH) / 2;
-          } else {
-            drawW = height * imgRatio;
-            offsetX = (width - drawW) / 2;
-          }
-          
-          ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
-          const imgData = ctx.getImageData(0, 0, width, height);
-          const data = imgData.data;
-          
-          // Step 1: Analyze pixels and binarize cleanly
-          const bytesPerRow = Math.ceil(width / 8);
-          const byteCount = bytesPerRow * height;
-          
-          let hexString = "";
-          for (let y = 0; y < height; y++) {
-            let byteVal = 0;
-            let bitsInByte = 0;
-            let rowHex = "";
-            
-            for (let x = 0; x < width; x++) {
-              const idx = (y * width + x) * 4;
-              const r = data[idx];
-              const g = data[idx + 1];
-              const b = data[idx + 2];
-              const a = data[idx + 3];
-
-              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-              const isBlack = a > 20 && lum < 210;
-              
-              if (isBlack) {
-                byteVal |= (1 << (7 - bitsInByte));
-              }
-              bitsInByte++;
-              
-              if (bitsInByte === 8) {
-                rowHex += byteVal.toString(16).padStart(2, "0").toUpperCase();
-                byteVal = 0;
-                bitsInByte = 0;
-              }
-            }
-            
-            if (bitsInByte > 0) {
-              rowHex += byteVal.toString(16).padStart(2, "0").toUpperCase();
-            }
-            hexString += rowHex;
-          }
-          
-          resolve({ hex: hexString, bytesPerRow, byteCount });
-        } catch (e) {
-          console.error("Error converting image to ZPL:", e);
-          resolve(null);
-        }
-      };
-      img.onerror = () => {
-        resolve(null);
-      };
-      img.src = imageUrl;
-    });
   };
 
   // 3. GENERATE RAW ZEBRA ZPL COMMANDS FORMATTED FOR 100x50mm
@@ -1898,7 +1811,7 @@ ${barcodeBlock}
                                           <img 
                                             src={lbl.imageUrl} 
                                             alt="img" 
-                                            className="w-full h-full object-contain filter contrast-[145%] brightness-90 drop-shadow-[0_0_1px_rgba(0,0,0,0.95)]" 
+                                            className="w-full h-full object-contain" 
                                             crossOrigin="anonymous" 
                                           />
                                         </div>

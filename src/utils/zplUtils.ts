@@ -40,7 +40,29 @@ export const imageToZPLHex = (
         const imgData = ctx.getImageData(0, 0, width, height);
         const data = imgData.data;
 
-        // Step 1: Analyze pixels and binarize cleanly
+        // Initialize 2D luminance array (0 = black, 255 = white)
+        const gray: number[][] = [];
+        for (let y = 0; y < height; y++) {
+          gray[y] = new Float32Array(width) as any;
+          for (let x = 0; x < width; x++) {
+            const idx = (y * width + x) * 4;
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
+            const a = data[idx + 3];
+
+            // Blend transparent pixels gracefully with white background
+            if (a < 32) {
+              gray[y][x] = 255;
+            } else {
+              const alphaNorm = a / 255;
+              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+              gray[y][x] = lum * alphaNorm + 255 * (1 - alphaNorm);
+            }
+          }
+        }
+
+        // Apply Floyd-Steinberg error-diffusion dithering for crisp monochrome rendering
         const bytesPerRow = Math.ceil(width / 8);
         const byteCount = bytesPerRow * height;
 
@@ -51,14 +73,25 @@ export const imageToZPLHex = (
           let rowHex = "";
 
           for (let x = 0; x < width; x++) {
-            const idx = (y * width + x) * 4;
-            const r = data[idx];
-            const g = data[idx + 1];
-            const b = data[idx + 2];
-            const a = data[idx + 3];
+            const oldVal = gray[y][x];
+            // Threshold at 128 (natural midpoint)
+            const newVal = oldVal < 128 ? 0 : 255;
+            const isBlack = newVal === 0;
+            const error = oldVal - newVal;
 
-            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            const isBlack = a > 20 && lum < 210;
+            // Diffuse quantization error to neighboring pixels
+            if (x + 1 < width) {
+              gray[y][x + 1] += error * (7 / 16);
+            }
+            if (x - 1 >= 0 && y + 1 < height) {
+              gray[y + 1][x - 1] += error * (3 / 16);
+            }
+            if (y + 1 < height) {
+              gray[y + 1][x] += error * (5 / 16);
+            }
+            if (x + 1 < width && y + 1 < height) {
+              gray[y + 1][x + 1] += error * (1 / 16);
+            }
 
             if (isBlack) {
               byteVal |= 1 << (7 - bitsInByte);
