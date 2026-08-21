@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { ArrowLeft, Activity } from "lucide-react";
+import { ArrowLeft, Activity, PaintRoller } from "lucide-react";
 import { useDatabase } from "./useDatabase";
 import type { User, OrderStatus } from "./types";
 import { calculateWorkingMillis } from "./timeUtils";
