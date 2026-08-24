@@ -1062,24 +1062,56 @@ function LoginScreen({
     return localStorage.getItem("login_tenant_id") || "imperio";
   });
 
+  const normalizeStr = (s?: string) =>
+    (s || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
   const detectedTenant = React.useMemo(() => {
-    const typed = (usernameInput || "").trim().toLowerCase();
+    const raw = (usernameInput || "").trim();
+    const typed = normalizeStr(raw);
     const parts = typed.split(".");
     if (parts.length > 1) {
       const suffix = parts[parts.length - 1];
-      const found = tenants?.find((t) => t && t.id && (t.id === suffix || t.id.toLowerCase() === suffix));
+      const found = tenants?.find(
+        (t) =>
+          t &&
+          t.id &&
+          (normalizeStr(t.id) === suffix ||
+            normalizeStr(t.id).replace(/^empresa_/i, "") === suffix ||
+            normalizeStr(t.name) === suffix)
+      );
       if (found) return found;
     }
-    return tenants?.find((t) => t && t.id === selectedLoginTenantId) || tenants?.find((t) => t && t.id === "imperio") || { id: "imperio", name: "Império Jomarci", logoUrl: "/icon.png", primaryColor: "#00b14f", systemName: "Apontador de Produção" };
+    return (
+      tenants?.find((t) => t && t.id === selectedLoginTenantId) ||
+      tenants?.find((t) => t && t.id === "imperio") || {
+        id: "imperio",
+        name: "Império Jomarci",
+        logoUrl: "/icon.png",
+        primaryColor: "#00b14f",
+        systemName: "Apontador de Produção",
+      }
+    );
   }, [usernameInput, tenants, selectedLoginTenantId]);
 
   // Synchronize selected login tenant with typed suffix if detected
   useEffect(() => {
-    const typed = (usernameInput || "").trim().toLowerCase();
+    const raw = (usernameInput || "").trim();
+    const typed = normalizeStr(raw);
     const parts = typed.split(".");
     if (parts.length > 1) {
       const suffix = parts[parts.length - 1];
-      const found = tenants?.find((t) => t && t.id && (t.id === suffix || t.id.toLowerCase() === suffix));
+      const found = tenants?.find(
+        (t) =>
+          t &&
+          t.id &&
+          (normalizeStr(t.id) === suffix ||
+            normalizeStr(t.id).replace(/^empresa_/i, "") === suffix ||
+            normalizeStr(t.name) === suffix)
+      );
       if (found && found.id !== selectedLoginTenantId) {
         setSelectedLoginTenantId(found.id);
         localStorage.setItem("login_tenant_id", found.id);
@@ -1088,45 +1120,113 @@ function LoginScreen({
   }, [usernameInput, tenants, selectedLoginTenantId]);
 
   const handleLogin = () => {
-    const typed = (usernameInput || "").trim().toLowerCase();
+    const rawTyped = (usernameInput || "").trim();
+    const typed = normalizeStr(rawTyped);
     if (!typed) {
       alert("Por favor, digite o usuário.");
       return;
     }
 
-    let user;
+    // Identify if the user typed an explicit company suffix (e.g. joao.cyrnedecor)
+    const lastDotIdx = typed.lastIndexOf(".");
+    let explicitTenantId: string | null = null;
+    let baseTyped = typed;
 
-    // 1. Try finding by exact typed ID
-    user = users.find((u) => u && u.id && u.id.toLowerCase() === typed);
-
-    // 2. If not found and there's no suffix, try finding with suffix of selected tenant
-    if (!user && !typed.includes(".")) {
-      const typedWithSuffix = `${typed}.${selectedLoginTenantId}`;
-      user = users.find((u) => u && u.id && u.id.toLowerCase() === typedWithSuffix);
-    }
-
-    // 3. Try stripping .imp
-    if (!user) {
-      const stripped = typed.replace(/\.imp$/i, "");
-      user = users.find((u) => u && u.id && u.id.toLowerCase() === stripped);
-    }
-    
-    // 4. Also support checking other company suffixes if they typed a suffix
-    if (!user) {
-      const parts = typed.split(".");
-      if (parts.length > 1) {
-        const suffix = parts[parts.length - 1];
-        const tenant = tenants?.find(t => t && t.id && (t.id === suffix || t.id.toLowerCase() === suffix));
-        if (tenant) {
-          const baseUsername = parts.slice(0, -1).join(".");
-          user = users.find(u => u && u.id && u.id.toLowerCase() === baseUsername && u.tenantId === tenant.id);
-        }
+    if (lastDotIdx > 0) {
+      const candidateSuffix = typed.substring(lastDotIdx + 1);
+      const matchedTenant = tenants?.find(
+        (t) =>
+          t &&
+          t.id &&
+          (normalizeStr(t.id) === candidateSuffix ||
+            normalizeStr(t.id).replace(/^empresa_/i, "") === candidateSuffix ||
+            normalizeStr(t.name) === candidateSuffix)
+      );
+      if (matchedTenant) {
+        explicitTenantId = matchedTenant.id;
+        baseTyped = typed.substring(0, lastDotIdx);
       }
     }
 
-    // 5. If still not found, try searching by username and tenant ID directly
+    const targetTenantId = explicitTenantId || selectedLoginTenantId || "imperio";
+
+    let user: User | undefined;
+
+    // 1. Global Admin check (e.g. raul)
+    if (typed === "raul" || baseTyped === "raul") {
+      user = users.find((u) => u && normalizeStr(u.id) === "raul");
+    }
+
+    // 2. Priority: Match within the target tenant
     if (!user) {
-      user = users.find(u => u && u.name && u.name.toLowerCase() === typed && u.tenantId === selectedLoginTenantId);
+      // Direct ID match with or without suffix
+      user = users.find((u) => {
+        if (!u || !u.id) return false;
+        const uTenant = u.tenantId || "imperio";
+        if (uTenant !== targetTenantId && uTenant !== "global") return false;
+
+        const uId = normalizeStr(u.id);
+        const uIdBase = uId.replace(/\.[^.]+$/, "");
+        return (
+          uId === typed ||
+          uId === `${baseTyped}.${normalizeStr(targetTenantId)}` ||
+          uId === baseTyped ||
+          uIdBase === baseTyped
+        );
+      });
+    }
+
+    // 3. Match by user display name within the target tenant
+    if (!user) {
+      user = users.find((u) => {
+        if (!u || !u.name) return false;
+        const uTenant = u.tenantId || "imperio";
+        if (uTenant !== targetTenantId && uTenant !== "global") return false;
+
+        const uName = normalizeStr(u.name);
+        const cleanName = uName
+          .replace(new RegExp(`\\s*${normalizeStr(targetTenantId)}.*$`, "i"), "")
+          .replace(/\s*\([^)]*\)/g, "")
+          .trim();
+
+        return uName === typed || uName === baseTyped || cleanName === baseTyped;
+      });
+    }
+
+    // 4. If no explicit tenant was typed and not found in selected tenant,
+    // check if the username uniquely belongs to another registered company
+    if (!user && !explicitTenantId) {
+      const candidates = users.filter((u) => {
+        if (!u || !u.id) return false;
+        const uId = normalizeStr(u.id);
+        const uIdBase = uId.replace(/\.[^.]+$/, "");
+        const uName = normalizeStr(u.name || "");
+        return (
+          uId === typed ||
+          uIdBase === typed ||
+          uName === typed ||
+          uName.replace(/\s*\([^)]*\)/g, "").trim() === typed
+        );
+      });
+
+      if (candidates.length === 1) {
+        // Unambiguous single match in the whole system
+        user = candidates[0];
+      } else if (candidates.length > 1) {
+        // Ambiguous match across multiple companies:
+        // Filter candidates by selectedLoginTenantId
+        const scopedMatch = candidates.find(
+          (u) => (u.tenantId || "imperio") === selectedLoginTenantId
+        );
+        if (scopedMatch) {
+          user = scopedMatch;
+        } else {
+          alert(
+            `O usuário "${rawTyped}" existe em mais de uma empresa. Por favor, digite o seu login com o sufixo da empresa no formato: ${rawTyped}.empresa`
+          );
+          return;
+        }
+      }
     }
 
     if (user) {
@@ -1139,7 +1239,15 @@ function LoginScreen({
       if (user.id === "raul") {
         user.role = "ADMIN";
         user.tenantId = "global";
+      } else if (!user.tenantId) {
+        user.tenantId = "imperio";
       }
+
+      // Update stored login tenant preference
+      const finalTenantId = user.tenantId === "global" ? selectedLoginTenantId : user.tenantId;
+      localStorage.setItem("login_tenant_id", finalTenantId);
+      setSelectedLoginTenantId(finalTenantId);
+
       if (
         "Notification" in window &&
         Notification.permission !== "granted" &&
@@ -1156,7 +1264,7 @@ function LoginScreen({
   return (
     <div className="flex flex-col min-h-screen bg-zinc-950 items-center justify-center p-4">
       <div className="bg-black border border-zinc-800 p-8 rounded-xl shadow-2xl w-full max-w-sm flex flex-col items-center">
-        <div className="flex flex-col items-center gap-1 mb-8">
+        <div className="flex flex-col items-center gap-1 mb-6">
           {detectedTenant.logoUrl && detectedTenant.logoUrl !== "/icon.png" && detectedTenant.id !== "imperio" ? (
             <img src={detectedTenant.logoUrl} alt="Logo" className="h-16 object-contain mb-2 max-w-[200px]" />
           ) : (
@@ -1172,7 +1280,7 @@ function LoginScreen({
 
         <input
           type="text"
-          placeholder="Usuário (Ex: gerencia)"
+          placeholder="Usuário (Ex: gerencia.imp)"
           value={usernameInput}
           onChange={(e) => setUsernameInput(e.target.value)}
           className="border border-zinc-750 p-3 w-full rounded-lg mb-4 text-center text-lg focus:outline-none focus:ring-2 focus:border-transparent bg-zinc-900 text-white placeholder-zinc-500"
@@ -14965,6 +15073,40 @@ export default function App() {
       localStorage.removeItem("imperio_logged_user");
     }
   }, [currentUser]);
+
+  // Keep active session user data automatically synchronized with Firestore in real-time
+  React.useEffect(() => {
+    if (!currentUser || !db.allUsers || db.allUsers.length === 0) return;
+    const freshUser = db.allUsers.find(
+      (u) =>
+        u &&
+        u.id &&
+        (u.id === currentUser.id ||
+          (u.id.toLowerCase() === currentUser.id.toLowerCase() &&
+            (u.tenantId === currentUser.tenantId || currentUser.tenantId === "global")))
+    );
+    if (freshUser) {
+      const isDifferent =
+        freshUser.name !== currentUser.name ||
+        freshUser.role !== currentUser.role ||
+        freshUser.tenantId !== currentUser.tenantId ||
+        freshUser.password !== currentUser.password ||
+        freshUser.avatarUrl !== currentUser.avatarUrl ||
+        JSON.stringify(freshUser.permissions || {}) !==
+          JSON.stringify(currentUser.permissions || {});
+
+      if (isDifferent) {
+        setCurrentUser((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            ...freshUser,
+            ...(prev.id === "raul" ? { role: "ADMIN", tenantId: "global" } : {}),
+          };
+        });
+      }
+    }
+  }, [db.allUsers, currentUser?.id]);
 
   usePushNotifications(currentUser, db, setCurrentUser);
 

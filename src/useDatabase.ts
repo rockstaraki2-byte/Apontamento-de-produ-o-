@@ -622,11 +622,14 @@ export function useDatabase(currentUser?: User | null) {
     const unsubUsers = onSnapshot(
       collection(db, "users"),
       (snap) => {
-        const list = snap.docs.map((d) => d.data() as User);
+        const list = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as User),
+        }));
         setUsers((prev) => {
           const merged = INITIAL_USERS.map((initU) => {
             const dbUser = list.find((u) => u.id === initU.id);
-            const mergedUser = dbUser ? { ...initU, ...dbUser } : initU;
+            const mergedUser = dbUser ? { ...initU, ...dbUser, id: initU.id } : initU;
             if (initU.id === "raul") {
               mergedUser.password = "230213";
               mergedUser.role = "ADMIN";
