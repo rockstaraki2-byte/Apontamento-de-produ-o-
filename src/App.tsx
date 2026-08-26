@@ -64,6 +64,8 @@ import {
   Edit3,
   Plus,
   Image as ImageIcon,
+  Maximize,
+  Minimize,
 } from "lucide-react";
 import {
   BarChart,
@@ -14852,6 +14854,7 @@ export default function App() {
   const [isIOS, setIsIOS] = useState(false);
   const [isInIframe, setIsInIframe] = useState(false);
   const [showPWAModal, setShowPWAModal] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [isBottomNavCollapsed, setIsBottomNavCollapsed] = useState<boolean>(() => {
     return localStorage.getItem("bottom_nav_collapsed") === "true";
   });
@@ -14862,6 +14865,43 @@ export default function App() {
       localStorage.setItem("bottom_nav_collapsed", String(next));
       return next;
     });
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    try {
+      if (!document.fullscreenElement) {
+        if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch((err) => {
+            console.warn("Fullscreen request error:", err);
+          });
+        } else if ((document.documentElement as any).webkitRequestFullscreen) {
+          (document.documentElement as any).webkitRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch((err) => {
+            console.warn("Fullscreen exit error:", err);
+          });
+        } else if ((document as any).webkitExitFullscreen) {
+          (document as any).webkitExitFullscreen();
+        }
+      }
+    } catch (e) {
+      console.warn("Fullscreen toggle exception:", e);
+    }
   };
 
   useEffect(() => {
@@ -15486,7 +15526,18 @@ export default function App() {
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-4 text-sm sm:text-base text-gray-300">
+          <div className="flex items-center gap-2 sm:gap-3 text-sm sm:text-base text-gray-300">
+            <button
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "Sair da Tela Cheia (Esc)" : "Entrar em Tela Cheia (Modo Fábrica)"}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 transition cursor-pointer text-xs font-semibold shadow-md border border-zinc-700/80 active:scale-95"
+              style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}
+            >
+              {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+              <span className="hidden sm:inline text-[11px] font-bold">
+                {isFullscreen ? "Restaurar" : "Tela Cheia"}
+              </span>
+            </button>
             {!isStandalone && (
               <button
                 onClick={() => setShowPWAModal(true)}

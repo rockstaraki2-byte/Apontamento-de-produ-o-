@@ -1056,7 +1056,7 @@ export function HistoricoProducaoScreen({
     return `${m}m ${s}s`;
   };
 
-  const isPintura = currentUser.role === "PINTURA";
+  const isPintura = currentUser.role === "PINTURA" || currentUser.role === "EMBALAGEM";
 
   return (
     <div
@@ -2204,13 +2204,13 @@ export function HistoricoProducaoScreen({
                       </span>
                     </div>
                     <span
-                      className={`font-bold text-gray-800 leading-tight group-hover:text-indigo-900 transition-colors truncate ${isPintura ? "text-xs md:text-sm" : "text-base md:text-lg"}`}
+                      className={`font-bold text-gray-800 leading-tight group-hover:text-indigo-900 transition-colors break-words ${isPintura ? "text-xs md:text-sm" : "text-base md:text-lg"}`}
                     >
                       {title}
                     </span>
                     {(subtitle || l.customOperatorName) && (
                       <span
-                        className={`${isPintura ? "text-[10px]" : "text-xs"} text-slate-500 mt-0.5 block truncate`}
+                        className={`${isPintura ? "text-[10px]" : "text-xs"} text-slate-500 mt-0.5 block break-words`}
                       >
                         {subtitle}{" "}
                         {l.customOperatorName

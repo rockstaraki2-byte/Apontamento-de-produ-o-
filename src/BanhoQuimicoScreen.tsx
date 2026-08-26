@@ -106,8 +106,7 @@ export function BanhoQuimicoScreen({
       return (
         o.status !== "EMBALADO" &&
         o.status !== "FATURADO" &&
-        o.status !== ("BANHO_CONCLUIDO" as OrderStatus) &&
-        (o.paintedQuantity || 0) < getAvailableForChemical(o)
+        (o.packedQuantity || 0) < getAvailableForChemical(o)
       );
     });
   }, [db.orders, getAvailableForChemical]);
@@ -137,7 +136,7 @@ export function BanhoQuimicoScreen({
         });
       }
       groups.get(key)!.totalRemaining +=
-        (getAvailableForChemical(o) || 0) - (o.paintedQuantity || 0);
+        Math.max(0, (getAvailableForChemical(o) || 0) - (o.packedQuantity || 0));
       
       // Keep customProductName updated if it wasn't set yet
       if (!groups.get(key)!.customProductName && o.customProductName) {
@@ -296,7 +295,7 @@ export function BanhoQuimicoScreen({
 
     for (let o of ordersForProduct) {
       if (qtyToAllocate <= 0) break;
-      const needed = getAvailableForChemical(o) - (o.paintedQuantity || 0);
+      const needed = Math.max(0, getAvailableForChemical(o) - (o.packedQuantity || 0));
       const allocate = Math.min(needed, qtyToAllocate);
 
       if (allocate > 0) {

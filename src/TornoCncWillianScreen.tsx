@@ -104,7 +104,7 @@ export function TornoCncWillianScreen({
         o &&
         o.status !== "EMBALADO" &&
         o.status !== "FATURADO" &&
-        (o.cutQuantity || 0) < o.totalQuantity
+        (o.packedQuantity || 0) < o.totalQuantity
       );
     });
   }, [db.orders]);
@@ -149,7 +149,7 @@ export function TornoCncWillianScreen({
       const productKey = `${o.itemId}|${o.color}|${o.size}|${o.variation}`;
       const remaining = Math.max(
         0,
-        o.totalQuantity - (o.producedQuantity || o.cutQuantity || 0),
+        o.totalQuantity - (o.packedQuantity || 0),
       );
       productTotals.set(
         productKey,
@@ -164,7 +164,7 @@ export function TornoCncWillianScreen({
       const key = `${customerDisplayName}|${o.orderCode}|${o.itemId}|${o.color}|${o.size}|${o.variation}`;
       const remaining = Math.max(
         0,
-        o.totalQuantity - (o.producedQuantity || o.cutQuantity || 0),
+        o.totalQuantity - (o.packedQuantity || 0),
       );
 
       if (remaining <= 0) return;
@@ -326,7 +326,7 @@ export function TornoCncWillianScreen({
         if (qtyToAllocate <= 0) break;
         const remaining = Math.max(
           0,
-          o.totalQuantity - (o.producedQuantity || 0) - (o.corteQuantity || 0),
+          o.totalQuantity - (o.packedQuantity || 0),
         );
         if (remaining > 0) {
           const alloc = Math.min(remaining, qtyToAllocate);

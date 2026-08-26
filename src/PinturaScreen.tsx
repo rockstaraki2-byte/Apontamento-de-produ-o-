@@ -7,7 +7,6 @@ import { DailySummaryWidget } from "./components/DailySummaryWidget";
 import { ScreenLayout, ScrollContainer } from "./components/Layout";
 import { normalizeString } from "./searchUtils";
 import { ProductivityCard } from "./components/ProductivityCard";
-import { MachineStopWidget } from "./components/OperatorActions";
 import { parseQty } from "./quantityUtils";
 
 const getProductKey = (
@@ -81,7 +80,7 @@ export function PinturaScreen({
     return (
       o.status !== "EMBALADO" &&
       o.status !== "FATURADO" &&
-      parseQty(o.paintedQuantity) < getAvailableForPainting(o)
+      parseQty(o.packedQuantity) < getAvailableForPainting(o)
     );
   });
 
@@ -107,7 +106,7 @@ export function PinturaScreen({
           totalRemaining: 0,
         });
       }
-      const rem = Math.max(0, getAvailableForPainting(o) - parseQty(o.paintedQuantity));
+      const rem = Math.max(0, getAvailableForPainting(o) - parseQty(o.packedQuantity || 0));
       groups.get(key)!.totalRemaining += rem;
     });
     return Array.from(groups.values());
@@ -295,7 +294,7 @@ export function PinturaScreen({
 
     for (let o of ordersForProduct) {
       if (qtyToAllocate <= 0) break;
-      const needed = getAvailableForPainting(o) - (o.paintedQuantity || 0);
+      const needed = Math.max(0, getAvailableForPainting(o) - (o.packedQuantity || 0));
       const allocate = Math.min(needed, qtyToAllocate);
 
       if (allocate > 0) {
@@ -434,9 +433,6 @@ export function PinturaScreen({
         </div>
 
         <ProductivityCard db={db} currentUser={currentUser} />
-
-        {/* Apontamento de Paradas de Máquina */}
-        <MachineStopWidget db={db} currentUser={currentUser} machineName="Pintura Eletrostática" />
 
         {/* Offline Sync Status Banner */}
         {db.syncQueueCount !== undefined && (
@@ -737,7 +733,7 @@ export function PinturaScreen({
                                 </div>
                               )}
                               <div className="flex flex-col min-w-0 flex-1 text-left">
-                                <span className="font-bold text-sm sm:text-base text-gray-800 truncate" title={item?.name || "Item"}>
+                                <span className="font-bold text-sm sm:text-base text-gray-800 break-words leading-tight" title={item?.name || "Item"}>
                                   {item?.name || "Item"}
                                 </span>
                                 <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1 mt-0.5">
@@ -817,12 +813,12 @@ export function PinturaScreen({
                     >
                       <div className="absolute top-0 left-0 w-1 h-full bg-pink-500"></div>
 
-                      <div className="flex items-center gap-3 pl-2 max-w-[80%]">
+                      <div className="flex items-center gap-3 pl-2 flex-1 min-w-0">
                         {item?.imageUrl && (
                           <img
                             src={item.imageUrl}
                             alt={item.name}
-                            className="w-12 h-12 object-cover rounded shadow-3xs border border-slate-200 cursor-pointer hover:opacity-80 transition"
+                            className="w-12 h-12 object-cover rounded shadow-3xs border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0"
                             onClick={(e) => {
                               e.stopPropagation();
                               setFullSizeImage(item.imageUrl || null);
@@ -845,7 +841,7 @@ export function PinturaScreen({
                               </div>
                             )}
                           </div>
-                          <span className="font-extrabold text-slate-900 text-[11px] leading-tight truncate">
+                          <span className="font-extrabold text-slate-900 text-xs leading-snug break-words">
                             {pack.itemId === 0
                               ? pack.customProductName
                               : item?.name || "Produto"}

@@ -463,6 +463,32 @@ export interface ActiveTask {
   sectorId?: number | string;
   sectorName?: string;
   tenantId?: string;
+  customerName?: string;
+  orderCode?: string;
+  pendingProductionId?: string;
+  previousProcesses?: string[];
+}
+
+export interface PrensaPendingProduction {
+  id: string;
+  itemId: number;
+  partName: string;
+  color?: string;
+  size?: string;
+  variation?: string;
+  customerName?: string;
+  orderCode?: string;
+  orderId?: number;
+  associatedBatchId?: number;
+  associatedBatchName?: string;
+  quantity: number;
+  completedProcesses: string[];
+  lastProcess: string;
+  lastOperator: string;
+  lastTimestamp: number;
+  operatorId?: string;
+  notes?: string;
+  tenantId?: string;
 }
 
 export interface Customer {

@@ -281,24 +281,14 @@ export function ProducaoScreen({
   const pendingOrders = React.useMemo(() => {
     return db.orders.filter((o) => {
       const totalQty = parseQty(o.totalQuantity ?? (o as any).quantity);
-      const prodQty = parseQty(o.producedQuantity);
+      const packedQty = parseQty(o.packedQuantity);
       if (
         o.status === "EMBALADO" ||
         o.status === "FATURADO" ||
-        (prodQty >= totalQty && totalQty > 0)
+        o.status === "CANCELADO" ||
+        (packedQty >= totalQty && totalQty > 0)
       )
         return false;
-
-      // Filter orders based on the user's assigned sectors and item flows
-      if (!isGlobalUser && userSectors.length > 0) {
-        const item = db.items.find((i) => i.id === o.itemId);
-        if (item) {
-          const eligibleSectors = getSetoresElegiveisParaItem(item, userSectors, db.flows || []);
-          if (eligibleSectors.length === 0) {
-            return false;
-          }
-        }
-      }
 
       if (isRodrigo) {
         const item = db.items.find((i) => i.id === o.itemId);
@@ -326,9 +316,6 @@ export function ProducaoScreen({
   }, [
     db.orders,
     db.items,
-    db.flows,
-    userSectors,
-    isGlobalUser,
     isRodrigo,
     isRetratil,
     retratilPcpPlans,
@@ -396,8 +383,8 @@ export function ProducaoScreen({
         });
       }
       const totalQty = parseQty(o.totalQuantity ?? (o as any).quantity);
-      const prodQty = parseQty(o.producedQuantity);
-      const remaining = Math.max(0, totalQty - prodQty);
+      const packedQty = parseQty(o.packedQuantity);
+      const remaining = Math.max(0, totalQty - packedQty);
       groups.get(key)!.totalRemaining += remaining;
     });
     return Array.from(groups.values());
@@ -671,7 +658,7 @@ export function ProducaoScreen({
 
     for (let o of ordersForProduct) {
       if (qtyToAllocate <= 0) break;
-      const needed = o.totalQuantity - (o.producedQuantity || 0);
+      const needed = Math.max(0, o.totalQuantity - (o.packedQuantity || 0));
       const allocate = Math.min(needed, qtyToAllocate);
 
       if (allocate > 0) {
@@ -690,11 +677,7 @@ export function ProducaoScreen({
               newStatus = "EMBALANDO" as OrderStatus;
             }
           } else {
-            if (newProduced >= tempOrders[oIndex].totalQuantity) {
-              newStatus = "PRODUZIDO" as OrderStatus;
-            } else {
-              newStatus = "EM_PRODUCAO" as OrderStatus;
-            }
+            newStatus = "EM_PRODUCAO" as OrderStatus;
           }
 
           const updatedO = {
@@ -702,7 +685,7 @@ export function ProducaoScreen({
             producedQuantity: newProduced,
             packedQuantity: newPacked,
             status: newStatus,
-            isActive: isRetratil ? true : tempOrders[oIndex].isActive,
+            isActive: isRetratil ? (newPacked < tempOrders[oIndex].totalQuantity) : true,
           };
           tempOrders[oIndex] = updatedO;
           changedOrders.push(updatedO);

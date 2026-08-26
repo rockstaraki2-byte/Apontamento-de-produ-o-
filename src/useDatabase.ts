@@ -584,6 +584,7 @@ export function useDatabase(currentUser?: User | null) {
   const [laserQuotes, setLaserQuotes] = useState<import("./types").LaserQuote[]>([]);
   const [sheetStocks, setSheetStocks] = useState<SheetStockEntry[]>([]);
   const [sheetStockMovements, setSheetStockMovements] = useState<SheetStockMovement[]>([]);
+  const [prensaPendingProductions, setPrensaPendingProductions] = useState<import("./types").PrensaPendingProduction[]>([]);
 
   useEffect(() => {
     updateQueueCount();
@@ -925,6 +926,18 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("sheetStockMovements", err),
     );
 
+    const unsubPrensaPending = onSnapshot(
+      collection(db, "prensaPendingProductions"),
+      (snap) => {
+        const list = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        })) as import("./types").PrensaPendingProduction[];
+        setPrensaPendingProductions(list);
+      },
+      (err) => handleSnapshotError("prensaPendingProductions", err),
+    );
+
     let unsubPriceHistories = () => {};
     if (
       currentUser &&
@@ -976,6 +989,7 @@ export function useDatabase(currentUser?: User | null) {
       unsubPerformanceQuestions();
       unsubPerformanceReviews();
       unsubAttendances();
+      unsubPrensaPending();
     };
   }, [currentUser]);
 
@@ -1988,6 +2002,7 @@ export function useDatabase(currentUser?: User | null) {
   const filteredLaserQuotes = useMemo(() => laserQuotes.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [laserQuotes, matchesTenant]);
   const filteredSheetStocks = useMemo(() => sheetStocks.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [sheetStocks, matchesTenant]);
   const filteredSheetStockMovements = useMemo(() => sheetStockMovements.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [sheetStockMovements, matchesTenant]);
+  const filteredPrensaPendingProductions = useMemo(() => prensaPendingProductions.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [prensaPendingProductions, matchesTenant]);
 
   const activeTenant = useMemo(() => {
     return tenants.find((t) => t.id === activeTenantId) || tenants.find((t) => t.id === "imperio") || { id: "imperio", name: "Império Jomarci", logoUrl: "/icon.png", primaryColor: "#00b14f", systemName: "Apontador de Produção" };
@@ -2533,6 +2548,24 @@ export function useDatabase(currentUser?: User | null) {
         tenantId: mov.tenantId || activeTenantId,
       };
       await setDoc(doc(db, "sheetStockMovements", id), cleanUndefined(newMov));
+    },
+
+    prensaPendingProductions: filteredPrensaPendingProductions,
+    addPrensaPendingProduction: async (entry: Omit<import("./types").PrensaPendingProduction, "id"> & { id?: string }) => {
+      const id = entry.id || Date.now().toString();
+      const newEntry: import("./types").PrensaPendingProduction = {
+        ...entry,
+        id,
+        tenantId: entry.tenantId || activeTenantId || "imperio",
+      };
+      await setDoc(doc(db, "prensaPendingProductions", id), cleanUndefined(newEntry));
+      return id;
+    },
+    updatePrensaPendingProduction: async (id: string, updates: Partial<import("./types").PrensaPendingProduction>) => {
+      await setDoc(doc(db, "prensaPendingProductions", id), cleanUndefined(updates), { merge: true });
+    },
+    removePrensaPendingProduction: async (id: string) => {
+      await deleteDoc(doc(db, "prensaPendingProductions", id));
     },
 
     tenants,

@@ -16,7 +16,6 @@ import {
 import { useDatabase } from "./useDatabase";
 import { ColorBadgeWithImage } from "./components/ColorBadgeWithImage";
 import { ProductivityCard } from "./components/ProductivityCard";
-import { MachineStopWidget } from "./components/OperatorActions";
 import type {
   User as UserType,
   OrderStatus,
@@ -98,10 +97,25 @@ export function EmbalagemScreen({
   // Manual Production
   const [manualTitle, setManualTitle] = useState("");
   const [manualProduct, setManualProduct] = useState("");
+  const [selectedManualItemId, setSelectedManualItemId] = useState<number>(0);
+  const [showItemSuggestions, setShowItemSuggestions] = useState(false);
 
   const [operatorModalOpen, setOperatorModalOpen] = useState(false);
   const [selectedOperator, setSelectedOperator] = useState("");
   const [operatorModalTarget, setOperatorModalTarget] = useState<any>(null);
+
+  const itemSuggestions = useMemo(() => {
+    if (!manualProduct) return [];
+    const normalized = normalizeString(manualProduct);
+    if (normalized.length < 1) return [];
+    return db.items
+      .filter((i) => {
+        const nameMatch = normalizeString(i.name || "").includes(normalized);
+        const codeMatch = normalizeString(i.code || "").includes(normalized);
+        return nameMatch || codeMatch;
+      })
+      .slice(0, 10);
+  }, [db.items, manualProduct]);
 
   const proceedWithStart = (opId: string, groupOverride: any = null) => {
     const group = groupOverride || operatorModalTarget;
@@ -109,12 +123,17 @@ export function EmbalagemScreen({
     if (!group) {
       // Manual Production Start
       if (!manualTitle || !manualProduct) return;
+      const isSelectedRegisteredItem = selectedManualItemId > 0;
+      const registeredItem = isSelectedRegisteredItem
+        ? db.items.find((i) => i.id === selectedManualItemId)
+        : null;
+
       db.addActivePack({
         id: Date.now(),
-        itemId: 0,
-        color: "-",
-        size: "-",
-        variation: "-",
+        itemId: registeredItem ? registeredItem.id : 0,
+        color: registeredItem?.color || "-",
+        size: registeredItem?.size || "-",
+        variation: registeredItem?.variation || "-",
         operatorId: opId || currentUser.id,
         startTime: Date.now(),
         type: "EMBALAGEM",
@@ -125,6 +144,8 @@ export function EmbalagemScreen({
 
       setManualTitle("");
       setManualProduct("");
+      setSelectedManualItemId(0);
+      setShowItemSuggestions(false);
       setOperatorModalOpen(false);
       setSelectedOperator("");
       setOperatorModalTarget(null);
@@ -704,10 +725,10 @@ export function EmbalagemScreen({
               />
             )}
             <div className="flex-1 min-w-0">
-              <h3 className="font-bold text-sm text-gray-800 truncate">
+              <h3 className="font-bold text-sm text-gray-800 break-words leading-snug">
                 {activePack.itemId === 0 ? (activePack.customProductName || "Avulso") : (item?.name || "Item Desconhecido")}
               </h3>
-              <p className="text-gray-500 text-xs mt-0.5 truncate">
+              <p className="text-gray-500 text-xs mt-0.5 break-words">
                 {activePack.itemId === 0 ? (
                   <span>Origem: <strong className="text-blue-700">{activePack.thirdPartyName || "Geral"}</strong></span>
                 ) : (
@@ -1142,17 +1163,72 @@ export function EmbalagemScreen({
               placeholder="Ex: Montagem XYZ"
             />
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1 relative">
             <label className="text-sm font-semibold text-gray-700">
               Descrição das Peças / Produto
             </label>
             <input
               type="text"
               value={manualProduct}
-              onChange={(e) => setManualProduct(e.target.value)}
+              onChange={(e) => {
+                setManualProduct(e.target.value);
+                setSelectedManualItemId(0);
+                setShowItemSuggestions(true);
+              }}
+              onFocus={() => setShowItemSuggestions(true)}
               className="border p-2 rounded focus:outline-blue-500 bg-white"
-              placeholder="Ex: Parafusos soltos"
+              placeholder="Pesquise por código/nome de peça ou digite livremente..."
             />
+
+            {showItemSuggestions && itemSuggestions.length > 0 && (
+              <div className="absolute top-[100%] left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto mt-1 flex flex-col divide-y divide-gray-100">
+                {itemSuggestions.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setManualProduct(item.name);
+                      setSelectedManualItemId(item.id);
+                      setShowItemSuggestions(false);
+                    }}
+                    className="p-2.5 text-left hover:bg-blue-50 transition flex items-center justify-between gap-2 cursor-pointer"
+                  >
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {item.code && (
+                          <span className="font-bold text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono">
+                            [{item.code}]
+                          </span>
+                        )}
+                        <span className="font-bold text-xs text-gray-900 break-words">
+                          {item.name}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-gray-500 flex items-center gap-2 mt-0.5">
+                        {item.color && item.color !== "-" && <span>Cor: {item.color}</span>}
+                        {item.size && item.size !== "-" && <span>Tam: {item.size}</span>}
+                        {item.variation && item.variation !== "-" && <span>Var: {item.variation}</span>}
+                      </div>
+                    </div>
+                    <span className="text-[10px] uppercase font-bold text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded shrink-0">
+                      Selecionar
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {selectedManualItemId > 0 ? (
+              <p className="text-xs text-emerald-700 font-bold mt-1 flex items-center gap-1">
+                ✓ Item do Cadastro Vinculado! (ID: {selectedManualItemId})
+              </p>
+            ) : (
+              manualProduct && (
+                <p className="text-xs text-amber-700 font-bold mt-1">
+                  ℹ️ Seguirá como descrição manual personalizada para terceiros/projetos adicionais.
+                </p>
+              )
+            )}
           </div>
 
           <button
@@ -1331,7 +1407,7 @@ export function EmbalagemScreen({
                         </div>
                       )}
                       <div className="flex flex-col min-w-0 flex-1 text-left">
-                        <span className="font-bold text-xs sm:text-sm text-gray-800 truncate" title={displayName}>
+                        <span className="font-bold text-xs sm:text-sm text-gray-800 break-words leading-tight" title={displayName}>
                           {displayName}
                         </span>
                         <span className="text-[10px] sm:text-xs text-gray-500 flex flex-wrap items-center gap-1 mt-0.5">
@@ -1392,7 +1468,7 @@ export function EmbalagemScreen({
                       />
                     )}
                     <div className="flex flex-col gap-1 flex-1 min-w-0">
-                      <span className="font-bold text-xs text-slate-800 line-clamp-1">
+                      <span className="font-bold text-xs text-slate-800 break-words leading-snug">
                         {displayName}
                       </span>
                       <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
@@ -1463,11 +1539,6 @@ export function EmbalagemScreen({
           <ProductivityCard db={db} currentUser={currentUser} />
         </div>
 
-        {/* Apontamento de Paradas de Máquina */}
-        <div className="text-xs">
-          <MachineStopWidget db={db} currentUser={currentUser} machineName="Central de Embalagem" />
-        </div>
-
         {/* Offline Sync Status Banner */}
         {db.syncQueueCount !== undefined && (
           <div className="bg-emerald-50 border border-emerald-100 text-[#0f5132] px-2.5 py-1 rounded-lg flex items-center justify-between gap-2 shadow-2xs text-[10px] font-bold flex-wrap">
@@ -1516,7 +1587,7 @@ export function EmbalagemScreen({
                   >
                     <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
 
-                    <div className="flex items-center gap-2 pl-2 max-w-[80%]">
+                    <div className="flex items-center gap-2 pl-2 flex-1 min-w-0">
                       {item?.imageUrl && (
                         <img
                           src={item.imageUrl}
@@ -1528,11 +1599,11 @@ export function EmbalagemScreen({
                           }}
                         />
                       )}
-                      <div className="flex flex-col text-left shrink-1 min-w-0">
+                      <div className="flex flex-col text-left shrink-1 min-w-0 flex-1">
                         <div className="text-[8px] tracking-wider uppercase bg-emerald-50 border border-emerald-100 text-emerald-700 font-extrabold px-1 py-0.2 rounded w-max mb-1 shadow-3xs">
                           Setor de Expedição Ativo
                         </div>
-                        <span className="font-extrabold text-slate-900 text-xs leading-none truncate flex items-center gap-1">
+                        <span className="font-extrabold text-slate-900 text-xs leading-snug break-words flex flex-wrap items-center gap-1">
                           {pack.itemId === 0
                             ? pack.customProductName
                             : item?.name}
