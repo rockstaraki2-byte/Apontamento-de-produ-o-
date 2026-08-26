@@ -123,8 +123,20 @@ export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
     { value: "CORTE_LASER", label: "Corte Laser / Dobra" },
     { value: "PINTURA", label: "Pintura" },
     { value: "EMBALAGEM", label: "Embalagem" },
+    { value: "PRENSA_EDUARDO", label: "Prensa Eduardo (Dobra / Estampo)" },
+    { value: "PRENSA_RAFAEL", label: "Prensa Rafael (Corte de Bobinas)" },
+    { value: "TORNO_CNC_WILLIAN", label: "Torno CNC Willian" },
+    { value: "TORNO_CNC_HENRIQUE", label: "Torno CNC Henrique" },
+    { value: "INJETORA", label: "Injetora de Plástico" },
+    { value: "BANHO_QUIMICO", label: "Banho Químico (Zincagem)" },
+    { value: "MONTAGEM_RETRATIL", label: "Montagem Retrátil" },
+    { value: "MONTAGEM_RODRIGO", label: "Montagem Rodrigo" },
+    { value: "SOLDA", label: "Solda" },
+    { value: "PROJETISTA", label: "Projetista" },
     { value: "REPRESENTANTE", label: "Representante / Vendas" },
     { value: "ESTOQUE", label: "Estoque" },
+    { value: "ENCARREGADO", label: "Encarregado" },
+    { value: "LEITURA", label: "Somente Leitura" },
   ];
 
   // COMPANY HANDLERS

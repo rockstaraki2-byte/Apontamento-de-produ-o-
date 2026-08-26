@@ -286,7 +286,8 @@ function RealTimeFactoryMonitoringContent({
               if (r === "EMBALAGEM" && (sNameNorm.includes("embalag") || sNameNorm.includes("exped"))) return true;
               if (r === "QUALIDADE" && (sNameNorm.includes("qualidade") || sNameNorm.includes("inspec"))) return true;
               if (r === "CORTE_LASER" && (sNameNorm.includes("corte") || sNameNorm.includes("laser"))) return true;
-              if ((r === "PRENSA_EDUARDO" || r === "PRENSA_RAFAEL") && sNameNorm.includes("prensa")) return true;
+              if (r === "PRENSA_EDUARDO" && (sNameNorm.includes("eduardo") || (sNameNorm.includes("prensa") && !sNameNorm.includes("rafael")))) return true;
+              if (r === "PRENSA_RAFAEL" && (sNameNorm.includes("rafael") || (sNameNorm.includes("prensa") && !sNameNorm.includes("eduardo")))) return true;
               if ((r === "TORNO_CNC_WILLIAN" || r === "TORNO_CNC_HENRIQUE") && (sNameNorm.includes("torno") || sNameNorm.includes("cnc"))) return true;
               if (r === "INJETORA" && sNameNorm.includes("injetora")) return true;
               if (r === "BANHO_QUIMICO" && (sNameNorm.includes("banho") || sNameNorm.includes("quimico") || sNameNorm.includes("zincagem"))) return true;

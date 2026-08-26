@@ -197,8 +197,8 @@ const INITIAL_USERS: User[] = [
     phone: "",
     tenantId: "imperio",
   },
-  { id: "prensa_eduardo", name: "Prensa Eduardo", role: "PRENSA_EDUARDO", tenantId: "imperio" },
-  { id: "prensa_rafael", name: "Prensa Rafael", role: "PRENSA_RAFAEL", tenantId: "imperio" },
+  { id: "prensa_eduardo", name: "Prensa Eduardo", role: "PRENSA_EDUARDO", password: "1111", tenantId: "imperio" },
+  { id: "prensa_rafael", name: "Prensa Rafael", role: "PRENSA_RAFAEL", password: "1111", tenantId: "imperio" },
   {
     id: "torno_cnc_willian",
     name: "Torno CNC Willian",
@@ -636,10 +636,26 @@ export function useDatabase(currentUser?: User | null) {
               mergedUser.role = "ADMIN";
               mergedUser.tenantId = "global";
             }
+            if (initU.id === "prensa_eduardo") {
+              mergedUser.role = "PRENSA_EDUARDO";
+              mergedUser.name = "Prensa Eduardo";
+              if (!mergedUser.password) mergedUser.password = "1111";
+            }
+            if (initU.id === "prensa_rafael") {
+              mergedUser.role = "PRENSA_RAFAEL";
+              mergedUser.name = "Prensa Rafael";
+              if (!mergedUser.password) mergedUser.password = "1111";
+            }
             return mergedUser;
           });
           list.forEach((dbUser) => {
             if (!merged.some((u) => u.id === dbUser.id)) {
+              if (dbUser.id === "prensa_eduardo" || dbUser.name?.toLowerCase() === "prensa eduardo") {
+                dbUser.role = "PRENSA_EDUARDO";
+              }
+              if (dbUser.id === "prensa_rafael" || dbUser.name?.toLowerCase() === "prensa rafael") {
+                dbUser.role = "PRENSA_RAFAEL";
+              }
               merged.push(dbUser);
             }
           });

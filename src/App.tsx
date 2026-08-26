@@ -239,6 +239,24 @@ function Welcome({
 
   useEffect(() => {
     const role = currentUser.role;
+    const isEduardo =
+      role === "PRENSA_EDUARDO" ||
+      currentUser.id === "prensa_eduardo" ||
+      currentUser.name.toLowerCase().includes("prensa eduardo");
+    const isRafael =
+      role === "PRENSA_RAFAEL" ||
+      currentUser.id === "prensa_rafael" ||
+      currentUser.name.toLowerCase().includes("prensa rafael");
+
+    if (isEduardo) {
+      navigate("/prensa-eduardo");
+      return;
+    }
+    if (isRafael) {
+      navigate("/prensa-rafael");
+      return;
+    }
+
     const hasRedirectedKey = `has_redirected_on_load_${currentUser.id}`;
     const alreadyRedirected = sessionStorage.getItem(hasRedirectedKey);
 
@@ -257,22 +275,16 @@ function Welcome({
       } else if (role === "INJETORA") {
         navigate("/injetora");
       } else if (
-        role === "PRENSA_RAFAEL" ||
-        role === "PRENSA_EDUARDO" ||
         role === "TORNO_CNC_WILLIAN" ||
         role === "TORNO_CNC_HENRIQUE" ||
         role === "BANHO_QUIMICO"
       ) {
         navigate(
-          role === "PRENSA_RAFAEL"
-            ? "/prensa-rafael"
-            : role === "PRENSA_EDUARDO"
-              ? "/prensa-eduardo"
-              : role === "TORNO_CNC_WILLIAN"
-                ? "/torno-cnc-willian"
-                : role === "TORNO_CNC_HENRIQUE"
-                  ? "/torno-cnc-henrique"
-                  : "/banho-quimico",
+          role === "TORNO_CNC_WILLIAN"
+            ? "/torno-cnc-willian"
+            : role === "TORNO_CNC_HENRIQUE"
+              ? "/torno-cnc-henrique"
+              : "/banho-quimico",
         );
       } else if (role === "MONTAGEM_RETRATIL") {
         navigate("/montagem-retratil");
@@ -1241,6 +1253,10 @@ function LoginScreen({
       if (user.id === "raul") {
         user.role = "ADMIN";
         user.tenantId = "global";
+      } else if (user.id === "prensa_eduardo" || user.name.toLowerCase().includes("prensa eduardo")) {
+        user.role = "PRENSA_EDUARDO";
+      } else if (user.id === "prensa_rafael" || user.name.toLowerCase().includes("prensa rafael")) {
+        user.role = "PRENSA_RAFAEL";
       } else if (!user.tenantId) {
         user.tenantId = "imperio";
       }
@@ -15236,8 +15252,8 @@ export default function App() {
       return sectors
         .filter(
           (s) =>
-            s.name.toLowerCase().includes("prensa") ||
-            s.name.toLowerCase().includes("eduardo"),
+            s.name.toLowerCase().includes("eduardo") ||
+            (s.name.toLowerCase().includes("prensa") && !s.name.toLowerCase().includes("rafael")),
         )
         .map((s) => s.id);
     }
@@ -15245,8 +15261,8 @@ export default function App() {
       return sectors
         .filter(
           (s) =>
-            s.name.toLowerCase().includes("prensa") ||
-            s.name.toLowerCase().includes("rafael"),
+            s.name.toLowerCase().includes("rafael") ||
+            (s.name.toLowerCase().includes("prensa") && !s.name.toLowerCase().includes("eduardo")),
         )
         .map((s) => s.id);
     }
@@ -16063,8 +16079,9 @@ export default function App() {
 
           {isScreenAllowed("prensa-eduardo") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
-            currentUser.role === "PRENSA_EDUARDO") && 
-            (currentUser.id === "raul" || hasMachine("eduardo") || hasMachine("prensa") || hasSector("prensa")) && (
+            currentUser.role === "PRENSA_EDUARDO" ||
+            currentUser.id === "prensa_eduardo") && 
+            (currentUser.id === "raul" || currentUser.role === "PRENSA_EDUARDO" || currentUser.id === "prensa_eduardo" || ((hasMachine("eduardo") || (hasMachine("prensa") && currentUser.role !== "PRENSA_RAFAEL") || (hasSector("prensa") && currentUser.role !== "PRENSA_RAFAEL")) && currentUser.role !== "PRENSA_RAFAEL" && currentUser.id !== "prensa_rafael")) && (
             <NavLink
               to="/prensa-eduardo"
               icon={<Hammer size={24} />}
@@ -16096,8 +16113,9 @@ export default function App() {
 
           {isScreenAllowed("prensa-rafael") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
-            currentUser.role === "PRENSA_RAFAEL") && 
-            (currentUser.id === "raul" || hasMachine("rafael") || hasMachine("prensa") || hasSector("prensa")) && (
+            currentUser.role === "PRENSA_RAFAEL" ||
+            currentUser.id === "prensa_rafael") && 
+            (currentUser.id === "raul" || currentUser.role === "PRENSA_RAFAEL" || currentUser.id === "prensa_rafael" || ((hasMachine("rafael") || (hasMachine("prensa") && currentUser.role !== "PRENSA_EDUARDO") || (hasSector("prensa") && currentUser.role !== "PRENSA_EDUARDO")) && currentUser.role !== "PRENSA_EDUARDO" && currentUser.id !== "prensa_eduardo")) && (
             <NavLink
               to="/prensa-rafael"
               icon={<Scissors size={24} />}
