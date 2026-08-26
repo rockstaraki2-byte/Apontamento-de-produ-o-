@@ -94,23 +94,30 @@ export function PrensaEduardoScreen({
     }
     const userSectorIds = currentUser.sectorIds || [];
     const assigned = list.filter((b) => {
+      const bName = (b.name || "").toLowerCase();
       const matchesOp =
         (Array.isArray(b.assignedOperatorIds) &&
           (b.assignedOperatorIds.includes(currentUser.id) ||
             b.assignedOperatorIds.includes("prensa_eduardo") ||
             b.assignedOperatorIds.some((id) => id.toLowerCase().includes("eduardo")))) ||
         b.operatorId === currentUser.id ||
-        b.operatorId === "prensa_eduardo";
+        b.operatorId === "prensa_eduardo" ||
+        bName.includes("prensa eduardo") ||
+        bName.includes("eduardo");
       const matchesSector = userSectorIds.some((sid) => String(sid) === String(b.sectorId));
       return matchesOp || matchesSector;
     });
-    return assigned.length > 0 ? assigned : list;
+    return assigned;
   }, [db.productionBatches, currentUser]);
 
   const pendingCuttingPlans = useMemo(() => {
     return (
       db.coilCuttingPlans?.filter(
-        (p) => p.status !== "CONCLUIDO" && p.type === "PRENSA_EDUARDO",
+        (p) =>
+          p.status !== "CONCLUIDO" &&
+          (p.type === "PRENSA_EDUARDO" ||
+            (p.name && p.name.toLowerCase().includes("prensa eduardo")) ||
+            (p.name && p.name.toLowerCase().includes("eduardo"))),
       ) || []
     );
   }, [db.coilCuttingPlans]);
@@ -132,7 +139,7 @@ export function PrensaEduardoScreen({
       partName: plan.name,
       type: "PRENSA_EDUARDO",
       taskId: plan.id,
-      processName: "Corte Bobina",
+      processName: "Dobra / Prensa",
       thirdPartyName: currentUser.name || "Eduardo",
     });
     db.updateCoilCuttingPlan({ ...plan, status: "EM_PRODUCAO" });

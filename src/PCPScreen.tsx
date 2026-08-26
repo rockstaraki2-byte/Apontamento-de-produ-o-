@@ -3855,6 +3855,36 @@ export function PCPScreen({
                       <label className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer">
                         <input
                           type="checkbox"
+                          checked={assignedOperatorIds.includes("prensa_eduardo")}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAssignedOperatorIds([...assignedOperatorIds, "prensa_eduardo"]);
+                            } else {
+                              setAssignedOperatorIds(assignedOperatorIds.filter(id => id !== "prensa_eduardo"));
+                            }
+                          }}
+                          className="rounded border-slate-350 text-indigo-650"
+                        />
+                        <span className="text-indigo-900 font-bold">Prensa Eduardo</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={assignedOperatorIds.includes("prensa_rafael")}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAssignedOperatorIds([...assignedOperatorIds, "prensa_rafael"]);
+                            } else {
+                              setAssignedOperatorIds(assignedOperatorIds.filter(id => id !== "prensa_rafael"));
+                            }
+                          }}
+                          className="rounded border-slate-350 text-indigo-650"
+                        />
+                        <span>Prensa Rafael</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer">
+                        <input
+                          type="checkbox"
                           checked={assignedOperatorIds.includes("dinei")}
                           onChange={(e) => {
                             if (e.target.checked) {

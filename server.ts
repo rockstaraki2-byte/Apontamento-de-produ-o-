@@ -761,6 +761,11 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   const PORT = 3000;
 
+  // Cloud Run / Ingress health check endpoints
+  app.get(["/api/health", "/healthz"], (req, res) => {
+    res.status(200).json({ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() });
+  });
+
   app.post("/api/agent/pedidos-sem-lote", async (req, res) => {
     try {
       console.log("Manual trigger: /api/agent/pedidos-sem-lote");

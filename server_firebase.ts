@@ -15,23 +15,35 @@ import config from "./firebase-applet-config.json";
 
 // We still initialize the Admin SDK in case other services like Firebase Cloud Messaging are used
 export function initFirebaseAdmin() {
-  const projectId = config.projectId;
-  const serviceAccountEnv = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  try {
+    const projectId = config.projectId;
+    const serviceAccountEnv = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
 
-  if (getAdminApps().length === 0) {
-    if (serviceAccountEnv && serviceAccountEnv.trim() && !serviceAccountEnv.startsWith("Conteudo_JSON")) {
-      try {
-        const sa = JSON.parse(serviceAccountEnv);
-        initializeAdminApp({ credential: cert(sa), projectId });
-        console.log("[initFirebaseAdmin] Admin SDK initialized successfully with Service Account.");
-      } catch (e) {
-        console.error("[initFirebaseAdmin] Failed to parse SA. Initializing with defaults.", e);
-        initializeAdminApp({ projectId });
+    if (getAdminApps().length === 0) {
+      if (serviceAccountEnv && serviceAccountEnv.trim() && !serviceAccountEnv.startsWith("Conteudo_JSON")) {
+        try {
+          const sa = JSON.parse(serviceAccountEnv);
+          initializeAdminApp({ credential: cert(sa), projectId });
+          console.log("[initFirebaseAdmin] Admin SDK initialized successfully with Service Account.");
+        } catch (e) {
+          console.error("[initFirebaseAdmin] Failed to parse SA. Initializing with defaults.", e);
+          try {
+            initializeAdminApp({ projectId });
+          } catch (initErr) {
+            console.warn("[initFirebaseAdmin] Default admin init fallback notice:", initErr);
+          }
+        }
+      } else {
+        console.log("[initFirebaseAdmin] No Service Account. Initializing Admin SDK with ADC.");
+        try {
+          initializeAdminApp({ projectId });
+        } catch (adcErr) {
+          console.warn("[initFirebaseAdmin] ADC admin init fallback notice:", adcErr);
+        }
       }
-    } else {
-      console.log("[initFirebaseAdmin] No Service Account. Initializing Admin SDK with ADC.");
-      initializeAdminApp({ projectId });
     }
+  } catch (err) {
+    console.error("[initFirebaseAdmin] Caught initialization error:", err);
   }
 }
 
