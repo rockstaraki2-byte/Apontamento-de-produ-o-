@@ -35,9 +35,12 @@ export function OrderEditModal({
   // Find group of orders with matching orderCode
   const orderGroup = useMemo(() => {
     if (!orderCode) return [];
-    return db.orders.filter(
-      (o: Order) => o.orderCode === orderCode && o.isActive !== false,
+    const activeGroup = db.orders.filter(
+      (o: Order) => o.orderCode === orderCode && o.status !== "CANCELADO",
     );
+    return activeGroup.length > 0
+      ? activeGroup
+      : db.orders.filter((o: Order) => o.orderCode === orderCode);
   }, [orderCode, db.orders]);
 
   const firstOrder = orderGroup[0];

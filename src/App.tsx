@@ -5729,7 +5729,7 @@ function PedidosScreen({
   };
 
   const handleApproveOrderGroup = async (orderCode: string) => {
-    const group = db.orders.filter((o) => o.orderCode === orderCode && o.isActive !== false);
+    const group = db.orders.filter((o) => o.orderCode === orderCode);
     if (group.length === 0) return;
 
     const updatedOrders = group.map((o) => {
@@ -5756,7 +5756,7 @@ function PedidosScreen({
 
   const handleRejectOrderGroup = async (orderCode: string) => {
     if (!window.confirm(`Tem certeza que deseja REPROVAR / CANCELAR o pedido #${orderCode}?`)) return;
-    const group = db.orders.filter((o) => o.orderCode === orderCode && o.isActive !== false);
+    const group = db.orders.filter((o) => o.orderCode === orderCode);
     if (group.length === 0) return;
 
     const updatedOrders = group.map((o) => ({
@@ -5781,7 +5781,7 @@ function PedidosScreen({
   };
 
   const handleOpenOrderGroupEditModal = (orderCode: string) => {
-    const group = db.orders.filter((o) => o.orderCode === orderCode && o.isActive !== false);
+    const group = db.orders.filter((o) => o.orderCode === orderCode);
     if (group.length === 0) return;
     const first = group[0];
     setEditingOrderGroupCode(orderCode);
@@ -5930,7 +5930,7 @@ function PedidosScreen({
 
   const handleSaveOrderGroupEdit = async () => {
     if (!editingOrderGroupCode) return;
-    const group = db.orders.filter((o) => o.orderCode === editingOrderGroupCode && o.isActive !== false);
+    const group = db.orders.filter((o) => o.orderCode === editingOrderGroupCode);
     if (group.length === 0) return;
 
     if (editingGroupLineItems.length === 0) {
@@ -10689,7 +10689,7 @@ function PedidosScreen({
                   const clientCode = clientObj?.id || "-";
                   const clientDisplayName = clientObj?.tradeName || rawCustName || "-";
                   const modalOrders = db.orders.filter(
-                    (o) => o.orderCode === selectedOrderCode && o.isActive !== false
+                    (o) => o.orderCode === selectedOrderCode
                   );
                   const modalIsPrinted = modalOrders.some((o) => o.isPrinted);
                   const modalPrintCount = Math.max(0, ...modalOrders.map((o) => o.printCount ?? (o.isPrinted ? 1 : 0)));
@@ -10720,7 +10720,7 @@ function PedidosScreen({
                   <>
                     {(() => {
                       const currentGroupOrders = db.orders.filter(
-                        (o) => o.orderCode === selectedOrderCode && o.isActive !== false
+                        (o) => o.orderCode === selectedOrderCode
                       );
                       const needsApproval = currentGroupOrders.some(
                         (o) => o.status === "AGUARDANDO_APROVACAO"
@@ -10808,7 +10808,7 @@ function PedidosScreen({
                   onClick={() => {
                     const group = groupedOrders.find(
                       ([code]) => code === selectedOrderCode,
-                    )?.[1];
+                    )?.[1] || db.orders.filter((o) => o.orderCode === selectedOrderCode);
                     if (group && group[0]) {
                       window.dispatchEvent(
                         new CustomEvent("print-order", { detail: group[0] }),
@@ -10831,9 +10831,8 @@ function PedidosScreen({
             </div>
 
             <div className="p-3 sm:p-4 overflow-y-auto flex-1 flex flex-col gap-2.5 sm:gap-3 bg-slate-50/50">
-              {groupedOrders
-                .find(([code]) => code === selectedOrderCode)?.[1]
-                .map((o) => {
+              {(groupedOrders.find(([code]) => code === selectedOrderCode)?.[1] || db.orders.filter((o) => o.orderCode === selectedOrderCode))
+                ?.map((o) => {
                   const item = db.items.find((i) => i.id === o.itemId);
 
                   if (isUpdating === o.id) {
@@ -11259,5816 +11258,192 @@ function PedidosScreen({
                     ? "Editar Produto Selecionado"
                     : "Adicionar Produto ao Pedido"}
                 </h4>
-                {editingGroupCartIndex !== null && (
-                  <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200 animate-pulse">
-                    Modo de Edi√ß√£o de Item #{editingGroupCartIndex + 1}
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                {/* Produto / Item Search */}
-                <div className="flex flex-col gap-1 sm:col-span-2 relative">
-                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                    Item / Produto <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={editingGroupOrderItemSearch}
-                    onChange={(e) => {
-                      setEditingGroupOrderItemSearch(e.target.value);
-                      setEditingGroupItemId("");
-                    }}
-                    placeholder="Digite c√≥digo ou nome da pe√ßa..."
-                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800 bg-white"
-                  />
-                  {/* Suggestions Dropdown */}
-                  {!editingGroupItemId && editingGroupOrderItemSearch.trim().length > 0 && (
-                    <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto">
-                      {db.items
-                        .filter(
-                          (it) =>
-                            it.code
-                              .toLowerCase()
-                              .includes(editingGroupOrderItemSearch.toLowerCase()) ||
-                            it.name
-                              .toLowerCase()
-                              .includes(editingGroupOrderItemSearch.toLowerCase())
-                        )
-                        .slice(0, 10)
-                        .map((it) => (
-                          <div
-                            key={it.id}
-                            onClick={() => {
-                              setEditingGroupItemId(it.id);
-                              setEditingGroupOrderItemSearch(`${it.code} - ${it.name}`);
-                              if (it.unitPrice !== undefined) {
-                                setEditingGroupUnitPrice(it.unitPrice);
-                              }
-                            }}
-                            className="p-2.5 hover:bg-indigo-50 cursor-pointer border-b border-slate-100 last:border-0 flex justify-between items-center text-xs"
-                          >
-                            <div>
-                              <span className="font-extrabold text-indigo-700 mr-2">
-                                {it.code}
-                              </span>
-                              <span className="font-medium text-slate-800">
-                                {it.name}
-                              </span>
-                            </div>
-                            {it.unitPrice !== undefined && (
-                              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
-                                R$ {it.unitPrice.toFixed(2)}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Cor */}
-                <div className="flex flex-col gap-1">
-                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                    Cor
-                  </label>
-                  <select
-                    value={editingGroupColor}
-                    onChange={(e) => setEditingGroupColor(e.target.value)}
-                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800 bg-white"
-                  >
-                    <option value="">Nenhuma / Padr√£o</option>
-                    {((db?.attributes || []).filter((a) => a.type === "COLOR" && a.value).length > 0
-                      ? Array.from(new Set((db?.attributes || []).filter((a) => a.type === "COLOR" && a.value).map((a) => a.value.trim().toUpperCase())))
-                      : Object.values(COLOR_MAP)
-                    ).map((cName) => (
-                      <option key={cName} value={cName}>
-                        {cName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Tamanho */}
-                <div className="flex flex-col gap-1">
-                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                    Tamanho
-                  </label>
-                  <input
-                    type="text"
-                    value={editingGroupSize}
-                    onChange={(e) => setEditingGroupSize(e.target.value)}
-                    placeholder="Ex: M, 42, G"
-                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800 bg-white"
-                  />
-                </div>
-
-                {/* Varia√ß√£o */}
-                <div className="flex flex-col gap-1">
-                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                    Varia√ß√£o
-                  </label>
-                  <input
-                    type="text"
-                    value={editingGroupVariation}
-                    onChange={(e) => setEditingGroupVariation(e.target.value)}
-                    placeholder="Ex: Especial"
-                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800 bg-white"
-                  />
-                </div>
-
-                {/* Quantidade Total */}
-                <div className="flex flex-col gap-1">
-                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                    Qtd. Total <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    value={editingGroupTotalQuantity}
-                    onChange={(e) => setEditingGroupTotalQuantity(e.target.value)}
-                    placeholder="Ex: 100"
-                    min="1"
-                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800 bg-white"
-                  />
-                </div>
-
-                {/* Pre√ßo Unit√°rio */}
-                <div className="flex flex-col gap-1">
-                  <label className="font-bold text-slate-600 uppercase tracking-wider text-[10px]">
-                    Pre√ßo Unit√°rio (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editingGroupUnitPrice}
-                    onChange={(e) => setEditingGroupUnitPrice(e.target.value)}
-                    placeholder="0,00"
-                    className="border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-indigo-500 text-slate-800 bg-white"
-                  />
-                </div>
-
-                {/* Checkboxes de Op√ß√µes */}
-                <div className="flex items-center gap-4 sm:col-span-2 pt-2">
-                  <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={editingGroupIsUrgent}
-                      onChange={(e) => setEditingGroupIsUrgent(e.target.checked)}
-                      className="rounded text-rose-600 focus:ring-rose-500 h-4 w-4"
-                    />
-                    <span>üî• Urgente</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={editingGroupIsProgramacao}
-                      onChange={(e) => setEditingGroupIsProgramacao(e.target.checked)}
-                      className="rounded text-amber-600 focus:ring-amber-500 h-4 w-4"
-                    />
-                    <span>üìÖ Programa√ß√£o</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={editingGroupIsThirdPartyLaser}
-                      onChange={(e) => setEditingGroupIsThirdPartyLaser(e.target.checked)}
-                      className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
-                    />
-                    <span>‚ö° Laser Terceirizado</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Bot√µes do Formul√°rio do Produto */}
-              <div className="flex justify-end gap-2 pt-2">
-                {editingGroupCartIndex !== null ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={handleCancelEditEditingGroupCartItem}
-                      className="px-3 py-1.5 border border-slate-300 rounded-lg text-slate-600 font-bold hover:bg-slate-100 transition text-xs cursor-pointer"
-                    >
-                      Cancelar Edi√ß√£o do Item
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSaveEditingGroupCartItem}
-                      className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-lg shadow-sm transition text-xs cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Check size={14} /> Salvar Altera√ß√£o do Item
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleAddProductToEditingGroup}
-                    disabled={!editingGroupItemId || !editingGroupTotalQuantity}
-                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-extrabold rounded-lg shadow-sm transition text-xs cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Plus size={14} /> Adicionar Produto ao Pedido
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* SE√á√ÉO 3: LISTA / CARRINHO DE PRODUTOS DO PEDIDO */}
-            <div className="flex flex-col gap-2">
-              <div className="flex justify-between items-center">
-                <h4 className="font-black text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                  <span>üõí</span> Produtos no Pedido ({editingGroupLineItems.length})
-                </h4>
-                {editingGroupLineItems.length > 0 && (
-                  <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
-                    Total do Pedido:{" "}
-                    <strong className="text-indigo-700 font-black">
-                      {editingGroupLineItems.reduce(
-                        (sum, li) => sum + (li.totalQuantity || 0),
-                        0
-                      )}{" "}
-                      pe√ßas
-                    </strong>
-                  </span>
-                )}
-              </div>
-
-              {editingGroupLineItems.length === 0 ? (
-                <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
-                  Nenhum produto adicionado ao pedido ainda. Utilize o formul√°rio acima para adicionar pe√ßas.
-                </div>
-              ) : (
-                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-                  <div className="max-h-60 overflow-y-auto divide-y divide-slate-100">
-                    {editingGroupLineItems.map((li, idx) => {
-                      const itemObj = db.items.find((i) => i.id === li.itemId);
-                      const isEditingThis = editingGroupCartIndex === idx;
-
-                      return (
-                        <div
-                          key={idx}
-                          className={`p-3 flex items-center justify-between gap-3 text-xs transition ${
-                            isEditingThis
-                              ? "bg-amber-50 border-l-4 border-l-amber-500"
-                              : "hover:bg-slate-50/80 bg-white"
-                          }`}
-                        >
-                          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded text-[11px]">
-                                #{itemObj?.code || "C√ìD"}
-                              </span>
-                              <span className="font-bold text-slate-800 truncate">
-                                {itemObj?.name || `Item ID #${li.itemId}`}
-                              </span>
-                              {li.isUrgent && (
-                                <span className="text-[9px] font-black bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded">
-                                  üî• URGENTE
-                                </span>
-                              )}
-                              {li.isProgramacao && (
-                                <span className="text-[9px] font-black bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
-                                  üìÖ PROG
-                                </span>
-                              )}
-                              {li.isThirdPartyLaser && (
-                                <span className="text-[9px] font-black bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
-                                  ‚ö° LASER
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap mt-0.5">
-                              {li.color && (
-                                <span>
-                                  Cor: <strong>{li.color}</strong>
-                                </span>
-                              )}
-                              {li.size && (
-                                <span>
-                                  Tam: <strong>{li.size}</strong>
-                                </span>
-                              )}
-                              {li.variation && (
-                                <span>
-                                  Var: <strong>{li.variation}</strong>
-                                </span>
-                              )}
-                              {li.unitPrice !== undefined && (
-                                <span>
-                                  Unit: <strong>R$ {li.unitPrice.toFixed(2)}</strong>
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 shrink-0">
-                            <div className="text-right">
-                              <span className="font-extrabold text-slate-800 text-sm block">
-                                {li.totalQuantity} un
-                              </span>
-                              {li.unitPrice !== undefined && (
-                                <span className="text-[10px] font-bold text-emerald-600 block">
-                                  R$ {(li.totalQuantity * li.unitPrice).toFixed(2)}
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleEditEditingGroupCartItem(idx)}
-                                className="p-1.5 text-slate-500 hover:text-amber-700 hover:bg-amber-100 rounded-lg transition cursor-pointer"
-                                title="Editar este produto"
-                              >
-                                <Edit3 size={15} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveEditingGroupCartItem(idx)}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                title="Excluir este produto do pedido"
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex justify-end gap-2 pt-3 border-t mt-2">
-              <button
-                type="button"
-                onClick={() => setEditingOrderGroupCode(null)}
-                className="px-4 py-2 border border-slate-300 rounded-xl text-slate-600 font-bold hover:bg-slate-50 transition text-xs cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveOrderGroupEdit}
-                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl shadow-md hover:shadow-indigo-200 transition text-xs cursor-pointer flex items-center gap-2"
-              >
-                <span>üíæ</span> Salvar Todas as Altera√ß√µes do Pedido
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {selectedOrder && (
-        <div
-          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 min-h-screen overflow-y-auto"
-          onClick={() => setSelectedOrder(null)}
-        >
-          <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-center p-5 border-b border-gray-100 shrink-0">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900 border-l-4 border-blue-500 pl-3 flex items-center gap-2 flex-wrap">
-                  Pedido: {selectedOrder.orderCode}
-                  {selectedOrder.isUrgent && (
-                    <span className="bg-red-100 text-red-850 text-[10px] font-bold px-2 py-0.5 rounded animate-pulse">
-                      URGENTE
-                    </span>
-                  )}
-                  {selectedOrder.isProgramacao && (
-                    <span className="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-2 py-0.5 rounded">
-                      üìà PROGRAMA√á√ÉO
-                    </span>
-                  )}
-                </h2>
-                <p className="text-sm text-gray-500 font-medium pl-4 mt-1 bg-white">
-                  Cliente: {selectedOrder.customerName}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {(currentUser.role === "PCP" ||
-                  currentUser.role === "ADMIN" ||
-                  currentUser.role === "GERENCIA") && (
-                  <>
-                    <button
-                      onClick={() => {
-                        const orderToEdit = selectedOrder;
-                        setSelectedOrder(null);
-                        handleEdit(orderToEdit);
-                      }}
-                      className="p-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition shadow-sm cursor-pointer"
-                      title="Editar Pedido"
-                    >
-                      <Pencil size={18} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        const orderToReplicate = selectedOrder;
-                        setSelectedOrder(null);
-                        handleReplicate(orderToReplicate);
-                      }}
-                      className="p-2 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100 transition shadow-sm cursor-pointer"
-                      title="Replicar Pedido"
-                    >
-                      <Copy size={18} />
-                    </button>
-                  </>
-                )}
-                <button
-                  onClick={() => setSelectedOrder(null)}
-                  className="p-2 bg-gray-100 text-gray-500 rounded-full hover:bg-gray-200 cursor-pointer"
-                >
-                  <span className="font-bold px-1">X</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-5 flex-1 overflow-y-auto bg-gray-50">
-              <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 mb-6 flex flex-col gap-3">
-                <h3 className="font-semibold text-gray-800 border-b pb-2">
-                  Informa√ß√µes Adicionais
-                </h3>
-                <div className="grid grid-cols-2 gap-4 text-sm mt-1">
-                  <div className="flex flex-col">
-                    <span className="text-gray-400 font-bold uppercase text-[10px]">
-                      Produto
-                    </span>
-                    <span className="text-gray-800 font-semibold">
-                      {db.items.find((i) => i.id === selectedOrder.itemId)
-                        ?.name || "-"}
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-gray-400 font-bold uppercase text-[10px]">
-                      Quantidade Total
-                    </span>
-                    <span className="text-blue-700 font-bold">
-                      {selectedOrder.totalQuantity} p√ßs
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-gray-400 font-bold uppercase text-[10px]">
-                      Cor / Tamanho / Var
-                    </span>
-                    <span className="text-gray-700 font-mono">
-                      {selectedOrder.color || "-"} / {selectedOrder.size || "-"}{" "}
-                      / {selectedOrder.variation || "-"}
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-gray-400 font-bold uppercase text-[10px]">
-                      Data de Entrega
-                    </span>
-                    <span className="text-gray-700 font-semibold">
-                      {selectedOrder.deliveryDate
-                        ? new Date(
-                            selectedOrder.deliveryDate,
-                          ).toLocaleDateString("pt-BR", { timeZone: "UTC" })
-                        : "-"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="font-semibold text-gray-800 border-b pb-2 mb-4">
-                  Linha do Tempo (Processamento)
-                </h3>
-                {(() => {
-                  const orderLogs = db.logs
-                    .filter((l) => l.orderId === selectedOrder.id)
-                    .sort((a, b) => b.timestamp - a.timestamp);
-                  return (
-                    <div className="flex flex-col gap-3">
-                      {orderLogs.map((log) => {
-                        let actionLabel = "Processado";
-                        let actionColor = "bg-gray-100 text-gray-800";
-                        let actionQty = 0;
-
-                        switch (log.type) {
-                          case "PRODUCAO":
-                            actionLabel = "Produzido";
-                            actionColor = "bg-blue-50 text-blue-800";
-                            actionQty = log.quantityProcessed || 0;
-                            break;
-                          case "CORTE_LASER":
-                            actionLabel = "Corte a Laser";
-                            actionColor = "bg-indigo-50 text-indigo-800";
-                            actionQty = log.quantityCut || 0;
-                            break;
-                          case "PINTURA":
-                            actionLabel = "Pintura";
-                            actionColor = "bg-amber-50 text-amber-850";
-                            actionQty = log.quantityPainted || 0;
-                            break;
-                          case "EMBALAGEM":
-                            actionLabel = "Embalado";
-                            actionColor =
-                              "bg-green-50 text-green-800 border bg-green-50 text-green-800";
-                            actionQty = log.quantityPacked || 0;
-                            break;
-                          case "FATURAMENTO":
-                            actionLabel = "Faturado";
-                            actionColor = "bg-emerald-100 text-emerald-800";
-                            actionQty = log.quantityInvoiced || 0;
-                            break;
-                        }
-
-                        return (
-                          <div
-                            key={log.id}
-                            className="flex gap-4 text-sm items-start border-b border-gray-100/50 pb-3 last:border-0 last:pb-0"
-                          >
-                            <div
-                              className={`px-2 py-1 rounded text-[10px] font-bold uppercase shrink-0 w-28 text-center ${actionColor}`}
-                            >
-                              {actionLabel}
-                            </div>
-                            <div className="flex-1 min-w-0 text-gray-700">
-                              <span className="font-bold text-gray-900">
-                                +{actionQty}
-                              </span>{" "}
-                              un. por{" "}
-                              <span className="font-semibold text-blue-700">
-                                {db.users.find((u) => u.id === log.operatorId)
-                                  ?.name || log.operatorId}
-                              </span>
-                              {log.durationMillis > 0 && (
-                                <span className="text-gray-400 text-xs block font-mono mt-1">
-                                  Tempo:{" "}
-                                  {Math.round(log.durationMillis / 60000)} min
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-gray-400 font-mono shrink-0 whitespace-nowrap">
-                              {new Date(log.timestamp).toLocaleDateString()}{" "}
-                              <br />{" "}
-                              {new Date(log.timestamp).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <div className="flex gap-4 text-sm items-start mt-2 border-t pt-3">
-                        <div className="px-2 py-1 w-28 text-center rounded text-[10px] font-bold uppercase shrink-0 bg-purple-100 text-purple-800">
-                          Inclus√£o
-                        </div>
-                        <div className="flex-1 min-w-0 text-gray-700">
-                          <span className="font-bold text-gray-900">
-                            {selectedOrder.totalQuantity}
-                          </span>{" "}
-                          un. (Sistema)
-                        </div>
-                        <div className="text-xs text-gray-400 font-mono shrink-0 whitespace-nowrap mt-1">
-                          {new Date(
-                            selectedOrder.createdAt,
-                          ).toLocaleDateString()}{" "}
-                          <br />{" "}
-                          {new Date(selectedOrder.createdAt).toLocaleTimeString(
-                            [],
-                            { hour: "2-digit", minute: "2-digit" },
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {invoiceModalData && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 min-h-screen">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
-            <div className="bg-emerald-600 p-4 shrink-0 flex justify-between items-center">
-              <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                {showInvoiceConfirmStep ? "‚ö†Ô∏è Confirmar Faturamento Definitivo" : "üí∞ Faturar Pedido"}
-              </h3>
-              <button 
-                onClick={() => { setInvoiceModalData(null); setShowInvoiceConfirmStep(false); }}
-                className="text-white/80 hover:text-white font-bold text-sm"
-              >
-                ‚úï
-              </button>
-            </div>
-
-            {!showInvoiceConfirmStep ? (
-              <>
-                <div className="p-5 flex flex-col gap-4">
-                  <p className="text-sm text-gray-700">
-                    O faturamento ir√° deduzir pe√ßas do seu{" "}
-                    <strong className="text-gray-900 bg-gray-100 px-1 rounded">
-                      estoque de itens acabados
-                    </strong>
-                    .
-                  </p>
-                  <div className="bg-gray-50 border border-gray-200 p-3.5 rounded-lg flex flex-col gap-1">
-                    <span className="text-xs text-gray-500 font-bold uppercase tracking-wide">
-                      Pedido
-                    </span>
-                    <span className="font-bold text-gray-900">
-                      {invoiceModalData.order.orderCode} -{" "}
-                      {invoiceModalData.order.customerName}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs text-gray-600 font-bold uppercase">
-                      Quantidade a Faturar (M√°ximo: {invoiceModalData.limit})
-                    </label>
-                    <input
-                      type="number"
-                      value={invoiceInput}
-                      onChange={(e) => setInvoiceInput(e.target.value)}
-                      className="border-2 border-emerald-500 rounded-lg p-2.5 text-2xl font-black bg-emerald-50 focus:outline-none w-full text-center text-emerald-900"
-                      max={invoiceModalData.limit}
-                      min={1}
-                    />
-                  </div>
-                </div>
-                <div className="bg-gray-50 p-4 border-t border-gray-100 flex justify-end gap-3 shrink-0">
-                  <button
-                    onClick={() => { setInvoiceModalData(null); setShowInvoiceConfirmStep(false); }}
-                    className="px-4 py-2 font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={() => {
-                      const qty = parseInt(invoiceInput, 10);
-                      if (isNaN(qty) || qty <= 0 || qty > invoiceModalData.limit) {
-                        alert("Quantidade inv√°lida. Deve ser maior que 0 e no m√°ximo " + invoiceModalData.limit);
-                        return;
-                      }
-                      setShowInvoiceConfirmStep(true);
-                    }}
-                    className="flex-1 sm:flex-none px-6 py-2.5 font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-md transition"
-                  >
-                    Faturar ‚Üí
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="p-5 flex flex-col gap-4">
-                  {/* Total Selected Pieces Banner */}
-                  <div className="bg-emerald-50 border-2 border-emerald-500/40 p-4 rounded-xl text-center shadow-xs">
-                    <span className="text-xs text-emerald-800 font-bold uppercase tracking-wider block mb-1">
-                      Total de Pe√ßas Selecionadas
-                    </span>
-                    <span className="text-3xl font-black text-emerald-900 block tracking-tight">
-                      {parseInt(invoiceInput, 10) || 0} PE√áA(S)
-                    </span>
-                  </div>
-
-                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-lg flex flex-col gap-1 text-xs text-slate-700">
-                    <div className="flex justify-between border-b pb-1">
-                      <span className="font-semibold text-slate-500">C√≥digo do Pedido:</span>
-                      <strong className="text-slate-900 font-bold">{invoiceModalData.order.orderCode}</strong>
-                    </div>
-                    <div className="flex justify-between border-b py-1">
-                      <span className="font-semibold text-slate-500">Cliente:</span>
-                      <strong className="text-slate-900 font-bold">{invoiceModalData.order.customerName}</strong>
-                    </div>
-                    <div className="flex justify-between pt-1">
-                      <span className="font-semibold text-slate-500">Item:</span>
-                      <strong className="text-slate-900 font-bold truncate max-w-[200px]">{invoiceModalData.order.itemId} ({invoiceModalData.order.color || '-'})</strong>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs leading-relaxed font-medium">
-                    ‚ö†Ô∏è <strong>Aten√ß√£o:</strong> Confirme para processar o faturamento definitivo de <strong>{parseInt(invoiceInput, 10) || 0} pe√ßas</strong>. Esta a√ß√£o atualizar√° o status do pedido e dar√° baixa autom√°tica no estoque.
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 p-4 border-t border-gray-100 flex justify-between items-center gap-3 shrink-0">
-                  <button
-                    onClick={() => setShowInvoiceConfirmStep(false)}
-                    className="px-4 py-2 font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition text-xs"
-                  >
-                    ‚Üê Voltar
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowInvoiceConfirmStep(false);
-                      handleConfirmInvoice();
-                    }}
-                    className="px-5 py-2.5 font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-lg transition text-xs flex items-center gap-1.5"
-                  >
-                    ‚úÖ Confirmar Definitivo
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {(() => {
-        const handleSendFaturamentoEmail = async () => {
-          if (!faturamentoWhatsAppShareData) return;
-          setIsSendingEmail(true);
-          setEmailDeliveryStatus(null);
-          try {
-            const response = await fetch("/api/send-invoice-email", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                orderCode: faturamentoWhatsAppShareData.orderCode,
-                customerName: faturamentoWhatsAppShareData.customerName,
-                deliveryDate: faturamentoWhatsAppShareData.deliveryDate,
-                itemsText: `${faturamentoWhatsAppShareData.productDescription} - Qtd: ${faturamentoWhatsAppShareData.quantity}`,
-                totalValue: faturamentoWhatsAppShareData.totalValue,
-                recipientEmail: recipientEmailInput,
-              }),
-            });
-            const data = await response.json();
-            if (response.ok && data.success) {
-              setEmailDeliveryStatus({
-                type: "success",
-                text: `E-mail enviado com sucesso! (${data.mode === "smtp" ? "Enviado por SMTP Real" : "Log Simulado no Servidor"})`,
-              });
-            } else {
-              setEmailDeliveryStatus({
-                type: "error",
-                text: `Falha ao enviar e-mail: ${data.error || "Erro desconhecido"}`,
-              });
-            }
-          } catch (error: any) {
-            setEmailDeliveryStatus({
-              type: "error",
-              text: `Erro de rede ao enviar e-mail: ${error?.message || String(error)}`,
-            });
-          } finally {
-            setIsSendingEmail(false);
-          }
-        };
-
-        if (!faturamentoWhatsAppShareData) return null;
-
-        const dateStr = (() => {
-          const date = new Date();
-          const day = String(date.getDate()).padStart(2, "0");
-          const months = [
-            "Jan",
-            "Fev",
-            "Mar",
-            "Abr",
-            "Mai",
-            "Jun",
-            "Jul",
-            "Ago",
-            "Set",
-            "Out",
-            "Nov",
-            "Dez",
-          ];
-          const month = months[date.getMonth()];
-          const year = String(date.getFullYear()).slice(-2);
-          return `${day}/${month}/${year}`;
-        })();
-
-        // Formata√ß√£o final da mensagem
-        const messageText = `*FATURAMENTO DE PEDIDO* üöÄ
-
-*N¬∫ Pedido:* ${faturamentoWhatsAppShareData.orderCode}
-*Cliente:* ${faturamentoWhatsAppShareData.customerName}
-*Data Faturamento:* ${dateStr}
-
-*Itens Enviados:*
-‚Ä¢ ${faturamentoWhatsAppShareData.productDescription} - Qtd: *${faturamentoWhatsAppShareData.quantity}*
-
-_Mensagem do Sistema Imp√©rio Jomarci_`;
-
-        return (
-          <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-xs text-left">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col overflow-hidden animate-in zoom-in-95 text-left">
-              <div className="bg-slate-900 text-[#00b14f] p-4 flex items-center justify-between border-b border-[#00b14f]/20">
-                <div className="flex items-center gap-2">
-                  <DollarSign size={22} className="text-[#00b14f]" />
-                  <h3 className="font-bold text-base text-white">
-                    Notificar Faturamento
-                  </h3>
-                </div>
-                <span className="text-[9px] bg-[#00b14f]/15 text-[#00b14f] px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
-                  Pedido #{faturamentoWhatsAppShareData.orderCode}
-                </span>
-              </div>
-
-              <div className="p-5 flex flex-col gap-4 text-gray-800 overflow-y-auto max-h-[70vh]">
-                <p className="text-xs text-gray-500 font-medium">
-                  Selecione as op√ß√µes abaixo para comunicar o faturamento do
-                  pedido{" "}
-                  <strong>#{faturamentoWhatsAppShareData.orderCode}</strong> do
-                  cliente{" "}
-                  <strong>{faturamentoWhatsAppShareData.customerName}</strong>.
-                </p>
-
-                {/* EMAIL NOTIFICATION BLOCK */}
-                <div className="border border-slate-100 rounded-lg p-3 bg-slate-50 flex flex-col gap-2.5">
-                  <div className="flex items-center gap-1.5 border-b border-slate-200/50 pb-1.5">
-                    <span className="text-xs font-black text-slate-800 uppercase tracking-tight flex items-center gap-1">
-                      üìß Notifica√ß√£o por E-mail
-                    </span>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">
-                      E-mails (Cliente / Representante - Separar por v√≠rgula)
-                    </label>
-                    <input
-                      type="email"
-                      value={recipientEmailInput}
-                      placeholder="Ex: cliente@email.com, rep@email.com"
-                      onChange={(e) => setRecipientEmailInput(e.target.value)}
-                      className="w-full border p-2 text-xs rounded bg-white focus:ring-1 focus:ring-[#00b14f] outline-none text-gray-800 font-medium"
-                    />
-                  </div>
-
-                  <div className="text-[9px] text-gray-400 font-medium leading-tight">
-                    O e-mail ser√° enviado de{" "}
-                    <strong>gerencia.imperiojomarci@gmail.com</strong> com c√≥pia
-                    para <strong>imperiojomarci@gmail.com</strong>.
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={isSendingEmail || !recipientEmailInput.trim()}
-                    onClick={handleSendFaturamentoEmail}
-                    className="w-full py-1.5 bg-black hover:bg-zinc-800 text-white rounded text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    {isSendingEmail
-                      ? "Enviando e-mail..."
-                      : "Enviar E-mail de Faturamento"}
-                  </button>
-
-                  {emailDeliveryStatus && (
-                    <div
-                      className={`p-2 rounded text-[11px] font-bold leading-tight ${
-                        emailDeliveryStatus.type === "success"
-                          ? "bg-emerald-50 text-emerald-800 border-l-2 border-emerald-500"
-                          : "bg-rose-50 text-rose-800 border-l-2 border-rose-500"
-                      }`}
-                    >
-                      {emailDeliveryStatus.text}
-                    </div>
-                  )}
-                </div>
-
-                {/* WHATSAPP CONTAINER */}
-                <div className="border border-slate-100 rounded-lg p-3 bg-slate-50 flex flex-col gap-2.5">
-                  <div className="flex items-center gap-1.5 border-b border-slate-200/50 pb-1.5">
-                    <span className="text-xs font-black text-slate-800 uppercase tracking-tight flex items-center gap-1">
-                      üí¨ Compartilhar pelo WhatsApp
-                    </span>
-                  </div>
-
-                  {/* Campo Celular do Representante */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">
-                      WhatsApp do Representante
-                    </label>
-                    <input
-                      type="text"
-                      value={faturamentoWhatsAppShareData.phone}
-                      placeholder="Ex: 5511999998888"
-                      onChange={(e) =>
-                        setFaturamentoWhatsAppShareData((prev) =>
-                          prev
-                            ? {
-                                ...prev,
-                                phone: e.target.value.replace(/\D/g, ""),
-                              }
-                            : null,
-                        )
-                      }
-                      className="w-full border p-2 text-xs font-mono rounded bg-white focus:ring-1 focus:ring-teal-500 outline-none text-gray-800"
-                    />
-                    {!faturamentoWhatsAppShareData.phone && (
-                      <span className="text-[9px] text-amber-600 font-extrabold">
-                        ‚ö†Ô∏è Insira o n√∫mero do celular acima para enviar.
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Preview da Mensagem */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">
-                      Mensagem Copiada
-                    </label>
-                    <pre className="text-[10px] bg-slate-900 text-green-400 p-3 rounded font-mono overflow-x-auto whitespace-pre-wrap leading-tight select-all">
-                      {messageText}
-                    </pre>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gray-50 px-5 py-3.5 flex justify-end gap-2 border-t border-gray-150 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setFaturamentoWhatsAppShareData(null)}
-                  className="px-3.5 py-1.5 border rounded text-xs font-bold text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-                >
-                  Fechar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(messageText);
-                    alert(
-                      "Mensagem copiada com sucesso para a √°rea de transfer√™ncia!",
-                    );
-                  }}
-                  className="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded text-xs font-bold transition cursor-pointer"
-                >
-                  Copiar Mensagem
-                </button>
-                <button
-                  type="button"
-                  disabled={!faturamentoWhatsAppShareData.phone}
-                  onClick={() => {
-                    const clean = faturamentoWhatsAppShareData.phone.replace(
-                      /\D/g,
-                      "",
-                    );
-                    const url = `https://api.whatsapp.com/send?phone=${clean}&text=${encodeURIComponent(messageText)}`;
-                    window.open(url, "_blank");
-                    setFaturamentoWhatsAppShareData(null);
-                  }}
-                  className="px-3.5 py-1.5 bg-[#00b14f] hover:bg-[#009e46] text-white rounded text-xs font-bold transition disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Phone size={13} className="text-white" /> Abrir WhatsApp
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {orderToastMessage && (
-        <div className="fixed bottom-4 right-4 bg-emerald-600 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 animate-in slide-in-from-bottom-5 fade-in duration-300 z-[200]">
-          <div className="bg-white/20 p-1.5 rounded-full">
-            <CheckCircle2 size={18} />
-          </div>
-          <span className="font-semibold text-sm">{orderToastMessage}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-const getProductKey = (
-  itemId: number,
-  color: string,
-  size: string,
-  variation: string,
-) => `${itemId}|${color}|${size}|${variation}`;
-
-export function SVGQRCode({ data }: { data: string }) {
-  return (
-    <svg
-      width="68"
-      height="68"
-      viewBox="0 0 29 29"
-      className="bg-white p-1 rounded border border-gray-300"
-    >
-      <rect width="29" height="29" fill="white" />
-      <rect x="0" y="0" width="7" height="7" fill="black" />
-      <rect x="1" y="1" width="5" height="5" fill="white" />
-      <rect x="2" y="2" width="3" height="3" fill="black" />
-      <rect x="22" y="0" width="7" height="7" fill="black" />
-      <rect x="23" y="1" width="5" height="5" fill="white" />
-      <rect x="24" y="2" width="3" height="3" fill="black" />
-      <rect x="0" y="22" width="7" height="7" fill="black" />
-      <rect x="1" y="23" width="5" height="5" fill="white" />
-      <rect x="2" y="24" width="3" height="3" fill="black" />
-      <rect x="22" y="22" width="3" height="3" fill="black" />
-      <rect x="8" y="1" width="1" height="1" fill="black" />
-      <rect x="10" y="2" width="1" height="1" fill="black" />
-      <rect x="12" y="0" width="1" height="1" fill="black" />
-      <rect x="15" y="3" width="1" height="1" fill="black" />
-      <rect x="18" y="1" width="2" height="1" fill="black" />
-      <rect x="8" y="5" width="2" height="1" fill="black" />
-      <rect x="11" y="4" width="1" height="1" fill="black" />
-      <rect x="14" y="5" width="1" height="1" fill="black" />
-      <rect x="16" y="4" width="2" height="2" fill="black" />
-      <rect x="0" y="8" width="1" height="1" fill="black" />
-      <rect x="2" y="10" width="1" height="1" fill="black" />
-      <rect x="3" y="9" width="2" height="1" fill="black" />
-      <rect x="5" y="12" width="1" height="1" fill="black" />
-      <rect x="7" y="10" width="1" height="1" fill="black" />
-      <rect x="9" y="8" width="2" height="1" fill="black" />
-      <rect x="13" y="8" width="1" height="1" fill="black" />
-      <rect x="15" y="9" width="1" height="1" fill="black" />
-      <rect x="17" y="10" width="1" height="1" fill="black" />
-      <rect x="19" y="8" width="1" height="1" fill="black" />
-      <rect x="21" y="9" width="1" height="1" fill="black" />
-      <rect x="25" y="8" width="1" height="1" fill="black" />
-      <rect x="27" y="10" width="1" height="1" fill="black" />
-      <rect x="9" y="12" width="1" height="1" fill="black" />
-      <rect x="11" y="14" width="1" height="1" fill="black" />
-      <rect x="14" y="12" width="2" height="1" fill="black" />
-      <rect x="17" y="14" width="1" height="1" fill="black" />
-      <rect x="19" y="13" width="1" height="1" fill="black" />
-      <rect x="23" y="14" width="1" height="1" fill="black" />
-      <rect x="26" y="12" width="2" height="1" fill="black" />
-      <rect x="10" y="17" width="1" height="1" fill="black" />
-      <rect x="12" y="18" width="2" height="1" fill="black" />
-      <rect x="15" y="16" width="1" height="1" fill="black" />
-      <rect x="18" y="19" width="1" height="1" fill="black" />
-      <rect x="20" y="17" width="1" height="1" fill="black" />
-      <rect x="24" y="18" width="2" height="1" fill="black" />
-      <rect x="8" y="22" width="2" height="2" fill="black" />
-      <rect x="11" y="24" width="1" height="1" fill="black" />
-      <rect x="14" y="22" width="1" height="1" fill="black" />
-      <rect x="16" y="25" width="2" height="1" fill="black" />
-      <rect x="19" y="23" width="1" height="1" fill="black" />
-    </svg>
-  );
-}
-
-function parseInline(text: string) {
-  const parts = text.split(/(\*\*.*?\*\*)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return (
-        <strong key={i} className="font-extrabold text-blue-700">
-          {part.slice(2, -2)}
-        </strong>
-      );
-    }
-    return <span key={i}>{part}</span>;
-  });
-}
-
-function parseCustomMarkdown(text: string) {
-  const lines = text.split("\n");
-  return lines.map((line, idx) => {
-    if (line.startsWith("### ")) {
-      return (
-        <h4 key={idx} className="text-sm font-bold mt-3 mb-1 text-gray-800">
-          {parseInline(line.slice(4))}
-        </h4>
-      );
-    }
-    if (line.startsWith("- ")) {
-      return (
-        <li
-          key={idx}
-          className="ml-4 list-disc text-[13px] text-gray-700 leading-relaxed"
-        >
-          {parseInline(line.slice(2))}
-        </li>
-      );
-    }
-    if (line.trim() === "") {
-      return <div key={idx} className="h-2"></div>;
-    }
-    return (
-      <p key={idx} className="text-[13px] text-gray-700 leading-relaxed">
-        {parseInline(line)}
-      </p>
-    );
-  });
-}
-
-interface InvoiceSuggestionsTabProps {
-  db: any;
-  setSelectedOrder: (order: any) => void;
-  setInvoiceModalData: (data: any) => void;
-  setInvoiceInput: (input: string) => void;
-}
-
-function InvoiceSuggestionsTab({
-  db,
-  setSelectedOrder,
-  setInvoiceModalData,
-  setInvoiceInput,
-}: InvoiceSuggestionsTabProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedTierFilter, setSelectedTierFilter] = useState("ALL");
-
-  const getInvoiceSuggestions = () => {
-    const candidates = db.orders.filter(
-      (o: any) =>
-        o.status !== "FATURADO" &&
-        o.isActive !== false &&
-        o.totalQuantity - (o.invoicedQuantity || 0) > 0,
-    );
-
-    const todayMs = new Date().setHours(12, 0, 0, 0);
-
-    const getBaseRank = (o: any) => {
-      const isProg = !!o.isProgramacao;
-      const deliveryMs = o.deliveryDate
-        ? new Date(o.deliveryDate).setUTCHours(12, 0, 0, 0)
-        : Date.now();
-      const isLate = deliveryMs < todayMs;
-
-      if (isProg) return 3;
-      if (isLate) return 2;
-      return 1;
-    };
-
-    const baselineSorted = [...candidates].sort((a, b) => {
-      const rankA = getBaseRank(a);
-      const rankB = getBaseRank(b);
-      if (rankA !== rankB) return rankB - rankA;
-      const delA = a.deliveryDate || "";
-      const delB = b.deliveryDate || "";
-      return delA.localeCompare(delB);
-    });
-
-    const simulatedStock: Record<string, number> = {};
-    db.stocks.forEach((s: any) => {
-      if (s.stage === "ACABADO") {
-        simulatedStock[s.id] = s.quantity;
-      }
-    });
-
-    const suggestions = baselineSorted.map((o) => {
-      const remainingQty = o.totalQuantity - (o.invoicedQuantity || 0);
-      const stockKey = `${o.itemId}|${o.color}|${o.size}|${o.variation}|ACABADO`;
-      const availableStock = simulatedStock[stockKey] || 0;
-
-      const allocated = Math.min(remainingQty, availableStock);
-      simulatedStock[stockKey] = Math.max(0, availableStock - allocated);
-
-      const coveragePercent =
-        remainingQty > 0 ? (allocated / remainingQty) * 100 : 0;
-
-      const isProg = !!o.isProgramacao;
-      const deliveryMs = o.deliveryDate
-        ? new Date(o.deliveryDate).setUTCHours(12, 0, 0, 0)
-        : todayMs;
-      const isLate = deliveryMs < todayMs;
-
-      let tier = 5;
-      let tierName = "Estoque Insuficiente";
-
-      if (isProg) {
-        tier = 1;
-        tierName = "Pedido Programa√ß√£o";
-      } else if (isLate) {
-        tier = 2;
-        tierName = "Atrasado";
-      } else if (coveragePercent >= 100) {
-        tier = 3;
-        tierName = "100% Estoque Acabado";
-      } else if (coveragePercent >= 70) {
-        tier = 4;
-        tierName = "Estoque Parcial (>= 70%)";
-      }
-
-      return {
-        order: o,
-        remainingQty,
-        availableStock,
-        allocated,
-        coveragePercent,
-        isProg,
-        isLate,
-        tier,
-        tierName,
-      };
-    });
-
-    suggestions.sort((a, b) => {
-      const tierOrder: Record<number, number> = {
-        1: 1,
-        2: 2,
-        3: 3,
-        4: 4,
-        5: 5,
-      };
-
-      const orderA = tierOrder[a.tier];
-      const orderB = tierOrder[b.tier];
-
-      if (orderA !== orderB) return orderA - orderB;
-
-      const delA = a.order.deliveryDate || "";
-      const delB = b.order.deliveryDate || "";
-      return delA.localeCompare(delB);
-    });
-
-    return suggestions;
-  };
-
-  const allSuggestions = getInvoiceSuggestions();
-  const progCount = allSuggestions.filter((s) => s.isProg).length;
-  const lateCount = allSuggestions.filter((s) => s.isLate && !s.isProg).length;
-  const fullStockCount = allSuggestions.filter(
-    (s) => s.coveragePercent >= 100 && !s.isProg && !s.isLate,
-  ).length;
-
-  const filteredSuggestions = allSuggestions.filter((s) => {
-    const item = db.items.find((i: any) => i.id === s.order.itemId);
-    const searchStr =
-      `${s.order.orderCode} ${s.order.customerName} ${item?.name || ""}`.toLowerCase();
-    const matchesSearch = searchStr.includes(searchQuery.toLowerCase());
-
-    if (selectedTierFilter === "ALL") return matchesSearch;
-    if (selectedTierFilter === "PROG") return matchesSearch && s.isProg;
-    if (selectedTierFilter === "LATE")
-      return matchesSearch && s.isLate && !s.isProg;
-    if (selectedTierFilter === "100")
-      return (
-        matchesSearch && s.coveragePercent >= 100 && !s.isProg && !s.isLate
-      );
-    if (selectedTierFilter === "70")
-      return (
-        matchesSearch &&
-        s.coveragePercent >= 70 &&
-        s.coveragePercent < 100 &&
-        !s.isProg &&
-        !s.isLate
-      );
-    if (selectedTierFilter === "LOW")
-      return matchesSearch && s.coveragePercent < 70 && !s.isProg && !s.isLate;
-    return matchesSearch;
-  });
-
-  return (
-    <div className="flex-1 overflow-y-auto w-full flex flex-col gap-4">
-      <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-        <h3 className="font-extrabold text-indigo-950 text-base flex items-center gap-2">
-          üìä Sugest√£o de Faturamento Induzido
-        </h3>
-        <p className="text-[11px] text-slate-500 mt-1">
-          Lista din√¢mica priorizada para apoiar a decis√£o de faturamento humana,
-          cruzando prazos, programa√ß√µes e o estoque livre atual.
-        </p>
-
-        {/* Quick stats grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
-          <div className="bg-indigo-50/50 border border-indigo-100 p-3 rounded-lg flex flex-col">
-            <span className="text-xl">üìà</span>
-            <span className="text-[10px] text-indigo-750 font-bold uppercase tracking-wider mt-1">
-              Programa√ß√£o
-            </span>
-            <span className="text-xl font-black text-indigo-950 mt-0.5">
-              {progCount} un.
-            </span>
-          </div>
-          <div className="bg-red-50/50 border border-red-100 p-3 rounded-lg flex flex-col">
-            <span className="text-xl">‚ö†Ô∏è</span>
-            <span className="text-[10px] text-red-750 font-bold uppercase tracking-wider mt-1">
-              Atrasados
-            </span>
-            <span className="text-xl font-black text-red-950 mt-0.5">
-              {lateCount} un.
-            </span>
-          </div>
-          <div className="bg-emerald-50/50 border border-emerald-100 p-3 rounded-lg flex flex-col">
-            <span className="text-xl">‚ú®</span>
-            <span className="text-[10px] text-emerald-750 font-bold uppercase tracking-wider mt-1">
-              100% Cobertos
-            </span>
-            <span className="text-xl font-black text-emerald-950 mt-0.5">
-              {fullStockCount} un.
-            </span>
-          </div>
-          <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg flex flex-col">
-            <span className="text-xl">üì¶</span>
-            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">
-              Total Fila
-            </span>
-            <span className="text-xl font-black text-slate-900 mt-0.5">
-              {allSuggestions.length} un.
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col md:flex-row gap-3 bg-white p-3 rounded-lg border border-slate-100">
-          <input
-            type="text"
-            placeholder="Buscar por c√≥digo, cliente ou produto..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 border p-2 rounded text-xs focus:ring-blue-500 bg-white"
-          />
-          <select
-            value={selectedTierFilter}
-            onChange={(e) => setSelectedTierFilter(e.target.value)}
-            className="border p-2 rounded text-xs bg-white text-gray-700 cursor-pointer focus:ring-blue-500"
-          >
-            <option value="ALL">Todas as prioridades</option>
-            <option value="PROG">üìà Apenas Programa√ß√£o</option>
-            <option value="LATE">‚ö†Ô∏è Atrasados comuns</option>
-            <option value="100">‚ú® Estoque 100% Coberto</option>
-            <option value="70">üè† Estoque Parcial (&gt;= 70%)</option>
-            <option value="LOW">‚ùå Sem estoque m√≠nimo (&lt; 70%)</option>
-          </select>
-        </div>
-
-        {filteredSuggestions.length === 0 ? (
-          <p className="text-center text-sm text-gray-400 py-10 bg-white rounded-lg border border-dashed border-slate-200">
-            Nenhuma sugest√£o encontrada para os filtros selecionados.
-          </p>
-        ) : (
-          <div className="grid gap-3">
-            {filteredSuggestions.map((s) => {
-              const item = db.items.find((i: any) => i.id === s.order.itemId);
-              const isEmbalado = s.order.status === "EMBALADO";
-
-              let badgeBg = "bg-slate-100 text-slate-800 border-slate-200";
-              let badgeLabel = s.tierName;
-              let badgeIcon = "üì¶";
-
-              if (s.isProg) {
-                badgeBg = "bg-indigo-100 text-indigo-800 border-indigo-200";
-                badgeLabel = "üìà PROGRAMA√á√ÉO";
-                badgeIcon = "üìà";
-              } else if (s.isLate) {
-                badgeBg = "bg-red-50/90 text-red-800 border-red-200";
-                badgeLabel = "‚ö†Ô∏è ATRASADO";
-                badgeIcon = "‚ö†Ô∏è";
-              } else if (s.coveragePercent >= 100) {
-                badgeBg = "bg-emerald-100 text-emerald-800 border-emerald-200";
-                badgeLabel = "‚ú® ESTOQUE 100%";
-                badgeIcon = "‚ú®";
-              } else if (s.coveragePercent >= 70) {
-                badgeBg = "bg-amber-100 text-amber-850 border-yellow-200";
-                badgeLabel = `üè† PARCIAL (${Math.round(s.coveragePercent)}%)`;
-                badgeIcon = "üè†";
-              } else {
-                badgeBg = "bg-gray-100 text-gray-500 border-gray-200";
-                badgeLabel = `‚è±Ô∏è INSUFICIENTE (${Math.round(s.coveragePercent)}%)`;
-                badgeIcon = "‚è±Ô∏è";
-              }
-
-              return (
-                <div
-                  key={s.order.id}
-                  className="bg-white p-4 rounded-lg border border-slate-150 shadow-xs hover:shadow-md transition cursor-pointer flex flex-col md:flex-row justify-between items-start md:items-center gap-3"
-                  onClick={() => setSelectedOrder(s.order)}
-                >
-                  <div className="flex-1 min-w-0 flex flex-col gap-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-black border flex items-center gap-1 ${badgeBg}`}
-                      >
-                        <span>{badgeIcon}</span> {badgeLabel}
-                      </span>
-                      {isEmbalado && (
-                        <span className="bg-teal-50 text-teal-700 border border-teal-200 text-[10px] px-1.5 py-0.5 rounded font-black uppercase">
-                          Pronto p/ Faturar
-                        </span>
-                      )}
-                      <span className="font-mono font-black text-slate-900 text-sm">
-                        Pedido #{s.order.orderCode}
-                      </span>
-                    </div>
-
-                    <span className="text-xs text-gray-500 font-semibold uppercase block tracking-wide mt-1">
-                      Cliente:{" "}
-                      <strong className="text-slate-800">
-                        {s.order.customerName}
-                      </strong>
-                    </span>
-
-                    <span className="text-xs text-slate-800 font-bold block">
-                      Produto: {item?.name || "-"}{" "}
-                      <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-1 py-0.5 rounded ml-1 font-normal">
-                        {s.order.color || "-"} | {s.order.size || "-"} |{" "}
-                        {s.order.variation || "-"}
-                      </span>
-                    </span>
-
-                    {/* Stock progress */}
-                    <div className="flex items-center gap-3 mt-1.5 w-full max-w-sm">
-                      <div className="flex-1 bg-gray-150 rounded-full h-1.5">
-                        <div
-                          className={`h-1.5 rounded-full ${s.coveragePercent >= 100 ? "bg-emerald-500" : s.coveragePercent >= 70 ? "bg-amber-500" : "bg-gray-400"}`}
-                          style={{
-                            width: `${Math.min(100, s.coveragePercent)}%`,
-                          }}
-                        ></div>
-                      </div>
-                      <span className="text-[10px] font-bold text-slate-705 whitespace-nowrap">
-                        Alocado: {Math.round(s.allocated)} /{" "}
-                        {Math.round(s.remainingQty)} un (
-                        {Math.round(s.coveragePercent)}%)
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col items-end gap-1 text-right self-stretch md:self-auto shrink-0 border-t md:border-t-0 pt-3 md:pt-0">
-                    <span className="text-xs text-slate-550 font-semibold">
-                      Entrega:{" "}
-                      <strong
-                        className={
-                          s.isLate
-                            ? "text-red-600 animate-pulse font-extrabold"
-                            : "text-slate-700 font-bold"
-                        }
-                      >
-                        {s.order.deliveryDate
-                          ? new Date(s.order.deliveryDate).toLocaleDateString(
-                              "pt-BR",
-                              { timeZone: "UTC" },
-                            )
-                          : "-"}
-                      </strong>
-                    </span>
-
-                    <div className="flex gap-2 mt-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedOrder(s.order);
-                        }}
-                        className="bg-slate-100 hover:bg-slate-205 text-slate-700 border border-slate-250 font-bold text-xs px-2.5 py-1 rounded transition"
-                      >
-                        Ver Ficha
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const availableToInvoice =
-                            s.order.status === "EMBALADO" ||
-                            s.order.status === "EM_PRODUCAO"
-                              ? s.order.totalQuantity -
-                                (s.order.invoicedQuantity || 0)
-                              : Math.max(
-                                  s.order.packedQuantity || 0,
-                                  s.order.producedQuantity || 0,
-                                ) - (s.order.invoicedQuantity || 0);
-                          const maxToInvoice =
-                            s.order.totalQuantity -
-                            (s.order.invoicedQuantity || 0);
-                          const stockId = `${s.order.itemId}|${s.order.color}|${s.order.size}|${s.order.variation}|ACABADO`;
-                          const physicalStock =
-                            db.stocks.find((st) => st.id === stockId)
-                              ?.quantity || 0;
-                          const limit = Math.max(
-                            Math.max(
-                              0,
-                              Math.min(availableToInvoice, maxToInvoice),
-                            ),
-                            physicalStock,
-                          );
-                          setInvoiceModalData({ order: s.order, limit });
-                          setInvoiceInput(String(limit));
-                        }}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2.5 py-1 rounded transition shadow-xs flex items-center gap-1"
-                      >
-                        üí∞ Faturar
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AdminScreen({
-  db,
-  currentUser,
-}: {
-  db: ReturnType<typeof useDatabase>;
-  currentUser: User;
-}) {
-  const [selectedItemId, setSelectedItemId] = useState<number | "ALL">("ALL");
-  const [selectedSector, setSelectedSector] = useState<
-    "ALL" | "CORTE_LASER" | "PRODUCAO" | "PINTURA" | "EMBALAGEM"
-  >("ALL");
-  const [activeTab, setActiveTab] = useState<
-    | "PAINEL"
-    | "MONITORAMENTO"
-    | "CADASTROS"
-    | "LOTES"
-    | "FATURAMENTO"
-    | "SUGESTAO"
-    | "EVOLUCAO_EMBALAGEM"
-    | "ETIQUETAS"
-    | "GESTAO_PESSOAS"
-  >("PAINEL");
-  const [currentTime, setCurrentTime] = useState(Date.now());
-  const [dailyProductionGoal, setDailyProductionGoal] = useState<number>(() => {
-    const saved = localStorage.getItem("producao_daily_production_goal");
-    return saved ? parseInt(saved, 10) : 3000;
-  });
-  const [isEditingGoal, setIsEditingGoal] = useState(false);
-  const [tempGoalInput, setTempGoalInput] = useState(String(dailyProductionGoal));
-
-  // States to optimize the general panel order list rendering (eliminates UI freeze)
-  const [panelOrdersSearch, setPanelOrdersSearch] = useState("");
-  const [panelOrdersFilter, setPanelOrdersFilter] = useState<"ATIVOS" | "TODOS">("ATIVOS");
-  const [panelOrdersLimit, setPanelOrdersLimit] = useState(12);
-
-  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
-  const [invoiceModalData, setInvoiceModalData] = useState<{
-    order: any;
-    limit: number;
-  } | null>(null);
-  const [invoiceInput, setInvoiceInput] = useState("");
-  const [showInvoiceConfirmStep, setShowInvoiceConfirmStep] = useState(false);
-
-  const [adminWhatsAppShareData, setAdminWhatsAppShareData] = useState<{
-    orderCode: string;
-    customerName: string;
-    productDescription: string;
-    quantity: number;
-    phone: string;
-    representativeName: string;
-  } | null>(null);
-
-  const handleConfirmInvoice = () => {
-    if (!invoiceModalData) return;
-    const { order: o, limit } = invoiceModalData;
-    const qty = parseInt(invoiceInput, 10);
-
-    if (isNaN(qty) || qty <= 0 || qty > limit) {
-      alert("Quantidade inv√°lida. Deve ser maior que 0 e no m√°ximo " + limit);
-      return;
-    }
-
-    const stockId = `${o.itemId}|${o.color}|${o.size}|${o.variation}|ACABADO`;
-    const existingStock = db.stocks.find((s) => s.id === stockId);
-
-    if (existingStock && (existingStock.reservedQuantity || 0) > 0) {
-      const alternateReservedOrders = db.orders.filter(
-        (ord) =>
-          ord.id !== o.id &&
-          ord.itemId === o.itemId &&
-          ord.color === o.color &&
-          ord.size === o.size &&
-          ord.variation === o.variation &&
-          (ord.status === "PLANEJADO" || ord.status === "EMBALADO") &&
-          ord.isActive,
-      );
-
-      if (alternateReservedOrders.length > 0) {
-        const primaryResOrder = alternateReservedOrders[0];
-        const confirmResult = window.confirm(
-          `ALERTA POPUP - PRODUTO RESERVADO PARA OUTRO PEDIDO:\n\n` +
-            `O produto que voc√™ est√° faturando cont√©m unidades de estoque RESERVADAS para:\n` +
-            `‚Ä¢ Pedido: ${primaryResOrder.orderCode}\n` +
-            `‚Ä¢ Cliente: ${primaryResOrder.customerName}\n\n` +
-            `Deseja CONTINUAR assim mesmo e desfazer a reserva do outro pedido ou clique em Cancelar para interromper?`,
-        );
-
-        if (!confirmResult) {
-          setInvoiceModalData(null);
-          setInvoiceInput("");
-          return;
-        } else {
-          db.updateOrders([
-            {
-              ...primaryResOrder,
-              status: "PENDENTE",
-              packedQuantity: 0,
-            },
-          ]);
-
-          const nextReservedQty = Math.max(
-            0,
-            (existingStock.reservedQuantity || 0) -
-              (primaryResOrder.totalQuantity || 0),
-          );
-          db.updateStocks([
-            {
-              ...existingStock,
-              reservedQuantity: nextReservedQty,
-            },
-          ]);
-
-          db.addLogs([
-            {
-              id: Date.now() + 5,
-              orderId: primaryResOrder.id,
-              operatorId: currentUser.id,
-              timestamp: Date.now(),
-              durationMillis: 0,
-              customProductName: `Reserva desfeita (estoque direcionado para pedido ${o.orderCode})`,
-            },
-          ]);
-        }
-      }
-    }
-
-    const newInvoiced = (o.invoicedQuantity || 0) + qty;
-    const isNowFaturado = newInvoiced >= o.totalQuantity;
-    const newStatus = isNowFaturado
-      ? ("FATURADO" as const)
-      : (newInvoiced > 0 ? ("FATURADO_PARCIAL" as const) : (o.status || "PENDENTE"));
-
-    db.updateOrders([
-      {
-        ...o,
-        invoicedQuantity: newInvoiced,
-        status: newStatus,
-        isActive: !isNowFaturado,
-        isUrgent: isNowFaturado ? false : o.isUrgent,
-        _alreadyDeducted: true,
-      },
-    ]);
-
-    if (existingStock) {
-      const newStockQty = Math.max(0, existingStock.quantity - qty);
-      const newReservedQty = Math.max(
-        0,
-        (existingStock.reservedQuantity || 0) - qty,
-      );
-      db.updateStocks([
-        {
-          ...existingStock,
-          quantity: newStockQty,
-          reservedQuantity: newReservedQty,
-        },
-      ]);
-    }
-
-    db.addStockMovement?.({
-      itemId: o.itemId,
-      color: o.color,
-      size: o.size,
-      variation: o.variation,
-      quantity: qty,
-      type: "SAIDA",
-      description: `Sa√≠da por faturamento do Pedido ${o.orderCode} (Cliente: ${o.customerName})`,
-    });
-
-    db.addLogs([
-      {
-        id: Date.now(),
-        orderId: o.id,
-        operatorId: currentUser.id,
-        quantityInvoiced: qty,
-        type: "FATURAMENTO",
-        timestamp: Date.now(),
-        durationMillis: 0,
-      },
-    ]);
-
-    // Triga WhatsApp Share Modal de Admin
-    const rep = db.users.find(
-      (u) =>
-        u.role === "REPRESENTANTE" &&
-        (u.name === o.representativeName || u.id === o.representativeId),
-    );
-    const customer = db.customers.find((c) => c.name === o.customerName);
-    const clientDisplayName = customer?.tradeName || o.customerName;
-    const item = db.items.find((i) => i.id === o.itemId);
-    const productDescr = `${item?.name || "Produto"} (Cor: ${o.color || "-"}, Tam: ${o.size || "-"}, Var: ${o.variation || "-"})`;
-
-    setInvoiceModalData(null);
-    setInvoiceInput("");
-
-    setAdminWhatsAppShareData({
-      orderCode: o.orderCode || `${o.id}`,
-      customerName: clientDisplayName,
-      productDescription: productDescr,
-      quantity: qty,
-      phone: rep?.phone || "",
-      representativeName: rep?.name || o.representativeName || "n√£o definido",
-    });
-  };
-
-  const [isMonitoringModalOpen, setIsMonitoringModalOpen] = useState(false);
-  const [selectedMonitoringCard, setSelectedMonitoringCard] = useState<
-    any | null
-  >(null);
-  const [finalizeQuantity, setFinalizeQuantity] = useState<string>("");
-
-  const handleOpenMonitoringModal = (pack: any) => {
-    setSelectedMonitoringCard(pack);
-    setFinalizeQuantity("");
-    setIsMonitoringModalOpen(true);
-  };
-
-  const handleFinalizeActivePackByManager = (pack: any) => {
-    const qty = parseInt(finalizeQuantity, 10);
-    if (isNaN(qty) || qty < 0) {
-      alert("Por favor, digite uma quantidade v√°lida (deve ser 0 ou maior).");
-      return;
-    }
-
-    if (
-      !confirm(
-        `Deseja realmente finalizar o apontamento de ${pack.operatorId} para o produto "${pack.partName || "Item"}" com a quantidade ${qty}?`,
-      )
-    ) {
-      return;
-    }
-
-    const endTime = Date.now();
-    const durationMillis = endTime - pack.startTime;
-
-    if (pack.itemId === 0) {
-      // Manual/Avulso task
-      const singleLog: any = {
-        id: Date.now() + Math.random(),
-        operatorId: pack.operatorId,
-        type: pack.type,
-        timestamp: endTime,
-        durationMillis,
-        thirdPartyName: pack.thirdPartyName,
-        customProductName: pack.customProductName,
-      };
-      if (pack.type === "EMBALAGEM") {
-        singleLog.quantityPacked = qty;
-      } else if (pack.type === "PINTURA") {
-        singleLog.quantityPainted = qty;
-      } else if (pack.type === "CORTE_LASER") {
-        singleLog.quantityCut = qty;
-      } else {
-        singleLog.quantityProcessed = qty;
-      }
-      db.addLogs([singleLog]);
-      db.removeActivePack(pack.id);
-      setIsMonitoringModalOpen(false);
-      return;
-    }
-
-    // Standard task linking to orders
-    let qtyToAllocate = qty;
-    const targetQty = qty;
-
-    const matchedOrders = db.orders
-      .filter(
-        (o) =>
-          o.status !== "EMBALADO" &&
-          o.status !== "FATURADO" &&
-          o.itemId === pack.itemId &&
-          (pack.type === "EMBALAGEM"
-            ? (o.paintedColor || o.color) === pack.color
-            : o.color === pack.color) &&
-          o.size === pack.size &&
-          o.variation === pack.variation,
-      )
-      .sort((a, b) => {
-        const dateA = new Date(a.deliveryDate).getTime() || a.createdAt;
-        const dateB = new Date(b.deliveryDate).getTime() || b.createdAt;
-        if (dateA !== dateB) return dateA - dateB;
-        return a.createdAt - b.createdAt;
-      });
-
-    let totalAssignedQty = 0;
-    let logsToAdd: any[] = [];
-    let updatedOrders = [...db.orders];
-
-    for (let o of matchedOrders) {
-      if (qtyToAllocate <= 0) break;
-
-      let needed = 0;
-      if (pack.type === "EMBALAGEM") {
-        needed = o.totalQuantity - (o.packedQuantity || 0);
-      } else if (pack.type === "PINTURA") {
-        needed = o.totalQuantity - (o.paintedQuantity || 0);
-      } else if (pack.type === "CORTE_LASER") {
-        needed = o.totalQuantity - (o.cutQuantity || 0);
-      } else {
-        needed = o.totalQuantity - (o.producedQuantity || 0);
-      }
-
-      const allocate = Math.min(needed, qtyToAllocate);
-      if (allocate > 0) {
-        const oIndex = updatedOrders.findIndex((uo) => uo.id === o.id);
-        if (oIndex >= 0) {
-          const targetOrder = updatedOrders[oIndex];
-
-          if (pack.type === "EMBALAGEM") {
-            const newPacked = (targetOrder.packedQuantity || 0) + allocate;
-            const status =
-              newPacked >= targetOrder.totalQuantity ? "EMBALADO" : "EMBALANDO";
-            updatedOrders[oIndex] = {
-              ...targetOrder,
-              packedQuantity: newPacked,
-              status,
-              isActive: newPacked < targetOrder.totalQuantity,
-            };
-          } else if (pack.type === "PINTURA") {
-            const newPainted = (targetOrder.paintedQuantity || 0) + allocate;
-            const status =
-              newPainted >= targetOrder.totalQuantity
-                ? "PINTADO"
-                : "EM_PINTURA";
-            updatedOrders[oIndex] = {
-              ...targetOrder,
-              paintedQuantity: newPainted,
-              status,
-            };
-          } else if (pack.type === "CORTE_LASER") {
-            const newCut = (targetOrder.cutQuantity || 0) + allocate;
-            const status =
-              newCut >= targetOrder.totalQuantity ? "CORTADO" : "EM_CORTE";
-            updatedOrders[oIndex] = {
-              ...targetOrder,
-              cutQuantity: newCut,
-              status,
-            };
-          } else {
-            const newProduced = (targetOrder.producedQuantity || 0) + allocate;
-            const status =
-              newProduced >= targetOrder.totalQuantity
-                ? "PRODUZIDO"
-                : "EM_PRODUCAO";
-            updatedOrders[oIndex] = {
-              ...targetOrder,
-              producedQuantity: newProduced,
-              status,
-            };
-          }
-        }
-
-        qtyToAllocate -= allocate;
-        totalAssignedQty += allocate;
-
-        const baseLog: any = {
-          orderId: o.id,
-          operatorId: pack.operatorId,
-          type: pack.type,
-          timestamp: endTime,
-          durationMillis: 0,
-          processName: pack.processName,
-        };
-        if (pack.type === "EMBALAGEM") {
-          baseLog.quantityPacked = allocate;
-        } else if (pack.type === "PINTURA") {
-          baseLog.quantityPainted = allocate;
-        } else if (pack.type === "CORTE_LASER") {
-          baseLog.quantityCut = allocate;
-        } else {
-          baseLog.quantityProcessed = allocate;
-        }
-        logsToAdd.push(baseLog);
-      }
-    }
-
-    if (pack.type === "EMBALAGEM" && targetQty > 0) {
-      const stockId = `${pack.itemId}|${pack.color}|${pack.size}|${pack.variation}|ACABADO`;
-      const existingStock = db.stocks.find((s) => s.id === stockId);
-      if (existingStock) {
-        db.updateStocks([
-          {
-            ...existingStock,
-            quantity: existingStock.quantity + targetQty,
-          },
-        ]);
-      } else {
-        db.updateStocks([
-          {
-            id: stockId,
-            itemId: pack.itemId,
-            color: pack.color,
-            size: pack.size,
-            variation: pack.variation,
-            quantity: targetQty,
-            stage: "ACABADO",
-          },
-        ]);
-      }
-      db.addStockMovement?.({
-        itemId: pack.itemId,
-        color: pack.color,
-        size: pack.size,
-        variation: pack.variation,
-        quantity: targetQty,
-        type: "ENTRADA",
-        description: `Embalagem finalizada via Ger√™ncia - entrada autom√°tica no estoque (Operador: ${pack.operatorId} | Finalizado por: ${currentUser.name})`,
-      });
-    } else if (pack.type === "PRODUCAO" && targetQty > 0) {
-      if (qtyToAllocate > 0) {
-        const stockId = `${pack.itemId}|${pack.color}|${pack.size}|${pack.variation}|INTERMEDIARIO`;
-        const existingStock = db.stocks.find((s) => s.id === stockId);
-        if (existingStock) {
-          db.updateStocks([
-            {
-              ...existingStock,
-              quantity: existingStock.quantity + qtyToAllocate,
-            },
-          ]);
-        } else {
-          db.updateStocks([
-            {
-              id: stockId,
-              itemId: pack.itemId,
-              color: pack.color,
-              size: pack.size,
-              variation: pack.variation,
-              quantity: qtyToAllocate,
-              stage: "INTERMEDIARIO",
-            },
-          ]);
-        }
-        db.addStockMovement?.({
-          itemId: pack.itemId,
-          color: pack.color,
-          size: pack.size,
-          variation: pack.variation,
-          quantity: qtyToAllocate,
-          type: "ENTRADA",
-          description: `Sobra de Produ√ß√£o finalizada via Ger√™ncia - entrada no estoque intermedi√°rio (Operador: ${pack.operatorId} | Finalizado por: ${currentUser.name})`,
-        });
-      }
-    }
-
-    if (totalAssignedQty > 0) {
-      logsToAdd.forEach((log) => {
-        log.durationMillis =
-          totalAssignedQty > 0
-            ? Math.round(
-                ((log.quantityPacked ||
-                  log.quantityProcessed ||
-                  log.quantityPainted ||
-                  log.quantityCut ||
-                  0) /
-                  totalAssignedQty) *
-                  durationMillis,
-              )
-            : durationMillis;
-        log.id = Date.now() + Math.random();
-      });
-      db.addLogs(logsToAdd);
-    } else {
-      const singleLog: any = {
-        id: Date.now(),
-        operatorId: pack.operatorId,
-        type: pack.type,
-        timestamp: endTime,
-        durationMillis,
-        processName: pack.processName,
-      };
-      if (pack.type === "EMBALAGEM") {
-        singleLog.quantityPacked = targetQty;
-      } else if (pack.type === "PINTURA") {
-        singleLog.quantityPainted = targetQty;
-      } else if (pack.type === "CORTE_LASER") {
-        singleLog.quantityCut = targetQty;
-      } else {
-        singleLog.quantityProcessed = targetQty;
-      }
-      db.addLogs([singleLog]);
-    }
-
-    const itemDb = db.items.find((i) => i.id === pack.itemId);
-    db.addNotification?.({
-      message: `Apontamento finalizado por Ger√™ncia (${pack.type.replace("_", " ")}): ${targetQty} de ${itemDb?.name || "Item"} (${pack.color || "-"} | ${pack.size || "-"}) do Operador ${pack.operatorId}`,
-      read: false,
-    });
-
-    db.updateOrders(updatedOrders);
-    db.removeActivePack(pack.id);
-    setIsMonitoringModalOpen(false);
-  };
-
-  useEffect(() => {
-    const handleEvents = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setIsMonitoringModalOpen(false);
-      }
-    };
-    window.addEventListener("keydown", handleEvents);
-    return () => window.removeEventListener("keydown", handleEvents);
-  }, []);
-
-  const [chartsReady, setChartsReady] = useState(false);
-
-  useEffect(() => {
-    if (activeTab === "PAINEL") {
-      // Pequeno timeout de 150ms garante que o layout do navegador esteja pintado e com dimens√µes calculadas antes de montar o Recharts
-      const timer = setTimeout(() => {
-        setChartsReady(true);
-      }, 150);
-      return () => clearTimeout(timer);
-    } else {
-      setChartsReady(false);
-    }
-  }, [activeTab]);
-
-  React.useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(Date.now()), 60000); // update every minute
-    return () => clearInterval(timer);
-  }, []);
-
-  const now = new Date();
-  const todayStart = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  ).getTime();
-  const yesterdayStart = todayStart - 86400000;
-
-  const filteredLogs = React.useMemo(() => {
-    let result = db.logs;
-    if (selectedItemId !== "ALL") {
-      result = result.filter((log) => {
-        const order = db.orders.find((o) => o.id === log.orderId);
-        return order && order.itemId === selectedItemId;
-      });
-    }
-    if (selectedSector !== "ALL") {
-      result = result.filter((l) => l.type === selectedSector);
-    }
-    return result;
-  }, [db.logs, db.orders, selectedItemId, selectedSector]);
-
-  const logsToday = React.useMemo(
-    () => filteredLogs.filter((l) => l.timestamp >= todayStart),
-    [filteredLogs, todayStart]
-  );
-  const logsYesterday = React.useMemo(
-    () => filteredLogs.filter((l) => l.timestamp >= yesterdayStart && l.timestamp < todayStart),
-    [filteredLogs, yesterdayStart, todayStart]
-  );
-
-  const calcStats = React.useCallback((logs: any[]) => {
-    const totalPacked = logs.reduce(
-      (acc, log) =>
-        acc +
-        (log.quantityPacked ||
-          log.quantityProcessed ||
-          log.quantityPainted ||
-          log.quantityCut ||
-          0),
-      0,
-    );
-    const totalMillis = logs.reduce(
-      (acc, log) => acc + (log.durationMillis || 0),
-      0,
-    );
-    const totalHours = totalMillis / 3600000;
-    const pph = totalHours > 0 ? Math.round(totalPacked / totalHours) : 0;
-    return { totalPacked, totalHours, pph };
-  }, []);
-
-  const todayStats = React.useMemo(() => calcStats(logsToday), [calcStats, logsToday]);
-  const yesterdayStats = React.useMemo(() => calcStats(logsYesterday), [calcStats, logsYesterday]);
-
-  const todayFaturamento = React.useMemo(() => {
-    return db.logs
-      .filter((l) => l.type === "FATURAMENTO" && l.timestamp >= todayStart)
-      .reduce((acc, log) => {
-        let price = 0;
-        if (log.orderId) {
-          const o = db.orders.find((ord) => ord.id === log.orderId);
-          if (o) price = o.unitPrice || 0;
-        }
-        return (
-          acc + (log.quantityInvoiced || log.quantityProcessed || 0) * price
-        );
-      }, 0);
-  }, [db.logs, db.orders, todayStart]);
-
-  const todayProducedQuantity = React.useMemo(() => {
-    return db.logs
-      .filter((l) => l.type === "PRODUCAO" && l.timestamp >= todayStart)
-      .reduce((acc, log) => acc + (log.quantityProcessed || 0), 0);
-  }, [db.logs, todayStart]);
-
-  const pendingOrdersDeliverToday = React.useMemo(() => {
-    const d = new Date(todayStart);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    const todayStr = `${yyyy}-${mm}-${dd}`;
-    return db.orders.filter((o) => o.isActive && o.deliveryDate === todayStr)
-      .length;
-  }, [db.orders, todayStart]);
-
-  let comparisonMsg = "Sem base de compara√ß√£o (ontem: 0 pe√ßas).";
-  let comparisonColor = "text-gray-500";
-  if (yesterdayStats.pph > 0) {
-    if (todayStats.pph > yesterdayStats.pph) {
-      comparisonMsg = `Produtividade ${((todayStats.pph / yesterdayStats.pph - 1) * 100).toFixed(1)}% melhor que ontem! üöÄ`;
-      comparisonColor = "text-green-600";
-    } else if (todayStats.pph < yesterdayStats.pph) {
-      comparisonMsg = `Produtividade ${((1 - todayStats.pph / yesterdayStats.pph) * 100).toFixed(1)}% menor que ontem. üìâ`;
-      comparisonColor = "text-red-500";
-    } else {
-      comparisonMsg = "Produtividade igual a de ontem.";
-      comparisonColor = "text-blue-600";
-    }
-  }
-
-  const groupedOrders = React.useMemo(() => {
-    const map = new Map<string, { total: number; packed: number; customerName: string; isActive: boolean }>();
-    db.orders.forEach((o) => {
-      const g = map.get(o.orderCode) || { total: 0, packed: 0, customerName: o.customerName || "", isActive: false };
-      g.total += o.totalQuantity || 0;
-      g.packed += o.packedQuantity || 0;
-      if (o.customerName && !g.customerName) {
-        g.customerName = o.customerName;
-      }
-      // If order is active and not fully packed
-      if (o.isActive && o.status !== "FATURADO" && (o.packedQuantity || 0) < o.totalQuantity) {
-        g.isActive = true;
-      }
-      map.set(o.orderCode, g);
-    });
-    return Array.from(map.entries()).map(([code, data]) => ({ code, ...data }));
-  }, [db.orders]);
-
-  const filteredGroupedOrders = React.useMemo(() => {
-    let result = groupedOrders;
-
-    // 1. Filter by Active status vs All
-    if (panelOrdersFilter === "ATIVOS") {
-      result = result.filter((g) => g.isActive && g.packed < g.total);
-    }
-
-    // 2. Filter by Search term
-    if (panelOrdersSearch.trim() !== "") {
-      const term = panelOrdersSearch.trim().toLowerCase();
-      result = result.filter(
-        (g) =>
-          g.code.toLowerCase().includes(term) ||
-          g.customerName.toLowerCase().includes(term),
-      );
-    }
-
-    return result;
-  }, [groupedOrders, panelOrdersFilter, panelOrdersSearch]);
-
-  const statsTodaySector = React.useMemo(() => {
-    let prod = 0;
-    let corte = 0;
-    let pint = 0;
-    let emb = 0;
-
-    db.logs
-      .filter((l) => l.timestamp >= todayStart)
-      .forEach((l) => {
-        if (l.type === "PRODUCAO") prod += l.quantityProcessed || 0;
-        else if (l.type === "CORTE_LASER") corte += l.quantityCut || 0;
-        else if (l.type === "PINTURA") pint += l.quantityPainted || 0;
-        else if (l.type === "EMBALAGEM") emb += l.quantityPacked || 0;
-      });
-
-    return { prod, corte, pint, emb };
-  }, [db.logs, todayStart]);
-
-  const cargaHorariaStats = React.useMemo(() => {
-    const stats: Record<number, { sectorName: string, estimatedSec: number, actualTimeSec: number, stdTimeProducedSec: number }> = {};
-    
-    db.sectors.forEach(s => {
-      stats[s.id] = { sectorName: s.name, estimatedSec: 0, actualTimeSec: 0, stdTimeProducedSec: 0 };
-    });
-
-    // 1. Calculate estimated remaining time (Carga Hor√°ria Estimada) based on pending items
-    const activeBatches = db.productionBatches.filter(b => b.status !== "CONCLUIDO");
-    activeBatches.forEach(b => {
-      if (!stats[b.sectorId]) return;
-      
-      const orders = db.orders.filter(o => o.isActive && o.status !== "FATURADO" && o.status !== "CANCELADO" && b.orderIds?.includes(o.id));
-      orders.forEach(o => {
-        const item = db.items.find(i => i.id === o.itemId);
-        let stdSec = 30; // fallback
-        if (item?.standardCycles && item.standardCycles[b.sectorId]) {
-           stdSec = item.standardCycles[b.sectorId] * 60;
-        } else {
-           const flow = db.productFlows.find(f => f.itemId === o.itemId);
-           if (flow && flow.sectorTimes) {
-             stdSec = flow.sectorTimes[String(b.sectorId)] || flow.sectorTimes[b.sectorId] || 30;
-           }
-        }
-        const sectorConfig = db.sectors.find(s => s.id === b.sectorId);
-        let completed = 0;
-        if (sectorConfig?.name === "Corte Laser") completed = o.cutQuantity || 0;
-        else if (sectorConfig?.name === "Produ√ß√£o") completed = o.producedQuantity || 0;
-        else if (sectorConfig?.name === "Pintura") completed = o.paintedQuantity || 0;
-        else if (sectorConfig?.name === "Embalagem") completed = o.packedQuantity || 0;
-        
-        const remaining = Math.max(0, o.totalQuantity - completed);
-        stats[b.sectorId].estimatedSec += (remaining * stdSec);
-      });
-    });
-
-    // 2. Pace / Previs√£o (Compare Actual Time vs Standard Time value produced)
-    const now = Date.now();
-    // Add current active tasks time
-    db.activePacks.forEach(pack => {
-       const sector = db.sectors.find(s => s.name === pack.processName);
-       if (sector && stats[sector.id]) {
-          stats[sector.id].actualTimeSec += Math.floor((now - pack.startTime) / 1000);
-       }
-    });
-
-    // Add completed logs from today
-    db.logs.filter(l => l.timestamp >= todayStart).forEach(l => {
-       const sector = db.sectors.find(s => s.name === l.processName);
-       if (sector && stats[sector.id]) {
-          const lDurationSec = Math.floor(l.durationMillis / 1000);
-          stats[sector.id].actualTimeSec += lDurationSec;
-          
-          let stdSec = 30;
-          const item = db.items.find(i => i.id === l.itemId);
-          if (item?.standardCycles && item.standardCycles[sector.id]) {
-             stdSec = item.standardCycles[sector.id] * 60;
-          } else {
-             const flow = db.productFlows.find(f => f.itemId === l.itemId);
-             if (flow && flow.sectorTimes) {
-               stdSec = flow.sectorTimes[String(sector.id)] || flow.sectorTimes[sector.id] || 30;
-             }
-          }
-          let qty = l.quantityProcessed || l.quantityCut || l.quantityPainted || l.quantityPacked || 0;
-          stats[sector.id].stdTimeProducedSec += (qty * stdSec);
-       }
-    });
-
-    return Object.values(stats).filter(s => s.estimatedSec > 0 || s.actualTimeSec > 0);
-  }, [db.sectors, db.productionBatches, db.orders, db.items, db.productFlows, db.activePacks, db.logs, todayStart]);
-
-  const producaoActive = db.activePacks.filter(
-    (p) => !["PINTURA", "EMBALAGEM", "CORTE_LASER"].includes(p.type),
-  );
-  const corteLaserActive = db.activePacks.filter(
-    (p) => p.type === "CORTE_LASER",
-  );
-  const pinturaActive = db.activePacks.filter((p) => p.type === "PINTURA");
-  const embalagemActive = db.activePacks.filter((p) => p.type === "EMBALAGEM");
-
-  const efficiencyData = React.useMemo(() => {
-    const earliestLog =
-      db.logs.length > 0
-        ? Math.min(...db.logs.map((l) => l.timestamp))
-        : Date.now();
-    const daysElapsed = Math.max(
-      1,
-      Math.ceil((Date.now() - earliestLog) / 86400000),
-    );
-
-    let totalProd = 0,
-      totalCorte = 0,
-      totalPint = 0,
-      totalEmb = 0;
-    db.logs.forEach((l) => {
-      if (l.type === "PRODUCAO") totalProd += l.quantityProcessed || 0;
-      else if (l.type === "CORTE_LASER") totalCorte += l.quantityCut || 0;
-      else if (l.type === "PINTURA") totalPint += l.quantityPainted || 0;
-      else if (l.type === "EMBALAGEM") totalEmb += l.quantityPacked || 0;
-    });
-
-    const getSectorAvg = (name: string, total: number) => {
-      const sector = db.sectors.find((s) =>
-        s.name.toLowerCase().includes(name.toLowerCase()),
-      );
-      return {
-        name: sector ? sector.name : name,
-        "M√©dia Di√°ria": Math.round(total / daysElapsed),
-        Capacidade: sector?.dailyCapacity || 1000,
-      };
-    };
-
-    return [
-      getSectorAvg("Corte", totalCorte),
-      getSectorAvg("Produ", totalProd),
-      getSectorAvg("Pintura", totalPint),
-      getSectorAvg("Embalagem", totalEmb),
-    ];
-  }, [db.logs, db.sectors]);
-
-  const sectorOccupancyData = React.useMemo(() => {
-    return db.sectors.map((sector) => {
-      const sectorBatches = db.productionBatches.filter(
-        (b) => b.sectorId === sector.id && b.status !== "CONCLUIDO",
-      );
-      const sectorOrders = sectorBatches
-        .flatMap((b) =>
-          b.orderIds.map((oid) => db.orders.find((o) => o.id === oid)),
-        )
-        .filter((o): o is any => o !== undefined);
-      const totalQuantity = sectorOrders.reduce(
-        (sum, o) => sum + (o?.totalQuantity || 0),
-        0,
-      );
-      const capacity = sector.dailyCapacity || 1000;
-      return {
-        name: sector.name,
-        quantity: totalQuantity,
-        capacity: capacity,
-        isOverloaded: totalQuantity > capacity,
-      };
-    });
-  }, [db.sectors, db.productionBatches, db.orders]);
-
-  const formatDuration = (startTime: number) => {
-    const diff = Math.max(0, currentTime - startTime);
-    const m = Math.floor(diff / 60000);
-    const h = Math.floor(m / 60);
-    const d = Math.floor(h / 24);
-    if (d > 0) return `${d}d ${h % 24}h ${m % 60}m`;
-    if (h > 0) return `${h}h ${m % 60}m`;
-    return `${m}m`;
-  };
-
-  return (
-    <ScreenLayout id="admin-screen-layout">
-      <ScreenHeader
-        title={currentUser.role === "PCP" ? "Painel PCP" : "Administra√ß√£o"}
-        icon={<BarChart2 className="text-blue-600" size={20} />}
-      />
-
-      <div className="bg-slate-50 px-3 py-1.5 border-b border-slate-200 shrink-0">
-        <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 overflow-x-auto scrollbar-none max-w-full gap-0.5 select-none">
-          {isSubTabAllowed(db.activeTenant, "pcp:painel") && (
-            <button
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "PAINEL" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-              onClick={() => setActiveTab("PAINEL")}
-            >
-              Painel Geral
-            </button>
-          )}
-          {isSubTabAllowed(db.activeTenant, "pcp:monitoramento") && (
-            <button
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "MONITORAMENTO" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-              onClick={() => setActiveTab("MONITORAMENTO")}
-            >
-              Monitoramento
-            </button>
-          )}
-          {(currentUser.role === "ADMIN" || currentUser.role === "GERENCIA") && isSubTabAllowed(db.activeTenant, "pcp:gestao_pessoas") && (
-            <button
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "GESTAO_PESSOAS" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-              onClick={() => setActiveTab("GESTAO_PESSOAS")}
-            >
-              üë• Gest√£o de Pessoas
-            </button>
-          )}
-          {(currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.name.toLowerCase().includes("romario") ||
-            currentUser.name.toLowerCase().includes("alessandra")) && isSubTabAllowed(db.activeTenant, "pcp:evolucao_embalagem") && (
-            <button
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "EVOLUCAO_EMBALAGEM" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-              onClick={() => setActiveTab("EVOLUCAO_EMBALAGEM")}
-            >
-              üì¶ Evolu√ß√£o Embalagem
-            </button>
-          )}
-
-          {isSubTabAllowed(db.activeTenant, "pcp:etiquetas") && (
-            <button
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "ETIQUETAS" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-              onClick={() => setActiveTab("ETIQUETAS")}
-            >
-              üè∑Ô∏è Etiquetas
-            </button>
-          )}
-
-          {(currentUser.role === "ADMIN" || currentUser.role === "PCP" || currentUser.role === "GERENCIA") && (
-            <>
-              {isSubTabAllowed(db.activeTenant, "pcp:cadastros") && (
-                <button
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "CADASTROS" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-                  onClick={() => setActiveTab("CADASTROS")}
-                >
-                  Cadastros
-                </button>
-              )}
-              {isSubTabAllowed(db.activeTenant, "pcp:lotes") && (
-                <button
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "LOTES" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-                  onClick={() => setActiveTab("LOTES")}
-                >
-                  Lotes
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {["PAINEL", "MONITORAMENTO"].includes(activeTab) ? (
-        <ScrollContainer paddingSize="dense" className="space-y-4">
-          {activeTab === "PAINEL" ? (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
-                <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-center">
-                  <div className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">
-                    Faturamento Hoje
-                  </div>
-                  <div className="text-2xl font-black text-green-600">
-                    {new Intl.NumberFormat("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    }).format(todayFaturamento)}
-                  </div>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-center">
-                  <div className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">
-                    Pe√ßas Produzidas Hoje
-                  </div>
-                  <div className="text-2xl font-black text-blue-600">
-                    {todayProducedQuantity}
-                  </div>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-center">
-                  <div className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">
-                    Pedidos p/ Entrega Hoje
-                  </div>
-                  <div className="text-2xl font-black text-orange-500">
-                    {pendingOrdersDeliverToday} pendentes
-                  </div>
-                </div>
-                {/* Meta Di√°ria Card */}
-                <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <div className="text-gray-500 text-[10px] font-extrabold uppercase tracking-wider">
-                      Progresso Meta Di√°ria
-                    </div>
-                    {isEditingGoal ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          value={tempGoalInput}
-                          onChange={(e) => setTempGoalInput(e.target.value)}
-                          className="w-16 border border-indigo-200 rounded px-1 py-0.5 text-xs text-indigo-900 font-bold focus:outline-none"
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              const val = Math.max(1, parseInt(tempGoalInput, 10) || 1);
-                              setDailyProductionGoal(val);
-                              localStorage.setItem("producao_daily_production_goal", String(val));
-                              setIsEditingGoal(false);
-                            } else if (e.key === "Escape") {
-                              setIsEditingGoal(false);
-                              setTempGoalInput(String(dailyProductionGoal));
-                            }
-                          }}
-                        />
-                        <button
-                          onClick={() => {
-                            const val = Math.max(1, parseInt(tempGoalInput, 10) || 1);
-                            setDailyProductionGoal(val);
-                            localStorage.setItem("producao_daily_production_goal", String(val));
-                            setIsEditingGoal(false);
-                          }}
-                          className="bg-emerald-500 text-white p-0.5 rounded text-xs hover:bg-emerald-600 cursor-pointer"
-                          title="Salvar"
-                        >
-                          ‚úì
-                        </button>
-                        <button
-                          onClick={() => {
-                            setIsEditingGoal(false);
-                            setTempGoalInput(String(dailyProductionGoal));
-                          }}
-                          className="bg-gray-400 text-white p-0.5 rounded text-xs hover:bg-gray-500 cursor-pointer"
-                          title="Cancelar"
-                        >
-                          ‚úï
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setTempGoalInput(String(dailyProductionGoal));
-                          setIsEditingGoal(true);
-                        }}
-                        className="text-[10px] text-indigo-600 hover:text-indigo-800 font-extrabold flex items-center gap-0.5 bg-indigo-50 px-1.5 py-0.5 rounded cursor-pointer"
-                        title="Ajustar Meta"
-                      >
-                        ‚úèÔ∏è Meta: {dailyProductionGoal}
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="mt-1 flex items-baseline justify-between">
-                    <span className="text-xl font-black text-indigo-950">
-                      {todayProducedQuantity} <span className="text-xs font-semibold text-gray-400">/ {dailyProductionGoal}</span>
-                    </span>
-                    <span className="text-xs font-extrabold text-indigo-600">
-                      {Math.round((todayProducedQuantity / dailyProductionGoal) * 100) || 0}%
-                    </span>
-                  </div>
-
-                  <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden mt-1.5 border border-gray-200/50">
-                    <div
-                      className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-500"
-                      style={{
-                        width: `${Math.min(100, Math.round((todayProducedQuantity / dailyProductionGoal) * 100) || 0)}%`,
-                      }}
-                    />
-                  </div>
-
-                  <span className="text-[9px] text-gray-500 font-medium mt-1 truncate block">
-                    {todayProducedQuantity >= dailyProductionGoal ? (
-                      <span className="text-emerald-600 font-bold">üéâ Meta di√°ria atingida! Parab√©ns!</span>
-                    ) : (
-                      <span>Falta(m) {dailyProductionGoal - todayProducedQuantity} pe√ßas para concluir a meta.</span>
-                    )}
-                  </span>
-                </div>
-              </div>
-
-              {/* Novo Widget: Carga Hor√°ria e Previs√£o de Conclus√£o */}
-              {cargaHorariaStats.length > 0 && (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4">
-                  <h3 className="text-gray-800 font-extrabold text-sm mb-3 border-b pb-2 flex items-center gap-2">
-                    ‚è±Ô∏è Estimativa de Carga e Ritmo de Produ√ß√£o (Setores Ativos)
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {cargaHorariaStats.map(stat => {
-                      // format seconds as hh:mm
-                      const formatSecs = (secs: number) => {
-                        const h = Math.floor(secs / 3600);
-                        const m = Math.floor((secs % 3600) / 60);
-                        return `${h}h ${m}m`;
-                      };
-                      
-                      // ritmo = Tempo Produzido Equivalente Padr√£o / Tempo Real Gasto
-                      // Ex: Trabalhou 1 hora, mas produziu o equivalente a 1h30 (ritmo > 1) = Adiantado
-                      // Trabalhou 1 hora, mas produziu o equivalente a 30m (ritmo < 1) = Atrasado
-                      let pacePct = 0;
-                      if (stat.actualTimeSec > 0) {
-                        pacePct = (stat.stdTimeProducedSec / stat.actualTimeSec) * 100;
-                      }
-
-                      return (
-                        <div key={stat.sectorName} className="bg-slate-50 border border-slate-200 rounded p-3">
-                          <div className="font-bold text-slate-800 text-xs mb-1 uppercase tracking-wider">{stat.sectorName}</div>
-                          
-                          <div className="flex flex-col gap-2 mt-2">
-                            <div className="bg-white p-2 border border-slate-100 rounded shadow-sm">
-                              <span className="text-[10px] text-slate-500 font-semibold block uppercase">Carga Fila (Padr√£o)</span>
-                              <span className="text-sm font-black text-slate-700">{formatSecs(stat.estimatedSec)}</span>
-                            </div>
-
-                            {stat.actualTimeSec > 0 && (
-                              <div className={`p-2 border rounded shadow-sm ${pacePct >= 100 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
-                                <span className="text-[10px] font-semibold block uppercase" style={{ color: pacePct >= 100 ? '#059669' : '#dc2626' }}>
-                                  Ritmo Atual (Real x Padr√£o)
-                                </span>
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs font-bold" style={{ color: pacePct >= 100 ? '#065f46' : '#991b1b' }}>
-                                    {pacePct >= 100 ? 'No ritmo/Adiantado' : 'Atrasado'}
-                                  </span>
-                                  <span className="text-sm font-black" style={{ color: pacePct >= 100 ? '#047857' : '#b91c1c' }}>
-                                    {Math.round(pacePct)}%
-                                  </span>
-                                </div>
-                                <div className="text-[9px] mt-1 text-slate-600 opacity-80 leading-tight">
-                                  Produziu equivale a {formatSecs(stat.stdTimeProducedSec)} em {formatSecs(stat.actualTimeSec)} operados.
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-white p-4 rounded-lg shadow-sm border flex flex-col gap-4">
-                <div className="flex flex-col gap-3 border-b border-gray-100 pb-3 mt-2">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                    <label className="text-sm font-semibold text-gray-700">
-                      Filtrar Produtividade por Produto:
-                    </label>
-                    <select
-                      value={selectedItemId}
-                      onChange={(e) =>
-                        setSelectedItemId(
-                          e.target.value === "ALL"
-                            ? "ALL"
-                            : Number(e.target.value),
-                        )
-                      }
-                      className="border border-gray-300 p-2 rounded bg-white text-gray-800 w-full md:w-64 focus:md:w-80 cursor-pointer text-sm transition-all duration-305"
-                    >
-                      <option value="ALL">Todos os Produtos (Geral)</option>
-                      {db.items.map((it) => (
-                        <option key={it.id} value={it.id}>
-                          {it.code} - {it.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                    <label className="text-sm font-semibold text-gray-700">
-                      Filtrar Produtividade por Setor:
-                    </label>
-                    <select
-                      value={selectedSector}
-                      onChange={(e) => setSelectedSector(e.target.value as any)}
-                      className="border border-gray-300 p-2 rounded bg-white text-gray-800 w-full md:w-64 focus:md:w-80 cursor-pointer text-sm transition-all duration-305"
-                    >
-                      <option value="ALL">Todos os Setores (Geral)</option>
-                      <option value="CORTE_LASER">Corte a Laser</option>
-                      <option value="PRODUCAO">Produ√ß√£o</option>
-                      <option value="PINTURA">Pintura</option>
-                      <option value="EMBALAGEM">Embalagem</option>
-                    </select>
-                  </div>
-                </div>
-
-                <h3 className="font-semibold text-gray-700">
-                  Produtividade de Hoje{" "}
-                  {(selectedItemId !== "ALL" || selectedSector !== "ALL") &&
-                    "(Filtrada)"}
-                </h3>
-                <div className="flex justify-around text-center">
-                  <div>
-                    <p className="text-sm text-gray-500">Pe√ßas Processadas</p>
-                    <p className="text-2xl font-bold text-blue-600">
-                      {Number.isNaN(todayStats.totalPacked)
-                        ? 0
-                        : todayStats.totalPacked}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Tempo Gasto</p>
-                    <p className="text-2xl font-bold text-orange-600">
-                      {Number.isNaN(todayStats.totalHours)
-                        ? 0
-                        : Math.round(todayStats.totalHours * 10) / 10}
-                      h
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">P√ßs / Hora</p>
-                    <p className="text-2xl font-bold text-green-600">
-                      {Number.isNaN(todayStats.pph) ? 0 : todayStats.pph}
-                    </p>
-                  </div>
-                </div>
-                <div
-                  className={`text-sm font-semibold text-center mt-2 ${comparisonColor}`}
-                >
-                  {comparisonMsg}
-                </div>
-
-                <hr className="border-gray-100" />
-                <h3 className="font-semibold text-gray-700">
-                  Efici√™ncia Operacional (M√©dia Di√°ria vs Capacidade)
-                </h3>
-                <div className="w-full h-64 mt-2 bg-gray-50/30 rounded-lg flex items-center justify-center border border-gray-100 relative min-h-[16rem]">
-                  {chartsReady ? (
-                    <ResponsiveContainer
-                      width="100%"
-                      height={240}
-                      minWidth={0}
-                      minHeight={0}
-                      initialDimension={{ width: 1, height: 1 }}
-                    >
-                      <BarChart
-                        data={efficiencyData}
-                        margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
-                      >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          vertical={false}
-                          stroke="#E5E7EB"
-                        />
-                        <XAxis
-                          dataKey="name"
-                          tick={{ fontSize: 12 }}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          tick={{ fontSize: 12 }}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <Tooltip
-                          cursor={{ fill: "transparent" }}
-                          contentStyle={{
-                            borderRadius: "8px",
-                            border: "none",
-                            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                          }}
-                        />
-                        <Legend
-                          iconType="circle"
-                          wrapperStyle={{ fontSize: "12px" }}
-                        />
-                        <Bar
-                          dataKey="Capacidade"
-                          fill="#E5E7EB"
-                          radius={[4, 4, 0, 0]}
-                        />
-                        <Bar
-                          dataKey="M√©dia Di√°ria"
-                          fill="#3B82F6"
-                          radius={[4, 4, 0, 0]}
-                        />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="w-6 h-6 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin"></div>
-                      <span className="text-xs text-gray-400 font-medium">
-                        Carregando dados de efici√™ncia...
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                <hr className="border-gray-100 mt-4" />
-                <h3 className="font-semibold text-gray-700">
-                  Ocupa√ß√£o dos Setores vs Capacidade Di√°ria (Lotes Pendentes)
-                </h3>
-                <div className="text-xs text-red-600 font-medium bg-red-50 px-2 py-1 rounded border border-red-100 mb-2 mt-1">
-                  üö® Vermelho indica acima de 100% de capacidade di√°ria
-                </div>
-                <div className="w-full h-64 mt-2 mb-6 bg-gray-50/30 rounded-lg flex items-center justify-center border border-gray-100 relative min-h-[16rem]">
-                  {chartsReady ? (
-                    <ResponsiveContainer
-                      width="100%"
-                      height={240}
-                      minWidth={0}
-                      minHeight={0}
-                      initialDimension={{ width: 1, height: 1 }}
-                    >
-                      <BarChart
-                        data={sectorOccupancyData}
-                        margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
-                      >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          vertical={false}
-                          stroke="#E5E7EB"
-                        />
-                        <XAxis
-                          dataKey="name"
-                          tick={{ fontSize: 12 }}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          tick={{ fontSize: 12 }}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <Tooltip
-                          cursor={{ fill: "transparent" }}
-                          contentStyle={{
-                            borderRadius: "8px",
-                            border: "none",
-                            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                          }}
-                        />
-                        <Legend
-                          iconType="circle"
-                          wrapperStyle={{ fontSize: "12px" }}
-                        />
-                        <Bar
-                          name="Capacidade Di√°ria"
-                          dataKey="capacity"
-                          fill="#D1D5DB"
-                          radius={[4, 4, 0, 0]}
-                        />
-                        <Bar
-                          name="Carga Agrupada"
-                          dataKey="quantity"
-                          radius={[4, 4, 0, 0]}
-                        >
-                          {sectorOccupancyData.map(
-                            (entry: any, index: number) => (
-                              <Cell
-                                key={`cell-${index}`}
-                                fill={
-                                  entry.isOverloaded ? "#EF4444" : "#6366F1"
-                                }
-                              />
-                            ),
-                          )}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="w-6 h-6 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin"></div>
-                      <span className="text-xs text-gray-400 font-medium">
-                        Carregando ocupa√ß√£o por setor...
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="bg-white p-4 rounded-lg shadow-sm border mt-1">
-                <h3 className="font-semibold text-gray-700 mb-4">
-                  Pe√ßas Produzidas Hoje (por Setor)
-                </h3>
-                <div className="flex flex-col gap-3">
-                  {[
-                    {
-                      label: "Corte a Laser",
-                      value: statsTodaySector.corte,
-                      color: "bg-teal-500",
-                    },
-                    {
-                      label: "Produ√ß√£o",
-                      value: statsTodaySector.prod,
-                      color: "bg-blue-500",
-                    },
-                    {
-                      label: "Pintura",
-                      value: statsTodaySector.pint,
-                      color: "bg-pink-500",
-                    },
-                    {
-                      label: "Embalagem",
-                      value: statsTodaySector.emb,
-                      color: "bg-orange-500",
-                    },
-                  ].map((s) => {
-                    const max = Math.max(
-                      statsTodaySector.corte,
-                      statsTodaySector.prod,
-                      statsTodaySector.pint,
-                      statsTodaySector.emb,
-                      1,
-                    );
-                    const percent = (s.value / max) * 100;
-                    return (
-                      <div
-                        key={s.label}
-                        className="flex flex-col gap-1 w-full text-sm"
-                      >
-                        <div className="flex justify-between font-medium text-gray-700">
-                          <span>{s.label}</span>
-                          <span>{s.value} p√ßs</span>
-                        </div>
-                        <div className="w-full bg-gray-100 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full ${s.color} transition-all duration-500`}
-                            style={{ width: `${percent}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto w-full">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                  <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col items-center justify-center">
-                    <span className="text-sm font-semibold text-gray-500 mb-1 text-center">
-                      Em Produ√ß√£o
-                    </span>
-                    <span className="text-3xl font-bold text-blue-600">
-                      {
-                        db.orders.filter((o) => o.status === "EM_PRODUCAO")
-                          .length
-                      }
-                    </span>
-                  </div>
-                  <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col items-center justify-center">
-                    <span className="text-sm font-semibold text-gray-500 mb-1 text-center">
-                      Em Corte Laser
-                    </span>
-                    <span className="text-3xl font-bold text-teal-600">
-                      {db.orders.filter((o) => o.status === "EM_CORTE").length}
-                    </span>
-                  </div>
-                  <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col items-center justify-center">
-                    <span className="text-sm font-semibold text-gray-500 mb-1 text-center">
-                      Em Pintura
-                    </span>
-                    <span className="text-3xl font-bold text-pink-600">
-                      {
-                        db.orders.filter((o) => o.status === "EM_PINTURA")
-                          .length
-                      }
-                    </span>
-                  </div>
-                  <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col items-center justify-center">
-                    <span className="text-sm font-semibold text-gray-500 mb-1 text-center">
-                      Embalando
-                    </span>
-                    <span className="text-3xl font-bold text-orange-600">
-                      {db.orders.filter((o) => o.status === "EMBALANDO").length}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-2 border-b border-gray-100">
-                  <h3 className="font-extrabold text-gray-800 text-sm uppercase tracking-wider">
-                    üìã Progresso dos Pedidos ({filteredGroupedOrders.length})
-                  </h3>
-                  
-                  <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-                    {/* Search Input */}
-                    <input
-                      type="text"
-                      placeholder="Buscar por C√≥digo ou Cliente..."
-                      value={panelOrdersSearch}
-                      onChange={(e) => {
-                        setPanelOrdersSearch(e.target.value);
-                        setPanelOrdersLimit(12); // reset pagination when searching
-                      }}
-                      className="border border-gray-250 rounded-lg p-1.5 px-3 text-xs bg-white text-gray-800 focus:outline-none focus:border-indigo-500 font-medium w-full sm:w-56"
-                    />
-
-                    {/* Status Filter Toggle */}
-                    <div className="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
-                      <button
-                        onClick={() => {
-                          setPanelOrdersFilter("ATIVOS");
-                          setPanelOrdersLimit(12);
-                        }}
-                        className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition whitespace-nowrap cursor-pointer ${
-                          panelOrdersFilter === "ATIVOS"
-                            ? "bg-white text-indigo-950 shadow-xs"
-                            : "text-gray-500 hover:text-gray-700"
-                        }`}
-                      >
-                        Em Andamento
-                      </button>
-                      <button
-                        onClick={() => {
-                          setPanelOrdersFilter("TODOS");
-                          setPanelOrdersLimit(12);
-                        }}
-                        className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition whitespace-nowrap cursor-pointer ${
-                          panelOrdersFilter === "TODOS"
-                            ? "bg-white text-indigo-950 shadow-xs"
-                            : "text-gray-500 hover:text-gray-700"
-                        }`}
-                      >
-                        Todos os Pedidos
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {filteredGroupedOrders.length === 0 ? (
-                  <p className="text-gray-450 text-center text-xs py-8 font-medium">
-                    {panelOrdersSearch
-                      ? "Nenhum pedido encontrado para a busca especificada."
-                      : "Nenhum pedido cadastrado ou em andamento."}
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                      {filteredGroupedOrders.slice(0, panelOrdersLimit).map((go, idx) => {
-                        const percRaw =
-                          go.total > 0
-                            ? Math.min(
-                                100,
-                                Math.round((go.packed / go.total) * 100),
-                              )
-                            : 0;
-                        const perc = Number.isNaN(percRaw) ? 0 : percRaw;
-                        return (
-                          <div
-                            key={go.code || `order-${idx}`}
-                            className="bg-white p-4 rounded-xl shadow-xs border border-gray-150 flex flex-col justify-between hover:border-indigo-200 transition-colors"
-                          >
-                            <div>
-                              <div className="flex justify-between items-start mb-1.5">
-                                <span className="font-extrabold text-sm text-slate-900 tracking-tight">
-                                  #{go.code}
-                                </span>
-                                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full">
-                                  {go.packed} / {go.total} p√ßs
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-gray-500 font-bold truncate uppercase tracking-tight mb-3">
-                                {go.customerName || "Cliente Geral"}
-                              </p>
-                            </div>
-
-                            <div>
-                              <div className="w-full bg-slate-100 rounded-full h-2 border border-slate-200/40">
-                                <div
-                                  className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 rounded-full transition-all duration-300"
-                                  style={{ width: `${perc}%` }}
-                                ></div>
-                              </div>
-                              <div className="flex justify-between items-center mt-1.5">
-                                <span className="text-[9px] font-bold text-gray-400 uppercase">
-                                  {go.total - go.packed > 0 ? `${go.total - go.packed} pendentes` : "Completo"}
-                                </span>
-                                <span className="text-[10px] font-extrabold text-slate-800">
-                                  {perc}%
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {filteredGroupedOrders.length > panelOrdersLimit && (
-                      <div className="flex justify-center mt-2">
-                        <button
-                          onClick={() => setPanelOrdersLimit((prev) => prev + 12)}
-                          className="bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs px-5 py-2 rounded-xl shadow-3xs cursor-pointer transition flex items-center gap-1"
-                        >
-                          üîÑ Mostrar Mais Pedidos (Exibindo {Math.min(panelOrdersLimit, filteredGroupedOrders.length)} de {filteredGroupedOrders.length})
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </>
-          ) : activeTab === "MONITORAMENTO" ? (
-            <div className="flex-1 overflow-y-auto w-full pb-20">
-              <RealTimeFactoryMonitoring
-                activePacks={db.activePacks}
-                logs={db.logs}
-                items={db.items}
-                sectors={db.sectors}
-                employees={db.employees}
-                users={db.users}
-                activeTenantId={db.activeTenantId}
-                activeTenant={db.activeTenant}
-                productionBatches={db.productionBatches}
-                onOpenModal={handleOpenMonitoringModal}
-              />
-            </div>
-          ) : null}
-        </ScrollContainer>
-      ) : null}
-
-      {activeTab === "CADASTROS" && (
-        <PCPScreen db={db} currentUser={currentUser} subScreen="CADASTROS" />
-      )}
-      {activeTab === "LOTES" && (
-        <PCPScreen db={db} currentUser={currentUser} subScreen="LOTES" />
-      )}
-      {activeTab === "EVOLUCAO_EMBALAGEM" && <EvolucaoEmbalagemTab db={db} />}
-      {activeTab === "ETIQUETAS" && (
-        <EtiquetasTab db={db} currentUser={currentUser} />
-      )}
-      {activeTab === "GESTAO_PESSOAS" && (
-        <GestaoPessoasTab db={db} currentUser={currentUser} />
-      )}
-
-      {isMonitoringModalOpen &&
-        selectedMonitoringCard &&
-        (() => {
-          const pack =
-            db.activePacks.find((p) => p.id === selectedMonitoringCard.id) ||
-            selectedMonitoringCard;
-          const item = db.items.find((i) => i.id === pack.itemId);
-          return (
-            <div
-              className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-xs"
-              onClick={() => setIsMonitoringModalOpen(false)}
-            >
-              <div
-                className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg flex flex-col gap-4 animate-in zoom-in-95"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-xl font-bold text-gray-800">
-                    Detalhes do Lote / Monitoramento
-                  </h3>
-                  <button
-                    onClick={() => setIsMonitoringModalOpen(false)}
-                    className="text-gray-500 hover:text-gray-800"
-                  >
-                    <X size={24} />
-                  </button>
-                </div>
-
-                <div className="bg-indigo-50 border border-indigo-200 rounded p-4 flex flex-col gap-2 text-left">
-                  <p className="text-sm text-gray-700">
-                    <strong>Setor:</strong>{" "}
-                    <span className="uppercase text-indigo-700 font-bold">
-                      {pack.type.replace("_", " ")}
-                    </span>
-                  </p>
-                  <p className="text-sm text-gray-700">
-                    <strong>Produto:</strong> {pack.partName || item?.name}
-                  </p>
-                  <p className="text-sm text-gray-700">
-                    <strong>SKU/Varia√ß√£o:</strong> {pack.color || "-"} |{" "}
-                    {pack.size || "-"} | {pack.variation || "-"}
-                  </p>
-                  <p className="text-sm text-gray-700">
-                    <strong>Operador Atual:</strong> {pack.operatorId}
-                  </p>
-                  <p className="text-sm text-gray-700 mt-2">
-                    <strong>Tempo de Opera√ß√£o:</strong>{" "}
-                    <span className="font-bold text-indigo-700">
-                      {formatDuration(pack.startTime)}
-                    </span>
-                  </p>
-                </div>
-
-                {(currentUser.role === "GERENCIA" ||
-                  currentUser.role === "ADMIN") && (
-                  <div className="border-t border-slate-200 pt-4 mt-2 flex flex-col gap-3 text-left">
-                    <h4 className="font-bold text-gray-800 text-sm flex items-center gap-1.5 text-blue-700">
-                      <span>üîß √Årea do Gestor: Finalizar Apontamento</span>
-                    </h4>
-                    <p className="text-xs text-slate-500 leading-relaxed">
-                      Como gestor, voc√™ pode encerrar este apontamento iniciado
-                      por qualquer usu√°rio, registrando a quantidade
-                      correspondente e atualizando as ordens de servi√ßo
-                      correspondentes automaticamente.
-                    </p>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Quantidade Produzida / Embalada:
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          value={finalizeQuantity}
-                          onChange={(e) => setFinalizeQuantity(e.target.value)}
-                          placeholder="Ex: 50"
-                          className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-slate-800"
-                        />
-                        <button
-                          onClick={() =>
-                            handleFinalizeActivePackByManager(pack)
-                          }
-                          className="bg-blue-600 hover:bg-blue-700 text-white font-black px-4 py-2 rounded-lg text-xs transition uppercase tracking-wider cursor-pointer shadow-sm"
-                        >
-                          Confirmar e Finalizar
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <button
-                  onClick={() => setIsMonitoringModalOpen(false)}
-                  className="mt-2 bg-slate-100 hover:bg-slate-200 font-bold p-2.5 rounded-lg text-slate-700 transition text-xs border border-slate-200/50 cursor-pointer text-center"
-                >
-                  Fechar Detalhes
-                </button>
-              </div>
-            </div>
-          );
-        })()}
-      {selectedOrder && (
-        <div
-          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 min-h-screen overflow-y-auto"
-          onClick={() => setSelectedOrder(null)}
-        >
-          <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-center p-5 border-b border-gray-100 shrink-0">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900 border-l-4 border-blue-500 pl-3 flex items-center gap-2 flex-wrap">
-                  Pedido: {selectedOrder.orderCode}
-                  {selectedOrder.isUrgent && (
-                    <span className="bg-red-100 text-red-850 text-[10px] font-bold px-2 py-0.5 rounded animate-pulse">
-                      URGENTE
-                    </span>
-                  )}
-                  {selectedOrder.isProgramacao && (
-                    <span className="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-2 py-0.5 rounded">
-                      üìà PROGRAMA√á√ÉO
-                    </span>
-                  )}
-                </h2>
-                <p className="text-sm text-gray-500 font-medium pl-4 mt-1 bg-white">
-                  Cliente: {selectedOrder.customerName}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setSelectedOrder(null)}
-                  className="p-2 bg-gray-100 text-gray-500 rounded-full hover:bg-gray-200 cursor-pointer"
-                >
-                  <span className="font-bold px-1">X</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-5 flex-1 overflow-y-auto bg-gray-50">
-              <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 mb-6 flex flex-col gap-3">
-                <h3 className="font-semibold text-gray-800 border-b pb-2">
-                  Informa√ß√µes Adicionais
-                </h3>
-                <div className="grid grid-cols-2 gap-4 text-sm mt-1">
-                  <div className="flex flex-col">
-                    <span className="text-gray-400 font-bold uppercase text-[10px]">
-                      Produto
-                    </span>
-                    <span className="text-gray-800 font-semibold">
-                      {db.items.find((i: any) => i.id === selectedOrder.itemId)
-                        ?.name || "-"}
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-gray-400 font-bold uppercase text-[10px]">
-                      Quantidade Total
-                    </span>
-                    <span className="text-blue-700 font-bold">
-                      {selectedOrder.totalQuantity} p√ßs
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-gray-400 font-bold uppercase text-[10px]">
-                      Cor / Tamanho / Var
-                    </span>
-                    <span className="text-gray-700 font-mono">
-                      {selectedOrder.color || "-"} / {selectedOrder.size || "-"}{" "}
-                      / {selectedOrder.variation || "-"}
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-gray-400 font-bold uppercase text-[10px]">
-                      Data de Entrega
-                    </span>
-                    <span className="text-gray-700 font-semibold">
-                      {selectedOrder.deliveryDate
-                        ? new Date(
-                            selectedOrder.deliveryDate,
-                          ).toLocaleDateString("pt-BR", { timeZone: "UTC" })
-                        : "-"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                <h3 className="font-semibold text-gray-800 border-b pb-2 mb-4">
-                  Linha do Tempo (Processamento)
-                </h3>
-                {(() => {
-                  const orderLogs = db.logs
-                    .filter((l: any) => l.orderId === selectedOrder.id)
-                    .sort((a: any, b: any) => b.timestamp - a.timestamp);
-                  return (
-                    <div className="flex flex-col gap-3">
-                      {orderLogs.map((log: any) => {
-                        let actionLabel = "Processado";
-                        let actionColor = "bg-gray-100 text-gray-800";
-                        let actionQty = 0;
-
-                        switch (log.type) {
-                          case "PRODUCAO":
-                            actionLabel = "Produzido";
-                            actionColor = "bg-blue-50 text-blue-800";
-                            actionQty = log.quantityProcessed || 0;
-                            break;
-                          case "CORTE_LASER":
-                            actionLabel = "Corte a Laser";
-                            actionColor = "bg-indigo-50 text-indigo-800";
-                            actionQty = log.quantityCut || 0;
-                            break;
-                          case "PINTURA":
-                            actionLabel = "Pintura";
-                            actionColor = "bg-amber-50 text-amber-850";
-                            actionQty = log.quantityPainted || 0;
-                            break;
-                          case "EMBALAGEM":
-                            actionLabel = "Embalado";
-                            actionColor =
-                              "bg-green-50 text-green-800 border bg-green-50 text-green-800";
-                            actionQty = log.quantityPacked || 0;
-                            break;
-                          case "FATURAMENTO":
-                            actionLabel = "Faturado";
-                            actionColor = "bg-emerald-100 text-emerald-800";
-                            actionQty = log.quantityInvoiced || 0;
-                            break;
-                        }
-
-                        return (
-                          <div
-                            key={log.id}
-                            className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded ${actionColor}`}
-                              >
-                                {actionLabel}
-                              </span>
-                              <span className="text-xs text-slate-800 font-bold">
-                                {actionQty || log.customProductName || ""} un.
-                                (Sistema)
-                              </span>
-                            </div>
-                            <div className="text-xs text-gray-400 font-mono shrink-0 whitespace-nowrap mt-1">
-                              {new Date(log.timestamp).toLocaleDateString()}{" "}
-                              <br />{" "}
-                              {new Date(log.timestamp).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {invoiceModalData && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 min-h-screen">
-          <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="bg-emerald-600 p-4 shrink-0 flex justify-between items-center">
-              <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                {showInvoiceConfirmStep ? "‚ö†Ô∏è Confirmar Faturamento Definitivo" : "üí∞ Faturar Pedido"}
-              </h3>
-              <button 
-                onClick={() => { setInvoiceModalData(null); setShowInvoiceConfirmStep(false); }}
-                className="text-white/80 hover:text-white font-bold text-sm"
-              >
-                ‚úï
-              </button>
-            </div>
-
-            {!showInvoiceConfirmStep ? (
-              <>
-                <div className="p-5 flex flex-col gap-4">
-                  <p className="text-sm text-gray-700">
-                    O faturamento ir√° deduzir pe√ßas do seu{" "}
-                    <strong className="text-gray-900 bg-gray-100 px-1 rounded">
-                      estoque de itens acabados
-                    </strong>
-                    .
-                  </p>
-                  <div className="bg-gray-50 border border-gray-200 p-3.5 rounded-lg flex flex-col gap-1">
-                    <span className="text-xs text-gray-500 font-bold uppercase tracking-wide">
-                      Pedido
-                    </span>
-                    <span className="font-bold text-gray-900">
-                      {invoiceModalData.order.orderCode} -{" "}
-                      {invoiceModalData.order.customerName}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs text-gray-600 font-bold uppercase">
-                      Quantidade a Faturar (M√°ximo: {invoiceModalData.limit})
-                    </label>
-                    <input
-                      type="number"
-                      value={invoiceInput}
-                      onChange={(e) => setInvoiceInput(e.target.value)}
-                      className="border-2 border-emerald-500 rounded-lg p-2.5 text-2xl font-black bg-emerald-50 focus:outline-none w-full text-center text-emerald-900"
-                      max={invoiceModalData.limit}
-                      min={1}
-                    />
-                  </div>
-                </div>
-                <div className="bg-gray-50 p-4 border-t border-gray-100 flex justify-end gap-3 shrink-0">
-                  <button
-                    onClick={() => { setInvoiceModalData(null); setShowInvoiceConfirmStep(false); }}
-                    className="px-4 py-2 font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={() => {
-                      const qty = parseInt(invoiceInput, 10);
-                      if (isNaN(qty) || qty <= 0 || qty > invoiceModalData.limit) {
-                        alert("Quantidade inv√°lida. Deve ser maior que 0 e no m√°ximo " + invoiceModalData.limit);
-                        return;
-                      }
-                      setShowInvoiceConfirmStep(true);
-                    }}
-                    className="flex-1 sm:flex-none px-6 py-2.5 font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-md transition"
-                  >
-                    Faturar ‚Üí
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="p-5 flex flex-col gap-4">
-                  {/* Total Selected Pieces Banner */}
-                  <div className="bg-emerald-50 border-2 border-emerald-500/40 p-4 rounded-xl text-center shadow-xs">
-                    <span className="text-xs text-emerald-800 font-bold uppercase tracking-wider block mb-1">
-                      Total de Pe√ßas Selecionadas
-                    </span>
-                    <span className="text-3xl font-black text-emerald-900 block tracking-tight">
-                      {parseInt(invoiceInput, 10) || 0} PE√áA(S)
-                    </span>
-                  </div>
-
-                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-lg flex flex-col gap-1 text-xs text-slate-700">
-                    <div className="flex justify-between border-b pb-1">
-                      <span className="font-semibold text-slate-500">C√≥digo do Pedido:</span>
-                      <strong className="text-slate-900 font-bold">{invoiceModalData.order.orderCode}</strong>
-                    </div>
-                    <div className="flex justify-between border-b py-1">
-                      <span className="font-semibold text-slate-500">Cliente:</span>
-                      <strong className="text-slate-900 font-bold">{invoiceModalData.order.customerName}</strong>
-                    </div>
-                    <div className="flex justify-between pt-1">
-                      <span className="font-semibold text-slate-500">Item:</span>
-                      <strong className="text-slate-900 font-bold truncate max-w-[200px]">{invoiceModalData.order.itemId} ({invoiceModalData.order.color || '-'})</strong>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs leading-relaxed font-medium">
-                    ‚ö†Ô∏è <strong>Aten√ß√£o:</strong> Confirme para processar o faturamento definitivo de <strong>{parseInt(invoiceInput, 10) || 0} pe√ßas</strong>. Esta a√ß√£o atualizar√° o status do pedido e dar√° baixa autom√°tica no estoque.
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 p-4 border-t border-gray-100 flex justify-between items-center gap-3 shrink-0">
-                  <button
-                    onClick={() => setShowInvoiceConfirmStep(false)}
-                    className="px-4 py-2 font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition text-xs"
-                  >
-                    ‚Üê Voltar
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowInvoiceConfirmStep(false);
-                      handleConfirmInvoice();
-                    }}
-                    className="px-5 py-2.5 font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-lg transition text-xs flex items-center gap-1.5"
-                  >
-                    ‚úÖ Confirmar Definitivo
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {adminWhatsAppShareData &&
-        (() => {
-          const dateStr = (() => {
-            const date = new Date();
-            const day = String(date.getDate()).padStart(2, "0");
-            const months = [
-              "Jan",
-              "Fev",
-              "Mar",
-              "Abr",
-              "Mai",
-              "Jun",
-              "Jul",
-              "Ago",
-              "Set",
-              "Out",
-              "Nov",
-              "Dez",
-            ];
-            const month = months[date.getMonth()];
-            const year = String(date.getFullYear()).slice(-2);
-            return `${day}/${month}/${year}`;
-          })();
-
-          // Formata√ß√£o final da mensagem
-          const messageText = `*FATURAMENTO DE PEDIDO* üöÄ
-
-*N¬∫ Pedido:* ${adminWhatsAppShareData.orderCode}
-*Cliente:* ${adminWhatsAppShareData.customerName}
-*Data Faturamento:* ${dateStr}
-
-*Itens Enviados:*
-‚Ä¢ ${adminWhatsAppShareData.productDescription} - Qtd: *${adminWhatsAppShareData.quantity}*
-
-_Mensagem do Sistema Imp√©rio Jomarci_`;
-
-          return (
-            <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-xs text-left">
-              <div className="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col overflow-hidden animate-in zoom-in-95 text-left">
-                <div className="bg-teal-600 text-white p-4 flex items-center gap-2">
-                  <Phone size={24} className="text-white" />
-                  <h3 className="font-bold text-lg text-white">
-                    Compartilhar no WhatsApp
-                  </h3>
-                </div>
-
-                <div className="p-5 flex flex-col gap-4 text-gray-800">
-                  <p className="text-sm">
-                    O pedido{" "}
-                    <strong>#{adminWhatsAppShareData.orderCode}</strong> foi
-                    faturado com sucesso! Deseja notificar o representante{" "}
-                    <strong>
-                      {adminWhatsAppShareData.representativeName ||
-                        "n√£o definido"}
-                    </strong>
-                    ?
-                  </p>
-
-                  {/* Campo Celular do Representante */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                      Telefone do Destinat√°rio (Pa√≠s + DDD + N√∫mero)
-                    </label>
-                    <input
-                      type="text"
-                      value={adminWhatsAppShareData.phone}
-                      placeholder="Ex: 5511999998888"
-                      onChange={(e) =>
-                        setAdminWhatsAppShareData((prev) =>
-                          prev
-                            ? {
-                                ...prev,
-                                phone: e.target.value.replace(/\D/g, ""),
-                              }
-                            : null,
-                        )
-                      }
-                      className="w-full border p-2 text-sm font-mono rounded bg-gray-50 focus:ring-1 focus:ring-teal-500 outline-none text-gray-850"
-                    />
-                    {!adminWhatsAppShareData.phone && (
-                      <span className="text-[11px] text-amber-600 font-bold">
-                        ‚ö†Ô∏è Telefone n√£o cadastrado. Insira acima para
-                        compartilhar!
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Preview da Mensagem */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                      Mensagem Gerada
-                    </label>
-                    <pre className="text-[11px] bg-gray-900 text-green-400 p-4 rounded font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed select-all">
-                      {messageText}
-                    </pre>
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 px-5 py-3.5 flex justify-end gap-2 border-t border-gray-150">
-                  <button
-                    type="button"
-                    onClick={() => setAdminWhatsAppShareData(null)}
-                    className="px-4 py-2 border rounded text-xs font-bold text-gray-700 hover:bg-gray-100 transition cursor-pointer"
-                  >
-                    Fechar sem enviar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(messageText);
-                      alert(
-                        "Mensagem copiada com sucesso para a √°rea de transfer√™ncia!",
-                      );
-                    }}
-                    className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded text-xs font-bold transition cursor-pointer"
-                  >
-                    Copiar Mensagem
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!adminWhatsAppShareData.phone}
-                    onClick={() => {
-                      const clean = adminWhatsAppShareData.phone.replace(
-                        /\D/g,
-                        "",
-                      );
-                      const url = `https://api.whatsapp.com/send?phone=${clean}&text=${encodeURIComponent(messageText)}`;
-                      window.open(url, "_blank");
-                      setAdminWhatsAppShareData(null);
-                    }}
-                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded text-xs font-bold transition disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Phone size={14} className="text-white" /> Abrir WhatsApp
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-    </ScreenLayout>
-  );
-}
-
-export default function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem("imperio_logged_user");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return null;
-      }
-    }
-    return null;
-  });
-  const db = useDatabase(currentUser);
-
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isStandalone, setIsStandalone] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
-  const [isInIframe, setIsInIframe] = useState(false);
-  const [showPWAModal, setShowPWAModal] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
-  const [isBottomNavCollapsed, setIsBottomNavCollapsed] = useState<boolean>(() => {
-    return localStorage.getItem("bottom_nav_collapsed") === "true";
-  });
-
-  const toggleBottomNav = () => {
-    setIsBottomNavCollapsed((prev) => {
-      const next = !prev;
-      localStorage.setItem("bottom_nav_collapsed", String(next));
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
-    return () => {
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
-    };
-  }, []);
-
-  const toggleFullscreen = () => {
-    try {
-      if (!document.fullscreenElement) {
-        if (document.documentElement.requestFullscreen) {
-          document.documentElement.requestFullscreen().catch((err) => {
-            console.warn("Fullscreen request error:", err);
-          });
-        } else if ((document.documentElement as any).webkitRequestFullscreen) {
-          (document.documentElement as any).webkitRequestFullscreen();
-        }
-      } else {
-        if (document.exitFullscreen) {
-          document.exitFullscreen().catch((err) => {
-            console.warn("Fullscreen exit error:", err);
-          });
-        } else if ((document as any).webkitExitFullscreen) {
-          (document as any).webkitExitFullscreen();
-        }
-      }
-    } catch (e) {
-      console.warn("Fullscreen toggle exception:", e);
-    }
-  };
-
-  useEffect(() => {
-    const checkStandalone = () => {
-      const isStandaloneMode =
-        window.matchMedia("(display-mode: standalone)").matches ||
-        (window.navigator as any).standalone ||
-        document.referrer.includes("android-app://");
-      setIsStandalone(!!isStandaloneMode);
-    };
-
-    checkStandalone();
-    setIsInIframe(window.self !== window.top);
-
-    const ua = navigator.userAgent.toLowerCase();
-    setIsIOS(/iphone|ipad|ipod/.test(ua));
-
-    const handleBeforeInstallPrompt = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-
-    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-    return () => {
-      window.removeEventListener(
-        "beforeinstallprompt",
-        handleBeforeInstallPrompt,
-      );
-    };
-  }, []);
-
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === "accepted") {
-      console.log("PWA installation accepted");
-    }
-    setDeferredPrompt(null);
-  };
-
-  const [orderToPrint, setOrderToPrint] = useState<any | null>(null);
-  const [emailToCustomerPrint, setEmailToCustomerPrint] = useState("");
-  const [isSendingOrderPrintEmail, setIsSendingOrderPrintEmail] =
-    useState(false);
-
-  useEffect(() => {
-    const handler = (e: any) => {
-      setOrderToPrint(e.detail);
-      if (e.detail && e.detail.printSheetSize) {
-        setPrintSheetSize(e.detail.printSheetSize);
-      }
-      setEmailToCustomerPrint("");
-    };
-    window.addEventListener("print-order", handler);
-    return () => {
-      window.removeEventListener("print-order", handler);
-    };
-  }, []);
-
-  // Intercept db.updateOrders to automatically deduct physical stock when status transitions to "FATURADO"
-  const originalUpdateOrders = React.useRef(db.updateOrders);
-  originalUpdateOrders.current = db.updateOrders;
-
-  db.updateOrders = React.useCallback(
-    async (updatedOrders: any) => {
-      const list = Array.isArray(updatedOrders)
-        ? updatedOrders
-        : [updatedOrders];
-      const stocksToUpdate: any[] = [];
-
-      for (const updated of list) {
-        const current = db.orders.find((o) => o.id === updated.id);
-        const isNowFaturado = updated.status === "FATURADO";
-        const wasFaturado = current?.status === "FATURADO";
-
-        if (isNowFaturado && !wasFaturado && !updated._alreadyDeducted) {
-          const stockId = `${updated.itemId}|${updated.color}|${updated.size}|${updated.variation}|ACABADO`;
-          const existingStock = db.stocks.find((s) => s.id === stockId);
-          const qtyToDeduct =
-            updated.totalQuantity || updated.invoicedQuantity || 0;
-
-          if (qtyToDeduct > 0) {
-            if (existingStock) {
-              const alreadyStagedIdx = stocksToUpdate.findIndex(
-                (s) => s.id === stockId,
-              );
-              if (alreadyStagedIdx >= 0) {
-                stocksToUpdate[alreadyStagedIdx].quantity = Math.max(
-                  0,
-                  stocksToUpdate[alreadyStagedIdx].quantity - qtyToDeduct,
-                );
-                stocksToUpdate[alreadyStagedIdx].reservedQuantity = Math.max(
-                  0,
-                  (stocksToUpdate[alreadyStagedIdx].reservedQuantity || 0) -
-                    qtyToDeduct,
-                );
-              } else {
-                stocksToUpdate.push({
-                  ...existingStock,
-                  quantity: Math.max(0, existingStock.quantity - qtyToDeduct),
-                  reservedQuantity: Math.max(
-                    0,
-                    (existingStock.reservedQuantity || 0) - qtyToDeduct,
-                  ),
-                });
-              }
-            }
-
-            db.addStockMovement?.({
-              itemId: updated.itemId,
-              color: updated.color,
-              size: updated.size,
-              variation: updated.variation,
-              quantity: qtyToDeduct,
-              type: "SAIDA",
-              description: `Dedu√ß√£o de estoque por transi√ß√£o para FATURADO (Pedido ${updated.orderCode})`,
-            });
-          }
-        }
-      }
-
-      if (stocksToUpdate.length > 0) {
-        await db.updateStocks(stocksToUpdate);
-      }
-
-      // Deduct from laser cut stock if there are assigned laser parts
-      let updatedNestTasks = [...db.nestTasks];
-      let madeNestChanges = false;
-      for (const updated of list) {
-        const current = db.orders.find((o) => o.id === updated.id);
-        const isNowFaturado = updated.status === "FATURADO";
-        const wasFaturado = current?.status === "FATURADO";
-        if (
-          isNowFaturado &&
-          updated.laserAssignments &&
-          updated.laserAssignments.length > 0
-        ) {
-          for (const assignment of updated.laserAssignments) {
-            let qtyToAbate = 0;
-            if (!wasFaturado) {
-              // Transitioning of order to FATURADO - deduct whole assignment
-              qtyToAbate = assignment.quantity;
-            } else {
-              // Order was already FATURADO - deduct only the new/extra assignment difference
-              const currentAssignment = current?.laserAssignments?.find(
-                (la: any) =>
-                  la.partName === assignment.partName &&
-                  la.size === assignment.size,
-              );
-              const currentQty = currentAssignment
-                ? currentAssignment.quantity
-                : 0;
-              qtyToAbate = assignment.quantity - currentQty;
-            }
-
-            if (qtyToAbate > 0) {
-              for (let i = 0; i < updatedNestTasks.length; i++) {
-                if (qtyToAbate <= 0) break;
-                const t = updatedNestTasks[i];
-                if (
-                  t.partName === assignment.partName &&
-                  t.size === assignment.size &&
-                  t.cutQuantity > 0 &&
-                  t.status === "CORTADO"
-                ) {
-                  const canTake = Math.min(qtyToAbate, t.cutQuantity);
-                  updatedNestTasks[i] = {
-                    ...t,
-                    cutQuantity: t.cutQuantity - canTake,
-                  };
-                  qtyToAbate -= canTake;
-                  madeNestChanges = true;
-                }
-              }
-            }
-          }
-        }
-      }
-      if (madeNestChanges) {
-        await db.updateNestTasks(updatedNestTasks);
-      }
-
-      return originalUpdateOrders.current(updatedOrders);
-    },
-    [
-      db.orders,
-      db.stocks,
-      db.updateStocks,
-      db.addStockMovement,
-      db.nestTasks,
-      db.updateNestTasks,
-    ],
-  );
-
-  const [toasts, setToasts] = useState<
-    {
-      id: string;
-      title: string;
-      message: string;
-      type: "info" | "warning" | "success";
-    }[]
-  >([]);
-
-  React.useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem("imperio_logged_user", JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem("imperio_logged_user");
-    }
-  }, [currentUser]);
-
-  // Keep active session user data automatically synchronized with Firestore in real-time
-  React.useEffect(() => {
-    if (!currentUser || !db.allUsers || db.allUsers.length === 0) return;
-    const freshUser = db.allUsers.find(
-      (u) =>
-        u &&
-        u.id &&
-        (u.id === currentUser.id ||
-          (u.id.toLowerCase() === currentUser.id.toLowerCase() &&
-            (u.tenantId === currentUser.tenantId || currentUser.tenantId === "global")))
-    );
-    if (freshUser) {
-      const isDifferent =
-        freshUser.name !== currentUser.name ||
-        freshUser.role !== currentUser.role ||
-        freshUser.tenantId !== currentUser.tenantId ||
-        freshUser.password !== currentUser.password ||
-        freshUser.avatarUrl !== currentUser.avatarUrl ||
-        JSON.stringify(freshUser.permissions || {}) !==
-          JSON.stringify(currentUser.permissions || {});
-
-      if (isDifferent) {
-        setCurrentUser((prev) => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            ...freshUser,
-            ...(prev.id === "raul" ? { role: "ADMIN", tenantId: "global" } : {}),
-          };
-        });
-      }
-    }
-  }, [db.allUsers, currentUser?.id]);
-
-  usePushNotifications(currentUser, db, setCurrentUser);
-
-  React.useEffect(() => {
-    const handleAppToast = (e: any) => {
-      if (e.detail?.title && e.detail?.message) {
-        if (e.detail?.type === "success") {
-          playNotificationSound();
-        }
-        setToasts((prev) => [
-          ...prev,
-          {
-            id: Math.random().toString(),
-            title: e.detail.title,
-            message: e.detail.message,
-            type: e.detail.type || "info",
-          },
-        ]);
-        setTimeout(() => {
-          setToasts((prev) => prev.slice(1));
-        }, 5000);
-      }
-    };
-    window.addEventListener("app_toast", handleAppToast);
-    return () => window.removeEventListener("app_toast", handleAppToast);
-  }, []);
-
-  // Sound alert synthesizer
-  const playNotificationSound = () => {
-    try {
-      const AudioCtx =
-        window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-
-      const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
-      const gainNode = ctx.createGain();
-
-      osc1.connect(gainNode);
-      osc2.connect(gainNode);
-      gainNode.connect(ctx.destination);
-
-      osc1.type = "sine";
-      osc1.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
-      osc1.frequency.setValueAtTime(659.25, ctx.currentTime + 0.15); // E5
-
-      osc2.type = "triangle";
-      osc2.frequency.setValueAtTime(261.63, ctx.currentTime); // C4
-      osc2.frequency.setValueAtTime(329.63, ctx.currentTime + 0.15); // E4
-
-      gainNode.gain.setValueAtTime(0.15, ctx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-
-      osc1.start(ctx.currentTime);
-      osc2.start(ctx.currentTime);
-
-      osc1.stop(ctx.currentTime + 0.4);
-      osc2.stop(ctx.currentTime + 0.4);
-    } catch (e) {
-      console.warn("Erro ao reproduzir som de notifica√ß√£o:", e);
-    }
-  };
-
-  // Sector identification mapper for users
-  const getOperatorSectorIds = (role: string, sectors: any[]): number[] => {
-    const roleLower = role.toLowerCase();
-    if (roleLower === "corte_laser") {
-      return sectors
-        .filter(
-          (s) =>
-            s.name.toLowerCase().includes("corte") ||
-            s.name.toLowerCase().includes("laser"),
-        )
-        .map((s) => s.id);
-    }
-    if (roleLower === "pintura") {
-      return sectors
-        .filter(
-          (s) =>
-            s.name.toLowerCase().includes("pint") ||
-            s.name.toLowerCase().includes("acabam"),
-        )
-        .map((s) => s.id);
-    }
-    if (roleLower === "prensa_eduardo") {
-      return sectors
-        .filter(
-          (s) =>
-            s.name.toLowerCase().includes("eduardo") ||
-            (s.name.toLowerCase().includes("prensa") && !s.name.toLowerCase().includes("rafael")),
-        )
-        .map((s) => s.id);
-    }
-    if (roleLower === "prensa_rafael") {
-      return sectors
-        .filter(
-          (s) =>
-            s.name.toLowerCase().includes("rafael") ||
-            (s.name.toLowerCase().includes("prensa") && !s.name.toLowerCase().includes("eduardo")),
-        )
-        .map((s) => s.id);
-    }
-    if (roleLower === "injetora") {
-      return sectors
-        .filter((s) => s.name.toLowerCase().includes("injet"))
-        .map((s) => s.id);
-    }
-    if (roleLower === "banho_quimico") {
-      return sectors
-        .filter(
-          (s) =>
-            s.name.toLowerCase().includes("banho") ||
-            s.name.toLowerCase().includes("quim"),
-        )
-        .map((s) => s.id);
-    }
-    if (roleLower === "torno_cnc_willian") {
-      return sectors
-        .filter(
-          (s) =>
-            s.name.toLowerCase().includes("torno") ||
-            s.name.toLowerCase().includes("willian"),
-        )
-        .map((s) => s.id);
-    }
-    if (roleLower === "torno_cnc_henrique") {
-      return sectors
-        .filter(
-          (s) =>
-            s.name.toLowerCase().includes("torno") ||
-            s.name.toLowerCase().includes("henrique"),
-        )
-        .map((s) => s.id);
-    }
-    if (roleLower === "embalagem") {
-      return sectors
-        .filter((s) => s.name.toLowerCase().includes("embal"))
-        .map((s) => s.id);
-    }
-    if (roleLower === "producao" || roleLower === "montagem_rodrigo") {
-      return sectors
-        .filter(
-          (s) =>
-            s.name.toLowerCase().includes("produ") ||
-            s.name.toLowerCase().includes("montag"),
-        )
-        .map((s) => s.id);
-    }
-    return [];
-  };
-
-  const prevBatchesRef = React.useRef<typeof db.productionBatches>([]);
-  const isInitialBatchesRef = React.useRef(true);
-
-  React.useEffect(() => {
-    if (
-      !currentUser ||
-      !db.productionBatches ||
-      db.productionBatches.length === 0
-    ) {
-      if (db.productionBatches) {
-        prevBatchesRef.current = db.productionBatches;
-      }
-      return;
-    }
-
-    if (isInitialBatchesRef.current) {
-      prevBatchesRef.current = db.productionBatches;
-      isInitialBatchesRef.current = false;
-      return;
-    }
-
-    const prevIds = new Set(prevBatchesRef.current.map((b) => b.id));
-    const newBatches = db.productionBatches.filter((b) => !prevIds.has(b.id));
-
-    if (newBatches.length > 0) {
-      const opSectorIds = getOperatorSectorIds(currentUser.role, db.sectors);
-
-      newBatches.forEach((batch) => {
-        // match either direct sector id or general 0 sector
-        let isAssignedToMe =
-          batch.sectorId === 0 || opSectorIds.includes(batch.sectorId);
-
-        if (
-          currentUser.id === "projetista_marcos" ||
-          currentUser.role === "PROJETISTA"
-        ) {
-          const sName =
-            db.sectors.find((s) => s.id === batch.sectorId)?.name || "";
-          const isLaserSector =
-            sName.toLowerCase().includes("laser") ||
-            sName.toLowerCase().includes("corte");
-          const isLaserBatch =
-            batch.name.toLowerCase().includes("laser") ||
-            batch.name.toLowerCase().includes("corte");
-          isAssignedToMe = isLaserSector || isLaserBatch;
-        }
-
-        if (isAssignedToMe) {
-          const sectorName =
-            batch.sectorId === 0
-              ? "Geral (Sem Setor)"
-              : db.sectors.find((s) => s.id === batch.sectorId)?.name ||
-                "Seu Setor";
-
-          const toastId = `${batch.id}-${Date.now()}`;
-          const title = `üì¶ Novo Lote Atribu√≠do ao seu Setor!`;
-          const message = `O lote "${batch.name}" foi planejado e atribu√≠do para o setor "${sectorName}".`;
-
-          setToasts((prev) => [
-            ...prev,
-            { id: toastId, title, message, type: "success" },
-          ]);
-          playNotificationSound();
-
-          if (Notification.permission === "granted") {
-            new Notification(title, { body: message, icon: "/icon.png" });
-          }
-
-          setTimeout(() => {
-            setToasts((prev) => prev.filter((t) => t.id !== toastId));
-          }, 8000);
-        }
-      });
-    }
-
-    prevBatchesRef.current = db.productionBatches;
-  }, [db.productionBatches, currentUser, db.sectors]);
-
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
-  const [printSheetSize, setPrintSheetSize] = useState<"half" | "full">("half");
-
-  useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
-  }, []);
-
-  React.useEffect(() => {
-    if (currentUser) {
-      const nameLower = currentUser.name.toLowerCase();
-      const roleLower = currentUser.role.toLowerCase();
-      const isMarcosOrEmbalagem =
-        currentUser.id === "projetista_marcos" ||
-        roleLower === "projetista" ||
-        roleLower === "embalagem" ||
-        nameLower.includes("marcos") ||
-        nameLower.includes("embalagem");
-
-      if (isMarcosOrEmbalagem) {
-        // Aumenta ligeiramente para Marcos/Embalagem (n√£o t√£o grande)
-        document.documentElement.style.fontSize = "16.5px";
-      } else {
-        // Aumenta para os demais usu√°rios (e.g. Ger√™ncia)
-        document.documentElement.style.fontSize = "17.5px";
-      }
-    } else {
-      document.documentElement.style.fontSize = ""; // Padr√£o
-    }
-    return () => {
-      document.documentElement.style.fontSize = ""; // Padr√£o
-    };
-  }, [currentUser]);
-
-  if (!currentUser) {
-    return (
-      <LoginScreen
-        users={db.allUsers}
-        tenants={db.tenants}
-        onLogin={setCurrentUser}
-        deferredPrompt={deferredPrompt}
-        setDeferredPrompt={setDeferredPrompt}
-        isStandalone={isStandalone}
-        isIOS={isIOS}
-        isInIframe={isInIframe}
-        handleInstallClick={handleInstallClick}
-      />
-    );
-  }
-
-  const hasSector = (nameKeyword: string) => {
-    return db.sectors.some((s) => s.name.toLowerCase().includes(nameKeyword.toLowerCase()));
-  };
-
-  const hasMachine = (nameKeyword: string) => {
-    const machines = db.activeTenant?.machines || [];
-    return machines.some((m) => m.toLowerCase().includes(nameKeyword.toLowerCase()));
-  };
-
-  const isScreenAllowed = (screenKey: string) => {
-    if (currentUser?.id === "raul") return true;
-    if (
-      currentUser?.role === "ADMIN" ||
-      currentUser?.role === "PCP" ||
-      currentUser?.role === "GERENCIA" ||
-      currentUser?.role === "QUALIDADE"
-    ) {
-      if (
-        screenKey === "pcp" ||
-        screenKey === "qualidade" ||
-        screenKey === "relatorios-qualidade"
-      ) {
-        return true;
-      }
-    }
-    const allowed = db.activeTenant?.allowedScreens;
-    if (!allowed || allowed.length === 0) return true;
-    return allowed.includes(screenKey);
-  };
-
-  return (
-    <BrowserRouter>
-      <div className="flex flex-col h-screen-safe w-screen bg-slate-50 overflow-hidden font-sans antialiased">
-        {/* Real-time Toast Alerts Stack */}
-        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
-          {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              className="pointer-events-auto bg-slate-900 border border-[#00b14f]/30 text-white rounded-xl shadow-2xl p-4 flex flex-col gap-1 transition-all duration-300 animate-in slide-in-from-right-5 fade-in duration-200"
-            >
-              <div className="flex items-center gap-1.5 justify-between">
-                <span className="font-extrabold text-[11px] text-[#00b14f] flex items-center gap-1">
-                  <span>üîî</span> {toast.title}
-                </span>
-                <button
-                  onClick={() =>
-                    setToasts((prev) => prev.filter((t) => t.id !== toast.id))
-                  }
-                  className="text-slate-400 hover:text-white text-xs font-bold leading-none shrink-0"
-                >
-                  ‚úï
-                </button>
-              </div>
-              <p className="text-[11px] text-slate-300">{toast.message}</p>
-            </div>
-          ))}
-        </div>
-
-        {isOffline && (
-          <div className="bg-amber-500 text-white text-xs font-bold text-center py-1 flex items-center justify-center gap-2">
-            <span className="w-2 h-2 bg-red-600 rounded-full animate-pulse"></span>
-            Modo Offline (As altera√ß√µes ser√£o sincronizadas quando reconectar)
-          </div>
-        )}
-
-        {db.permissionError && (
-          <div className="bg-red-600 text-white text-xs font-bold text-center py-2 px-4 flex items-center justify-center gap-2 animate-bounce">
-            <span>‚ö†Ô∏è ALERTA DO FIRESTORE: {db.permissionError}</span>
-            <button
-              onClick={() => db.triggerSyncQueue(true)}
-              className="bg-white text-red-700 hover:bg-red-100 px-2 py-0.5 rounded text-[10px] font-extrabold shadow-sm transition ml-2 cursor-pointer"
-            >
-              Tentar Reconectar
-            </button>
-          </div>
-        )}
-        {/* Top Navbar */}
-        <header className="bg-black text-[#00b14f] p-4 flex justify-between items-center shadow-md shrink-0 border-b border-[#00b14f]/20" style={{ borderBottomColor: (db.activeTenant?.primaryColor || '#00b14f') + '40', color: db.activeTenant?.primaryColor || '#00b14f' }}>
-          <div className="flex items-center gap-2">
-            {db.activeTenant?.logoUrl && db.activeTenant.logoUrl !== "/icon.png" ? (
-              <img src={db.activeTenant.logoUrl} alt="Logo" className="h-8 object-contain max-w-[120px]" />
-            ) : (
-              <Crown size={28} className="text-[#00b14f]" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }} />
-            )}
-            <div className="flex flex-col leading-none">
-              <h1 className="text-xl font-bold tracking-tight" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}>
-                {db.activeTenant?.name || "IMP√âRIO"}
-              </h1>
-              <span className="text-[0.6rem] text-gray-400 font-medium tracking-widest uppercase">
-                {db.activeTenant?.systemName || "Apontador de Produ√ß√£o"}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3 text-sm sm:text-base text-gray-300">
-            <button
-              onClick={toggleFullscreen}
-              title={isFullscreen ? "Sair da Tela Cheia (Esc)" : "Entrar em Tela Cheia (Modo F√°brica)"}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 transition cursor-pointer text-xs font-semibold shadow-md border border-zinc-700/80 active:scale-95"
-              style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}
-            >
-              {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
-              <span className="hidden sm:inline text-[11px] font-bold">
-                {isFullscreen ? "Restaurar" : "Tela Cheia"}
-              </span>
-            </button>
-            {!isStandalone && (
-              <button
-                onClick={() => setShowPWAModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 hover:text-[#00b14f] transition cursor-pointer text-xs font-semibold animate-pulse shadow-md"
-                style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}
-              >
-                <span>üì≤</span>
-                <span className="hidden md:inline">Instalar App</span>
-              </button>
-            )}
-            <span className="hidden sm:inline">
-              {currentUser.name} ({currentUser.role})
-            </span>
-            <span className="sm:hidden">{currentUser.name.split(" ")[0]}</span>
-            <button
-              onClick={() => setCurrentUser(null)}
-              className="p-2 bg-zinc-800 text-white rounded-full hover:bg-zinc-700 hover:text-[#00b14f] transition"
-            >
-              <LogOut size={18} />
-            </button>
-          </div>
-        </header>
-
-        {/* Main Content Area */}
-        <main className="flex-1 overflow-hidden w-full max-w-7xl mx-auto flex flex-col min-h-0 bg-slate-50 relative">
-          <Routes>
-            <Route
-              path="/"
-              element={<Welcome currentUser={currentUser} db={db} />}
-            />
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "LEITURA" ||
-              currentUser.role === "PCP" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "ENCARREGADO") && (
-              <Route
-                path="/admin"
-                element={<AdminScreen db={db} currentUser={currentUser} />}
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "PCP" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "LEITURA" ||
-              currentUser.role === "ENCARREGADO") && (
-              <Route
-                path="/relatorios"
-                element={<RelatoriosScreen db={db} currentUser={currentUser} />}
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "PCP" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "LEITURA" ||
-              currentUser.role === "ENCARREGADO" ||
-              currentUser.id === "dinei" ||
-              currentUser.name.toLowerCase().includes("dinei")) && (
-              <>
-                <Route
-                  path="/status"
-                  element={<Navigate to="/pedidos" replace />}
-                />
-                <Route
-                  path="/itens"
-                  element={
-                    <ScreenErrorBoundary screenName="Itens">
-                      <ItensScreen db={db} />
-                    </ScreenErrorBoundary>
-                  }
-                />
-              </>
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "PCP" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "ENCARREGADO" ||
-              currentUser.role === "PROJETISTA" ||
-              currentUser.id === "dinei" ||
-              currentUser.name.toLowerCase().includes("dinei") ||
-              (currentUser.role === "LEITURA" && currentUser.id !== "romario" && !currentUser.name.toLowerCase().includes("romario"))) && (
-              <>
-                <Route
-                  path="/pedidos"
-                  element={
-                    <PedidosScreen
-                      db={db}
-                      currentUser={currentUser}
-                    />
-                  }
-                />
-                <Route
-                  path="/nests"
-                  element={
-                    <UploadNestScreen db={db} currentUser={currentUser} />
-                  }
-                />
-              </>
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "PCP" ||
-              currentUser.role === "LEITURA" ||
-              currentUser.role === "ENCARREGADO") && (
-              <Route
-                path="/estoque"
-                element={<EstoqueScreen db={db} currentUser={currentUser} />}
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "PCP" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "PROJETISTA") && (
-              <>
-                <Route
-                  path="/estoque-laser"
-                  element={
-                    <EstoqueNestingScreen db={db} currentUser={currentUser} />
-                  }
-                />
-                <Route
-                  path="/estoque-chapas"
-                  element={
-                    <EstoqueChapasScreen db={db} currentUser={currentUser} />
-                  }
-                />
-              </>
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "PCP" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "PROJETISTA" ||
-              currentUser.id === "romario" ||
-              currentUser.name.toLowerCase().includes("romario")) && (
-              <Route
-                path="/orcamentos"
-                element={
-                  <OrcamentoLaserScreen db={db} currentUser={currentUser} />
-                }
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "PRENSA_EDUARDO") && (
-              <Route
-                path="/prensa-eduardo"
-                element={
-                  <PrensaEduardoScreen db={db} currentUser={currentUser} />
-                }
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "TORNO_CNC_WILLIAN") && (
-              <Route
-                path="/torno-cnc-willian"
-                element={
-                  <TornoCncWillianScreen db={db} currentUser={currentUser} />
-                }
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "TORNO_CNC_HENRIQUE") && (
-              <Route
-                path="/torno-cnc-henrique"
-                element={
-                  <TornoCncHenriqueScreen db={db} currentUser={currentUser} />
-                }
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "PRENSA_RAFAEL") && (
-              <Route
-                path="/prensa-rafael"
-                element={
-                  <PrensaRafaelScreen db={db} currentUser={currentUser} />
-                }
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "INJETORA") && (
-              <Route
-                path="/injetora"
-                element={<InjetoraScreen db={db} currentUser={currentUser} />}
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "BANHO_QUIMICO") && (
-              <Route
-                path="/banho-quimico"
-                element={
-                  <BanhoQuimicoScreen db={db} currentUser={currentUser} />
-                }
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "EMBALAGEM") && (
-              <Route
-                path="/embalagem"
-                element={
-                  <EmbalagemScreen
-                    db={db}
-                    currentUser={currentUser}
-                    SVGQRCode={SVGQRCode}
-                  />
-                }
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "PRODUCAO" ||
-              currentUser.role === "MONTAGEM_RODRIGO" ||
-              currentUser.role === "SOLDA" ||
-              currentUser.role === "MONTAGEM_RETRATIL" ||
-              currentUser.role === "ENCARREGADO") && (
-              <Route
-                path="/producao"
-                element={<ProducaoScreen db={db} currentUser={currentUser} />}
-              />
-            )}
-            <Route
-              path="/montagem-retratil"
-              element={
-                currentUser ? (
-                  <MontagemRetratilScreen db={db} currentUser={currentUser} />
-                ) : (
-                  <Navigate to="/" replace />
-                )
-              }
-            />
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "CORTE_LASER") && (
-              <>
-                <Route
-                  path="/cortelaser"
-                  element={
-                    <CorteLaserScreen db={db} currentUser={currentUser} />
-                  }
-                />
-                {(currentUser.role === "CORTE_LASER" || currentUser.role === "GERENCIA") && (
-                  <Route
-                    path="/nests"
-                    element={
-                      <UploadNestScreen db={db} currentUser={currentUser} />
-                    }
-                  />
-                )}
-              </>
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "PINTURA") && (
-              <Route
-                path="/pintura"
-                element={<PinturaScreen db={db} currentUser={currentUser} />}
-              />
-            )}
-            <Route
-              path="/historico"
-              element={
-                <HistoricoProducaoScreen db={db} currentUser={currentUser} />
-              }
-            />
-            {currentUser.role === "REPRESENTANTE" && (
-              <Route
-                path="/representante"
-                element={
-                  <RepresentanteScreen db={db} currentUser={currentUser} />
-                }
-              />
-            )}
-            <Route
-              path="/qualidade"
-              element={<QualidadeScreen db={db} currentUser={currentUser} />}
-            />
-            <Route
-              path="/relatorios-qualidade"
-              element={<RelatoriosProducaoEQualidade db={db} />}
-            />
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "PCP" ||
-              currentUser.role === "GERENCIA") && (
-              <Route
-                path="/pcp"
-                element={<PCPScreen db={db} currentUser={currentUser} />}
-              />
-            )}
-            {(currentUser.role === "ADMIN" || currentUser.role === "PCP") && (
-              <Route
-                path="/gestao-clientes"
-                element={
-                  <GestaoClientesScreen db={db} currentUser={currentUser} />
-                }
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "PCP" ||
-              currentUser.role === "GERENCIA" ||
-              currentUser.role === "ENCARREGADO" ||
-              currentUser.role === "PROJETISTA" ||
-              currentUser.id === "dinei" ||
-              currentUser.id === "projetista_marcos") && (
-              <Route
-                path="/lotes"
-                element={
-                  <ScreenErrorBoundary screenName="Lotes de Ger√™ncia">
-                    <LotesScreen db={db} currentUser={currentUser} />
-                  </ScreenErrorBoundary>
-                }
-              />
-            )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "GERENCIA") && (
-              <Route
-                path="/financeiro"
-                element={<FinanceiroScreen db={db} currentUser={currentUser} />}
-              />
-            )}
-            {(currentUser.id === "raul" || (currentUser.tenantId === "global" && currentUser.id !== "gerencia.cyrnedecor" && currentUser.role === "ADMIN")) && (
-              <Route
-                path="/superadmin"
-                element={<SuperAdminScreen db={db} currentUser={currentUser} />}
-              />
-            )}
-          </Routes>
-        </main>
-
-        {/* Bottom Navigation */}
-        <BottomNavContext.Provider value={{ isCollapsed: isBottomNavCollapsed }}>
-          <nav className={`bg-white border-t border-gray-200 flex items-center justify-around pb-safe shrink-0 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] overflow-x-auto transition-all duration-300 ${isBottomNavCollapsed ? "py-1 px-2 gap-1" : "p-2 sm:p-3 gap-1"}`}>
-            {/* Collapse / Expand Toggle Button */}
-            <button
-              onClick={toggleBottomNav}
-              title={isBottomNavCollapsed ? "Expandir Menu de Navega√ß√£o" : "Recolher Menu (Modo Compacto)"}
-              className={`flex flex-col items-center justify-center border rounded-lg transition-all shrink-0 cursor-pointer ${
-                isBottomNavCollapsed
-                  ? "p-1 min-w-[34px] h-[34px] bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
-                  : "p-2 min-w-[56px] min-h-[48px] bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              {isBottomNavCollapsed ? (
-                <ChevronUp size={18} className="text-indigo-600" />
-              ) : (
-                <ChevronDown size={20} className="text-slate-700" />
-              )}
-              <span className={`${isBottomNavCollapsed ? "hidden" : "text-[10px] mt-1 font-bold text-slate-600 whitespace-nowrap"}`}>
-                Recolher
-              </span>
-            </button>
-          {(currentUser.id === "raul" || (currentUser.tenantId === "global" && currentUser.id !== "gerencia.cyrnedecor" && currentUser.role === "ADMIN")) && (
-            <NavLink
-              to="/superadmin"
-              icon={<ShieldAlert size={24} className="text-red-650" />}
-              label="Permiss√µes"
-            />
-          )}
-          {isScreenAllowed("inicio") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "PCP" ||
-            currentUser.id === "projetista_marcos" ||
-            currentUser.id === "dinei" ||
-            currentUser.id === "romario" ||
-            currentUser.id === "alessandra") && (
-            <NavLink to="/" icon={<Home size={24} />} label="In√≠cio" />
-          )}
-
-          {isScreenAllowed("financeiro") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA") && (
-            <NavLink
-              to="/financeiro"
-              icon={<DollarSign size={24} />}
-              label="Financeiro"
-            />
-          )}
-
-          {isScreenAllowed("admin") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "LEITURA" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "ENCARREGADO") && (
-            <NavLink
-              to="/admin"
-              icon={<BarChart2 size={24} />}
-              label="Monitor"
-            />
-          )}
-
-          {isScreenAllowed("relatorios") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "LEITURA" ||
-            currentUser.role === "ENCARREGADO") && (
-            <NavLink
-              to="/relatorios"
-              icon={<ClipboardList size={24} />}
-              label="Relat√≥rios"
-            />
-          )}
-
-          {isScreenAllowed("gestao-clientes") && (currentUser.role === "ADMIN" || currentUser.role === "PCP") && (
-            <NavLink
-              to="/gestao-clientes"
-              icon={<Users size={24} />}
-              label="Clientes"
-            />
-          )}
-
-          {isScreenAllowed("itens") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.id === "dinei" ||
-            currentUser.name.toLowerCase().includes("dinei")) && (
-            <NavLink to="/itens" icon={<List size={24} />} label="Itens" />
-          )}
-
-          {isScreenAllowed("pedidos") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "ENCARREGADO" ||
-            currentUser.role === "PROJETISTA" ||
-            currentUser.id === "dinei" ||
-            currentUser.name.toLowerCase().includes("dinei") ||
-            (currentUser.role === "LEITURA" && currentUser.id !== "romario" && !currentUser.name.toLowerCase().includes("romario"))) && (
-            <NavLink
-              to="/pedidos"
-              icon={<ShoppingCart size={24} />}
-              label="Pedidos"
-            />
-          )}
-
-          {isScreenAllowed("estoque") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "LEITURA" ||
-            currentUser.role === "ENCARREGADO") && (
-            <NavLink
-              to="/estoque"
-              icon={<Layers size={24} />}
-              label="Estoque"
-            />
-          )}
-
-          {(currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "PROJETISTA") && (
-            <>
-              {isScreenAllowed("estoque-chapas") && (
-                <NavLink
-                  to="/estoque-chapas"
-                  icon={<Layers size={24} />}
-                  label="Estoque de Chapas"
-                />
-              )}
-              {isScreenAllowed("estoque-laser") && (
-                <NavLink
-                  to="/estoque-laser"
-                  icon={<Layers size={24} />}
-                  label="Estoque P√ß Cortadas"
-                />
-              )}
-            </>
-          )}
-
-          {isScreenAllowed("orcamentos") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "PROJETISTA" ||
-            currentUser.id === "romario" ||
-            currentUser.name.toLowerCase().includes("romario")) && (
-            <NavLink
-              to="/orcamentos"
-              icon={<FileText size={24} />}
-              label="Or√ßamentos Laser"
-            />
-          )}
-
-          {isScreenAllowed("nests") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "PROJETISTA" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "CORTE_LASER") && 
-            (currentUser.id === "raul" || hasSector("laser") || hasSector("corte")) && (
-            <NavLink to="/nests" icon={<Scissors size={24} />} label="Nests" />
-          )}
-
-          {isScreenAllowed("producao") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "MONTAGEM_RODRIGO" ||
-            currentUser.role === "PRODUCAO" ||
-            currentUser.role === "SOLDA" ||
-            currentUser.role === "ENCARREGADO") && (
-            <NavLink
-              to="/producao"
-              icon={<Activity size={24} />}
-              label="Produ√ß√£o"
-            />
-          )}
-
-          {isScreenAllowed("cortelaser") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "CORTE_LASER") && 
-            (currentUser.id === "raul" || hasSector("laser") || hasSector("corte")) && (
-            <NavLink
-              to="/cortelaser"
-              icon={<Scissors size={24} />}
-              label="Laser"
-            />
-          )}
-
-          {isScreenAllowed("pintura") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "PINTURA") && 
-            (currentUser.id === "raul" || hasSector("pintura")) && (
-            <NavLink
-              to="/pintura"
-              icon={<Paintbrush size={24} />}
-              label="Pintura"
-            />
-          )}
-
-          {isScreenAllowed("prensa-eduardo") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "PRENSA_EDUARDO" ||
-            currentUser.id === "prensa_eduardo") && 
-            (currentUser.id === "raul" || currentUser.role === "PRENSA_EDUARDO" || currentUser.id === "prensa_eduardo" || ((hasMachine("eduardo") || (hasMachine("prensa") && currentUser.role !== "PRENSA_RAFAEL") || (hasSector("prensa") && currentUser.role !== "PRENSA_RAFAEL")) && currentUser.role !== "PRENSA_RAFAEL" && currentUser.id !== "prensa_rafael")) && (
-            <NavLink
-              to="/prensa-eduardo"
-              icon={<Hammer size={24} />}
-              label="Prensa (E)"
-            />
-          )}
-
-          {isScreenAllowed("torno-cnc-willian") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "TORNO_CNC_WILLIAN") && 
-            (currentUser.id === "raul" || hasMachine("willian") || hasMachine("torno") || hasSector("torno")) && (
-            <NavLink
-              to="/torno-cnc-willian"
-              icon={<Hammer size={24} />}
-              label="Torno Willian"
-            />
-          )}
-
-          {isScreenAllowed("torno-cnc-henrique") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "TORNO_CNC_HENRIQUE") && 
-            (currentUser.id === "raul" || hasMachine("henrique") || hasMachine("torno") || hasSector("torno")) && (
-            <NavLink
-              to="/torno-cnc-henrique"
-              icon={<Hammer size={24} />}
-              label="Torno Henrique"
-            />
-          )}
-
-          {isScreenAllowed("prensa-rafael") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "PRENSA_RAFAEL" ||
-            currentUser.id === "prensa_rafael") && 
-            (currentUser.id === "raul" || currentUser.role === "PRENSA_RAFAEL" || currentUser.id === "prensa_rafael" || ((hasMachine("rafael") || (hasMachine("prensa") && currentUser.role !== "PRENSA_EDUARDO") || (hasSector("prensa") && currentUser.role !== "PRENSA_EDUARDO")) && currentUser.role !== "PRENSA_EDUARDO" && currentUser.id !== "prensa_eduardo")) && (
-            <NavLink
-              to="/prensa-rafael"
-              icon={<Scissors size={24} />}
-              label="Prensa (R)"
-            />
-          )}
-
-          {isScreenAllowed("injetora") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "INJETORA") && 
-            (currentUser.id === "raul" || hasMachine("injetora") || hasSector("injetora")) && (
-            <NavLink
-              to="/injetora"
-              icon={<Scissors size={24} />}
-              label="Injetora"
-            />
-          )}
-
-          {isScreenAllowed("banho-quimico") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "BANHO_QUIMICO") && 
-            (currentUser.id === "raul" || hasMachine("banho") || hasMachine("zinc") || hasSector("banho") || hasSector("zinc") || hasSector("quimico")) && (
-            <NavLink
-              to="/banho-quimico"
-              icon={<Beaker size={24} />}
-              label="Banho/Zinc"
-            />
-          )}
-
-          {isScreenAllowed("embalagem") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "EMBALAGEM") && 
-            (currentUser.id === "raul" || hasSector("embalagem")) && (
-            <NavLink
-              to="/embalagem"
-              icon={<Box size={24} />}
-              label="Embalagem"
-            />
-          )}
-
-          {isScreenAllowed("montagem-retratil") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "MONTAGEM_RETRATIL") && 
-            (currentUser.id === "raul" || hasSector("retratil") || hasSector("montagem")) && (
-            <NavLink
-              to="/montagem-retratil"
-              icon={<Hammer size={24} />}
-              label="Montagem Retr√°til"
-            />
-          )}
-
-          {isScreenAllowed("representante") && currentUser.role === "REPRESENTANTE" && (
-            <NavLink
-              to="/representante"
-              icon={<ClipboardList size={24} />}
-              label="Painel"
-            />
-          )}
-
-          {isScreenAllowed("pcp") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA") && (
-            <NavLink
-              to="/pcp"
-              icon={<Settings size={24} />}
-              label="Cadastros PCP"
-            />
-          )}
-
-          {isScreenAllowed("qualidade") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "ENCARREGADO" ||
-            currentUser.role === "PRODUCAO" ||
-            currentUser.role === "QUALIDADE" ||
-            currentUser.id === "raul") && (
-            <NavLink
-              to="/qualidade"
-              icon={<CheckCircle2 size={24} className="text-emerald-500" />}
-              label="Qualidade"
-            />
-          )}
-
-          {isScreenAllowed("relatorios-qualidade") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "ENCARREGADO" ||
-            currentUser.role === "QUALIDADE") && (
-            <NavLink
-              to="/relatorios-qualidade"
-              icon={<BarChart2 size={24} className="text-indigo-500" />}
-              label="Relat. Qualidade"
-            />
-          )}
-
-          {isScreenAllowed("lotes") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "GERENCIA" ||
-            currentUser.role === "ENCARREGADO" ||
-            currentUser.role === "PROJETISTA" ||
-            currentUser.id === "dinei" ||
-            currentUser.id === "projetista_marcos") && (
-            <NavLink
-              to="/lotes"
-              icon={<ClipboardList size={24} />}
-              label="Lotes"
-            />
-          )}
-
-          {isScreenAllowed("historico") && (
-            <NavLink
-              to="/historico"
-              icon={<History size={24} />}
-              label="Hist√≥rico"
-            />
-          )}
-        </nav>
-      </BottomNavContext.Provider>
-    </div>
-
-      {orderToPrint &&
-        (() => {
-          // Resolve array of order codes to print
-          const orderCodesToPrintList: string[] = Array.isArray(orderToPrint)
-            ? orderToPrint.map((o: any) => o.orderCode || String(o))
-            : orderToPrint.isBatch && Array.isArray(orderToPrint.orderCodes)
-            ? orderToPrint.orderCodes
-            : orderToPrint.orderCode
-            ? [orderToPrint.orderCode]
-            : [];
-
-          return (
-            <div className="fixed inset-0 bg-black/75 z-[9999] flex items-center justify-center p-2 sm:p-4 backdrop-blur-xs text-left text-slate-800">
-              <style>{`
-              @media print {
-                @page {
-                  size: A4 portrait;
-                  margin: 0 !important;
-                }
-                .non-printable {
-                  display: none !important;
-                }
-                #print-order-sheet {
-                  display: block !important;
-                  width: 100% !important;
-                  max-width: 100% !important;
-                  padding: 0 !important;
-                  margin: 0 !important;
-                  background: white !important;
-                }
-                .half-sheet-page {
-                  box-sizing: border-box !important;
-                  width: 100% !important;
-                  height: 297mm !important;
-                  max-height: 297mm !important;
-                  page-break-after: always !important;
-                  break-after: page !important;
-                  page-break-inside: avoid !important;
-                  break-inside: avoid !important;
-                  display: flex !important;
-                  flex-direction: column !important;
-                  justify-content: space-between !important;
-                  padding: 0 !important;
-                  margin: 0 !important;
-                  border: none !important;
-                  background: white !important;
-                  position: relative !important;
-                  overflow: hidden !important;
-                }
-                .half-sheet-order-card {
-                  box-sizing: border-box !important;
-                  width: 100% !important;
-                  height: 148.5mm !important;
-                  max-height: 148.5mm !important;
-                  padding: 3.5mm 5mm !important;
-                  border: 1px solid #94a3b8 !important;
-                  overflow: hidden !important;
-                  background: white !important;
-                  border-radius: 0 !important;
-                  display: flex !important;
-                  flex-direction: column !important;
-                  justify-content: flex-start !important;
-                  gap: 1.5mm !important;
-                }
-                .serrated-cut-line {
-                  box-sizing: border-box !important;
-                  position: absolute !important;
-                  top: 148.5mm !important;
-                  left: 0 !important;
-                  right: 0 !important;
-                  transform: translateY(-50%) !important;
-                  z-index: 10 !important;
-                  height: 0 !important;
-                  display: flex !important;
-                  align-items: center !important;
-                  justify-content: center !important;
-                  border-top: 2px dashed #334155 !important;
-                  margin: 0 !important;
-                  text-align: center !important;
-                  font-size: 7.5pt !important;
-                  font-weight: 800 !important;
-                  color: #1e293b !important;
-                  letter-spacing: 1px !important;
-                }
-                .full-sheet-order-card {
-                  box-sizing: border-box !important;
-                  width: 100% !important;
-                  padding: 6mm 8mm !important;
-                  border: 1px solid #cbd5e1 !important;
-                  margin-bottom: 0 !important;
-                  page-break-inside: avoid !important;
-                  break-inside: avoid !important;
-                  page-break-after: always !important;
-                  break-after: page !important;
-                  background: white !important;
-                  display: flex !important;
-                  flex-direction: column !important;
-                  justify-content: flex-start !important;
-                  gap: 3.5mm !important;
-                }
-              }
-            `}</style>
-
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden max-h-[92vh] animate-in zoom-in-95 leading-normal">
-                {/* Header (non-printable) */}
-                <div className="bg-slate-900 text-[#00b14f] p-3.5 sm:p-4 flex items-center justify-between border-b border-[#00b14f]/20 non-printable shrink-0 flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <Printer size={18} />
-                    <div>
-                      <h3 className="font-extrabold text-xs sm:text-sm text-white leading-tight">
-                        Espelho do Pedido ({printSheetSize === "half" ? "Meia Folha" : "Folha Inteira"})
-                      </h3>
-                      <span className="text-[10px] text-emerald-400 font-mono block">
-                        {orderCodesToPrintList.length === 1
-                          ? `Pedido #${orderCodesToPrintList[0]}`
-                          : `Impress√£o em Lote: ${orderCodesToPrintList.length} pedido(s)`}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {/* Size Selector Toggle */}
-                    <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setPrintSheetSize("half")}
-                        className={`px-2.5 py-1 rounded-lg font-extrabold text-[11px] transition cursor-pointer flex items-center gap-1 ${
-                          printSheetSize === "half"
-                            ? "bg-[#00b14f] text-white shadow-xs"
-                            : "text-slate-400 hover:text-white hover:bg-slate-800"
-                        }`}
-                      >
-                        üìÑ Meia Folha
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPrintSheetSize("full")}
-                        className={`px-2.5 py-1 rounded-lg font-extrabold text-[11px] transition cursor-pointer flex items-center gap-1 ${
-                          printSheetSize === "full"
-                            ? "bg-[#00b14f] text-white shadow-xs"
-                            : "text-slate-400 hover:text-white hover:bg-slate-800"
-                        }`}
-                      >
-                        üìë Folha Inteira
-                      </button>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setOrderToPrint(null)}
-                      className="text-gray-400 hover:text-white transition duration-150 text-base font-bold px-1.5 focus:outline-none cursor-pointer"
-                    >
-                      ‚úï
-                    </button>
-                  </div>
-                </div>
-
-                {/* Main Content (Scrollable Container) */}
-                <div className="overflow-y-auto p-3 sm:p-5 bg-slate-100 flex-1">
-                  {/* Print Sheet Target */}
-                  <div
-                    id="print-order-sheet"
-                    className="bg-transparent max-w-2xl mx-auto flex flex-col font-sans text-slate-800 gap-4"
-                    style={{ width: "100%", boxSizing: "border-box" }}
-                  >
-                    {(() => {
-                      const renderOrderCard = (codeToPrint: string) => {
-                        const groupOrders = db.orders.filter(
-                          (o) =>
-                            o.orderCode === codeToPrint &&
-                            o.status !== "CANCELADO" &&
-                            (o.isActive !== false || o.status === "TEM_ESTOQUE"),
-                        );
-                      if (groupOrders.length === 0) return null;
-
-                      const firstOrd = groupOrders[0];
-                      const custObj = findCustomerForOrder(firstOrd, db.customers);
-                      const locationFullLabel = getCustomerLocationLabel(firstOrd, custObj);
-
-                      const custCode = custObj?.id || custObj?.code || firstOrd.customerCode || "";
-                      const rawNameStr = custObj?.tradeName?.trim() || custObj?.name?.trim() || firstOrd.customerName?.trim() || "";
-                      const leadingCodeMatch = rawNameStr.match(/^\s*[\[\(]?\s*(\d+)/);
-                      const finalCode = custCode || (leadingCodeMatch ? leadingCodeMatch[1] : "");
-                      const cleanNameStr = rawNameStr.replace(/^\s*[\[\(]?\s*\d+\s*[\]\)]?\s*[-‚Äì‚Äî]?\s*/, "").trim();
-
-                      const customerDisplayName = finalCode
-                        ? `${finalCode} - ${cleanNameStr || rawNameStr}`
-                        : cleanNameStr || rawNameStr;
-
-                      const fiscalTypeVal =
-                        firstOrd.fiscalType || custObj?.fiscalType || "COM_NF";
-                      let fiscalTypeLabel = "Com Nota Fiscal (COM NF)";
-                      if (fiscalTypeVal === "SEM_NF")
-                        fiscalTypeLabel = "Sem Nota Fiscal (SEM NF)";
-                      if (fiscalTypeVal === "MEIA_NOTA")
-                        fiscalTypeLabel = "Meia Nota Fiscal";
-
-                      const paymentStr =
-                        [firstOrd.paymentCondition, firstOrd.paymentTerms]
-                          .filter(Boolean)
-                          .join(" - ") ||
-                        custObj?.defaultPaymentTerms ||
-                        "√Ä vista / Padr√£o";
-
-                      const linkedBatches = db.productionBatches.filter((b) =>
-                        (b.orderIds || []).some(
-                          (id) =>
-                            groupOrders.some(
-                              (go) =>
-                                Number(id) === Number(go.id) ||
-                                String(id) === String(go.id),
-                            ) || String(id) === String(codeToPrint),
-                        ),
-                      );
-                      const lotesStr =
-                        linkedBatches.length > 0
-                          ? linkedBatches
-                              .map((b) => b.name || b.code || `Lote #${b.id}`)
-                              .join(", ")
-                          : "N√£o vinculado";
-
-                      const orderDiscountPercent =
-                        firstOrd.discountPercent !== undefined
-                          ? firstOrd.discountPercent
-                          : custObj?.defaultDiscountPercent;
-                      const orderHasRET =
-                        firstOrd.hasRET !== undefined ? firstOrd.hasRET : custObj?.hasRET;
-
-                      const totalQtyOrder = groupOrders.reduce(
-                        (sum, o) => sum + (o.totalQuantity || 0),
-                        0,
-                      );
-                      const subtotalBeforeDiscount = groupOrders.reduce((sum, o) => {
-                        const itemInG = db.items.find((i) => i.id === o.itemId);
-                        const price =
-                          o.unitPrice !== undefined
-                            ? o.unitPrice
-                            : itemInG?.unitPrice || itemInG?.price || 0;
-                        return sum + (o.totalQuantity || 0) * price;
-                      }, 0);
-
-                      const discountAmount =
-                        orderDiscountPercent && orderDiscountPercent > 0
-                          ? (subtotalBeforeDiscount * orderDiscountPercent) / 100
-                          : 0;
-
-                      const totalValOrder = subtotalBeforeDiscount - discountAmount;
-
-                      const isFull = printSheetSize === "full";
-
-                      return (
-                        <div
-                          key={codeToPrint}
-                          className={`${
-                            isFull
-                              ? "full-sheet-order-card p-5 sm:p-6 gap-3"
-                              : "half-sheet-order-card p-3 sm:p-3.5 gap-2"
-                          } bg-white border border-slate-300 rounded-xl shadow-xs flex flex-col justify-start font-sans text-slate-800`}
-                          style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-                        >
-                          {/* Brand Branding Block */}
-                          <div
-                            className={`flex items-center justify-between border-b ${
-                              isFull ? "pb-3 mb-1" : "pb-1.5 mb-0.5"
-                            } border-slate-200`}
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <ReportHeaderLogo
-                                logoUrl={db.activeTenant?.logoUrl && db.activeTenant.logoUrl !== "/icon.png" ? db.activeTenant.logoUrl : (db.systemSettings?.[0]?.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png")}
-                                className={isFull ? "w-10 h-10 object-contain rounded" : "w-7 h-7 object-contain rounded"}
-                                alt="Logo Empresa"
-                              />
-                              <div>
-                                <h2
-                                  className={`${
-                                    isFull ? "text-base sm:text-lg" : "text-xs sm:text-sm"
-                                  } font-black text-slate-900 tracking-tight leading-none uppercase`}
-                                >
-                                  {db.activeTenant?.name || db.systemSettings?.[0]?.companyName || "SUA EMPRESA"}
-                                </h2>
-                                <span
-                                  className={`${
-                                    isFull ? "text-[9px]" : "text-[7.5px]"
-                                  } text-gray-500 font-extrabold uppercase tracking-wider block mt-0.5`}
-                                >
-                                  {db.activeTenant?.systemName || db.systemSettings?.[0]?.systemName || "Acess√≥rios para M√≥veis"}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span
-                                className={`${
-                                  isFull ? "text-[10px] px-2.5 py-0.5" : "text-[8px] px-2 py-0.5"
-                                } bg-[#00b14f]/10 text-[#00b14f] border border-[#00b14f]/20 rounded font-black uppercase tracking-wider inline-block`}
-                              >
-                                Pedido de Venda ({isFull ? "Folha Inteira" : "Meia Folha"})
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Unified Condensed Info Panel */}
-                          <div className="border border-slate-300/90 rounded-lg overflow-hidden bg-slate-50/70 divide-y divide-slate-200">
-                            {/* Row 1: Key Metadata */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-200">
-                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
-                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  N¬∫ do Pedido
-                                </span>
-                                <span className={`${isFull ? "text-base sm:text-lg" : "text-sm sm:text-base"} font-black text-black font-mono block mt-0.5`}>
-                                  #{codeToPrint}
-                                </span>
-                              </div>
-
-                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
-                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Data do Pedido
-                                </span>
-                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-800 block mt-0.5`}>
-                                  {firstOrd.createdAt
-                                    ? new Date(firstOrd.createdAt).toLocaleDateString("pt-BR")
-                                    : "-"}
-                                </span>
-                              </div>
-
-                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
-                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Previs√£o de Entrega
-                                </span>
-                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-rose-600 block mt-0.5 font-mono`}>
-                                  {firstOrd.deliveryDate
-                                    ? firstOrd.deliveryDate.split("-").reverse().join("/")
-                                    : "-"}
-                                </span>
-                              </div>
-
-                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
-                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Nota Fiscal (NF)
-                                </span>
-                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-slate-800 block mt-0.5 truncate`}>
-                                  {fiscalTypeLabel}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Row 2: Customer Details */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
-                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
-                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Cliente / Raz√£o Social
-                                </span>
-                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-slate-900 block mt-0.5 truncate`}>
-                                  {customerDisplayName}
-                                </span>
-                              </div>
-
-                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
-                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Cidade / UF / Bairro do Cliente
-                                </span>
-                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-800 block mt-0.5 truncate`}>
-                                  üìç {locationFullLabel}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Row 3: Commercial Details */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
-                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
-                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Condi√ß√£o de Pagamento
-                                </span>
-                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-indigo-900 block mt-0.5 truncate`}>
-                                  üí≥ {paymentStr}
-                                </span>
-                              </div>
-
-                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
-                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Representante
-                                </span>
-                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-700 block mt-0.5 truncate`}>
-                                  {firstOrd.representativeName || "Venda Direta"}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Row 4: Discounts & RET */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 border-t border-slate-200">
-                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
-                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Desconto no Pedido
-                                </span>
-                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-emerald-800 block mt-0.5 truncate`}>
-                                  {orderDiscountPercent && orderDiscountPercent > 0
-                                    ? `üè∑Ô∏è ${orderDiscountPercent}% (-${discountAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`
-                                    : "Sem Desconto (0%)"}
-                                </span>
-                              </div>
-
-                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
-                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Regime Tribut√°rio (RET)
-                                </span>
-                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-800 block mt-0.5 truncate`}>
-                                  {orderHasRET
-                                    ? "üèõÔ∏è SIM (Regime Especial de Tributa√ß√£o)"
-                                    : "N√ÉO (Regime Comum)"}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Table of Items */}
-                          <div
-                            className={`${
-                              isFull ? "mt-4" : "mt-2"
-                            } overflow-x-auto border border-slate-200 rounded-lg`}
-                          >
-                            <table
-                              className={`w-full text-left border-collapse ${
-                                isFull ? "text-xs" : "text-[10px]"
-                              } font-sans`}
-                            >
-                              <thead>
-                                <tr
-                                  className={`bg-slate-100 text-slate-700 font-black ${
-                                    isFull ? "text-[10px] py-2" : "text-[8px] py-1"
-                                  } uppercase tracking-wider border-b border-slate-200`}
-                                >
-                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"} text-center w-6`}>
-                                    #
-                                  </th>
-                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"}`}>
-                                    C√≥digo / Produto
-                                  </th>
-                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1"}`}>Cor</th>
-                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1"}`}>Tam</th>
-                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1"}`}>Var</th>
-                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1"} text-center`}>
-                                    Qtd
-                                  </th>
-                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"} text-right`}>
-                                    Pre√ßo Unit.
-                                  </th>
-                                  <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"} text-right`}>
-                                    Subtotal
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-200/60">
-                                {groupOrders.map((ordInGroup, index) => {
-                                  const itemInGroup = db.items.find(
-                                    (i) => i.id === ordInGroup.itemId,
-                                  );
-                                  const prodLabel =
-                                    itemInGroup?.name ||
-                                    ordInGroup.customProductName ||
-                                    `Produto #${ordInGroup.itemId}`;
-                                  const prodCode = itemInGroup?.code
-                                    ? `[${itemInGroup.code}] `
-                                    : "";
-
-                                  const price =
-                                    ordInGroup.unitPrice !== undefined
-                                      ? ordInGroup.unitPrice
-                                      : itemInGroup?.unitPrice || itemInGroup?.price || 0;
-                                  const subtotal = (ordInGroup.totalQuantity || 0) * price;
-
-                                  return (
-                                    <tr
-                                      key={ordInGroup.id}
-                                      className="even:bg-slate-50/40 text-slate-800"
-                                    >
-                                      <td
-                                        className={`${
-                                          isFull ? "py-2 px-2" : "py-1 px-1.5"
-                                        } text-center font-bold text-gray-500`}
-                                      >
-                                        #{index + 1}
-                                      </td>
-                                      <td
-                                        className={`${
-                                          isFull ? "py-2 px-2" : "py-1 px-1.5"
-                                        } font-bold text-slate-900`}
-                                      >
-                                        <span className="text-[#00b14f] font-mono font-black">
-                                          {prodCode}
-                                        </span>
-                                        {prodLabel}
-                                      </td>
-                                      <td
-                                        className={`${
-                                          isFull ? "py-2 px-2" : "py-1 px-1"
-                                        } text-slate-600 font-medium`}
-                                      >
-                                        {ordInGroup.color || "-"}
-                                      </td>
-                                      <td
-                                        className={`${
-                                          isFull ? "py-2 px-2" : "py-1 px-1"
-                                        } text-slate-600 font-medium`}
-                                      >
-                                        {ordInGroup.size || "-"}
-                                      </td>
-                                      <td
-                                        className={`${
-                                          isFull ? "py-2 px-2" : "py-1 px-1"
-                                        } text-slate-600 font-medium`}
-                                      >
-                                        {ordInGroup.variation || "-"}
-                                      </td>
-                                      <td
-                                        className={`${
-                                          isFull ? "py-2 px-2" : "py-1 px-1"
-                                        } text-center font-extrabold text-slate-900 font-mono`}
-                                      >
-                                        {ordInGroup.totalQuantity || 0} p√ß
-                                      </td>
-                                      <td
-                                        className={`${
-                                          isFull ? "py-2 px-2" : "py-1 px-1.5"
-                                        } text-right font-semibold text-slate-700 font-mono`}
-                                      >
-                                        {price.toLocaleString("pt-BR", {
-                                          style: "currency",
-                                          currency: "BRL",
-                                        })}
-                                      </td>
-                                      <td
-                                        className={`${
-                                          isFull ? "py-2 px-2" : "py-1 px-1.5"
-                                        } text-right font-black text-slate-900 font-mono`}
-                                      >
-                                        {subtotal.toLocaleString("pt-BR", {
-                                          style: "currency",
-                                          currency: "BRL",
-                                        })}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                              <tfoot>
-                                {orderDiscountPercent && orderDiscountPercent > 0 ? (
-                                  <>
-                                    <tr className="bg-slate-800 text-slate-200 text-[9px] font-bold border-t border-slate-700">
-                                      <td colSpan={5} className="py-1 px-2 text-right uppercase tracking-wider text-slate-300">
-                                        Subtotal Bruto:
-                                      </td>
-                                      <td className="py-1 px-1 text-center font-mono text-slate-200">
-                                        {totalQtyOrder} p√ßs
-                                      </td>
-                                      <td colSpan={2} className="py-1 px-2 text-right font-mono text-slate-200">
-                                        {subtotalBeforeDiscount.toLocaleString("pt-BR", {
-                                          style: "currency",
-                                          currency: "BRL",
-                                        })}
-                                      </td>
-                                    </tr>
-                                    <tr className="bg-slate-800 text-emerald-300 text-[9px] font-bold">
-                                      <td colSpan={5} className="py-1 px-2 text-right uppercase tracking-wider">
-                                        Desconto ({orderDiscountPercent}%):
-                                      </td>
-                                      <td className="py-1 px-1"></td>
-                                      <td colSpan={2} className="py-1 px-2 text-right font-mono text-emerald-400">
-                                        -{discountAmount.toLocaleString("pt-BR", {
-                                          style: "currency",
-                                          currency: "BRL",
-                                        })}
-                                      </td>
-                                    </tr>
-                                    <tr className={`bg-slate-900 text-white font-extrabold ${isFull ? "text-xs" : "text-[9.5px]"}`}>
-                                      <td colSpan={5} className="py-2 px-2 text-right uppercase tracking-wider text-[8px] sm:text-[10px] text-gray-300">
-                                        Total Final com Desconto:
-                                      </td>
-                                      <td className="py-2 px-1 text-center font-mono text-emerald-400 font-black">
-                                        {totalQtyOrder} p√ßs
-                                      </td>
-                                      <td colSpan={2} className="py-2 px-2 text-right font-mono text-emerald-400 font-black text-xs sm:text-sm">
-                                        {totalValOrder.toLocaleString("pt-BR", {
-                                          style: "currency",
-                                          currency: "BRL",
-                                        })}
-                                      </td>
-                                    </tr>
-                                  </>
-                                ) : (
-                                  <tr
-                                    className={`bg-slate-900 text-white font-extrabold ${
-                                      isFull ? "text-xs" : "text-[9.5px]"
-                                    }`}
-                                  >
-                                    <td
-                                      colSpan={5}
-                                      className="py-2 px-2 text-right uppercase tracking-wider text-[8px] sm:text-[10px] text-gray-300"
-                                    >
-                                      Total do Pedido:
-                                    </td>
-                                    <td className="py-2 px-1 text-center font-mono text-emerald-400 font-black">
-                                      {totalQtyOrder} p√ßs
-                                    </td>
-                                    <td
-                                      colSpan={2}
-                                      className="py-2 px-2 text-right font-mono text-emerald-400 font-black text-xs sm:text-sm"
-                                    >
-                                      {totalValOrder.toLocaleString("pt-BR", {
-                                        style: "currency",
-                                        currency: "BRL",
-                                      })}
-                                    </td>
-                                  </tr>
-                                )}
-                              </tfoot>
-                            </table>
-                          </div>
-                        </div>
-                      );
-                    };
-
-                    if (printSheetSize === "full") {
-                      return orderCodesToPrintList.map((code) => renderOrderCard(code));
-                    }
-
-                    // Meia Folha: Group orders into pairs of 2 per A4 sheet with serrated cut line
-                    const pairs: string[][] = [];
-                    for (let i = 0; i < orderCodesToPrintList.length; i += 2) {
-                      pairs.push(orderCodesToPrintList.slice(i, i + 2));
-                    }
-
-                    return pairs.map((pair, pIndex) => (
-                      <div
-                        key={`page-${pIndex}`}
-                        className="half-sheet-page bg-slate-50/70 p-2 sm:p-3 rounded-2xl border border-slate-300 flex flex-col justify-between mb-6 gap-2 relative"
-                      >
-                        {renderOrderCard(pair[0])}
-
-                        <div className="serrated-cut-line my-1 py-1 flex items-center justify-center border-b-2 border-dashed border-slate-400 text-slate-700 font-mono text-[10px] sm:text-xs font-black uppercase tracking-widest relative">
-                          <span className="bg-white px-3 py-0.5 border border-dashed border-slate-400 rounded-full text-slate-700 font-extrabold flex items-center gap-1.5 shadow-2xs">
-                            ‚úÇ - - - - - - - LINHA SERRILHADA DE CORTE (MEIA FOLHA) - - - - - - - ‚úÇ
-                          </span>
-                        </div>
-
-                        {pair[1] ? (
-                          renderOrderCard(pair[1])
-                        ) : (
-                          <div className="half-sheet-order-card p-4 bg-white/60 border border-dashed border-slate-300 rounded-xl flex items-center justify-center text-slate-400 text-xs font-mono font-bold uppercase tracking-wider italic">
-                            [ Segunda Metade da Folha A4 Livre / Reservado ]
-                          </div>
-                        )}
-                      </div>
-                    ));
-                  })()}
-                </div>
-                </div>
-
-                {/* Footer controls */}
-                <div className="bg-gray-50 p-3 sm:p-4 border-t flex items-center justify-between non-printable shrink-0 gap-2">
-                  <span className="text-[10px] text-gray-500 font-medium hidden sm:inline">
-                    {printSheetSize === "half"
-                      ? "üìÑ Layout Otimizado em Meia Folha (2 por folha A4 em lote)"
-                      : "üìë Layout em Folha Inteira A4 (1 por folha com detalhes expandidos)"}
-                  </span>
-                  <div className="flex items-center gap-2 ml-auto">
-                    <button
-                      type="button"
-                      onClick={() => setOrderToPrint(null)}
-                      className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-100 transition cursor-pointer bg-white"
-                    >
-                      Fechar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        let pdfTitle = "Pedido";
-                        if (orderCodesToPrintList.length >= 1) {
-                          const code = orderCodesToPrintList[0];
-                          const ord = db.orders.find(
-                            (o) =>
-                              o.orderCode === code &&
-                              o.status !== "CANCELADO" &&
-                              (o.isActive !== false || o.status === "TEM_ESTOQUE")
-                          );
-                          const cust = ord ? findCustomerForOrder(ord, db.customers) : null;
-                          const rawClientName =
-                            cust?.tradeName?.trim() ||
-                            cust?.name?.trim() ||
-                            ord?.customerName?.trim() ||
-                            "";
-                          const cleanClientName = rawClientName
-                            .replace(/^\s*[\[\(]?\s*\d+\s*[\]\)]?\s*[-‚Äì‚Äî]?\s*/, "")
-                            .trim();
-
-                          if (orderCodesToPrintList.length === 1) {
-                            pdfTitle = cleanClientName
-                              ? `Pedido ${code} - ${cleanClientName}`
-                              : `Pedido ${code}`;
-                          } else {
-                            pdfTitle = cleanClientName
-                              ? `Pedido ${orderCodesToPrintList.join(", ")} - ${cleanClientName}`
-                              : `Pedidos ${orderCodesToPrintList.join(", ")}`;
-                          }
-                        }
-
-                        // Mark orders as printed in DB
-                        if (orderCodesToPrintList.length > 0) {
-                          const ordersToUpdate = db.orders.filter((o) => orderCodesToPrintList.includes(o.orderCode));
-                          if (ordersToUpdate.length > 0) {
-                            const updated = ordersToUpdate.map((o) => {
-                              const currentCount = o.printCount ?? (o.isPrinted ? 1 : 0);
-                              return {
-                                ...o,
-                                isPrinted: true,
-                                printedAt: Date.now(),
-                                printCount: currentCount + 1,
-                              };
-                            });
-                            db.updateOrders(updated);
-                          }
-                        }
-
-                        import("./printUtils").then(({ printElementById }) => {
-                          printElementById("print-order-sheet", pdfTitle, true);
-                        });
-                      }}
-                      className="px-4 py-1.5 bg-[#00b14f] hover:bg-[#009e46] text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/15 active:scale-95"
-                    >
-                      <Printer size={13} /> Imprimir PDF ({orderCodesToPrintList.length} pedido{orderCodesToPrintList.length > 1 ? "s" : ""})
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-      {/* PWA Installation Instruction Dialog / Modal */}
-      {showPWAModal && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-          <div
-            className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-2xl max-w-sm w-full relative text-left"
-          >
-            <button
-              onClick={() => setShowPWAModal(false)}
-              className="absolute top-4 right-4 text-zinc-400 hover:text-white cursor-pointer p-1 rounded-full hover:bg-zinc-800 transition"
-            >
-              <X size={20} />
-            </button>
-
-            <div className="flex items-center gap-2 border-b border-zinc-800 pb-3 mb-4" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}>
-              <span className="text-2xl">üì≤</span>
-              <h3 className="text-sm uppercase tracking-wider font-extrabold text-zinc-100">
-                Instalar Apontador
-              </h3>
-            </div>
-
-            <p className="text-xs text-zinc-400 leading-relaxed mb-4">
-              Instale o aplicativo de apontamento de produ√ß√£o para rodar em{" "}
-              <strong>tela cheia sem as barras do navegador</strong> e ter acesso r√°pido pelo √≠cone no seu dispositivo.
-            </p>
-
-            {isInIframe ? (
-              <div className="bg-amber-950/40 p-4 rounded-xl border border-amber-900/40 text-xs text-zinc-300 flex flex-col gap-2.5 leading-snug">
-                <span className="font-extrabold uppercase tracking-wider text-[10px] text-amber-400 block">
-                  ‚ö†Ô∏è Executando no Editor de Testes
-                </span>
-                <p>
-                  Por seguran√ßa, navegadores bloqueiam a instala√ß√£o de PWAs quando exibidos dentro de um iframe.
-                </p>
-                <p>
-                  Para instalar, por favor abra o sistema em uma nova aba fora do editor de testes:
-                </p>
-                <button
-                  onClick={() => window.open(window.location.href, "_blank")}
-                  className="w-full flex items-center justify-center gap-1.5 hover:opacity-90 text-black text-xs font-bold py-2.5 px-4 rounded-lg transition-all cursor-pointer mt-1"
-                  style={{ backgroundColor: db.activeTenant?.primaryColor || '#00b14f' }}
-                >
-                  Abrir em Nova Aba ‚Üó
-                </button>
-              </div>
-            ) : deferredPrompt ? (
-              <div className="flex flex-col gap-3">
-                <p className="text-xs text-zinc-300 font-medium">
-                  Clique no bot√£o abaixo para iniciar a instala√ß√£o nativa do aplicativo:
-                </p>
-                <button
-                  onClick={async () => {
-                    await handleInstallClick();
-                    setShowPWAModal(false);
-                  }}
-                  className="w-full flex items-center justify-center gap-2 hover:opacity-90 text-black text-xs font-bold py-2.5 px-4 rounded-lg transition-all cursor-pointer shadow-md shadow-emerald-950/30 animate-bounce"
-                  style={{ backgroundColor: db.activeTenant?.primaryColor || '#00b14f' }}
-                >
-                  <span>üì•</span> Instalar Aplicativo
-                </button>
-              </div>
-            ) : isIOS ? (
-              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800/40 text-xs text-zinc-400 flex flex-col gap-2 leading-relaxed">
-                <span className="font-bold uppercase tracking-wide block text-zinc-200" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}>
-                  Instru√ß√µes para iPhone / iPad:
-                </span>
-                <p>
-                  1. Toque no bot√£o de <strong>Compartilhar</strong> (√≠cone{" "}
-                  <span className="text-zinc-200">üì§</span> na barra inferior do Safari).
-                </p>
-                <p>
-                  2. Role para baixo e selecione{" "}
-                  <strong>"Adicionar √† Tela de In√≠cio"</strong> (√≠cone{" "}
-                  <span className="text-zinc-200">‚ûï</span>).
-                </p>
-                <p>
-                  3. Clique em <strong>"Adicionar"</strong> no canto superior direito para confirmar.
-                </p>
-              </div>
-            ) : (
-              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800/40 text-xs text-zinc-400 flex flex-col gap-2.5 leading-relaxed">
-                <span className="font-bold uppercase tracking-wide block text-zinc-300">
-                  Como Instalar Manualmente:
-                </span>
-                <p>
-                  1. Clique no menu de <strong className="text-zinc-200">tr√™s pontinhos</strong> no canto superior do seu navegador.
-                </p>
-                <p>
-                  2. Toque em <strong className="text-zinc-200">"Instalar aplicativo"</strong> ou <strong className="text-zinc-200">"Adicionar √† tela inicial"</strong>.
-                </p>
-                <p className="text-[10px] block mt-1" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}>
-                  ‚úì Um √≠cone direto ser√° criado para acesso instant√¢neo em tela cheia!
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </BrowserRouter>
-  );
-}
+     xúÏΩks…ë ¯ΩEt5[*P®B·≈G5An [êH¿÷ŒP42Qô®J1´≤îôïŸò≠ÌŒÏ›ŸÈN∫˝¢”YOœŸÆf∆nÃvmÏÏ÷ˆ√}8¸ì˛€?·‹„ïëôY∞ª•È4©â åßáááªá?ëœe‡áY8|öƒ”…∂ód{c?xG>‹⁄"„ië¸Ä4? ÖÁA:Ò∆§yi˙‹[ç,xóµ^Æv&Ô^ë”xúµN‚»''Éñ7:	í÷jßChˆÛ¸úºk≠ë…E´”ﬁ$–9tÎ∑FP%N¸ ·ˇ‚kP‹á#/Zìiîçáñ1Ú,ˆc‚d◊Ø˛xı“ø˜≤`D>rLÛGdufõ›
+NØÿ«íY¯¡äû=¸¿|/Uÿí–'¯üV?é“÷*IG›¸Áâ œ2&≠u≠w©e¶ó+∑…A˚”,&+l~GÅóÙá‰ˆJq6Ê`N#ò7˛ª£}—Ò¿èNÜìëóÖgv ?àºì “î´MáúF∏Jw`≈¶ìIêÙΩ4 Y‚ıﬂÙ[Á!Æ≠Ç+éÖ§ìZë≥¥c[ßAk≥”i<ºÌZ0\!:`Îßp<ôf÷˛≥ã	Ô•a˝~ÊE”`KC™}ƒW7[Zè∑áﬁx Uõ¡ŸzH.≠≈IÉl◊›x3hg^2≤6»“'ıZ¡ˆ¸f£·®0≥zy˝`$[çùpfÈ_˝≥bO…8ƒ˜»$∏˙£◊n∑ÌSOﬂ·_÷ë  ÓqBÄäÙßi7A¥YSÑcÏûö¨¬t§"R†<ÁC©m4+6l¿]u4Ç4„qJvíx‚«ÁcÎ¶Ç‚»"±,AâvñÑ£ÊR;
+∆ÉlHíéã∫w≠wí∆— ü≈ì÷)Ê(8ÕZíÑÉ!˛˚9 Ñå2ÿÃbÊƒg§§∆Ô"í=ò#˛5ÚﬁµÜ≠ç{$>í”^^¥<ÿ{é
+ O⁄–À(u|'§}FYêÿ'»ûfò·6()AHòµ˚±îñÅŒ≤¯i|$€@oöKUÖ√q?ö˙A⁄,].µ≈%ÚÎ_WsKım”Ÿ§˚K;ç¬~–Ï,ì’NI©ë7iÚır -{uK'ˆ6∏ÿ∫pÖæùﬁàà%Ï-– RR);±£˝8	§£ÆInﬂ‹∫‰X8#-B‡ZœﬁT6û"é∑ß„0;H  î±¬Ìwé©rRÖ°Ω-iÕVé£“¬/ÖçvmàD¢{¢–b“ü&iú¥&q8Œr¢s¢S‰°≠¨Àﬂv(#B~9ö{z—:	≤Û JVZ˝Ä∂$¯†íñ”èîE++aagÈ…='^ŒŸ…ﬁÖIåÄ'uR∆¸ëXS’Ωì}©§ı¯´96äƒ706ŒWuÁÿÓSPÈ°ûºAﬂ£ Ò"üÚ†Ä£‚Á&9V}u°£¨oÈ„ö˚$|¯ÕµÇDPM5¯J©ÄÌí£≤≥ö•º]äa,—vú,*V|ãÚåzNY ¢†o,Ã˛v≈IMﬂ ‡¥™…¿€õz/<Û|≤∂‚	r»,ç∆√Á¡x8y(Øy~b˜ÉVƒ^ˇ≤ŸÙOµΩÿ·`iS‡¨»ÀWKÇ]lzl^Ö0≤î¢±Ωˇtˇ∞Åt¬„ Sòh«÷xDzI‚]¥Oìx‘Á #g7“3ÂÉDI˙N0ˆY¸QñsbN^¨KˆO~	»∆*ßM⁄«ÎgΩ{ﬁc°î˘C˘+Z|&pó˝rS^¿’pÈz⁄)–=∫£äu ®Õ±7Ú∆√¯Oê‚ëõà£s«V—$¨Yè$i∫Ä›w]Úlôl¨-ìOøA©ˇzí~˙}Ê%°«4ázò˛€DB:
+$ãa¢¨æ :Ó¶ì†z—ü:˛lÍç≥–˜¸Ä«ô˝	"Âœ2øÕˇ-)q«SºB®çøt¨Ÿ≈b8¨5± É§lÚ(o5Vøi´â7åËIpı«ò†n„ÍÀ$¸S§æÖ)4oŸ¯π˜Ö iL∂ùv«ÅTó™§≈–<◊DÕè‚ùe~ˇâëËÌa–{øY®Ù˛Œﬂˇ˛Æçøö™qx√∏åõdMì≠≠¢¬√PŒqïö}kﬂujèJS`hüÉ√•≠£ﬂ_«√ΩÙ`œ8sâUà(ÍÁx»ªqÍU†qD"˘atá=âF‚Ä"CXõÛ÷Ü}j÷+%Æ∂z¯ıˇ€$lå¡bá‹ü—Z$Ò a©Ô≈ã/∏“»ıWùŸÀŒ^^w›˜oâ*ÂÃˇ≈Ø˛Ò0L¸/….û¬1ÎP°’¡ £°Îc?.4Pë≈Ò‡´ﬂIË(…1∞AòÑü{˛"∏`UÍ⁄è'<ú«=ç¸ò<âì—4bú	¸Ü≈s zJâö`ÏSLsKU÷DèÏ∆D‡ùL≥,ó¢!+‚BByÉ»‰G¡∂7Ó‚—Æ9LÿK5fÚÆµé∑∏”\‹â¬ô‹eæ	Â˝Y~-Á8©˛NlZ}/€ÁËRÈ±©zâb
+S´«eÉ„7¥GﬁY∞¯
+l»(§[ÇîΩ∫+∏>f
+a\Á)kƒ- “Qı
+'ŸùomP¶ë§·Á@ﬂV7f@<»ëù¡jıPÌ]o¡Xh—È⁄w^…“V/¨±¨=ﬂßt•ü«ÍÚ⁄ó’SÔ$¬¬fIÛÎ_ìÁÀ›X¢êvÛÊÒDå§Oº>4è7Öﬂ.Ó8ˆ·A4Mu¥È˘a:Ã›‚ÄÛÌJ@÷∏-Ø¥w‘hj˜ÍØØ˛Õ>YÔíß{G«=≤B∂{áá{œºOvv…¡·˛Œã„˝#≤≥Ovwˆ‡Û‘©ñÏãgMÈ9e3$∞úVÜEµ à©oÂ"ñ+$U≤∫ˆÀF∆˛ÔøÂ<ÄXΩîå≈Úë¶vñ>«nçî_|Õä∫Ö+√çäŸl•ÃÕÆÆsÒí¸Æ=?œ–∫ó]µØ*[∆uyBÑæò{˜≤AékÌ4K‚Ò†0.e;ÁÀË∂]≥%	ÄxnSÑf:-ì(dÈtD~DöQÿŒT⁄Ñî´≥¥Ïl√u]π4sOö0€Jª•†â˝(∏ñs9Ó‡˝h« —ô{s“∫√pÖÔŒ3≠â?|/~©°¢Çj‚h∑G¬Æ£…DDN"}J'lsyÄ/^õº»¬»)âir˛ÅëG&^‚… 	_Åv=ñ‹~‹ö`©aü)ç1á°ÔAˆöˆôõ0õŒ;”¶Nº3†b≠Òá‹∂é„@z/ÖÀ$ÙﬂïöËı„qöQ˙∏ÚK≤EÑÈh˚÷°Ÿd*lá>E*ÿR!ÂúVmºΩîs ¶–™]ˆ¿a|üıwÏIÇlöåKê*Ïô5£ˇÆÃÜ'_ìÀ7h€_<.ÃìKÛPŸã[ÂÉLJK¢ÖD„$Wt<åÄuíJ-Hô˘>]“0ÑöÕŒ ΩrU´xfo‹∞+3ú™f– ké[Á‹“–qCP—d·\_cçù'ﬁ§“xÃn¥ßp …•TZm’ƒEƒ™˚"B}>∫‰{Ó5Cƒ≥©±}ıªÁ9#G}ÉD€]QñL«}¯Qœ.ë≠q»o®7»ﬁ˘Ë÷•§eH3œhã\Å\«—iäx?∑D§ã{¬U«“Ûâ˛∫€Y‹
+ë¶H>¸t˜˘Ònı8kÕø“ÄëHQ∏ﬁ4î ƒÜ*^˜?˝fÅdË$oPú6HH)îcqPQ›dÔh˜õUK·z4x]%Ö*πŸ‰‚%œË”qHaÍÉÎ◊G√Ã9÷¨t∑„§+dñá≤ìYœnÙts¯âäÉûﬁ±7“ßá}|;≥;ÜC7<≈œ<ceGﬂŒ<ØaC?«¨Òn?ü6öø´]´ÊÔﬂ0*ÈáÎ≤^)Qìæ§√$ømU˘RòÕ±≥ΩÚ‰ØÖâ¢?G‰$äKt˘siÍ&fÄ/7∆4]qÁ®9uÊ≤QTŒ‹&Í»óÊ„∏Y¸ΩÅ∞Jî©∫∑…ü:78˘cxÂ1’øÎN≠âöÅj–j∫"ddåÛúâñ
+{x∑x„≥j‹ΩÂ"sù{4a¡Hp>^BÇ4Ñ2©™n"à≠Æ%˛ÊÃuq¨‘(ΩõS }s´}åb˚ﬁ¨˜Üæﬁ“$G.77»π·≈~◊è¶°æ⁄®êf˙¬X˜„ƒKák7øuƒÖ>ª‚8<>¨-Ÿ§∆ê„jÈYÏ{y«HÙj›Y-÷ÖB+Cy¿ró‰ÿ:Â[≈ÿπÖ
+ıÊæ^~–D√¿,◊ïkïF∫&º‘®`sõÇ‚Í	;Ç¬}Å7Ø	…‹< á!µ
+zw(Ùj]ˆV_ÏÊaF®¸7of≠éπÜ„Jp≠‰‚v∑ˇØ∏‰∆«∞RˇìV‹∏«z·k_¢¬n4^h?k˘_óÃô+È∫Ë<û°Ww$ÚV$√÷hQÌ&Ue¨‹·—*‹Zp˛≠aQ};l•˝µ‚fl
+•€‚n<RálÓB¶Ç_Ω£¡4¨A3ŒY(ºg9o≠¡]ÕÓ_^ﬁÔú_ÈÎûèñô∑Ì4ã'I<ÒÃ˝E£Î>´˝§µY»$ﬁeöúré›q˛úbÖ[·»d⁄iÎ˜;∂[Öìh ∏∫IdΩ
+©£aÁ˜ƒ^∂i€á{£lµ“∑ § Û(êkt·«=a,R^,Ò≠j±"•^∑b=îìÆ•»µÕ‹°}îÇ©:ˇú®ZÄ‡úˆ◊_¸Óo®÷ˆ∞˜¨GmJÆÅ+√5O
+(úéƒ5cM}µ‡:÷I¿ûF.†eˆfR¨›«ˆ¡ ƒa“iº¨w7e≥ l¬Ÿî@ô)å&â#Ó‹|∞}–∞áµ±óÔÌ<€{>WçOwwüoÔıKN3ìElkGÜa≈î,0õ4≤E¥µq«M±ü ÓÚπ ‹T˙sVpÜ\—É≠∞SsHõ4˙„é¬“Hr:Ù≥aOöõ©’ét˘˜†DrZ8„~	iÁûS⁄πé·ÈbHpL†–‡˜ç	≤£¶ŸÛM‡D~OlØ€ÒB•ﬁ◊∆>ìqc;û\\3¨Æ¬ÍDü9ô≈¸).Ñd£Ù”√æ
+Ù3äU‡vZ⁄o€'‘≤·_ªNFß¥Vœ»≥hŒµ…≠)
+ÜEbéõvn“ Y#óo5™’Öa	Ë—	»{E[èu´ÅÁz`i0
+>ı^Œßûê…â√·noåFbBÏñ∑+‡9÷-c)
+∫∆Ωˇ3Ç‹F-#/.´∫ùŒ}C”!(ˆÆïØDX≠Œ…•ïÁûéX¶Í¯Év#2ÉÔeˆdNíùõ4Z.À”wá
+Ì;¥Tf(ÅZ3 n‹U«Â^/}Eåã©…’ùÊ≠¬`«ËY+2™Õ
+ﬁ&ﬂ‰nëê≈„íHùÜ4BÌ8™√òåœ‘LÄ-3I.TÃo‡ˇ|∑—éóy4¿Ù8KÇÅ˜^÷≤öÚÈp˜É(Ñc¯∆Êé>˙à`,,R~9În⁄m“é!™0iﬂã,yî°Îd≥1…ZèÀ‰¯∆QóÒ$„∆ã„Ì±x/àß{É®3áª‰Mq'7»Ñ £≥aEÇß·xË°‚˜8Mb“Ñs∏§)4?Œb´càÖπl∫Â&EbzRf±¡_÷uë·”"⁄`ƒ‘p{÷sÿq∑ÅŒöMoôú–6N⁄à2iÊç&§ÖŸƒ/´ÏTj¬]m%l„9å$∏≠{<®ê5£ #^©‡SÍ¥çZæ: (πe∆ºçàıÏ¬˜¨”Ãœ≤h§„4{á≠~f˝!¡I—ÄwÂ¡h)âlPgÆÌﬁ~£[JEäßüá• »´© (™> Áü∑¬Êès˚g2¯:‘π∞Sﬁ∆IxoÀä0plÔÔæ¶ÊìÛA¯†-Û
+ü*v·q»lO≥õÉ…¡ﬁÛ„áΩ91‰‡i‚Õ	Èº†öo.å!ä„7àªœ˜ûˆ>›}64vG'^TN/
+‡(-I85	Ç±˚ïü:ƒ]bapb ÜõÉÊì"÷≥›Á«s“ü'"◊‰GòûI,^,îΩÒYˆo,37iØÙi™Ùj‚~M8Ú™0ÌÊŸ™Î1ÿú›IÊºÇ\Awóì÷∫ú˛Ç˜•ŒG’∆ô;CÛÕ‚∑U´¶øçqµó‚Úîú∑÷ÓiNé∑.|™ÚV©4∏T0˙Ωÿ√îÖ£î&í,ÍﬂT∏Æa¥˘£Kπij˙ˆî…ß‚ôé€d'uä⁄Á¢ÛÍB„Q«˛òÊ)úÔBC5•º„T∫9¬ﬁäèº,N tS˘ìk©Ù∫7Â	ç˙@(qûÖQ¶Â9J¥. Âma#CÌwsïÖ[Ài>T“)Ò7¶ÚÃÀÜm∫áõñY≠ê;xñfàÛ’S˚ñ¸^§ÛgQsAaóìTaå˝†5ék9%^Je e˛•pe„À”Â‡O≤Rk?Vˆ}Øxﬂ/_-◊»ê1åßIó4÷Z>Ê&jî)*ÿ´>≈k˙⁄UÏè˘s]#L˜ç†≥c´XÎ>z—Ó1∑ÇDõ»$)\¯»c±p Õ}NW5ô&ìHqå‰ø´“VÏa2ú‘ﬁòèª¬‘ı¶ŒΩ:ÛJ5‚•»TÎ√ÉØy¶Äû˚tôfã•jZπàä≤L2¸ËesÎ'´	[=¢ñ€12+i+ù"–ΩrÃ)–º"M#≥Rà∏gTä%›Gä‘m∂‘ú#‰êÛÖÀZ5dB5ß*˚Ç¡Í˚4S’ê‹©XÆ6(˘∆5∑DXÜcrÍ˘Ùﬂ4
+È-L{$)À‡ü" 4>0ˆ†eÄ™«çH+6ı¸AñÂ∑i}ù”L‰[ﬂ†-∆Á\íﬁé«ßa2: Ç	F¥¯Í˜˚ﬂˇÎoÎ%Ñ	ˇT5Nv–G-Ã¬≥∏Å_Ò€ˇÃøK[ñ"VïÁ‹∞Ñ∆eö$°e…ûÅã‹zàùXg—<ı¢4Äs +(1ŒÜ‚1co:™6<ˇÍˇ°0˘rÌ›ÂáŒ%1Iù≈‚œea¢ÎÈÌó!U∂úÓ√|vMéarı%Å9˝<—~ä%¶ÛG£ ≠ü>ÈT⁄¿3ˇj‡#¨‚8%^ﬂ;Í0Ï'Bä¡ä¨∆¶Ùuëp;€=◊•ÎJﬁ^±{kÑcw…äS±È∫£U£∞πÌR\Êºúùó≠+ú;Ï&L1K'≠2n¬Uø‹~∏|Zã›™óØ_!qqÔÿ∞é}ä'IrÛŸ’óÔ¬⁄˘ Ö£0s‹#óƒR&ubó≈ŸóëÙ˘àˆ∞µy¬Ô)ıÍEŒ∑≈œÖπ<ªùÊ…Ú4“ıXìﬁ"êàíèÖ:éßYéëSÇQ•<M˜}ﬂ
+¯ñ-◊Rπ™Ñ„≠KknGPÂyÓ˙K	€$wI…
+FÜVg¬äò eÊ Ôù3¿«ÍRh#bösú$ÈVá⁄˙·IÆÇlqJåyÁÄök{PsÖ_—ªñâó§∞π≤¶∫?if[óéÖ¶h∞=oBòÊó∂Ù ÉÚø;Nó›òÉ¥ódÕÜB◊†ç´/Å=˜⁄¿áû#çº0N¯`œ£x§A~‰Í‘}#ƒÆ}ú∫$«{7∫eâ3∑x5rÌJ:Í“ø(iQ]5º‰)´u·C‚®xyWG”‹OsÑ«ÃWˇÓ∑s·¨√¨Hcy√ú/MòG#ß
+Îur˝ %èΩÒÿ‚1mÔR?JŒóïçéfıN?$ cSV±} Õj5ÁóãÑ—IâJâïÄ§Ã<çÍé§:ß·ﬁ∫~¥ö«$•zVÊ“M∫ËeÒåÏ^˝uØy‰bz*X¿z® ù«]—IÎ0˛D[⁄ lu¸YU”8˜ö◊π¡ìaE∑Ø˛Mgî»√Âó=.yè5y_∑ÉÆñ ≈∑2U€|ª∏Aàq«o Nö‘Û~A5)SMœ	!Érs‡ëë3πN%lAj†ÏÇèéIöN∞
+ÛÔ∂~8[ZÆıI
+rÕ≈(≥9Ÿkì˘ÃmπÓ+w«Q‡˘4!0ô®∞Utk«uÅ"åY/∆4µBWŒZË	Óy¬M5å≠ËÜ|©7ƒÛDFÉ´$ÿLç${kì›4ÛœÔ Ì{Q¯πázßò¿álöÊ!gÄÙÈß/|u¶∞ÆæÃ¬æál"WŸ5<eÚ—˚ê¨AnVb™äæ9âHØÕh~ıÔ˛ÚYeﬂÜlT)L:ÍÒå9¨<Ø›\X ‡oÍåŒ0]áÛ∑.ÃM‰⁄¯ÍˇVπC»ÔﬁÉ††ØÊ˝V¡tüI¿<|N0ˆïKè]ê1—
+“K/∆}RD?Tà›œá^ñˆ&ì£°ó‡u©∑dë+Q{ëbG@êiEY„!·óÓCrD	\—w:K.‰eìIÇt†ü∂wÓÖ9≤˛∞ŸXÒ&·J
+]∑8’ÅnEKëQêcøK˚G«è!'Aív-;ß+gE÷:æòh¿õ0◊m@≤ï_¶ cöçÓZObˇ¢K~r¥ˇºù“_ ìÕbOíÏí≤%»y∆‚ùÆ &U¥¢-6§:˚T4TÓDwﬁ1Ï≈.ysÎ≤¥°	À¥§˝$§9Êg§ÖIÉª§¢¶∞ßùΩ)ÄZR|Ü’äy‰ãç$ ,NêŸ•X‹5~≥£ﬁƒ#Ô«Ã†ó±}ºêH-∞ºçhe“W‹ö≤@¸o±±r;ùˆëM)™ü{Æàw®ÁºÊYÏü2∂|ª-J=ÇÒYà	4˙Òà@®Hö∑.ÈhFYûF˚HGŸ§Åó∞ªº¸8Õ£g«‰0"zÂ˙4ê£p4EÛvddéÇ‰∏ù§1[*,§	æ	‡ƒ∫ˆ§É$Å˛úS~‚ECSÖ–I'$h±ıÁ≥•µ©á„.¸õ&ÖUn‡›qıî_3phì]‚ç/Ã≠9µ“ââïd£Ñ√+ÀÏhÌGÌÚøjd -UËá%sn˙ÃfH/äLR^<'ä\Gìô‚≠T˚X¢âïärì°•Ï3ãõ[^æKÎmP¢™î9∞|{d¨R{‚˘Gh[◊\[&çN√R}«»ΩÁ^j@i¸ƒ3Oê∆ì‡Ã|ıÃ3≥—;)ºzÊÖÊ´üLÕˇd⁄ƒÊ´£¿4ÖlÏOØû«Ö°ÓükØ^9`†`0y)Ä˘6ó,./)ˇ	,ˆ_¿\Ä4Bû¥µ¶Aû#≈‹Æ≥ï[ó¥C¸úΩ…À¢íÇ7++4I&`œ(B 1∆120åo<Á`òon+ﬁ)4ÌMuvõ|˝≈ÔˇÍÉn?ˇˇ˛õP1›Æ:⁄î(f∑Öæ•≤í~G|õZ=)\ mÄo
+‡#oÔQ„Nß”ÓÌæ˙´ø´Í¢‰∞æ]˜¥æ˝¡ØüqÄ¢∞ÀÌ…ﬁhrıò|È'10‹˝ıei,Ó,ÛÿpΩ\]Ìº™g∆uï¸$û†ô"òQpj™m+Õ∫rÂ:f]ü«Ò≠πÓo:GR¢≈ï⁄ìóu:'´ßØË$´≥ôé:≤˛ ö’√y·»dPw'é"/9
+chmmVå.–p\
+[|¨üÈﬁÔé›F»Û`@√)˚∆*ÔY√ª8‘.%Ÿ=`ùr¿Ænñ™:è°ë"@ªÓGJÇ&íèjSü‚mZÕzıéã-√ﬁå'ƒ#hﬁ•4-–-⁄~ŸÕàJ‘Ñ‚Z(¿»™ÒÑá˜ÒPÌ3≠ pΩ”1EC+h√¶ΩsY˘’aÌ5»5ï÷ﬁ˙Ïx®Íné£#WVZñbQ ‚-‰Ó≥ﬁﬁSÚ|ˇxÔ…ﬁvÔxoˇ9y¸t˚ß÷»:iVMkñu¢ﬁMYÑ∫Rm÷ã•ﬂ.∆Gï7^‹;—ïÃ≥‰b”‘tÂ©,˚ñ^∫TWe13ˇ()c\PËbrõCß˝{¬k€äŸ3=»=[m/∆&òí&gê»
+»òñ·ááø[∞±q˜&gWˇî@Ë|?ˆbLÂ(¬Õ≈,Íg≤O¿ò`P	Lﬂª¸_—~⁄@éñÅ%ö‰?K“nÃœã„X¿
+ç34|Îb(<ÅÛ¬!H2DÃ¬ô¯÷™˙#?Ë4Î3K(0Nº≠£*3´Å» ilÛha—_≈≈SŸı˝>ó§—™ÁÍK©0Òù§9'ŒÉ ¡hô^;÷áÒ/¸ØbyÛ3 ı/˝´ûÑˆ»CÙ¥ÕV∂Vry4ÁUDuJâ<Ÿw®©hûoÀ÷hÉ‘7*∫à∞«o—wW^HpŒsÑ32-Ø>«˝<∂±∆⁄yœ/!*Âq‡Ò‚-Y»Î_W`ul`°ô„ı"E◊vªÌ"]^X&®<R¿lÁ7‰UàÂ„ePTeïÑ†v{ÓÎŸT◊lπ1ïìE€ΩeÈS-√£qq∏nì´Jù’E>U≈ñ™`ÿ$É°€Ã´ öÓ“¶EÊì<1äΩQ^ŒŸ¢+Å”2…
+ÑÀ›Âf)Ïπ üˇ∏w|‘;8 €˚œè{{œwøÁ'ﬂ??˘€ˇãl«#8J≤0“ƒ◊QLÑ–pc%ÆÔ∂á—À∂É≥ïA:WœzÒ€gEl
+3x/º&éÆÇ’,W‚ÅÀ™ÕynnÆÆﬁ«Á<uŸL'ˆÛI…ÿöM ﬁYi0D(RÚ©puƒ 8ˆ∞ùÍHZ]¢3»m`æPÕï_Ï¨ñI£±T’Ry¯Ä.Ω√p∑·Úﬁæ£û˚l◊fŸ≥¿ãË¶psÏspÈË4Xç™e·G îkäôÙEíi)J‹–πÕÿ∞s¿L«d|ıﬂ‡à¶&¢}N©Ä=yåŸf∑h6NöéØƒ
+∞,ÖñÉ^  Ü¡9ﬁIH˙ü
+ëîﬁéAzÒ]ëSÀh#ÏX◊∏äoªlÉŸ+Kœq^*ﬂ1E£Æ ˙aπÉuŒë9˜∑º»rIπr±F–˙uΩöjG0ïÜ|‹˙
+∑Y“Ïv~õ%ŸÅ D¬*Å∞h€Wz.‘
+«ˇéNOtåﬁŸ%6Ô,ˇå$	ãƒÍÙákøS±õÇ•˝{g· ÉEµ˚Q89âΩƒoü'ÄÚà™Mm~Ãõ…Åˆππ˚ls´v"åNz‰ÍÀ$†°ì)dOÉ‰ÍQÈÒ°#ˆéuV;C7(Üú˙ØõUÀÂzà@…]"…ﬂ7Çπ≤•∆˘ji-îb∑‡} íc≤UnfE;í\ìã3ÂB±y–Dåmö†›„õañM“Ó
+⁄∂œqlﬁdÇä0jD¯àémÎ÷%ù»Ïà +˜c?xq∏á¢ÎõD5#PüÛpÏ«Áôm‹ÑﬁÅ5|‚⁄¯m√1ŒZÑÔFvBÆmï[_›6Óº™÷q°†™⁄∞EI±ÎπjÊ:9†ºœ≥^ºfπ¿XíﬁI&nu˛‹'Œr%XÙ˛„íß˜Ò“Ï∑ù™mFFf°ô¬—Ú@∑VñDÆØ€m\ÈÀ+kPòM3FáA∫¯9u1—/[]∆+k»^≠˜”¶•ƒˆ0Ëø›ÿakÆº?E–◊q∫5°?3πn”àZ{k
++…ËxÃƒÂß⁄}·2w–Pî@"D˝g∫ÑYı‚úí˙[ÊA»_R2˙Ê÷%wŒ˘5ê˛¿⁄¯Ø¨Ö¥ÂÉ‡›$N2r:”àò‰Ë≥OvH≥…^2˚—Yó∞øD'ÄîîPk∂2“≥ü¯yËg√≠∆)≈ƒ<ı
+è„w[çÈêµ˚?Ò≈?èíjâ≤.dA˘	∞œb–¥ ˛}F´bSkUp@rAˇÀ´ﬂÕkﬂï©^ÃVyïV^ïï7Û õï=Ø— k≤Úz^yΩ≤ÁµµÎå{m˝Zﬂ∏Œ»¿◊÷Æqˇ5@æq-òØ-8Ò{ÃWÛ ´’ÛÓ0üØ∂â-Û’ﬁ§µ◊¨mŒ{mû⁄¨ÚÊbïW∂l,8£Ô˘jﬂ1˙VFæVsì‹[¨k∂ÿ´Æ6#˜É8√î’—ÙÓµ~ﬂÄŸ|®≤~àÛr¡⁄◊õ˜™9Ò˘êeı:C_€ºVﬂ7±‡ã"'´◊£JÔÛ·€›ÎıŒÁæ MÁˇÇΩØ›πﬁ‹uC\„0[]tßsuÁz«Ÿ¢ÊzsÁ¨◊¢søg20sJ|«¨]o«¨-∫_“≠- ‹79«ÍﬁA‹;‰¢úô∏s>ﬁS5ôîòòƒ$>ºÂFˇ¸ﬁN'Qò5Wöø∏˝ã€Ì€èü•ï˙πPEã≥LP¯Á2	˝:,·€6∏ù˛<ÃÜÕ∆Ì€,Û5˝å}ÂuÓÎUpoÒ!h
+épVÉÂ=VIJÇK6Í"≥∂LZkä›˙¿¨ ¿˘h®ÉLH÷XzfÉˆ65$~Ê%o˝¯|ÏÑ:.âı∆/∆“¥œπ§˝w¨ÒΩÎè>˙àîÉu∏¡'‰ø+jî“ë¢Ïe≠u]»∏›4!,1åçÜB{cIıp√
+fÎZàB•9Âù2©Ê¨è¬4k˘a⁄∆QÎ∫©#^~q5r]ù…ÆÈìç¬Ú…2≥>fQ’(ÃîÍô¨+4DÔ¶¥±‡™Ä–ÉI…˙÷ö{>Â¬ÑÂ<e’%e#P›Ê©◊èïp4Ç˜FzÏù$Ò$•”ıO®ß'V5”Nw	KŒ]A€°%üó4ÉBa¶˛qó•ñîP.dˇäç(À™˚◊:Í&≤e¨ÀˆQ-∞¸¡¨[ï0ºL/È6íãe÷•¸˝
+∆4–¯,h6±êµÿ¿é√ yBS.´„Õ_ÎmÙû>m0@©˛+’Ä
+··óﬁÿ—ôégF§´ñä4àMö±\âTqõáy˘7 Û‹Ÿo¿	°	”¨…Y@QwY˝ªñ'Ä¥†£6èÑ‡À∑~f	≥∑,LUÜü¡j]<K5ﬂ◊6 Ï«Ò4Iõ´pZtÿˇÙj ü«^z„∑ï|zr≥ra
+;Ä"~àì¡â7Ú˙^¸âVN†#âÌiLï¥•z	:‡«€≈1À∫]ZØ=éœs◊^1¬ßÃ˜W¬Èw»‚B‚•´Ò˙'⁄7lE~[ﬂ¯ÔUN®4¢'ì#ÃˇÁ£gpª›Œ—ÈïôSál†ÔA%e%öû17,Ûÿ(s≤§éõµÇ»EÀ 	∞ö-÷Ka©∞_=uÇo
+bÁ'%yoÿd;¢Yòπa–ƒ ‚ÿ–Q/• bGY‹€%áAˆ‹Æ^Á ˘á–ÒÂå’áMôbQÿîq≤ÎıáÕfZƒWÑFä[r¿ç|{€Ω«∏!U?|ΩÔói;Ùëé§“ßUﬁ
+YGÆë}˘€n«07ñ?né=Ø/ÖªÃxsÎ2nÁ˜q[ﬁ@ƒmqÁ9úgøÊ∞x£∑ËùyaÑó<º«W<øù^9¬gàO34ç¬qSùÎ≤—æúé≥—ê˜ÆŸ1kcÊX—„í1î>ﬁÇ¬∫	ﬁö)˘5ÿc˛´G§ô|E˚æDn¥È¶˙›!Çí¨ÕO1õlß'î€¸ƒxáúÕU…÷Ôç”ÈiÿßéJ+Õ∑osıÌçhëª©
+êQß6I=xï˛⁄]≥∑€°IÀ¬´¥e¢√√-\WK€Îˆ∂°«DÄ¢«Bˆ◊ÏÁÆ≠õ{7¢átÈÒ"“§ı?^ ªÄÁT6oòsñÒ≤—Û∑˙Rﬁã-êø2&ì`+Æ˛~™
+¬)-&(ﬁÃå#@!°Â«#6ƒi~@[[ıÄê›Æv…j>àµ.YÀ≠w…z˛k£K6Ú_õ]≤©U2ûîr(/1w5pûüÀ=÷ ùàr Œ·Õ·QÕj»≥öiÒ˜∆0‰q≤∏ó⁄U≈Á;∫yie˘®º§p‹ÄS:´me¡õ
+Ø?º⁄éßH∞ç⁄2	y L
+9—]jG¡xêÛ&©›•í?¯˘–›ö<–ΩRﬁ(âlŸNo¥û‰±wÚÆÛæi€p*jP,ùï*« ;¿$j?¬”TÜ9£ä\ï©]îØ4Á1®åFcÌp4V#-fæ»_j˛ÊÑYE‰©-çŸö0Îjø‘‘za»§ eÇ!≤¢w‡á˙—‘“¶"DÍÌƒ§l_A8‰ 
+ÖuµŒ>©¨{p∏ˇ©£2.¶XÿÍÜûˆéwK˙¶≥6W@œÍ∂ÕÃ¶sì•ìy1UWˇîç‰Ó…πq€ÄÓv ã<‡CñE‘°Î/Áõ¬”˝ü◊Xß‚pÓñ ì\≠	u”¶ïè=Ø°KÉªÇîEówFµ1¬æª\Ï∏UZ™F⁄∞Öf1ÿ<Å˝}·⁄H„µ‘	"Ûıø˚–: u˘@˜Pñì9)q3Ù»-ñ‡!‹yTÈ\L\¯4ƒ0æ~8æ˙ª‰ù$aúÑü£Â3≥vûƒhÙãÊŒ˝0Â#S#áß#oÏ©&≠˝d˙9ıÀù$ﬁÁq∫LO:Œ˛b<íÄ»†øéÁ$`·É€ ‹‘‡Ë.Ú≥i2*úR2HÄê´æ"ÊJ”¯ƒä¥µF¢A7ˇπ¡m
+UñÅ|17©ü£é(¸”™ÓïQà!o⁄›!°,ˇﬂÿ|l~AÃWD≈∏ªõµíX3WjÚâﬁ}Ì!Y“({∫ÌXúD/%4√ü]-+ãKÑuΩ˝ç-s¨Zlπp ◊Y+!˙•7∑N8§≤EílÊM-RÓ)^\(ÒÌÊÎøÿJ…pÕ◊X-*Lo« ±e7πb21G…™ÈÃ¸M-]iNçõ§Üˇi±EÀè∫EóåÂZ÷»ªπı =˙\´e:L<Z`—¥ü∫w]µ'•öHªºÙ»g©êí¯úüß
+•!ÄOÙ£∑Ë+ÓÚ◊‹∫O”>èä‘gÈOñEÄ!O	Úò≈Ö¿ ‹∑\Æt[¨!Â˙Æ<∆PëyUñã.)“!ôZ>l≤<õÃûXiVw0`,º}J&s_gffù⁄,ôôD˝í⁄côø:mc∑≈4P'ü+o«æób¥;∆∑br≤Ù¡
++XZõ
+∏îÎ"ΩI0Ü4&®VT∂ÂÃ@~.≥{ıFA7PRﬂ™ûµZ …fÒõø%}ÍŸ'L•Zo2 ˇ=¸Íˇ¯ü»Q0íÏ˘ËÍü∆ò¬≠˘É(˚ƒŸ%äC*îÛÌßqT˙Ïπu-ÚåöæQKäK£—”ïÿóÍ‰êe(}<Ú0&9~åQ™Auó∆–án,§"XeúQˇ¶2Wú∂5†(ŸiÕjvë≈†¿N¿—ª∂‘Íœx# ∞BsÈÓËƒ£aŒÛ¸ˆüÍvü=Ó=≈À∆OLOnºb9Ò¸A/êrbU¯ÖÂq_
+ãbF∂ıî˙ı„PÑæ›YtfÄ#CQª4-^ÍàGπ"Ú©‚ç2v˛∆6x¢ΩA)°√ﬁ≥ﬁ’__˝õ}We
+S(£‹«•KıD∏åtøì≥ˇ $gù∫w|ÿ;bk_:|Vº|’WWˆ	©2É+PïxUkjHëèé˜ˆbóR‰ π˝·ÔÁûÿ›Ûb1?‰¨ÿœ{yf√ã B•Xç)Ω°gƒAÔp{Ø˜”–´fJ'ã√[ö}ºdÒ
+6∞Ò7Îös’¥Ú»Z‰#-wÂîæ˙Õ°·MûΩx≤∑Ω∑˚¸x˜&f∆ö-ŒÕ$ñHﬁÏqÑ{£Ê|íﬁ˙^œVu•ãùﬁÏ‰+πS¥-ùhÅ˚r≤ÙˆdX‘ºÀ]tÎE∆–ÃÓöñhV7jªfxé[Á-[ÿ3gXò⁄aœhs>•<üû„õ‹Øõ®¬´ö’ö-±c\‰÷%ﬂMÆ–wÓ‡w|¿/%¬;hrôÔ-W´Ââ /.°$ŒëEh>ë—òDËèªS≈@_Ø…0l ÷U@¨-™xIú$™ E]ˆdE$“uèæŒx≥vpæ«≠+êû·Œ—»0Ë≈K —≤…©Í∞F(óÆÌπ‚≈»ãÍªˆE<"YÑ;ÊlÓ[`œ=i⁄∏Îè˝◊¥“Ãí§¿-Á~smïs‰Lß—%ÊUs´1+áï≠—ß„8‡^3w⁄(¢a’†©1&q«ìR!.≤v‚ò…ØÛhªóø/õç“ö4Û5B¸íƒ˚'fÉGÔ±Ç4uD*´{¥–ª'§ZZ*çí}Ó8˙$'µŸ—ì*KräˆJà°zl!1®ÒÉ„&›å€¡<YÆkÓG
+ãÀãJÊd˙Ü˚x√'Õ."`y|DÍxE3∑IMÊrqH¿ZrØÂè#+$>KˆZTÍ⁄«2m∂ﬂK$ûﬁT√ªç„RÓÑêö6˘H-4Æ87%ùëïä}¶U‘FQ;]rŒW2‚ãüPŒ5˘∆úQdõSƒé„.Râíw
+,oÇ©ëÈ•ø©ıÅà#óGöÉœ‚ox=°W~˛uÊ	Øq,lnÁ©;É¿Ü9Íñuò’≤mß€ïÿÿŸR±Äáﬂ3ô¢thÑØ,m©Kˆ´…∂ùÁÁäÂabµY∂MPZ1€j.Q[-¥)‹aY™0ÎWÈ<	i ≤<>tÑSFJ≤p¸%ç‰⁄xqº›(¶Î‘◊.√ß[q^.ÃÛÿ∂ãÕ'ü=w≠WóüÍÿ¸¯‰bgPöMtYå'ËºÂ(·JÃßÎÆTrrÿ.VW’ B∫IåM`S¨i∑‘Çú†ÿ…ÉßÂbßT∏ÄËﬁ)üA∑O¬˛–ÙîîGÕßæÎkl¯Ü«‹äWq´∞=•jq`M®¸˙‡pÁ≈voøúF"9æ5ı–àWË£¨8ıªπ√JeO˘$ÅsyktTºZ©N√öÕ›¿zïœ∂+`¶Û‚√<+rÌÒQ_¢=üπHÈW;4>õ*Ä©/Ñ”TA¶*∫Nπ;ü/“=ÓMU:S≈ßç^M•SfÚ^äÕ§
+Iœ5Ó£U5»(ÖôÍiU⁄A]ÙÆƒ?)~È ≤ÜU—◊+>kKPV¥Íî3}°õó¬ÈÜ£»2á§ôÿ’KŒƒY!ZuÈ&M5Ã§<6•›ñ{rﬁ√QQ©ª2OÃ}|~˝≈oˇsÖä—Eó}-ÄjΩ69kZK3Ph*@æ7"NJ«˚û(~‘«pÂäª}ö$ ¥):JÕ∫2r¿!Ω?¡¥Ù–èO—üëM¶ih•fó‡°;√«û1c{îƒiûÚÏïÍ%œ=®»ØôgƒCÈ5_hÓ˛Îé˜Ïï÷mõ‹ﬁ?<ﬁ}˝¥w¥{HÀ≥õ˛ÿ{éÓÒÙo∆|∫˚±«2è:Ã{'¥ˇû¯UÏ€≈L2O‚Á≥˝Á{«˚<qØ|ª›€ÈÓ…7O˜èwÛ_J≤_˘ÓË≈ßªG«Ω¸≈Óg˚Oq:Øµ·≥O«{?{±{‹À[du_ÏÌ≥◊0O>Vu™|}èA¢°ì›Œk·rﬂwµ∂îÙÇ9Ï˚4ˆ"⁄ NÒΩ6ã±RÔå˙ÛR0†°®Ø¿DÕàKÕc<º¯5Ì¯ıDˆz ]à∞»¬Så6ıHDÓ…öÙ≈2YÌ†)»zß”r>a∫Î·‰Lˆ‘7DÚÃ„º2åpÇ•Xò
+¨|¨æ—*À4‘8q∑¢ïBK¶$ã	ö˚åP1õ2∆H[aZ„ bGçÀ”ÍIc∑6$ÔcZ˝≈9jy∞îèîV•“w°£=0ﬂñƒ»PZPBdòoµEoÙé˜>É-ÄËyºø·÷cÔm?≈S löæ‘∆∂∫¶ﬁê4ÑE)Hå⁄†º1∞-4_ √<<∂¿3âÌX÷ZcòúG]a¯HœZÛó‚\Uó9
+©gwYÃía|Œãn«„”0e¡ÑÕ›˙…ä 
+ƒc§@úëCÎ'Lƒä·éw eè˛•ò\ˇ.¯Lî2ßéZ0ëiìêrõ†/ßÕ r(ICãÿÇ∂$öà!úÙTœ¬À‹EZi–îYS≠Ò+úAR+V;™ªaÏ◊ÛÊØ0b ‹XÒÒø≤s€ñn°¡D¥œƒq\}¡ﬂm≤úòfx‡0NövH@∆1]}˘-‰GºE›só;ËjÒ)TÈÁ:"Xs¡; l∞l":DAfûµ∫ƒ¢@Jo/≈µ7mƒì‰ÃÍ&ü.ÇÜ4ıêWa‘®$d°.◊F*xÉ√•Nÿ¯á‚1»?Rò—˘ ±˚;VÜ˝](BoÚX	˙g°@~k«JÂøµ¢M⁄ò¢9x⁄{æ˚ÆS!ÊW©pY≤Lçá"b—íÊûÓ ∞∞Q’ñ$w‡G^r5haÍ≠lmÂeG˙ÃÁ1;Ë>ár”ÂQûmÅøVÂÕ7Ωßªá«=r∞‚Ä¥e,è˜…·.∞öü¡d—™´Gˆ_ ãGvwˆvˆªøˇb¸Ü¸H„ÚﬂÏ{x∫ÕŒ‚˛’?¢ùÔ’ó‹ù=ˆ– ıÍFd:f¶‘ËÏ'lÅEáΩ#j€µtÒ’_˝7IËí[ó|€GUqÁo©´›“[ßî;¯•GÛ+Ó=—;$ 'Ü#2
+R†"L$=ı>–ìëm;”`≈”,âyûsÙËG!Ns;y„~Ä≤®Ω/µóJbLC˚Hπ(\R,J)q÷ñU∑Ô≥I’Öú¶¿‹–≥m®§ãΩ–ÉÈ01‘kæ‘†dÍIiÚ8“¶÷ÄmØ.Ïº›Á;hbW∏¢–ıy]S¢›OºZ“lpŸ^É8.6d◊ª◊#¶¶∆≠ibñÆ†£ï‘~4¯K‡“.k W¢	8sƒ]ı	Û|ˇi<®SË´°ƒ‡l›4GEw)¶â0˙Ö¢∞0ñVduKIº¥LM‘ﬁÕB"w«≥0ô¢ÄHÇ{„"„¨ﬁäÕ˚;3–Ç”+?LÑa>€ƒ|õ„—üì¢•7Pñ>Pˇ’èq ò\üFìs≈∞˚rH*ã¨T|Œ‘A‘∂^mËa!V÷'zó<Îñﬁ
+Â#“TbÚy)´&‘©]“‘∫b˛≤¬kn'¨Tƒ*2‚⁄Hr CQ∏(OéÇ∞!îò=&ê∫ÍÙÛbÇ …´±xÿëﬁ%j0PKºH@fHı#å∞Kc≤2y≠◊^îû± ¢Ä›Y2Õc˙∞?^99=ìy£#á˜mÎ,Î,fÆ n!û·œ†ë*©Ïóö¥˚Q¯!ˆáõ»©ƒ§å∏˝J]Q1uµÄçÚù[	ü‹éb+Œ$≤¡£m?ãœE®›ônª,AIÛ›p∂UºeIoß*ﬁ)âoÊT|Õ'® ïòpNıˆvzÚêÙUyÚÕëwıOËB,≥B#ÑŸhi*Q¨Û@ÇnÕîÌg˘zÈd?Ø$ˆ±F¥Îv±c5XHh® E5LVÈq‡<Ã≠∑≤Béìp‡Âyã©NÄPyW™/P»&ÁLfö¶LdAé∑›új¬“¥ùƒ•x∏{ÄÃÔÛ„<U¥hNô&bä¢?n¥©êÕ , ê¶˘≈*≥qä_BËÏS°≥Øˆ™¢ÖﬁEûù0ùDﬁª&
+?j£7õ£ﬁävDŸ]…t/≤ÿLI’®0ô‹∞XÂ¶¨ƒs‹ñRPñúÀ‰ÿ±˜™iË2˘Ã„≈∆üË›A«P¡n[mÒ≈Æeí‘E—-)ªG¿Ù˛LÚ∫æ©∞ ¢òM˘§æ+•;\∏ıàß¶ëßƒgõ>äñÀµ∑„mcÃ¢Ω¿äij‰‰F|ˆ2Lü≈„®÷˚ì`Ãı◊ñ/Âzl°>Õ+n{â~≥£*ﬁã‰Z’‚¡‘r¬tº∞Iú=¥Ì'∆K≠U¶Ω{(qD’◊·ååI"à2ë£’9Z:«Ks,πËiŸì¬¬∞ä÷ßt ==æxÊçΩ•0÷ÅZ5ÇE∞≠
+ãáRPUôp%‡=¯ŒnÕx)ãn∂ø UÉ\1HöæPbÇn¶\j7 tÄ8
+˛ı√ÇEhÄ≠ãF4< ü¯1∆8‹ÁgqÄ⁄ÄJ;?g‹ÈW*Pºfê€oâ≥M´MÍ÷%¿cñÎnFå∑(4É±èwa∞fÙgÏP;'°ò®–¢B9«è/Nï~P‘| "¡i
+ò1ı¢ïﬁŸ4JcíyÈ[ç	MÎ¢ xä2Z Ç`…¨Q´4“8Öµ0¿l2Ù3˛ie¯\]\ÉRg&˛@‚Ç?÷¨ˆRâZ1i˘¬{#¬ß\±™éƒªR=3¢d¯®¿˘+%sÓ>j¥*.ì´⁄DùUÌF’ÎÎÚÜ∑ßôµ—“¡$1&P.'ó8$Î*+øRí$óü”0é∆π√∫ì4Ê'åc´±ÀŒ±Ñò"<ÊÎ@%z˜I%YZ= aË«qè€Œ´S·1[iÃ&ù—O 7¸Œ¢∂Á≥hÔM›Ωo?7-‘›’A˘IÆŸ«ïWÈÅÆzw"≥Rà*b†ÉŸ∂Û∆˘∏•º˙[´(≈0£ê©∫œÔM+^'ó	¥XAd™Wÿ]ISai{j:œ0ÌÜ%F∫”§ù◊Ó√ëSÔe¶Üz¨6tR÷–â≠!‹ßl<∏ú¥AíìΩo±∑y˛Uî±4.≈FµLΩ4c°]‡¶t¯5Ç}	hÔ˚îËøD÷ËÂ´¸3”‰òçY $vã¿ß∞ÃM,{ÍTﬂ9µ¡ÈÍ[Ï=üN`oµ@ﬁ„ )1ÈÃM}eUk zãmÍ“bπ™∫aÊÌ»E•À;ÎO≥“éj⁄fyõ7fèèØÜ«gÕ/ÎtTÀÁ kY/‹‚Ω±ºC÷\≈9*í“/ÕÊîe ò∆äd™F5°ë®Y+∑àÅA•‚‚FOÎÈ%´˙JSΩ◊∆ºº 	Ú»o*˝Y—X)ïO,mâÎOÌQ∫Äy™]ËÎ˙H=I∫‚«ÛB4+4˛è=∞˜ïŒ™nä‰ ÌóNÊ€\›õœÓÅ{rÜ^_ù–|[ŸX8¡W+gŸ–◊X:÷IŸ⁄µ®◊éó≤≠À¸	¯‰ﬁœ⁄j Ë*”®≥∫5ó«E µ%b™∂<∏“`„U[
+GôÔ®◊t–ÔË ¥∫|pã€ÖÓúÊ›z,é¢õπ1≠!˛rØÁÖÓ{Az
+]u.ÛØƒ˘_ÚOù!jmY \`ﬂ~§ñ2ŒP4Æ∂
+ŒÀÄö2{â‘^.∑W\¸NòÏ®»‚ Â¢H?‰kû»EIºÂyœåb”‚‡òßm7¡3€gTœŸvÈ–Ò‹“Ä¸KJÌ…46y3
+»˛˚AÂ"†-\.-[Ï›4S>EDE√Ω\TîøÑMü.˙πÚ>-lÿó£ó„æ∑‹BDß-Â÷!π¶ﬂqG¸£ÄjM≈|·ïõœØ?JTÎq ËW¨ ‚Ë¯]kæZ˙gvÈ*WOˇ®‹æ⁄•yHVXPí;¿[Hë≠RH ï\/WÃædÊŒY◊òqÈl˘uÎÓÛ„√ûr˝l^@≥MÉ`$ıﬂæGŒBè|$Wˇ8Ó√_-†–,“%∆:]}ôaZÄq≤øπè‘ﬂg7vM˘Ø…—rå›XHΩB´ó◊D˙èïPWÈH„&EÕÅU~º!™‰~˜ŸÓŒ^ÔpOuåºÍRA_n⁄≠ù— [◊X™ƒ0±÷∏ùtßÂ©§=‘ß6˝1.d]P ÈêÜ9ç∫∞T…v)U™ÑM)\J`R5`·§RCô¯$Aõ>ÓäFdÆC±*E-vGÅ^}ôÑÒÕ-¢∏Ωòû7Æë¢úÖí…<£x`h¢·M€º€S°hÈAC•GD	ΩSêãhè&«kPYyƒÍ¢ú”≠,à,´µ l≈Ú⁄ú¯πm)Â∫dèÓQﬁ5J¢≠íËíKMUóŒªŒ/≤‰BÎú¡Ê÷ΩO˝6ÔOk	`7z*O˘õøù£ÈyØD]M◊Ω-÷/bUÒzT3@äøsRiÆ•úº÷≈Û8OÅ€C,P@ôîû_ozä°ƒ©F1r‹‰!â¶Eò∞°Ÿx›X&“Xö-!qïsù1É6p≈6åS»∂ÃêÅ
+á&-ø–åRPyëó‘M{ªÃ˛∑hB©Y0kJ¢Ró—5Æ¢ôôŒ4vOOÉ~fqEf∆;ªg jö∑†ˇ”‡‚$ˆüæ,‰~⁄o172›oiﬂõ:Œ÷ªÁá˚…]í /hèò(ΩõË>åaA’QÍ˛œlFº	∞˙≠Ãñ…ÀWöKhË%YzàFŸÃS<ˇÌr&µCó^2	üzNB∏c∫js Å°1ÅB∆SL+JV7;£î<†˛ _ ãì»ª†_c2ˆŒÇ≈<†Øhi4äÉ{#†ˆ@>¥3Niˆ≥æıßëG”Vå3Êb5¬mÖñHáõ©vJ‡ öí^Cè⁄î¯˙* …Ì¡Ër.„ÿæ@˝(—(Ì«~\Ì´X3„&° WJˆ≥vé+Û⁄CnÌÃãö2T¥@ıˇ_&w:,}Ç´ƒˆ'	NAOy–∂‚e˚˘H®◊ıäÕ Õ%}DÉ_+hWP	/ÚüL£Ë/†qRÛ◊∞„≤°Òé5éØÄºØƒüDÈOÈºEÓ›Ÿ¿Èw,ySÒ|Ä‚Ïœ`”i@«ãÛD¯CÂπ)ÙPÃ~Ñ%Ωîà√Î≤?d.÷"ˇ™$6<TÒ0bW¥ÚÜ-ÆyVÑ570
+˛j(#&7k„5Y±Ya^,Ä«\Û¢„åré@oJÎâóµ ∞ã√x9á¿2)F,—‚ã®¯»8HX¸¬™“.Ÿ“™´_π‡ˆËµäƒ#éè/’∫À ˜WpìÙ|!∞Úf∆b 9¨ØZ‡AÂXı˙ñ±À¡#µ=¢i#ïÅo{QtÇ7Â“πYKë<°¥!yR,	ﬁÏHèØﬂ_&˝%Ê¬K≈5µR÷™!cU V•2UÓŒÿ±x–IJ˚—™I≤…±I™Ê8ÈÏÈ«Òî	©›Æêı;ú®Â•'ì°(∆Í05EÆUógE)âÆjçπTórY)∫LªôYOÅRôã®JÃj ç
+ß”K˘z9ﬂ¿ØÙΩf€rÛY⁄óﬂäÉW”«ñù¬†åQ+æÇn*®πÙò[Wß3¢-éQ:*)ÍéÄ˙“”pJ7§ﬁÍ·`±’âm«ãz b∏èn¥$˚é€S`êË/=ö\ÆÇ≥$˝PˆÑÈÖÕ∏68*9n≥æec*œ÷Y*;GäWX¯Ûn˛&W_S«/∏Ùàê±Nﬂ1gc|êiòî∂√L,ÌÁfëıUÜNæJä.‡A<”˘<µƒ=§DT%ÖÔÉIÆ.µ'ûOmÆÅ‹ih5}ﬂ®…∏√ÚJ|ú‹©
+á7k›∫çø>∫ü´«…˘/nNEŸ+Õ6ïÆ¥ËE.%Ö°¨äqCÉ‘3Òí0Ö"•y0≠MÜÌ¸#À¥[N¥mX…´?zÈRõ⁄jËç0”‚-Z§õ†qÎTµçd]Qª2µ¨ÒµXEΩÑ÷ˇÜπ™Ög¬°£i∂∑bi¯ıU‹„ò¬™ù≈O¬wÅﬂ\]ö}LFA4‰·nË‰?$_Ò˚øRÆ©]”Ç1∆:l.Õå·<∏ÓÙVa5¶ËöﬁXù]sõˇ˚ Ÿ±¨d∆‹\CnËCS/¢I yóç™ﬁh∫IîpU€b‡1&äQsyNIûyÓ0∂,2ä@Êø≠·®;«ì8ÈuLf¡Q∂≥∏?àµ„îèFcBä“T|©©πUgY˛‘«¢;ÑrèBedÃ}^j}ÃR-èL”aı$pWVŒbÌ™jëç! ï˙p†;ª*Å˛Öò~±¶JueÖÏùrÈXP¶ª 9¿)Dj†Ú6⁄ÄtíÈrµpí√Æ4Ä£œ@∂æE„òc∆ıLıı\&¬˙FæúÍ˜†êÌ”$5±ﬁèÖAäÕ˘≤O+˚;çbOÛí∞Whºo°Ω••◊N]!ê}Z{ßh˙mÉÂﬁ‹´m¬Ç˜ëì¬°¡¡|ñíuÈwF∏?∆ûàê~ï“=„D⁄íJÙ| ZW≤√ ◊‘≤HÖ/m„bü€ ˙¿Å¢I√4t¬∫‘Õ“^ã&8á≈ÜÉ3øprÃ):uâîÓX]Ω±v8ÓGS∞«∞§ç˙v*≠hƒè‡†≤*D¥E_&ñ8é8h8áò¿$*ÆÕ©B7¥œ‘ùY˙qí˙+‘‘ÍoÇ—	{!Hn)k\¡Á˜ºÜÿCÂgΩƒ∆42r«πd"Ä»ys≈¶¨µ∆îïÌ‰ókF˙Ä§"¢≤ı˛Ak¥√u"y3Ú>F Ôèe6ëe:ñe⁄–L!Q•"BﬂKﬁè„Õ ‰nıHß»ÜQä°[üç≈#=•®ßûÿÀ®ÛßNPç'N˜e<UÄ+AØˆ:ÕË≈´ê“îopŒ„0?UÚ±Û?U—àéÚ%ZQÎe}tÙ:Õ]ß0∞é}LqºÀı`zõ]`dAﬁ0ëyÅ®Rü4∑‡ é÷Ê¶ÜÇæ∑D% x4!µ±®⁄
+ÿŸQ¸òzàqG…<“.-ˆ‡	B‚D;á∑˜üo?}Åˆ‡úiÌIûò◊g2@
+hÔ˘ØÙ∏ö|94›∂5¸blÆúúÇ˛iª˜|{Wxuí°≥HÂ$ó˙3…É¿`cõﬁ¿#,ﬂ!»   ‘]Ô–ÎñSÆ6’(ãÈër⁄Ìã~À£«˜∆k∫™6'Ô™¢àwTΩå≈wÅ≥'ΩÕ…±Á	º‡ì?• j[¨KM;DßG€ÅÈ‡ø|∏QR”˘$üÅYÚ%ÔÛY,ΩBrW(ßNæØÎŸTÁ }™¨;‡ˆÜÇb‡lSÕ‹PÖæÿ('¡ø∫W•∏B…;xîGûil”ÉÂ)ÏËÑ3yEüCÀ·j67˘*¥jı:ôßi8:¶âWl◊‚Ω5G≥“™÷“∞Sƒë%èM$h®$¨Ëã)˚P÷∞@ø⁄*Ÿ«3∑ôwpõ£k¡ÑI%ı¿Í¬·Ä‹êgaJu5€Túê7GâõFõ Œ\z–≥◊“9fI°ÓÏé’åfùı|_Dö“:„ßÙ<'°'M.röá÷»û∫)‹€A.ûi–îÉ4_q$ ¸†•øÒ¥5Ç{_€⁄ã–ß+
+{>÷°`ÜËX8Ø“õm—Ï¨∞"Høê„!(‚1ÆGÂU≈aï≥®à—u ]|¸¢qá_)1B™@,2oõLX’Zµ}µ¶ÚßyÏ∆X„4çlá…ºG•R§‚¨ÃÎG•+9˚"«•uÜdŒ≥∆ë)'„81ï…L=‡ÃXd›»!_%´ÿS*√X1≤»eS∫åc)Pds˚sYhˇ‰ó–^õRÿ¥I{XªùoLçÓ?dëŸSc7<‘ÔW¯˛^∂r€⁄Ωì@¸eWñΩL*Ômx>©Ù2)º¢’hN®|ˆ·K)ì.´rÂ≤.Ûæ ˘Â	ïCôπM~	K%I ∏Ã—˘ƒ!amOèQ—∞•M)mÁmÇ±òø5EËV`úûÜ˝0˜Òû«´!^ÖÄQO„Å¥AáL]"˝£<ÿBRùcA_≤îõbw]Æºãt7Ú&Ã@÷åx∫*TOÙC?£¶b*Ün˘‡Òx∆Sy‘E©Òa\[$z‚Àm°0“ﬁpùëˆrW®çT 9‘?% ü|,54@5Ù? 4Jï@*†|ﬁïz†J-êWπ*H?~©ÅÙêPıŒêGné5åv’bπqÚ3Ã#+g§)g„Ryøô
+–\m%õ‰exƒˇ`Tó~ÃçÌœÆ˛¡=≤C˝VºF∑`Úà¨l≈3`€éí^áâæµiéˆÅâ»66˚3˝Ñy…ø™–n2YØ±¨ ìÏY/H7Q∏ qQl9G,G…\∫Zñà√ãæ≤ôH≈’5«Ù›~ø?ùxuà_~y.PÖ“0ˆ√â\ı¥Vr¡ö,U.≥q+CŒ/0ê]πU¿9möB9•çJv<µó=√Èú◊π∆âM7ô)MÖ'SpIÈIötIL/⁄–À™“˘`¬=hPcK1≈xEùïaùÜ93ß#êëôŸtÑv%Ò£Ú†˛Ù˙bü»E∞nüZ€º≠ok≈w◊¢FÙ›ïÂﬂ¬tˇ,H¢v∂o4@ +J€π˘;˝Ü/NÄç2\)¨Z»,?∞√”SC}°$yÉ#9ów5]‹£≠¨Ko•‹P/7¢ÖtéA/ÅVkJúRüŸÖµ{sÎ“ü˘‰÷Âê|ÂfC¯sﬁÈÃFoÚJC≥“–V2ˇ<‚Ôe’L∆∞ÙàOô„@Ëo5h∂´VJ_∑òCÅLêÕKˇ8Ä•œ£Á¡¬G¡ñÊ†ò«™>ÿ>h–¿(p.°?—{	·¨dF7J÷Ô ∑u˘‡±óPˇµBRzi)A=D∑.◊:3≤ÚPﬁ§ÀLœf÷oô¿z≥Éô6◊iûÕˆ¶»Z}b§ØÓtH:Ñ£¸m´£$∑¶◊≤eÛƒù≠h@&≠éløÿ:¶E≤ıÆÖûÌ@£B;iç1h2†kÎºÖWˇ4π'∂ƒå≥Èg-g˘eòMOéΩÙq=¸¶‰ èÉ±á∑SçI“ù–%†πààÓÜiOÇùOÛÚç
+0ëÆ4O`*Ê<“Úï“4ß)PÉ Ü|ûx‹{iú¥&1ıÜîµªæ æ L≈B´ISeTäEπÒUûp5wpdˆ∆L›ößÍÆ2ßeûRØdÊ+Â∏¸)¶‘·h…ï™µUs•FÃ3äÀ~óLœ˘Ì≠õ>éäÂ{¶BwŒık⁄©\oÁŸﬁsöÃ˛˝”›√›Á€{=∂ñıê`Äbi¸zBVÏ•ﬂe,0Ú´~{h`§æ˛‚˝è∞â”å≈ï'“7åZs%gd≠íè äó…ãç$yIàDe—º˝o«>ﬁ[ÕÅŒ¡Y—tµÅr;ıùEiK~·o≠-É©DÌﬂ˝'≤ãg6ÕRf≠É‹ÛüWAÜiÍ≤Ô6ï ÛBã+)«PπÄø˘˛˚˝Ÿêùw·<®8)™uåÀlN°&ÓÙ—ı8Kb+Ó∏ÒÁ€¡°<w˘{≈°J< «±T¨k.>€ EZp	üB√5◊3ä¶
+k…≤ŒªÎ»∆Psü"d]ø+Ê¡
+à¥R¿g?¯ØÀóB Z6Y}ÂJKÇu	ÉÔÁÌQyvC	Ä∏ÑâK}¥∞;B°Ω·„4h®í4[ªã÷Ü.⁄:%ƒ
+Íc
+ÍÉ$Ù	˛ß’è£¥µJ“Q7ˇπF¢ÅÚsÉä‹dt“Zkó¬¢Y`Éu˘ü#P:2t cPW@µ¯Ïñ¸röf·ÈE´è	aKø≈û5Ô#À^ôN&A“G/'ÿ*}L#—:q$0≥UkÑ®~ö?éÿÜ°‚LÂ¯÷ﬁE|H«ÆCˆA\¢Ô ﬁ8ã⁄œ©fÔ	U˛5ì¨ı¯–±pyœü4ªà0§;ø˙ÖÏ∞‚†Ï„√ßéb3jíÇõ¨ñ-ÎãÎıü5Pﬂ9/ÌÛ£ãº7\í
+A*YùPø_ø™ı√ê)ô¨ê›qñ‘|˙=-`«¯ †Œvé%t˙‘Œ®·6Ç™x2Œª†ó+∑…3‡µ≈e'¡dh‰ˆJUﬁÛ“üŸ9ê«ZkO[†&0cjµRá^Æv&Ô^±’ÇﬂâWäLé~í †ˆik¿µ ÖJî˚‹ıC˙iÏEÖÛ ·ŸÓB{⁄Bà)ùüY8ª≠ªr*∆yœjµu	}Op–4≥£çÓàX≈!Ó‡¡,´ïõè˛ŒÆ¨áêxú∑VÔ¬~ƒÙÇ„+ﬁâ¨"◊›Q∏n˙//{ÒU“î”∏?MªÒ4ãÄπcW%É¡é'X£tˆ?.v‚Û±úæÎêgèeåíKãYü	z/wFÛ" {¡’Â<≥†∂\4≠ Ωi5çOäﬁÚaƒOJ∞ïÊôÙ⁄s?ô4:BùÙ @üJå∆º7H{MØ}_Á•Ø–00A‹,{®3∫=uë÷Ïè‚–]œÌ˚$E¨	ä–≠öwŸôπ?Æîß+C‡+“{¬∆ÖqÒΩc‚8Q≤Pƒ8ÖÉﬁ…˘˘&ée$jÇ–	‚∆dx•
+ˆ∫÷†å¶±kÔ∆ëùy%›®D»W¯ù—rΩR‚fQq°›zc{uéE¶\ ∆\+,õπów€˜ÉhÒ˛/p	3Ñ1•ú¸OVÃÅ7∂∏‘“Büd0YVŒ§™åä°ü„oÔ	ˆ%geÌ¨!µŸàjÃX5ëú58Vì8ıê-˜ ª
+ª1È´?¸o∞ró\Z‡ÔX9íïi1j»£8FàËLãÏ`]$ùx„¬ÇZ‰C¡Än∫‰CßêÔÍÉK«i0
+)&‰“œ
+°+v?X¡÷ì)˚V:à$vOV±¡m⁄Cl°QnqìÚË8‘ qˆÒúÛ®è‹lI–]tá≠5)”è“˙i˙ øƒ•Ç±≠2 äsÂ±kóÜœ<4|Ãvﬂ ‚VB›‘òﬁàr
+±F:ÿ µ—Ê-~
+Ô/™≤(”Dn]∫È+HÕŸ∞ãˆy“G µLnbqóføqi>ƒ’ Ûñ¨πß_ﬁóƒXπ…1Û¡tDWÉ…åiRî‡6ﬂŒ•µCáAÀ‹À‘÷q™üîiø˛‚˛˜LK·sêáGVË{ívÈ’?å”À∂zÈ…L´=Ò¢Ãkéñ¨$FDπ*2ãå%~°°M√ÑxdÉmó»N‚Ì¨,áPYˆ<>ã…œCd]bÑX/]? €t»ÙWQ°vYàá°¯Ú8.]∏y¥o¸äg√ÆhÆ€ıcFÇ~Ñ~†±ı‹ûtrDœŒcÿnï˘Í7ˇÖﬁ˙3óπåFcê»aòçb#	IÛ( a-HIJ«Èíu±áÎu4âÖ≤ë_yCÊ⁄º≈E~Ù(„91¶ΩnA£ıxÏß0~8ÏéF.ØÜ}ô™¶V∑Wu√àÎÛ∞%™’Nú’˝ò’Um¡mO¡z[nüôÎÉê	Eñ-Ç|,Øab≤˚´)†UÑ®$ÕOâVx©√ (–ß^jXEjÌÓæÎíc@{/∆S≤
+åv‚-ìí&÷«îƒ$P:Ò»ÍpΩCöl@1·È˘°G„—ª;ö≥ìıŒHÙÒÄ˜ª3uwAC-y˝‡†ØD[*>‘m÷‚∞ZÇYy√¨≤≈”vÖõÂg∏l1>ñ(∞˙C˜˙€‡bÎíGFÂôπ,‰]VÎR[‹Z/Q°[‘RsÃà%mûr]ÖwQ%óÖÅóà«Ïôgp⁄5%–»™∏®¥´ÂhÕ
+@≈? ?ù*:q≤Zä‡+V≠cà5î¡ Å⁄x»éí'a‰ë&ﬂ˝Ke‹C’ ‡Ã3Ö56ñª(æ\Êîôm’|©Túí›:–¸π¥ÔO;„`4ØØ‡ÂeÂ
+≈í∏–}l(ÆÂ#ÚCMÈ(V[ºÅ2?Ü±h¢¢ ˛¬è≥7≥*¿W¨˘ÇK)DIµfL‡£ŒÊ˝;wÓ”q~‰˜◊Ó¨›˘!»’√"ú!È—»+Mzxºgäç1fUÌnÓ¬≥L’[Ûz∞ª≥y∫qá¡Ó˛˝’ì’ì∫∞√KÌB{œcvnØ»Ûë6-N≤ñÈHÁÖk≠-]wÔmﬁe@8πø⁄_ÌœE⁄ÂM/94ãM≥Úò‡≈l◊·Löe2kN⁄Pfåôè#`¿Gxhö– ¬¡0´Ö{Çá∞/RY‰ñf$Íƒå%dÛ„¥}3†©Q®Ù∫¢~Èg˜<ª∂Ò’RÅìZÿ¢£»:ÿÑ¢jÜcΩ‡áòã©(U:ŸëÚ¶AÜ£'Ò9˛]F7Ÿ0\z∂»;	"'±∞(RÔñ(01º*»ÜDöçi€ÿõ∏Î–M“Q∏î¨‘;“—#7≈–”›∏÷¥√pboäÅ‘À¯›vÉõ„?}ZvÖL™Àt	≥ë4≠C\
+@3Èd˛∏ ¢nå¢*eù™R§~ó»Ω£ÎL∏V∞ºugÉê–_˜Ã{9©PqÈ]◊;õvò8/”bö ï„ÖÈ√„‹‚T ]Jö‘•8bV⁄©ó·∂hXÇêeø+ëæxÁT ≥vËœB≤_eÙã`¥‰i—øiÓ◊zZ>Ù%±Ü„î"râÿÚ·œäÙPM⁄˚&<,éH]¬£V”ÿ„ÑfÌªpû¿ÊW(?kÓ[£-5,—Cê»c·CÁlHKzòkfÁmÇ«5z»„–ÃY=w|(]˝ õX`√ªdqCS>ÔÆ‘w"¸Ìå/§aCÍKgb@VŒô\Ô?∞B°—dÙ¿˜ñ,›Ÿ5ÁV™'öG˜õuÖ∑c]&6Jßgôyò◊c.tÌz∞2©›^nÇ-®¬Ñ‡ŒXåv=W≥ª(©Ã‹2ˇ##!∏˙tâΩ5◊9eùgÈu@3Ω8Uâ_¬‹∆}q≥drÇX⁄eióÍùY»W◊Q2¸.¨«¡’ÒroñÆπUH%ÀAÛºu‘Ö∑7Å≤%Œ&ñFT’e	Wƒπ.î!…≠K#ëÕm—6‡K-ÁëçZ∫éá§»áHÈ∂a3<∏Êâ≤ãA%yˆoöÅª« Í(ı`v(:RW‹Zı»?ÁéÜ»Q ÁÊÜ+ÎZ8 ∑Êíˇt\S'A‰—põòiÿzπz'	FØ¨3øTS;ç"È$ˆÏ,êﬁôé=@mT∂0äè]2Ë0@≈◊÷Â⁄Üìt¿∏N∫,+Úcﬁê≥L8Ü“ãvhÓÍ£D]
+#ö’e>¯”e‡‚d•D®)'˝ƒD[óz¨R∑6˛<§ÉÀ‚Ió¨uñI¬Ü∂F¡iFS\úƒY”4sNk«µŸ6å7HCo¸i˙ŒbhÖîƒoÉ/Ö	>m5÷…z©ÀJêdaﬂã∂.©ıoôfè5Ω’¯hws˜ÓÓcw´e÷Ùˇ∫˜.,s
+A–ˇƒÊäΩÂÊ∫h”zI©∫"¨ïcçßÄ˚5¶Í¡ k-õÍ_TLıª?É„8é≤pR“ìÈ,¬(BØyî1Bˇ8kTÿxc¢<òyïŸ>åBz~í(i‹õºs˙˘™†(uT™*˚Óàjy°xálLﬁë;ˇ÷*¸'úxCêˇØΩ∫T⁄÷Ç&OÉA0.€‘"Ôò˙†ı√§ïÓÖ G† ´Ç]ç’5Ä€¢É¢Yg€ÊÁkŸ YjB∫‰[ó/7ñ…[ÑWÔu¸F¯€Í9¨?æ∑ˆ‰Œ70á+‚‹r	¯ñcﬁV‘m≤XÆﬂ´m‘f„ôÓ √§€ÿr∂gÕpQD´˛&k)‰ÑxcjK–J'·∏Ò∞Ù"…y€´Ÿ}´ñ™%ypÙ¢;ÙÿèMPÂ$»9Œv€uÛVn>ÓæEµ∑£çÃÈ∆˚‡∂˜1à1≥FÙùú∆\KñªIÉòê·¥Ω(◊≠- ZS‹1,çsìã…;¿)å&ìÎ95>õ€b–`Ù≤◊:ÀØø¯˝ﬂìœÇÑ¶ %àõ}è¿ÏF‘DdöH8ü±ÔsÆM† V¿Ó|/[û?Ÿ¬¸{„{£¯|/`|/`‰œø\cL…"ÉQ6Rπ’Eà˙Ï¸ŒÍŒÊŒwB$3Fﬁﬁ ÅÉ¬Ø7[ÎˇÊ&QjÆ`9 ®ôDÈñhbFã.ﬁe/#sº”\8*Õx∑É(™(Cò˘≈õ>m›∫§ùÿ#ˆÈEÑ™H¯–)¥’‰hΩÛ—Óìxh¡èÓ¨ﬂπÛdµ‹öü™Qï`>%ñ?•÷zT§¸^ﬁ¸Ó õq.j°≈Jä¢÷7&oZ_öo5£t»]ıES∑#ü=iJõüEePãß]pzi]M°¶F]ëŒñ[§8Ÿ j “-§¢o≥‰‰éJ‹ñó'ºàﬁ≠:" ⁄_Wç]…ô;Ô¿inıÍqÁÌ∑»5Ô†1|ı†'òN‰∆≠$§ösÿ¡Ë§∆®ï|så˚OQU‚É…ù(ΩwñdzÊ3ÇœÖUs≠Ê<0\µpòµÛtçAÇGı‰6~+¢R◊¿
+ˇøí 	ú+J€ôjÖ])íΩUa"»MÊèoRjS%åDUı^=cO⁄4=Â´˝Fd
+˝ô\˝1≠™UÂÂP CcMÜÆá•äèjRΩqÊF∑˜¨,ÆEk,˝ÇÚ0ugø)ƒÀyß
+`ñEE≤mõ≥»5ä˜´yÙíñªâ-h«√…~MC≠ƒùv%x?ÅGK«s≈Ó)±…ﬁd,⁄j•i$>ª#%∆ÅÉù7‹Œ˙"Vènµ≠íÇP‰dIyÇDûcÙuûHµdGpéNã˝Ú@=ñˇb∞áÒŒîs~ËCYÁRÙ©ç%‘Ω±ƒÒ‡˚üü\0∆˝˝-6e›ﬂ7≠…çø'˘@ﬁ3Ê†Ë4v	πƒ©c¯]C–…„˘Œ˛MäöW“˙R„"›ª‡Ôj˜.âErπ∫÷	ƒdΩ$]ïrÃ§¸Î/~˜?*q —åAƒøo^≤%	¸OÌ'ÅœÛ˛Úò'‡RçmÊ1J¬†úf ıá&ÿ]¡òVnì£¿K†ç‚içhOS˜ú≈<G¯∫§ªI‰ıÉ!¨Iêl5O”æóP-Âˆ’?£bïƒS≤aæ†›nª·ÓrÄøAƒ ÕÜ^€cŒMÜ” ;0õ5]f›·öÙ⁄O√Qò5W◊ñ>°±ñÇîÑcè'#§OiÄz.ZΩò”ﬁ⁄¶ëcñ∆&≈åIB…Ïp„+FlÁØä˙oU“Ê≤*‡⁄yk”aÿ∂‚à–BQèQ∞'të„x0à7
+:“Î*!€î¨8{¿H˜Õ¿çF«U0ÇÕØŸËÔ}Üiπ*¬·Zq…Y•V<\ö7kç™]-fp∏^Ó¨íŸLL p◊vàR%ÀΩ• kÈU…æU⁄Ññôk”íôÎÆ;D' ÷©Âp´'Ä€Ïç}Kˆÿ¸©Ì¸æ±xÁ{$$dp¯Û√¡<tcS¬C7Û?üˇo)áD◊°„∞¥∏Í±À—ÕéÊ∏&N6@™{5nMãÏÉ>∞ˆœÉÒNπ	Ö#	∆h%ÑÒsX§Uèú #C 1É~xb≤J'Ô“5[„©-±5`~ÇÒ›h[ùõ≠ûÇÆÎÚÍ€HWtŒyS„iq@◊ÁâÍƒç»[ÄÜNÉ-±[£AºLBˇ]≠¯ù»ÈzÁd´dèbÊÏäq·*®Å∆\Zå÷\,Ùˇ  ˇˇÏΩks$«ë ¯ùø"∫ƒë
+$™h†Ÿ›[†Ihhiv!\wVUïbUf13B0”ÓŒÕﬁ}8õ€ë∆ŒlNvÌ=d;fcv∂cc∑6ˇÑ`˘Œ=^ëè›îò2±QôÒÙp˜áÒ®—úacÍ€LÊ‰àDÿÊ≤ñä™≠∏X™`"kDsjÂ†ﬁ¨¸giÃ“"–î^M–˚&ò=∆4Aü˝7ås˚
+÷ªÃßL!“∑$ŸVÖƒrI -ë1"ó$Iπ(°W'Ö'B±ué€Z/Sz&ÑA/N©∆£Ω\!¸XNo·e¨<{¬ÊœƒËÍaŒ~$Vπ‹∆™r0∑“Hà∂8˙≤9∏ÆoÚœï‹ƒ◊∞ãØƒ6f◊Ñw4—jÅŸÚgßTøŒ¿"‚Æ[¥#tY©Ü¶Ë¬2F#ü∆b≈m‹‡≤=°°X¨«õ>Eá˜æÉ;ﬂIŸ’k.$´º{uøù[*æjŒz¨ÄH”ß'X¨ñõ‡a”ô=éã‹“[\ˆî›ÂrêT*TùÊeÒ¶$zJx«\\núßDÕ≠Há—"Ÿ1ˇîræ Q€W%uÂBÌΩF„°üF•{Á.È•I¯EXÊjìfàrTØ¥HIßtk)YLÖä≈ûß9÷∂(q!Ó+—;ä≤V÷ÕfS 4«±Fø‚‰c≤∞X5…§v»:ìM å\¸›ÇP⁄Ûﬂü8í+†w—¢«ˆ¢Ö›{ﬂÕHdôj¡ï‘9±"˚Óõﬂ˛%ŸéEn€î´ÇÕã††ùnñ—≈DÇYRÑ53◊ËDXˇ∆Åc¿-ä’à®ö+k)gdõÚf‰q◊≥…Á”π◊1ª°wJyäµä©1.Óı.∑£0Äm
+y68å;ï¨·eúÚ;òat J·˘œœ÷dà»|Ê ¡äøÛÖ|8¢Kﬂg≈‰Ø|¡I‚Û∂Ë_˘~ËÖÈV_ôûxU\%W!_<K˘‹K{>Ê‹€|≈(‹Ö#p;Í£;‡¿˚CüΩE?ôıÊLT3∞±-¥»Í≠ŒÙ‚h8Ãπ%dE˘ã+M◊;ùÉ√˝›ÉÜNΩW˜÷˜†M‰H˙]úÓ5O(üæÇUXªR~\ìd“ee◊‘ˆ‰4‰~2;π{∏yWÛ∂ ;›¸ŸÓK¥WzùÖƒ¨nûECL*çç±Ü¬‹Sgsá[_º⁄<Ï‰Ê±ô_M¸‘K‘v‹S)¯gõá0ÏΩÕÉÉ›|wü˘ 'G{xΩ;Mó¢œ 1êÒU.("f≈hq•D3Ø”Á
+L°†+±tR‘>	Pã4fÁs;Ë”â€{ÑØò	LkÕ^Ú”‹@ênë5"É‹≤n⁄m ∫≈—“Ô[}ç´≤™à,"ëJ‹É‡ïÉí÷iË˘πGÛ‰k‰UÁèÀΩ€Q	‘ÖJ˝8£‡[tˆyˆgÀ∂ö<Ì©NurgãM∆≥kßYÃeÄqAUΩã÷πt‡◊’∑“„(…◊HÑAÿzb	üöMå]Å˚mÕ«{ 
+ÔîäÇÕ‹ë]—ÿ£X˙Í∫"í[2gŸ±{iKª¥aßv
+cFê9¬ÀyÛÊLtU¿ﬂ)ƒcΩ¬∞]=∂K‰-˝_ê$¯⁄«‡◊Æ‰|.~œ!$o’UÅgœR˛,Y–të-'Ü∞cCI\G∑˝˛* Oü≤¿Ã D≤üÆ–∞qWQtŸdñÙœusA)öΩ¥cü⁄∂4Ø≥zw«–v⁄]ŸC@ﬁ4"\æˆÿãS°ô√M˚Ã6¸≠Ì‡œ_Õ˝ÛøQ#Ó‹©ù*[çkÚ+˜¢≤‚∏≤“¸Â6O%<˛Â>Á∑ÀÚlƒ,ˇMn~4‡≠=À¿Ù£*Rà°±®µ I“1Ø±}Ïı"áûùdÉÎ õlÌÜ±ªŸ7ŒkË¶¬æµÅﬂ˜c∏øπ≥æ’iò¸{Ïï:€[;4nt•ÀW·0úœó6N[<Äè-ÁG1Èƒ£t©`ArfèEG{YÒw(Z>Ê˙Ù›7ø˝π˘∑±Ô··ãú3zæBo|Ì¬èQé¢ßp±ãÒ`…Ò%èÊ¬7:Àd&ÚÍ`Ñ"‡ùc^èF9•Éú%gQÔÊ»Ø˝∞Á«®£ÅO>Ò≤1c¨ü^‡Nà6ã_¡ñÒ$ÒzÇq%¢Y`lOT˙†~«#,®Fûp¥“ã ≠–ûjx	å …¿è÷O‚IHcá‚ù7pGo(!®¯¿‹†=:ﬂÓ¸Ìé\j5P§Qw§bP”fI‡ÍZ‚‚ÛÖÑmÊ¥Ïì<˚û=E)N“‡òyqÅìX|òY,UQt€2
+@/ºè·ñØ'lõ˘2Ûo±B7ó.‚ÖQﬂ¥p-jO≥‡≈DüÀÖ#ŒÎÁ®*U—ñ§èDâG-5Î$7H“ì”dôs$©Ÿy[fÒ»n5ú≥)äÀRS±^xÉ¡¥\bë:R∏~πÌÖﬁ©”#≥»ÿ£∫:^∏∑eJwq 0∞À¸ç∞|K∫Ü],íÁLüÓ⁄”¶
+>Kq9ï¶}=
+O`'ÄÑgßœ€–~◊5ÑÀß+¬í€ãò ≤ä„ŸÂµ\‹lìeƒxLm1sõNRgeQ•ı∏„Ó{ŸûÎÖª‰FmÁCJ—ﬁ¬ŸŸó–z¡`j}3%‘ıL¶êâwË%ä°‘ï85R¬Ñ®L≈*&LWk\\®‡ £«Å:‰&Íß¨PÁú”B%DWl£ÌÕé†ßnÇ˜É÷—ì˘≥¡±æ¥5uM∆¢’÷1ç[ÀÓºx… Fß<ÀÕè›|u∞XU-ı$ã4DÕ"Å8b∆C8Êâ›—~ŸåÔ
+Wºdﬁ_Î[)£lêºÇÛ<,∏OŒ	r<™ºl≈èÖçmŒ|JLUÏ£§*r<XDº⁄ˇlsÁp≥¶îg•yπIS˜,o‰ıº®ﬁÃ7ÕRn≤õCXÄ‡úˆwﬂ¸Ê"{˚ªüÌw∂;7ˇ·ÊﬂÔﬁ =-Zp∏<IäÊº32ÈsA:Y'¡m∑rh©yŸÜò2ÏëJ3¯∫ÿ:áj!’Ãec%Yáƒ	F›(L≤¬¡»8´ù
+¥Jl<˝ä‘?	/íU«ïzaÿJVÔƒ'òÜ2Æ=´b ∞«¡ÓRs +öoÖT=uÛáõA∫”h^KÃ‘jÒør±<ÿ≠çÿïŒP“Ö2x-7h=íÖâ°ÚfƒÕIπ∏˛∏&π*ŒcS+t{÷ni¸G˝ö—8ÿ}£S`jÓmp±≤qö4ó˜ª^äj‰Ì	Ôh·§\X·ZD_j’(un#ËÔ7ÿ◊£òÃëC‡>¬A˝Ã!áNπe$‰GQUÖº~Å2g~V/L‹*íØXÂRÂ˚æûîUØõaä°5ﬂ Zñì?Ó}¿Yås]:etO
+˝sæ_Ïû‰n∫04,lÁóQœ˙XÚ E˝D≥1N[œ˜≥‰ä§¡»ˇ7Qà°ù_Æ7HÅ-‚ ¢Œ}ƒ-D1-'‚Êı2ÙäÖ›◊5E:OzKQ5(Èï≈ûH<ÃúáÊetö0õ¥Z¥Æãå=2ÃŒ·!ìL∑¨á±„ n_ú6õèÊ‹ÕZÎ∂Éí‘çIãxŸ/´]v°≥Ÿ¥±X)»$Dò≥!@$£€€pËß‘22
+_“[ê5Êî%`çnßπ¨M∑àıÏR*®´4ÛEz	çÃÍvéIŒåÇ3£3Ö.‰îlfIå]˜+Ï…CÄ^– ´¶ÄkSîõ…‚˘g≠∞˘„‹Dhsæ~œ¨OH|∫±Ô}YTÑÅCM]"zÿﬁ∫P…Ãq]≈îêYü§wü™Üê∫u!··ïö˚ıxyjÒPNøC¸»ÃckAÉ_b÷⁄.Ö%	ß&òÕvYR¸ïùDƒ]bjpRˇ¶;ÉÊã"s®œ"◊‰«°ü¢¢/¶ VxΩª ãÂ~I<wÊÇç#Y∂≈SKWÔ‘”S.ZJÖ_u·≠râÿ‘∫D£‰AK X“+€u≈ôau.&^)¯Wûs¢ÇÆ≤ =m+9ﬂf,êËπQ‚FÅÅ¯∆Ù…{Ã3DzÉ¯:	]I≤ßy$∞–^q$ÑjÆ‚kXîqŒH· bªºç≤≤qj’ÁJJvîkì¨±M&õ)ÈÂ∫1ô+∞˜´—7ZÔÒæèégπIˆ¢	Fè_lˇ§%	ë·o *WqπläÁ]˘äVjIΩ¢.®ü{eº–~™n*Ï$¢∂T◊ëª˜~õ∑›™ﬂ—ı®o\»{ãA–Ô√Q§¯Júx}˙o2Ë-ÊNO”·¡P•É¸¢itßó€
+èÒàÆ[ HDÈaöø{±¯T®ˆ;R	aÕÈ:ØíAtŒŸnmsê˙cåãÙÌﬂ˝˝ˇØ≠ÿ‡0NãYPn¯'4a‚YDÛ}˜Õﬂ¸ø¸{Ão∏s$«¶Ω‡◊{˘¿òf¸3j4c‡4ª‚˚î^˝Yg¡j>µÖ1∞ÇrÓ±Ê≤aoﬁñ)’o˜∑π…€ÆÔl*¨´Œ%1Yæ’Ú*qœW%.‘ÙÒª∞„2‹‚õﬂÿÃìØ ,˜NéGRdyNm”Ì’',ÇK∆N^d©\ùß*⁄5ÒQ…´&¿¥{]œ)M«€ZVU•›Ä?O¯m™#P%–Öá∫Öñ≈"∑ñr\cQñ]Jr’nœ};H∑ÚÌµ„∑ÇŒ<øòR±í!≠"∂∆Uøÿú°xZ”]kØü”ö:”#˚Vπ Ù$Innﬂ¸˛"°ŸQ2CåJ‡P‰ZTWà\lÕû˘àhh‚ Q~≥ÛÄ÷´j‰ú˜ÿê±®≈Y≠ö~–∫ã¬{bQãQcYÂ|_∂◊Us‚®qE≠'n{d‡y÷\KÂ™ÇÅÏ_ﬁÉ∑âÆ∂qf!óÊdç”Ò√>˜{qöÓ—æ™˚kﬁ=gÄèzÇJìh”å´%IWÕm•}mu«œu/Ï˘CÎsëçs®π∂Ω/˙ä*∂∆^ú¿ÊJõÍ˛ú%ÛNπ(8!MVZ@Ás⁄“*Fˇ‰?%vú.∫û ·3NõÖÆA7ø÷ﬁkzF˝g`√‘k«áŒ|“¯àQ<“ ª:-sËîˇÔ›Ëñ∆Œ–‚Â»Ì¥D,xJZ +Q¨⁄d‡%„Z·C‚®x˘âé¶\Ë“ÚVGXqÃ|˚WSg˜∫˙[¯”;Ê|1J9µ¶!¬ÜêÏ~œO»s/ªÏ— >…ÓYœóπ•y3j•zHdAáßa˚5v9ÁÏË0Ç≥£G:Y
+t∆bÃ<ŒıΩ∫∂>Æ¡?‘èVÛò‰£¨ÉÚ M∫®f˛öÏmﬁ¸áNÛ¿≈Ùî∞Ä’PA∫4π<°™0˛ƒ¢Ö-LÆb^Ø⁄&∏◊‹Œ¬€º™0+‰Së‚‰<n‡^¨Ñu…{YºQEœ\.ãoEé?ı vyá„◊˜ 'MÍyª†)∫kBh+ıGwû,¯)”'¡§b.®1S”k“tÇUÿﬂ˝§ıìÎô)·Zù§ ◊¨ﬁäÎdÖΩ∂9X≤/Oƒ-'–√±∫B<uÆ·:©öA8ª„≥∞ÈcnìH”ı•ﬁœ—^9¡fj$Ÿ[õl&©Gx&l·XçzßàÑI¿ùát'}˙©ÎÛûæ˘=∫O#õ»’DvO≠ ¯w" YÔUÔVb*äÓO"Yù—¸ˆØ˛WÚ≥hòæŸ®Tòt‘cøº<Ø›úZê10%„ü1L∑·¸≠„'Qc…~˜?*wŸΩ¡[T‡Uº'Û˙£ ¸˘¿KìŒx|0büﬂñ…öŒhm}vãyömàìÇÚv’XwQÂm~ªä5⁄ß~ äœ¥«^ˇ √ß4gIcﬁÃË¬h"–∫”Ã3ﬂ¯©ÊÓQ/¸≥¸Àm/übæ—ÈZ^n{A˛ÂO'ñé~:Z⁄<ÕßÑo¯˘˚ﬁ∆ÓƒÚr'≤~√ˇ⁄xyÏÑÄâ¡ÎHÄz6g¨U.}/Œ/Œã…p¯Ø·.Àd—2Áp3ù7^¡Ú^œ}xE;≈?∞…Î7jiº÷å9ÁÊ»Gáüp4&‡	ÅS4¡ÿã9l·i{Í¬∆Ö·æ˘H±ß"õ llmÏ~Dæ˚ÊÔ~˝¡Ì¸∑|˙Ghúb›™OÍGÇ]-(Æ+◊?¢Iπ3§U˘¶Å¯—ΩïŸœ0K≤Ú—ﬂ˛˙?πÁ¡D7¸§c$R◊§EæH˚+‰#g%aóu˝—ºﬁÊ†CŒÄíê≠—¯Ê?«AD~uÍØﬂhÀ‡eX=x·¬¥¡"9m‹À„÷πEœ"F)≤åF‰≈Uè%;Æ¢≠÷Íﬁ ]Y<Îçm√°⁄∂òÍk7‰Jl4¬j¡„ ü(êÀzlY}+≤â=UÖâ÷˚ZÁ-cÜKo`ü˛®údLˇIX;·Fô@úF$ô†(=Ä√?Òâ\wJ)°l˚cÃù¶∞Q˝Ú¡π>é!g≠cînnÊT˙6B$µLB±ÿ/ëäyœ¨Ë1∂ w®t\˜–Ôc›NÜ Ä◊æ
+èäj«[ﬂ7ïrÂAXû&Ä”°§7oEÄ“Ö^JchëÊûwÛè	˘òlll¿wn˛ŒãßÉ€ÌÓq%7èÆ≥)èK…üë¥º∞ü«∏:4Ô/ùHßH«:™,2ø≥.°1˚>£˚XπÂ^ª›∆v -ˆ(úVà~ı*ceŒ˝bcÓx÷Fif´b3>†€›ÜÀ¥¬∞H√4)2í©»-M≠:Ö	Ø"Œ+Aß‘Ùÿ√£›+Ñ‹MÀ{ÍÍAÇfìp§˝XêŸÅòVËQEÉ^ÆˇëõR ,π]õlÅ‰àŸÚz¿=Pê≥©ûr∞>pø@ÈWî®¿Ae˜ õê¿ÄñL‡˜î¥ Òcí•æÀoµàp¬÷vçR†∏‘2'ë•yÌ∂JŸíyº‡Ÿ2√gËÜ∆¿…)ô!&*rﬂﬂ(¬åÎÜˆÎ€4‘“ŸqEﬁ—Xm*=K‹⁄UÅäX¨ÄùB‰uxéS¬ˆƒ°¬„¥O¨≠#ö£tl÷5{z ±≤à(ŒÎc,¥ˆQºKÂ^m–∫Œ«–;N1ûoª7∆›CÏü«ÄÔà•Mcùä@f»‡f?ÂﬁÓEcêâ=ïy…HÅçÚ©„:˚âﬂ¸CÿºNc˘€(ä(z\}˝öﬁ´Ext{<YG∏ƒíﬁ+ñÙÉƒÎ˝˛ZÒ°lk-ÎõPÃê¨ë¢n$ìÂƒ&∆}πë≠.¬à—MbÙ∫{3H”q≤27ÁçÉˆ9é—è€ÄØs ªÙü—1Æ}xEßr˝cD¯Ö©u˚˛´˝-î≠°@®o]%¶>ÁòRÈjáMËx ◊›°~ÈNo]BÔdOH%á‹Ùç\≥“Ü»µ¡Ÿ§ËXT…y⁄Ì£iTä4*§”çÉ∏XÁQSU?e¸Fö∏òêóﬁ%0’Xä]Å1é‚Öuo2L……$§ûfF€d∆d]èî‡ﬁ≥àÎŸÔc@‰I‚§^ÍØ‚Ú+*j<’Ù˘¨ùƒ;ÉEDoœû7<¿ßTåw‘ÕF06.à^£”SøˇÛ0	‹Dõ8Z93qK„KÖp„Ovw⁄Ùî–ÄeÚ®+øÊ√œk·pe¡≤ˇüØik¸≤°À¶çª°úß3ù)°9‰ ∂>|ÈÔ≈∞]S
+ºÌï?/º|öm.ﬁDê¿«∞ÔÔfY‹”ÏÖZ]πBìU∑vx¯´¥p∏uÇzfQÉˇ,ÆÜé{?Ô–{˝Yqø'^îıàW Ã€â˜ôΩ–™>x–	5‡ÌYbsË„Ω≈Á‘?i«;[èÜCoú¯}ﬁr˛É˙n!ù’—ñcÄ_ô'‘k`i^˜Dìç˜Mi‰R¿Ï°/Çó^JgéQ*…Ê≤÷BvKÒ ?Ù’FöétV\«`;3rß§áóÏC˚k:Ä÷Ê…	HñÕÕC2À’a™céƒ\ÂÚï}˜ 
+z˝˛Ê¸Ò/ B?n6≤™=⁄-ÃŒ>ﬁdASÁ~˜À ≠€†∏‰–Ê*{â˝o∑sY{”¸öÆÓ,9:ŒcjV≈XFï¯"m.ZCÖﬁbQYR¸¡À¡úæö¯Iöı©õ3WØ◊úiSbﬂlôu‹)√^oü{qÿl(s‰-®≈+ 8¨Øﬂ0*ß+ÒÅö—)9ÁÑ	
+0 Nõ-Õ~ÒßnFΩ‹ûˆ˛EPhΩ–‘P≈f¶©1˜ÕÇÅW´c€	¡9+∂A`r=üﬁ£“πâ-Uâ^ˆ~ÔÀÏ œJûDN9Î∑1G∆Ñ3Ù#Ù∂ﬂºf£	<0à4ó≠]A#.^u¶1√
+˙âzy”‰mH±\Ç.´™ñWÂa‚vˆÜìæü4P>éÇ~di2©¬`XÄ‡õs2»º±`K"û¯√Ú N\˛;ç∆¬ÄKZéH≠2ïå˙L]Úœ˝xô7≠á›ÉÊ\@eØ_cØˇâ˙sÌv\s‚ÕË≠3 ˙‹?âb^x√!„Íp5˝|4,üﬁ	@˜åÂn™P“˘¬¶	>√¸Å’•›¨˚1≠,âæehEÔ√vºH∞˜'?;˚E
+œVõ◊£‚> …eÿ”F Œ^3öªâ˛≠ÕF)†Õ∫∫¬∂}ÿ¯–«π§f5ƒñıööebà®DŸ<Øá€ü≤}&≈ )¶Ÿ 6òp@±XêYÖåTÿ_  ◊™0Aµåá—∞mLîÿU^òÇÑî√Ly¬y¡0ZÁÜ&Ykõñﬁhrâ¢VöéÇñ¶-≈˙Òò∞úPPâªå˚  E”o˜˝zì€WNºƒ+Ò7`î?¯ ∂ÄDØ(ò◊[˚ÿtU“eG‚• «˝ÇM€o—’ñ;9ûrﬂ6fn¬π9≤ÖÍDRr8£©KúGûí4i8º§ﬁÈΩîåó	æÅ„›KŒp<rÛ·L;C´Û¯TªâEQú¢Y÷+µß5≤Ô{=∫ˇˆ˝ì¶1:v[Ω6¬YÄFµ
+ùú9•óuòö1*«È+Ã”ÜÁqéçpÜñ:qÏ]∂ÉÑ˛´◊ÃnVüÌÉ|øBé¥“ÑékM¨…aƒ¶JrÑ€ÚËXöY±%M~‡±ñHtB«¶b4Á;T Ep,ptDÁâò—º%P˘©—FêÏDÁ"f…äÚeß¥QÆµY˘‹Kî™|8œ\u5VÔˆÒµ1¸-FÚ⁄∆æ◊ø‹†8™*é¿bLN¥/î≥eø ﬁPıÍ˛‘ﬂ2‘ÔıØ:ÎùÁ0nM	À:6m8NË&°¿gÀÅü∞+)∞õçm&ﬂ–WÈÂaƒ¶eƒ¥„—ÇI£Èøúè¨¶~”„_"ê’ûíy”´îíRu2y∑S6Pæ@ÊO˝˛VˇÇ¨®Lgæˆ˝ãºﬁSﬂûSB„Ër?]ÀO}8GfΩci˙Cﬂˆ“∞–ñ°2oª®ﬁxK]”|SE{i€h˛ü)+=≈öı{A|ö!-Kc§ÊsÚ´}ÍÌÒ$4mWAÌv[√R€≈
+¨d¿ôü’w™cï¨÷8&8V
+aÓÄ:1vó»≈ êÊ_^Á¡¸Å˛K˚âi”˚}:äm‡+FîLÁÄÕÊ
+—	®Ÿ9%¢Y!˙”,Ét5+ÇøÃí“f≈‰+≥l∂∏Ä¬+À“8Ëlmtróy˝ÃLzÖº¡ò9f≈‰qq0…%crÿ'z¡,N/“d÷·$;*2Ûœô7zw˙⁄dÎíÈ(V÷ÿC?<M&±Ê"ç‡zË:&FUÖwÂ »i?Ü˚¬xì4!?-±˜t‡«>ÒˇIúÜ¿l∞Rhë$∏≥Ã'Ω¿:Ùí/©klKQ(^IVÀèºæèÖô~ãS·@˘#frD]\[ı46ÿÂìÖ|áÆÓœ§Z)cdi˝ÄTÄÌ…zoWìÊ˘äJ7^ßÀºwåPÆTÑW†î?ü•¸ ‰{gv6 J»=÷b»˘ ≥gÉ5…Å:ñ¨î§Ô˙Ë«â%¿;G=;-CâBêé`õ†«“ço™±Äêc^]+€ƒq%≠ä?&‘ü1¨Œ≥OCOJ,ñ≥aËe©Õx»˜")iF£íçVÁŒmz,ÏonÆπ.üÂÀ»%À^…«.[vX¥lD|êCX•5gÃwb~@˛YÕQAæ˜‡„«€òR£üU ª:ÛÀöå8…^éÇ„|qÉºà'ùR'.∏ √9"Ÿ †≥YÖJb yÆ1–{¥éd^xË}ÈKÆ7êŒÍ±⁄±X¿	çŸ:§ú¶ï√úËi∆Í≥oâ1⁄j^€Ü§‡DkM‘∂Ã£xù/iÍòº†Ìo˝∆Ñaî—_"¡Ÿ4·õÁC∏û´HœcËY∏JãÙà7#èˇŸÏcÅî*É§º6ô_Âìd`r≠ÏË_éÒÕ"$çº$M®íÙê˛©)ni%yµ⁄«;º§‡‹˙ÊKnˇï+Àx€ <â‰W§ÅwXô˛ùLzh…YèÎ£c¯˜iS®•^Ã¢é≈Wç]‰`Ì¶6£ûYfß√Fú\jÌâe‘`≠q¶Ê,5¢◊p≥öÒR¶Ê¸sﬂ”Ù4ÚP/Ã«åLl.u='™1 _Ày ﬂÙ"àQà1ä`™7la∞Á
+ê{†πàf√!˛ƒã9¢¸<R¡y˝vÉa“	åa@Z”Í©As¢q ï‚NêV}¥'Ç)VâØ4o/ZJø=≥‘1
+t⁄H˝(·Væ?˘†a}OOÖ”a‘ıÜçô¶]UÃƒ$TfMmêlp∆K’õ…‚,Â›c4°·Ìñèë€4ã”ó÷‚r¯feæñjc8XœÅÄÂ™…÷jﬁ`q¸*ÊÍe_îä∆vT∫˜„Q@7≈Œ´ÎlPYK˜F∂‘˝TaïÂ0n]„BãÌì‹IÏã≈Ñ˛Z?∞≠.YRŒ7˜Öv/vE#ˆ&√:\g ≠ùçÌ≠ gbW$b˝Z¡)´-*ß˙µqg$Hï≤çg’e{c8ñód{ìd∞√›?È›JS≥œÏwMÕr™Æ^≤u∆cz09Ó⁄‘´¥gmz ©7jœ⁄¸82î:p01àäcHÁÂ–ÇAùﬂZˇ⁄Ï6Hvà*òr§4eYrCõ›ÁZ:ê4˚—®â±˙Ev ¯—+/ÈoΩà<àe!˛∆hâÃYCL‡@Ojc≤« Ùq“p‹Dì‘3√ä≈,¬¬¬å
+«Y≤<??o"c…Ì§7ø¶LåºNcª¢,∫ö,iIøò§X¿‹?DÒ%çX2VV¨)∞[cµ:ì~≠ßyªˆ%
+—®óáõú∆Ej)ı≤˘Åhx∆É…Ïë4Âîÿ¸f4È-†àú^¥{¿b ÛõÙ¥#à‚l/»¢ããûzA∏CÌàî‚ü¡K•Ïπ≈C§¢Çl;s/d	Ï•œ›óaUå^) BÑ~„SıÀ	µ∆{ó»K˛}b;ÎõÀã€ãÀ≥l¯å∆·˚ôOI÷ó+µÒh˘â≠Ú1ôo/,≥¶6ó?Pg,F
+¥ƒú°6⁄EwOãè⁄è∫FªT©çáãOlmË£]˙¿\¸√l
++Xc≠äﬁË_x√}o˚Roh~~¡>§%cçx«’'ù∫´àﬁL46ã»˛¥∂J ï€˘m∆qD<W!b¯ìhÑzuÅ≈m≥⁄¸!©ƒèb8[zÇÅ\é~™TGÑíF")◊©üÓ¬‹Æ¨ÊV•ˆ&„2wÖG:~J¯˝ˇ:t£˜1öËß8V£Ã7¥Å€L›êD)Â,Óa¬Ω◊T¡®ú«úñÛŒ%çI.U¡ …) ?Î˝+É¥«∆åM¢§av4f,evs¨YY¶<Ê9ıÓg∫ÿ[ÌŸ“|£;önå>Ø˝˛ƒã˚—=Õ:ÎÕòx≥\t¥çj÷QR6ˆN<≈¡;ìhÛ^†$;{ã@í+q'P
+¬_˙®è© Ÿx·(iªçôÈ÷≈‰‚Øøö£†w_HN˚¨Ω∑qåw≥≥aFaÙ∫ˆ^üﬂ =Õõˆ[{ﬁråw;ıÅ∆pPÔı‹≥Aﬁ≈‰}öı‘›ı.§ﬂf≤HsjûEåo√˝ ƒ¡È}mR:§⁄∆;≈rÒ©—{8’å•ÒÁÃcﬂ?1å]WQŒàNP°ÀÉıÎ»Ks}¶–‹¬ †ﬁ–Ÿò»òAπböœ…–Oã∑∂—düm_5Ì5-7£iêluT-ê$›≤7WQ◊_Ëâ'¯ÖS9Ê &Œ∫û™„ÇñM+Àÿ2¥`å?™¸¥i
+C∫.œHßy5@]±>ˆ!K:¿Zx¿ªmº§)öìÀZ≥⁄qÌ√XïZl¬L”‘ëœ“k8∂…31OÈÑ§MùÕ∫¯¬PrÅÑE}ôà†-È14≈âH]˛{ä&oHÊ˘kYôﬁŒ'nπtm˚ö-Ìèç_6–º+ $3‚†û1åïïVçA!Å”	@Ù}çQ3£§°S¶‹Ω≠µ∑ø˚”Õ√≠É√Nv#nµmf◊˘•À`n∑96¶ÛL‹~êÜñ…YPöôùã∫zG¥Û2.Gá+qY—9ä8∆0ÿ|™ìÊX*‘¥»D+F Hu∞™:[√ΩÎ‚“-+l√^≠ ‘4>£;£y‡èêÃDÒåi\±25™—òƒ÷KC34n∆^í
+|÷f–øn}xÖqõ€atﬁ4öjÙ“*}˜Õo˛≤ùE‰eî˙§ì∆AwrÛè}™ΩIDœ,Mp≈<6≤KÜXπ!FÄSπn`TN‘)á˛/=˛ﬁÀßVûÿ.+‘À÷„∫—÷Éﬂñ]P8n•ÆË≈œ,õ¨Ù¨∏⁄◊'ÍEÅ~UPpô¢".`ùZFπª„◊≠1F“Ï7Lõ<©‘äM>–+“ç˙ó+ŸÄAa¿s¯o{åF¶Ω´3Á˝F¡á8ŸR˙*E\≈ÎO≈Ω√YÚXΩ˙PL[f¥√π6?¿ÔÒrﬂ¥=ı ‘ èÇd˜‰„r7:˛KèÜë9¥F·K¯™∫ÂÈŒi≥y?6Õﬁ§1Ü'‘$=˜OõÏEUáº›'oY‘k˝µ:ÏªΩíí„Ày—NÂùCi%÷AVã˝û÷´Æh%5bz‰Meä√YA†GBl⁄4ÿt¬6˝±…Ñ’ím «Ï∆õB,Uéß˙,P^¢‰ÖãJe±ZHÇBÏXè3eÂ€0`»MwFgR;‘Wﬁ#√‡‘X¸vûÿÖ’úÀ‡‘§±@S¸“⁄æü	ôŒ¿Iz	Ç°∞®&i,<j/è/$≥ñ3bV∆ƒé∞ÑÙ—8Åù>°±Öºß?mc`Lo∫q|¢è„Àhj4◊†7\{^?¯‰%lGÃï©⁄ª/o3fZoâµ6¢€ØæåNÉêÖ€í†£◊=kWäuGf¡¿lGÿW˛wˆ®;6∑v•€sdtáuhD˚≠ŸIlEsØ≤“jÄÜµ+ıóZfk˜ ?¬?⁄[°Å~‚gﬂÛ˛˝kW˘w¢<èËÀå‘ â;`„@˚Ó_¢-î∏+ÀpRÿŸ$˘’î`JÀzëôúg>åhƒU~™âÛü¨8ó“ô!‚!]˛gm˘$Ü£cÌÄü¯4F¥›—Ã ô‚lg8Ñb‘nÇE:Å˙ñIGœ3›FJöeeÜ«ä@¨’À$[fLïQcG±ΩıΩÚBümÓoÓ¨ou K~Ò™Ûrk£≥±Ÿ∞(©≤Ì#@¡è¢ﬁX;^åœ_a"-Ã±ZT#˘B…meÂyaKå:’Ñ[çQ'\m≈™Âêâb´õdãÒ@‘$„Z-Nïû˘QZ¢ôúôÇUY\}GÁ ¯}`È˝X(mã√DZ¨ŸV‚ù`hwGM	if›`â<ÃRO≠/—R€cÎ}a¨Kòç[ÌâÆ˜•Œ⁄û†ÑER√0Œò;˛˝öÜ2œ∏^‰ôBí·&[4ÓKB£ôk°çØòA8SÎ—øÈ>ÀßK1dÎ/˝À5Vef„£nSÔüÜòñP§YAµxG?öüÔ.,ùœ=¥Ö‡ƒ\(<+
+&Úñ˘HÃÑõ“qcTì˛$¶Ú!çu´$GI ÔÒè˙∂Ló…âG_fµÕﬂeπ\‹a?çq∂L,÷¸ä‘ã+Â¨ÅósEµG≤¶¡Ÿø˚Ê∑øÂq⁄9"0ª¬|UW4ww@^=^Æ•¿î¢4U[ö≥~µßî\íÒ^À«vAœi ô∏/◊ãmjﬂ˛Óo-¥G[µ«ZÕßÖQ◊úÕ„!Êî·À∆U◊4QIaÛ3Jdq3§˙ïˇÕƒñ Î"â•∂O±«Eé§KL∂PñI…ñO(∑-Ä  ë¶A|ÅÖ§1|ç†˘ ƒ6OÄÌo<µ·Ôv‘èàòo≥É.ï–=W˝3p?p`†<î¿9Cù/0QıÍÓ£e|¿—y±äâ®g≠≤◊ôVº‚
+´ﬂEBW≤ÑR@◊3”(1¡”Ft^nÓv»∆.y±µøyp∏ªøπbõ÷µ“v*aD‘F	h©\ÜΩ/&˛ÑÎc
+Nô5ãB·•∏«ﬂ@≤à¿ôœr5B:/S;d4ñü0pz*ÒùGCh£(l≥πáQ“ç·»∏bÏÀ<9»#êƒö‹|Lvº≥Æßß2_ ùB'y*JF…ÏÄê«ea¶“,çº zYÚ‰‹)Ω8ﬂ T¥]ª∫‚_YŸuq°ô„«1†\|π.ÔÚ∂~2C>&?Yöˇ…¨à÷PΩ*πæ~Z∞ï™•,ª ı7åN#ÙUÅùj|ìüXRı œÚiÓÉ—)I‚ﬁöŸæh„ÈŒZDÌ®°éz–zL¢Ó/1—F≠ ÇPd=^X§YèÕî33d%ﬂ˚:æ°»¿ˆ8/\.•≤é”¿?7}◊s€ÍQõœî7X»çZföÁAÿ’åÚ∑õG˛8œ„Öºò‹⁄ﬁª˘ü˜∑vsy∆VÁπyÿÛ˘Ã∑≈˛ËX…¡∞$˙∞tŒzZ~Ç'ú±pv˘¡&óò&qGπ3F\Í√ƒ˚>Ÿ√[jLlôÅÖåõºD˛EµùGí—
+Kà,r5¡˙góÊ—ë†xòKõWrîòëÉÕiQˆïCJ0’g§q‡Ë{â…ë<≤>è47ìﬁL∂Tc3Ñàâ?“>SÓ·≈ÕÔªq–Ûfr´$‡π‘¶jêÌØÅ€†98,¢œ4;ÿhπOä2∑ËúÇÃœûw]ÓŒ=ûÁ~©+IœÇàñK|´ÌUxböÀ≤∫ ÇÍRûÔ‡íXí’mÔ"ˇ!á¬ÊÜ„Ç:‡Z¿.é¨Èùlª ƒó}ÿá»á1Eê-*n#õ$p•¶µ%s…Zˆ‹‡"æùá™é†oÉûäòï±!uqVcÂ3Œãbwáô6±NàÃø˘/NaÿÅp£>G∏∆S¶gj“èÌÕÿ±√<NÀP;áƒWÊ‹5i^ô˜k◊3¢Zê◊Ï∫dùÉ,öªÁK∆√ m6HcÊh˛xz—¿pÀµÊ«““±.ña+ïk„kâX∏]U≈h“„OTÅÁ∆Å≤Û™Pºˇ6r‘œ/LI”Gi"¿?$mSC©e˛x®œ˘¶sc£ lXd©Ï§˙bÿI^≠RçjbLíæ4@3ˆ“¡ZcŒ‹≤>ª[ªZ˝π?§qçZS—È63r–y:o¿¯*gÌg◊Ôã«^˙ÂÊFU™\^ø(.kπ(Æ •;˚˚õüaöÎ¡`π:ÕAï'ñÏiñ%¶°óPvØC˛ú-Ê¸ÔfAﬁ*ÄÎÆˆ-$ª{)Zï}YÍá•ôniäÎà+C<˝†§l°)&k`∆é&¡é;XÙ)[F∞7vò0∞‘`Y¡ì·	Â,x`MO[68/√‚ÅXµ˙´_©69∑¿qÒÎGv:m—v]âCWÈgÁ…uEf1≠/[—
+X˝ﬁÔïÍ∏o5ËæﬂÌío¡`I`{¢ ∑8ñ>àË˜ïG!jÕ‹Ÿæª∞˛~aaZ√jG¯Fp|u	÷Ú÷Õt'„íMÅW„a‰—pl5Œ∫?ím~œÃ\ƒyl≤" láBÔä>p¿∑òœG˝=¬We«g¡πﬂˆ>©>°ﬁ¿{”Ïz>£uZˇOo„ﬂ)´ù’Úhú˛¥ŒŒ…˙§&ä{‘Í∏PŒ±,ÊÍÆ®»¸ónÅÔÇ0M±Æõ;ù◊õØ:˚”uá°%B,‘Éˆ≠º…Í˛—˚pwg˜ı˙Œ˙ÎüoΩ|π’Ÿôﬁ‘˘æ’{-L†»±˛zÿ˚9´˝'Ùœ7wˆ∑æxµy;®À0”Å˝s^˝èÓú≤Ïw^t6_ﬁÇ∞¯0”–ï}Zıè“[;p4ÔÓªÿ≈B ÀX6<˘/Ûû3Âµ·ˆº≥Û˘ÓÎ/^mmo≠OuÙ—ÿ7-oßÜ>«∫_∞™Ù∫π˝ºÛ≤ÛŸÊˆTR£ÙB´aÈbV†‹(Rm‘Sl¸Ï≥/ˆ1ΩÕ⁄ï¸”VÚ˚∫Ñ  lºZÔT◊ÓmÔÓ‚íøÜä˚[üUØx∞˚r£˙∏≤n6˜;á[/ÔKô!√¸PŒ=^Ê≠QŒ¢Ok®˚)z‰ŒP˜ÓQ∆d±*§oÛ÷˜y„∑°a6„A⁄â~◊†^2‰€0ﬁ‹√EmÌ=Ñ	=6_øÏlÓﬂôjá„òVØ≥éïo-ËV‘È∏ÄÆB≈}o∂pÖê*WóÍ’ƒvgBÁÕπﬁÀsaká™êß°†<ieEﬁ	˝òÁ¬¬ŸπqeısQg
+ _ãÄŸc§ÆÉM8w7”Xå1Á"Pˆ0≠+‡Ó´uÔè£-Z¡úwin"´_à"S£òigU0û"«◊¸–2#ÅLõr¥˜kë4ïfyÇ–ÉıΩw'ÇÄfäôû¢o‘Íh“Ø´£˛å÷^Áïøo“„üÜÇ;–ÀËÇQ∫Í"Iô%Ü√ (Y¿áYÃ*-y;Æß¢±Ã;ïÑßXóì Ù¬ûƒÖR‡YÍû»óûµx®_≠È§\.ß4]g‡µ{óqË˜}7reM»Os_óL0rfôµËñzõ&£´s¶YÒÍ8&—ÃÕêpÒù	4ìhˆæÚÏ(m8¿œÙx9√<Ë%$Î—pËçøø?î¸≠ÈVz™s”’È} ùhRÒı]Zúü/p√ı®%:wYÑ	Èj…›éÊ_∑«Ø—?ıu|⁄ıöÛ≥ÙÌ˘Âô„Ã≤õp<¯ :∑g@—õ˙∆≤@ËÀ¬Ω≥–7ãΩº~c¯ƒ!E3dél^å=ò»!uº"œ©Åª∂tUº∂‰ ùN[ˆi∞1Ÿˆ√	RS(‡ü≤$tNËÇ;ƒP≠¥ Û‹ZèFcØóFEû[Wot√¯"jÓN•x√k"W∏ß˚º|ò?9lµt\AX@4◊Ñy∏Ñ^LÒ‡f @9ç–zü£%±(\"¯oÕeöø[0c^∞á#Ôr˘ˆƒ‹éñÛnôœ¿ÇÌ¡_»^ŸO≠SY¬ÏêO{cÒ≥‚D^7±∫>œ‚(|5V¸3LgL>˘G0ê¸j◊êâv77€˘|Àr“∂ÜÀ◊Æﬁ∏˜0˜Ω¡ïQ=⁄G)FZ–É∞1`@Jµ†ìûﬂ
+£ÛÿÁw9>bﬂ‰î ’|⁄ﬁ˚uõ/aSö‰&*<—Ÿœ¡A‡˚ñå≠˚R~›iáe∫ÍÊ*ΩÆ?\kÏ±¯	sBÔI√GÆåpYò∂"Ë°ïùcé¨&À_]ö®∆áW©eÁÙÎÿ;Ÿ zCåòˆcœ∆t
+ÃJoæÊü£ãR∂ÿ∞¶b∑¬õƒ»≠Z·≤)ºÎù/]M|w≥—|ÓHu‚É‡4‘!`«ÍéÊjÅámøªÇåÀ–v:úûz≥î\y≠Q9zÓ≈Î/N´¨Œv{˙•Q|òÓj}ﬁƒÎ-¸-÷«Ìÿ≈	ÿ›q7Ú‚>∆„≠≤PTˇxÛO˘&k-ñ©È™¥bıîmE`)Q¥qÿ`?Iò¨[€©ÊŸt_à[˝ õ“œL?≠ÿ‰XÛò&è,VÆ‡ÑìÀ{øÁãtêµ5êoo1Õ˙ÔèT—Üv∏:I∆8èÉt›ã+—∏=[kµ∞R¯¥‹?Vﬁ€—‚p€õ‹ª¨H<7mÌ˚}ﬁ‰≈^:9C'‚áYÉc]Q◊¶¿¶˙2·£/*¥÷-ó´‹sπgn5eß—À≠fºwÛÇf1r±˛§Wk—≈IÂΩ?‘jQUƒ·©ùäàï€Òá£≈ã`ËbbÛ
+k7æ˘oçºÃ£[≠≈f∆Gw∂Œ’ñ„#g‘Êf*rj8Œ^MG•æÂ©¶J˘N\…ÙÇ$âÃΩ/uáï≠«{
+cœw§Â*5¶≠i¥[«ÚˆŒ˘	óÂ,_ΩÜÕ
+“ÀJ¸[Dp˙ù©òPæ£Â}«{»∂Hnª“¬Mf_¶€“Œ,[˘ª—1´6é”-çúA›Ωb∑ë‰k∞Á¡Án<Iï6ã≠≠ödPÛı|WÀ°˚¨V”˛˘ﬂÎ-d’qTÈõ^?5≥¥)zûx¢}QsúÁ∆¿Êe«[êhW∑Å %]Í #Ö|Ì£°»ôX‹Ñx£∆äÆr<`s§π9s§œ;‹æ#ºw∏◊#H∑≤…≤Ïﬁ*„okÆg©≥rÌ%•~¥‰Á∂÷¶\U%y˙;^V›Ay uU¶s/ÎÚáûre?∑67Õ)%H–;=§µ¨~F©√æ´#*EÖûÛî“‘ÁS_b⁄J∂PΩh…%è›ÈŒ(ª_˙Ã±8§ˆosHI?ÓwÑÓ∫˙î§KôÑN£≤5◊ Âﬁ>≈2mYõ™µH∫ø¯;Z)ã◊˚îÀEßì?f0†qnı≤‚≠µ®ÑOÕµ.Ù∆ñ
+æ˜eµ”à˙Áœ˝‡ÙÆ$P}7ãm8ﬁO'ª*≥®{s‰r›À]T∫8≤7Sk)Úﬁ–Ô\ï'÷o±4 dÙb∫µó¨‘kº6_'<≈	∫äﬂ¸>◊dM€’C—ŒTrÖ,∂•)pÉú÷úu5&øPè≠ÌçﬂÂ5Q].)ÔÀ']?≈(Ç’Ïm.ç£Ñ‡àßá]Ên˘ﬁ_¥Me=RGÀüÂ}≠të«≤⁄÷Z{ßs´ÿ;ø˜Âz˜Ü˛bÅ˝≤∆ˆ1Õ_ÅÛˆŒ¶¥(l˝QcJ∂ÙS[∫=óåAæ≈KÌ€‰.÷ó˘O˛.Ëùé’r[-¬´ÀÍ¥gÁÀ|cµ÷?ÂPsŒÇ¢ﬂ+]UbQ¥¶5€rπZ¨ŒÖûLŒ≤:ÁÙ)dEÙl™W‘˘È0⁄ãÉ0ÖÀFõM%ì9Ô≥$û˘ƒãcÔíD'Ñ˘ìı¢æü »õQ™∞Ã€¥ÜπJxG∏ö"a˙—1Y#lØ$Ùﬂ¶:&=Zœ3¢~cÈ†£‚Öót¥Q[vÖ\ÓÌ†ôxWÙFÇ‰πóˆ∏‹Óad'Ö# äu)KMŸKmaæ{ÂïñF\"Ö55w&~ íÊ–‹õsü,ìØ[GO‡±ef6º•◊ÂÈBÂ~ç°ôIå…∞(µ˙'©Í≈ı8ó›∆0ˇ’”´7∆˚Öy=ÜA$Ôm¯Ø∆ Xﬁ∫£VHgâå£ë ˝‘RH”iÆêyÚ aA`ÿÛÂÚV_Ì0
+[tL^whÔø$„°wπBh
+ÊzÕˇà6›‚àﬂ∑M]È¢;åz_ˆA»y–O+da~˛œJJ“KïKèΩ>¶ø,ÉaUXäCß‘uÖ˘˙’]õÅ7<aPk9±£]¥ CË¿EÇÿË‚Œ@81õÁ
+Y|Ú…hT‹u „úZ›ÿ˜æly'∞ˇÄŒœΩÀ§¨j
+ó › yÄÉ˙9ãP^°õ:5$SBS\ñz3˜ÉÿÔ°kÚ
+Ê õå¬íJí\±dp¬PÁQë?¯æ—õb[≤Pw'¿X#Ê≤Ω"3ûïTû¯+Ñ'Yõ~ß±=‘ûÏ]Ó∑Ö•«ÌÂZ;ÆZâi·Ú
+bï∆x#ÿ?z≤‰=Ï>æÀ©è!Ù±◊&I9Æﬁˇ÷§≠Ä–ß%5OΩ1@∑tÈ,HRJ\Hø’õ kÇôTÔa≥Ëua’'•ÎëF„™(àLT˘ä≈´Àä—'Q<Za"[ˆØõ OˇŸLIÕØQˆˆ/pWV‹ìwâd …üÜ- åÜ1ˆ≥&ÜU™%b¢‡Ú,¬Ó{@Â`?|∏¥∞º|G'ÂàÈå*éäeñ•|Ì'ÌÂqŸ°≈œ˘*`*—‚‚<ÔÏè¸≈'ª•ÿò¶»õ¬IJ∑“πö˚”yæáá$Óè`>ûÜ¥˜∫˝e°Z¿»Q/«é{„øÓâü¨{TΩÔgœ√⁄gè˛˚f¶2ÔF9SFóëöD|û≈ã°µÑjôq¬=èôHór? ‹/ûéezÍ $_G—˛m=YÜ›Ì·éhÖpBxC[NÒπè»Á4◊/ij¢L.zícFLDƒ’…è[ Y°OpÎ˜.ËÅ¯C64∑8Ot)]1¢†¡»14J‘¢5l]NQbM3nØKÛG∞ IŒt j?ŒlíÉá⁄êû∞b/ãsë ®òne§ÊäKò"˘wÊ´$d3˚√AD˙aæ¨§yEAvÄî˘ ”‘S}.≤˙åŸ≥Ìyç€Cˇ"[0Ÿ ˆ◊fm9ïπ¡CÁ4Õ¨‹j, Ì"g	£í!FQ1≠G¡‘Æ¨
+∆ˆ–O”ù’Ç≥.™›ﬁpÄ¸ËC{Kò‹TW©œ
+y≥5¬ã‡‰Êˇåà?"®Ö^!é÷¯∏Æ	sPn&3olﬁÜòˆÓÏõ°tØˆÂV®é§Ä¢…Å?§∂"ööçTÎ.#ÀÛ£Ñ	¬¥çá*”¢s…4È∞X‹7'™YCπeOz9FÚDŸ„|„ìOæßÌò&€-9÷ÏQ√ca;†x4ûùÅÕ∂€èËûê¡ŸÃxlˆ•[∞≈iÀÁv/®C∏¡:)âÊ3⁄√œ¶G®tÒà®_lóÙˆ¨%#»⁄c{`7ˆò·÷≤«M"æ˚Ê7I2äÊ‹o˘¯`⁄˜{¬*<Êø◊XE''ÅUˇëh„TàÂ¶ÿe(W·ÚË∂´‹25CX*'™ôg5jµÇT2ÆÁ¬2'◊]/Òï8Ä≤Ä≤'Qoí¨Dìu3-™&’Ò—>#◊r|˚ªøu@◊{«!ÍZ<∑=`°◊ô(AöΩ#é!◊âÔ–r+Æ∆Kn˝íG≈X¶î^÷√SR÷~–·pÿ≈-›~‰O¯«~cˇV¯˝µFÓ zù≥ßK>ˆ–"ÄÀ$(§åx∞W]6a(o\R≥dÔç
+MóK¯Ò≥®%8‡JÇF¶%hêk€¥ºåÂz[õ(Ω∑ÜôA„t∑¨£ bç4Ò¶õÔqÅ]ÿU†á«¥ùÈwŸ’n“>	ÜÄÊ∂%‚iFÿ|!T/Ωë¯*CT/ÙÌUA
+N'	ÛvXÔÏ¨oæDìíYg≠õòÃû‡Ñ4ïâ™Ï˜¸LÄ»-¿# T˜d
+ß„"â≈”‰wÒHT?µtÅ\'Aú %Ü+ÕÅ®·´$3›Ì˛jùa~E 3Ωàö6E´≥∆ˇö8ß…⁄ÒäÏ0ÍóhÉÇcÚS—¯K˛ô~Rz‡Cô)ô(cÎ"j<C„!Íaƒˆ∏¡Üh[é\Xr4≈3àΩs$Ki¨ˆ™Ô„{¸35g¥NC„CÆs≥fŸ ∏$écﬁ¶%k ∏⁄#|’ú˚~ë|tÙã£_4èü¡_Õ_Ù?ûô+Yz9T (Ä“Ãu¯,7Ü£Öcdî%]Ù†^òAP6O§e∆MˇbÜ˛>j}˚Îﬂ|˚Îﬂ“s≥ÿ#á\Ï@`o0- vÀpõMŸπ=AjˇJª&-`RµY Ä≤iàÔ+ƒ]≠t'=ox<ÿœ<ÿ3Œ.$fe4L‘_7÷w∑_Ôºp"(Y±_Îf>JA¿°ﬂHö!;/fúÌ !3f@C{l“ﬁ]˙bÎ˚¿7˙ÜF¶È{{s´Ûzg#e’Èû uJˇçíu{ó™á‚∫≥ü#πjº8w} ‡ŒÛ”°èí„ÇsFeœ£ëÕ=;(˙K`~õ@Ë|‡=m*{˙˛â7¶{ PäÍ5n~MŒ–\ìÃë=ØcDîx˛•ﬂßVr>?°YdÑ-fÿÏ2,M~∏oıqê‰Ëx¶ù¿ˆ/dÅÇ~)§»eÌ—6OÀ˘*|v&£.Läé îˇ<ç⁄¯¶ »‚·à¢>ˇ…ÍÒ%«=3`4™+ºMA#ŒO•Ã Êp)‹>Ë)ô/T≤jïJ «;)&ë.=®]…'ºA+™kª »Î7E€â6«∂úJE%·ò‹A˝ÌYˆ&CØ_∫-("√π’ã&a∫Á«®2©r
+Ùç*»|£ﬁN3kÒ<s6Q8+ìP#.∆:«œΩdÛ∞ ‘¨§6#u‹¸ª2(ˆ¶“)–ˆ·È%›·:√
+¢ÇﬂL&£Y¬§¯ì|"Cõ58Ò¬√GFÕÏ§˘)wR2È“~û˚'QÏ∞€áØé“-*±vQA∑~∆1’÷µQh6Z=¶˘˝∏’/r¯y=ø`yQPúÑ™){~et•∂—YΩ]ü‘3•#X˘v,ﬁÃª'√eØ¢E&±…∫πûÖB%»(ˆ^gƒñ”≠Áµ—áˇÿ˛æå|6ÿÙëµπ8‹ÊãZ\AHño:`Õƒ¶s†e §§’ A)ös™çùXÌ‹’«©‚bœó˛Â⁄ïrx∫ıÎƒHkRàªlF%G–36πºÍ˚®⁄ÔUÖ=,÷y”S nå)ıáx´ŒÓÒ
+ö∫&FZ(˝¢32)wqR#ohıƒ=≥•pÈ¯úäu|§í-Kû£©…7iiPõ‘˜Yﬁ⁄ï}Ï)bÎhNÆSA—ˇ;EûSõz◊%&{J0Àíé©ö-C	j	‰¢Iî∫∞¿£ÆHÄ’•*t¯=ﬂ^.∆ôÎ\Ü£¬)fä+^!√ò òkL≈)3.yùF•ÃÙ
+Ωäáò«≠ÌaËGˇêÊ„y÷Ê_ê∏ﬂ‰'™·úCg¨ˆ8<EW…“ÑO…e≥»œ⁄GÛ«®ßçΩÚ%/	Gäs((»g›‹ÂâG¡†l—œ[ÛdÄˇâ∫øÙ{)µa¬æ9).ú∑>Å2ü∏äîwÌSÙú;ç»&5c∞$Z÷áâKˆª(•ã•ejëbÒd ÃÆüÑıÃ4KC•’îMük~ãÖæS*ï£ÊM1ºîñ8äiUËì…x3£pÎ±ßn@∆rx'Ñ§‘›·≈Ø:ds#t*`»Í‹`±¬z¢µ Ω¨Ë—ìÒ≈±íN≠d·E•Ã.2óÖïQvO.*[Œsöèëy^çR§∑omŸ Ìî,•^™—È°·ÕæáhÏëÌõ:ÛÉ§“≤∫Ìã‘R•ªπJ„‰`â«Jå÷x’JxU´Lúbvhô=û¨ä=≈ß“(èïô).‰, uŒK3h‰ƒ[%7N‘BzÅN1¥5Àì√ı}Ú3?Ï{§©úG∫ G±t⁄äß
+∫ïbRë±{ê«{'¿ï∂~àY∑¬ìàÏy°?¨¿Îi7›v˛xÓ…ºjocﬂ ;¸Â˘πOÊAFBÏ÷•¯#À%YúÀ~tNV»ü˚ód€«t©W2Ö¸$N„†O?»∑'Ãè7˚π$ÜuQw|πûXH…¥
+è·Eæó–öàæ Ó’ûŒ1◊æ5Õ§æs3Úü;Æ’3∫6µØ2:Bv˛€ød6µwDq+Õ⁄…’$#˘À4ÚL˚”0∞ïá[ïYˇ®™ ]g⁄Â[õñ˙G∏‹ˇÔ„.3É´ƒ-#}+Zˆ‘G™´Ï
+D˛‘Ôwä4€ŸÛåÑ˛9¬≈oÊ[ò°âCzﬁ–«¸
+•1N[œ˜Ø≤¶‹∫kfÍ/|ˆbˇ,†÷Ù¿ÜlÜiÏü∫L+U–ﬁ+¶«Q¬Ú´àû’∫(ﬂ˜á 	ƒóà•±ﬁZ∑ùåáA⁄îùi˝ò¶Àa7`s?`¸˚äÒö˘ƒŒãÚu∫l7&aáO¬|©åÓöı∆˝ã®ï∏Ì≈"åﬂ»∞‹¡0π-«Ω†s‹ãôD Ô≈ﬂ≠yÂ◊ºxÌMƒìÆí9≤Ô}çß«A‘º≤ªôwµóû‹r/YLÁ~†Ÿ˜än4⁄ `€´üÁ^«‘øí£·{Çv%¨yM¨˚Óõﬂ¸/‰*g1¸ûÚá@»#?åd‡RÆ∂ˇæÔ-¥∂§˘⁄PÿÛNYv≈˜dOe§ú(Ω%-ˇÓõø˘'rïŸ•˛@«Ô◊ˆ’(ﬁÔ	ÜT˚ì[Û›\TÃ"ñ„≈ìºDb™˛ç ˘.é*Û•"¨éÚcÇÜÑÔ%ó!Ñrf?–¯íg√O–X!"·{¶ÕÃ»ªHq[π˜m≥ÁyÛ›7˝ˇ˝˜ˇ˙◊"÷Ñ—“ıüëfÎ√+›@OÍCu]Ë,πb∆X ÁπwŸò%‚Ox˚|ˇeÉ\œ\œ≈¬»ûÊ"π9ˇg3?(ïÓ˘`;Ä¿∆Awíﬁ¸>`Älæ/ •ªïLÆ[ıä€ß€Á«Ìs∞µêa–¬@9T\Ë»yîù©b^¬›˛˝Æl‰è…ËŒˇVE™]°RØˆËÑl°yﬂ]H÷∞zLX¢¯¥¢πÖºÉÁ.Ë∂õ˚≈yı⁄˛6ñê4÷T…D‘YÛË]Y†l>Æ√>Ø`¥Ræ∑Jö∏Œ¨tKLEJ1¯^øâH„
+˚Fî˛¿‡ÅïÛyJÀ1nÂs	Ëd˜\∂™ôêπi≥§¨ö…-{™–8 ∫˚<ªD€§>/Ü⁄G7–=o=™FP	˘Qï!Õ•É∑8Ù™C]ø˘'ƒ—©]+h
+ﬁÍ–È¿◊£¯mwqËçﬁv?ÛﬁÓ,T‰¨∫⁄_§≈ûG|8o5If¬Xu‹{±Ûá≠”“ˆ˜r‹	ËŒ•‚rûß“Y≥öv£˛•*Ó;≠ÓÊïKÁ¿©éz,◊H‹ﬂ
+?√∑≥ÑÜG.qÿÀÕu»πÔUÇŒ«Oà;˚{≥ß¿!–0˙ys?˚jßm6Aiì^©¢2vØµ«<Ãwj¥ÒÜì~»QÃıõz≥Ê7¥	ıä"R®HÊG∞	≥∫¥Íı1©,:ª›‡l√-ÛﬂÃ.”∏tfœ3kS+ØËpµ˘|≤/U¸>≥G˜ª≈xM ›A+4^Í~®>’∏^|®W¢ä≠˝rVë=
+°Ûœ¸pE59^ö7$Îj¬kµC ßWM¶Úˆ`Oï3¨rs:lËÑ7H.ù=U·ÑÜ≤Ùú ìÖ™ç√qWAÆ‚eøáaU˛<y+–wDñô	t&XV`≤ÁJU«^]∑¶uQÒí]Ù}C†⁄˚ò!Õ#&⁄Ôì—[@ ï2”º	Ù∂¨äq${~Xäíg∫•¿hÎ?¨Ñ|ﬁ·Júyq@MÅ~X˘Xx#sf ®ÿãø’u sø◊d|Ûá?⁄’öÇ7§äÆ˜GÅÕ„≠ÆE‹∑≥5†ìø«≠QŸ∏Ò≠^ı∫Bîˆ¸©°ì’Ù˜≠‚íêÅ@'≥d©∂ü
+≤Ú·Ag®ê,W[ûDQZAY◊Ü£FU—”V][3˚<÷/Èe¢—†»zv3©O*òIe#Ëc¬ßêû÷Æñµ\Òbü.™[œyKß˜aç˛3Ì7yO“hÂÌP;€ºÚïZu¿◊ò…ïRè≤eAßûéX≤≈Ú%ªãôŸ„î˝@ÕíïaÖ}/L‰:v˛ΩÔÔ»íß9ÏÁfÓsì7ûﬁ„ﬁRRm’ X´≤1·€™∏§∂≠£ô)èEÁ3§«bÛ∫'‹¥∞ÍmnŸû[¨y¶2;|BMÏF5Ïı€Cz“æ¿Ô0ƒÃêÙ~v‰bÈ±õÀUWW{¸^ú¡˘%Æ4MKR¬⁄3±E†!f…J4dµ4
+F_©&TºÆúäbUÑP¬V©%w"/ı©J•´*"Zˇ˙ˆÌê⁄;ΩÒe‘XÜù©FÑk ˝˝‡©…o≠Y’Eü≈ªBü©…¯ù¢ÕùS˙[–˘)©|U_-™—˜*⁄•rΩB+ı
+Œ S}v®…Æˆ4òı≈ˆ€ù"åﬁÿìÈR≥<4Æ¢vqF∆6ˆ¡5J˚ ÁÊî<°+ÑŸÍ±Ñd$@QqÏgtB`œQÍ,ãõúÈÄ$~c‹)@6ö7≈n%“–@C"ã‹—Ò—1Y#GéÙ_'Qå˘ûR@°˘O·üU@X:,ÒÒYtCïˆﬁOíA”ﬁP2z~3ò≈ñ†°zP‰k∆:°kÑŒíÒñ¥ötÒ%ÖÆ$‘ZÍÕdˇ·k¨ËºWà§5ù&±74Jo∞áZˆuWpt{tﬂ{‘Â·‹CÍiÎ"´Óùwe"3Bh˛x∆r;u“[Äé-DG2¢™¸è;Lπ»ŒÃù`¸œæ ÏÎ–Xr8idGgNƒÉQ‰K£ö“ÏãrÖ‘À4ëaÌ·<|»Cµ´ËöÖX˜ÃM«òR∆‘:Âb>{*ÿ◊b“¸ÌÔ˛iiˇ{πµÛyálÓÔoΩ¸º≥—!õd}wˇpì411y±ØgåJ–L!q/∂5*Ûª¢8∑p\rï`≈‘Öc∑üaô\b‚±+Â¡íLc0˜hæ¬2yJ∑ÄÇœ˛*fcÖ˛ö0@AØé»Å:A|‚’'}~·˘Ú28ãiP#ˆÛ‡) 5Vr†;ãÇzv‚=”¥46EJ›¿« †PªGé¯,π®ºß¬j3À|±î]2ïÁ`£∞EôÍÊò‡œ/[Û<sÜ[BSÚZ÷ÕoèdqöàpU79;ı^˝Õ_íóﬁeº∆nåÇØ7¸ë¬¿ê&p)äNó‡+f¯r:≥Æ–fˇ£häk1ü±âÊÇ“$jÊ˙Ä≤CLÁ_å1©F?JÏØnrT1Ø©kßàÔM≤lq¯,‰ü<ûÍt≈0K˛Df€(ø¿í8r∏ÇX/yˆø7Ï:†í‹ÂwÚ‚L „˛…aê—3£¡4ŒìLﬁ(bí…”5≤Púöò')eæ ÷∂
+2ˆfD4œØöŸ∏Ã·ßB‚g{ÍÁ≤úœ”d}ÊÈçÒ§^.¥ü»ø2ò“H¶ñ\∆Q.ç1P'ñYπ¨Òÿ;gAÿX>ŸBÄ`Ûˆ\¡™Ö5j¿|ûπíVt'ŒfLìÿ™s÷aPÿ˛-í¸∑[íü“=ä(U≤IâJ@îÏÖg‰œw!çhÆ$Œ⁄(»Ãû≥ïB_≥k‚ÅMºáŸõe√ºÂlì*]É¬˘≠@»Eç)î2^¬r…ØÑd„˘-éÉ≤DıJNL®ˇj‹á≥‹ñ±^PFkgAÿN‡]S!ú.Ìä1pŸiÂã1Ohµæ8ƒ≤Üò[k%7VA∑QãöÆÛ\ñQõü˝|ˆÛ.…_ègdñZ”qmQπ∏›nGÂz[9Ä!„óW‡¯”IWh˘vù7KÚÛ jtÊ+:X>&eµØãar]3@9∂§Ã;π…◊∑∞÷Tõ-añ∂f£=Gg˚*Ü	Êv¯a≥y≈@∞9Ù1n·ÛÀ≠>ºïÃ*Õ}√{*‰ÂÙoñ.a¡º‹êr¶‘ı%…®+Ÿz2ñ_=Òó´wú≈º{∆õªıD◊Œ’Fò∫É˝%Ók@úú[X&,O‘
+œˆ[O∆».vqïmË$Àµ´Öá◊dÓ)Ÿ‹GALˆ6^˚'eº&cJ1Z@©î›€∫≤I≈™É“óπW
+f0]ˇâ:áΩüw@¶Fx8dÓ+¯#f)Õ…F‡£SÁL‘˜‘|AW… :á™Ï˝è¨(±rlpAO$![Ûà[Tﬂ9˜˛Ì«—ﬁLb\ÚØ[GO‡9.◊Gç[KöËõ”ïÎíØ·¨a°I5îæF˚=Ã:™jª•ÚrHFﬁEã‚#[$¥±Y¸"çÖ∞ Ñy—˙@fÛƒ¶('[+ÛÒ∫I4ú¿ÊK#Tı–[N¯óéáŒhIJ  N5ˆ∆x”ÙºrüK†d€Wﬂe9¸æüÁØÕåàñÎØ+j9Ã0BŸÇÒ$†Kç,q*uK\…g¢ƒ›Ì≈óÎ¬kÒ'ú∂˝cn.V›‡A„Èwﬂ¸Êøÿı6´Éáπ*Ä0NE®ÕäŒl¡j∆vßìŒ3Zˆ#S=±:7xh• ˙ªqnêâÅ5"W#"9ÓZ
+asDl<>âà7D∆›@c{tx4:1˛Do›	\L≥Ò¡OòÉ?∫jêúNlHNû>M°_“†÷.ÒG»—vΩ8ÜÄãΩ3ˇgã¿J‹Ñ1	~íD$æ˘˝π˝±?å»Õ?ˆ0›dA;LÃ<éïœ¢∂ß±•´ Ÿ
+∑NbÛ∫~ãÚ’u1ü∞Pt?fjuù⁄íÛYP˛˘€4ûAVÆJNN-¯ë√Ÿ™sz[6¬%~–™\¸ˆÔ˛n^¯ΩIÍÖ}¥t≥§∞π0P†ü§~ﬁ|ƒ•\€˙ÿÉ∂ˇtËÊﬁl∂Ù~Ç#˚jÿÅá
+Óå,:ˆœ;	˘jBGÂ_]*öı}‘¶„Á…$\Ÿ|»!äá»Ã{∆ã\‘ {g_Ø ·ÃJÈ°∆xˇÑ—ôü<ºπ¶È™|	´î¬*oAdåSøhú'ÁLˇºçÅ1Âã(ıÌAÏüÄ0˙é‡K{2^è¯âWzVé!—ÿÎÈ% ∫öc-œ¢±ÊóºPˆ≤ëÚ‘iKb[£‘Ó*‰)NisÎSπñm–È∆2≤ÉK€Å•˝ˆØ˛7À"⁄˘;øÜÍºæ‚É‡‘ﬂã£—8≠@zÚ§‚°ç6î˝á˙%çu«v¡é√mﬁçR‹iÄÕ¡ßÍAÙ†Î∆fÒT†ËûùwáË^rˆHëö‹;˜ÇîÄ}Œ›“∫Máêdg¬¨ó}w∏iÔcÀp^v‘7%*<≥Œ/Ñ˝ê˙–√$ÏYoKÓss—√y≠ˇõ*˚#0È∂õŒ¯›Éj«;ìñKév¡ó⁄Oˆ%˚…nr[ïèˆ¢SùŒ:Gß±ªÂëÒaB"Ïıˆy≤Â`oÄ◊¸·ım[Ω∞–&áëNt`jÇK\«ﬁqû¬6œgc/≠†‘AÑ(˜	î=∆wM™‡iëÔƒãÉô[Òãm≤ÎL!∆®®¥gË˜Ç¬°≥)6:˝ ¬^∏˘{‡¥ÄW®lÖ0Ò j‹$æ˝?˛ñ‚vì}ÿGúï˘9(ÜUÓy(6$ì1áw˚A œòÃI~Vécœø€ΩÆpÒou∑ª<ã`ÀD%›ˆ¬â7DIÕøÉùöÒ–‚DŸ®8ñ∆7ˇ ÑÊÑÉ()D&√I‡∂êñ%FŸêÀ∏m£Iï6¥MK\∆3≥ñ*O…eu#£≈/ºZˇÌÔ~C^çÑHç;ó«yõÙ‚ -mË.Âb8e√ÙÊ?Ö>5¡…D˙”Ó^ïàﬂµüº‡Í‹Û8:áÓG`Ä+pr◊¸ˇ   ˇˇ ÁKîõ

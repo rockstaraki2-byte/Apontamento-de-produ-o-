@@ -68,7 +68,8 @@ export type OrderStatus =
   | "EMBALADO"
   | "PLANEJADO"
   | "FATURADO"
-  | "FATURADO_PARCIAL";
+  | "FATURADO_PARCIAL"
+  | "CANCELADO";
 
 export interface UserPermissions {
   canDeleteOrders?: boolean;
