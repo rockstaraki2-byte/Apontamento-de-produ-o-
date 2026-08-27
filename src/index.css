@@ -100,13 +100,13 @@ html, body, #root {
   .p-3 {
     padding: 0.45rem !important;
   }
-  .p-2.5 {
+  .p-2\.5 {
     padding: 0.35rem !important;
   }
   .p-2 {
     padding: 0.25rem !important;
   }
-  .p-1.5 {
+  .p-1\.5 {
     padding: 0.2rem !important;
   }
   .p-1 {
@@ -121,13 +121,13 @@ html, body, #root {
   .gap-3 {
     gap: 0.45rem !important;
   }
-  .gap-2.5 {
+  .gap-2\.5 {
     gap: 0.35rem !important;
   }
   .gap-2 {
     gap: 0.25rem !important;
   }
-  .gap-1.5 {
+  .gap-1\.5 {
     gap: 0.2rem !important;
   }
   .gap-1 {
@@ -136,7 +136,7 @@ html, body, #root {
 }
 
 /* Adjustments for compact mobile usage */
-.flex.flex-col.gap-2.5 {
+.flex.flex-col.gap-2\.5 {
   margin-top: 0px !important;
   margin-bottom: 0px !important;
 }
