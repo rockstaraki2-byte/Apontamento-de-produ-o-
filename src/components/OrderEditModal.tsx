@@ -58,7 +58,7 @@ export function OrderEditModal({
 
   // Billing / Payment state
   const [fiscalType, setFiscalType] = useState<"COM_NF" | "SEM_NF" | "MEIA_NOTA">("COM_NF");
-  const [paymentType, setPaymentType] = useState<"boleto" | "pix" | "deposito" | "carteira" | "outro">("boleto");
+  const [paymentType, setPaymentType] = useState<"boleto" | "pix" | "deposito" | "carteira" | "cartao_credito" | "cheque" | "a_prazo" | "outro">("boleto");
   const [customPaymentCondition, setCustomPaymentCondition] = useState<string>("");
   const [paymentTerms, setPaymentTerms] = useState<string>("");
   const [billingRule, setBillingRule] = useState<"cadastro" | "ultimo_pedido">("cadastro");
@@ -114,14 +114,26 @@ export function OrderEditModal({
     // Payment fields
     setFiscalType(firstOrder.fiscalType || "COM_NF");
     const cond = (firstOrder.paymentCondition || "").toUpperCase();
-    if (["PIX", "BOLETO", "DEPÓSITO", "CARTEIRA"].includes(cond)) {
-      const typeMap: Record<string, "pix" | "boleto" | "deposito" | "carteira"> = {
-        PIX: "pix",
-        BOLETO: "boleto",
-        "DEPÓSITO": "deposito",
-        CARTEIRA: "carteira",
-      };
-      setPaymentType(typeMap[cond]);
+    if (cond === "PIX") {
+      setPaymentType("pix");
+      setCustomPaymentCondition("");
+    } else if (cond === "BOLETO") {
+      setPaymentType("boleto");
+      setCustomPaymentCondition("");
+    } else if (cond === "DEPÓSITO" || cond === "DEPOSITO") {
+      setPaymentType("deposito");
+      setCustomPaymentCondition("");
+    } else if (cond === "CARTEIRA") {
+      setPaymentType("carteira");
+      setCustomPaymentCondition("");
+    } else if (cond.includes("CARTÃO") || cond.includes("CARTAO") || cond.includes("CREDITO")) {
+      setPaymentType("cartao_credito");
+      setCustomPaymentCondition("");
+    } else if (cond === "CHEQUE") {
+      setPaymentType("cheque");
+      setCustomPaymentCondition("");
+    } else if (cond === "A PRAZO" || cond === "A_PRAZO" || cond === "PRAZO") {
+      setPaymentType("a_prazo");
       setCustomPaymentCondition("");
     } else if (cond) {
       setPaymentType("outro");
@@ -297,10 +309,15 @@ export function OrderEditModal({
       return;
     }
 
-    const finalPaymentCondition =
-      paymentType === "outro"
-        ? customPaymentCondition.trim()
-        : paymentType.toUpperCase();
+    let finalPaymentCondition = "";
+    if (paymentType === "pix") finalPaymentCondition = "PIX";
+    else if (paymentType === "boleto") finalPaymentCondition = "Boleto";
+    else if (paymentType === "deposito") finalPaymentCondition = "Depósito";
+    else if (paymentType === "carteira") finalPaymentCondition = "Carteira";
+    else if (paymentType === "cartao_credito") finalPaymentCondition = "Cartão de Crédito";
+    else if (paymentType === "cheque") finalPaymentCondition = "Cheque";
+    else if (paymentType === "a_prazo") finalPaymentCondition = "A Prazo";
+    else if (paymentType === "outro") finalPaymentCondition = customPaymentCondition.trim() || "Outro";
 
     setIsSubmitting(true);
     try {
@@ -474,34 +491,100 @@ export function OrderEditModal({
 
               {/* Cliente */}
               <div className="flex flex-col gap-1 relative sm:col-span-2">
-                <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider">
-                  Cliente (Razão Social ou Fantasia)
-                </label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => {
-                    setCustomerName(e.target.value);
-                    setCustomerSelected(false);
-                  }}
-                  className="border border-slate-300 rounded-lg p-2 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 bg-white outline-none"
-                  placeholder="Pesquisar cliente..."
-                />
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider">
+                    Cliente (Razão Social ou Nome Fantasia)
+                  </label>
+                  {customerSelected && customerName && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomerSelected(false);
+                      }}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline"
+                    >
+                      Alterar / Buscar
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <Search
+                    size={14}
+                    className="absolute left-2.5 top-2.5 text-slate-400 pointer-events-none"
+                  />
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => {
+                      setCustomerName(e.target.value);
+                      setCustomerSelected(false);
+                    }}
+                    onFocus={() => {
+                      if (!customerSelected) {
+                        // Keep open for search
+                      }
+                    }}
+                    className="w-full border border-slate-300 rounded-lg pl-8 pr-8 py-1.5 text-xs font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 bg-white outline-none"
+                    placeholder="Pesquisar por Código, Razão Social, Fantasia ou CNPJ..."
+                  />
+                  {customerName && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomerName("");
+                        setCustomerSelected(false);
+                      }}
+                      className="absolute right-2 top-2 p-0.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition"
+                      title="Limpar campo"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
                 {!customerSelected && customerName.trim().length > 0 && (() => {
-                  const query = customerName.toLowerCase();
+                  const queryNorm = customerName
+                    .toLowerCase()
+                    .normalize("NFD")
+                    .replace(/[\u0300-\u036f]/g, "")
+                    .trim();
+                  
                   const matches = (db.customers || [])
-                    .filter(
-                      (c: any) =>
-                        String(c.id).includes(query) ||
-                        (c.name || "").toLowerCase().includes(query) ||
-                        (c.tradeName || "").toLowerCase().includes(query),
-                    )
-                    .slice(0, 8);
+                    .filter((c: any) => {
+                      const idStr = String(c.id || "").toLowerCase();
+                      const nameNorm = (c.name || "")
+                        .toLowerCase()
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, "");
+                      const tradeNorm = (c.tradeName || "")
+                        .toLowerCase()
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, "");
+                      const cnpjNorm = String(c.cnpj || "").replace(/\D/g, "");
+                      const cityNorm = (c.city || "")
+                        .toLowerCase()
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, "");
+                      
+                      return (
+                        idStr.includes(queryNorm) ||
+                        nameNorm.includes(queryNorm) ||
+                        tradeNorm.includes(queryNorm) ||
+                        cnpjNorm.includes(queryNorm.replace(/\D/g, "")) ||
+                        cityNorm.includes(queryNorm)
+                      );
+                    })
+                    .slice(0, 10);
 
-                  if (matches.length === 0) return null;
+                  if (matches.length === 0) {
+                    return (
+                      <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl p-3 text-xs text-slate-500 text-center">
+                        Nenhum cliente cadastrado encontrado com "{customerName}". O valor digitado será usado como nome avulso.
+                      </div>
+                    );
+                  }
 
                   return (
-                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto text-left">
+                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-56 overflow-y-auto text-left divide-y divide-slate-100">
                       {matches.map((c: any) => {
                         const hasTrade = c.tradeName && c.tradeName !== c.name;
                         return (
@@ -509,16 +592,27 @@ export function OrderEditModal({
                             key={c.id}
                             type="button"
                             onClick={() => {
-                              setCustomerName(c.tradeName ? `${c.id} - ${c.tradeName}` : `${c.id} - ${c.name}`);
+                              const chosenName = c.tradeName ? `${c.id} - ${c.tradeName}` : `${c.id} - ${c.name}`;
+                              setCustomerName(chosenName);
                               setCustomerSelected(true);
+                              if (c.representativeName && !representativeName) {
+                                setRepresentativeName(c.representativeName);
+                              }
                             }}
-                            className="w-full text-left p-2 hover:bg-indigo-50 text-xs border-b last:border-0 flex flex-col gap-0.5"
+                            className="w-full text-left p-2.5 hover:bg-indigo-50/70 text-xs transition flex flex-col gap-0.5 cursor-pointer"
                           >
-                            <span className="font-bold text-slate-800">
-                              {c.id} - {c.name}
-                            </span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-bold text-slate-800">
+                                {c.id} - {c.name}
+                              </span>
+                              {c.city && (
+                                <span className="text-[10px] text-slate-400 font-medium shrink-0">
+                                  {c.city}{c.state ? `/${c.state}` : ""}
+                                </span>
+                              )}
+                            </div>
                             {hasTrade && (
-                              <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-1 py-0.5 rounded self-start">
+                              <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded self-start border border-indigo-100">
                                 Fantasia: {c.tradeName}
                               </span>
                             )}
@@ -660,9 +754,12 @@ export function OrderEditModal({
                 >
                   <option value="boleto">Boleto Bancário</option>
                   <option value="pix">PIX</option>
-                  <option value="deposito">Depósito Bancário</option>
+                  <option value="deposito">Depósito / Transferência Bancária</option>
                   <option value="carteira">Carteira</option>
-                  <option value="outro">Outro (Digitar abaixo/Misto)</option>
+                  <option value="cartao_credito">Cartão de Crédito</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="a_prazo">A Prazo</option>
+                  <option value="outro">Outro (Digitar abaixo / Misto)</option>
                 </select>
               </div>
 

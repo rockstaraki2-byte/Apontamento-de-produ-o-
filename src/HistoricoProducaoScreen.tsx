@@ -22,6 +22,7 @@ import {
   Sparkles,
   ExternalLink,
   PackageCheck,
+  Filter,
 } from "lucide-react";
 import { useDatabase } from "./useDatabase";
 import type { User, ProductionLog, Item } from "./types";
@@ -83,6 +84,7 @@ export function HistoricoProducaoScreen({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [selectedOperatorId, setSelectedOperatorId] = useState("ALL");
+  const [selectedProcessType, setSelectedProcessType] = useState("ALL");
 
   // Collapse filter state and Log Detail Popup State
   const [filtersCollapsed, setFiltersCollapsed] = useState(true);
@@ -211,10 +213,20 @@ export function HistoricoProducaoScreen({
     }
   };
 
+  const getLocalDateString = (timestamp: number | string | Date) => {
+    if (!timestamp) return "";
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return "";
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   // Reset pagination on filter change
   useEffect(() => {
     setVisibleCount(50);
-  }, [debouncedSearchTerm, startDate, endDate, selectedOperatorId]);
+  }, [debouncedSearchTerm, startDate, endDate, selectedOperatorId, selectedProcessType]);
 
   useEffect(() => {
     if (!selectedLog) {
@@ -926,10 +938,16 @@ export function HistoricoProducaoScreen({
       );
     }
 
+    if (selectedProcessType && selectedProcessType !== "ALL") {
+      filtered = filtered.filter((l) => l.type === selectedProcessType);
+    }
+
     filtered = filtered.sort((a, b) => b.timestamp - a.timestamp);
 
-    if (debouncedSearchTerm) {
-      const normSearch = normalizeString(debouncedSearchTerm);
+    if (debouncedSearchTerm && debouncedSearchTerm.trim().length > 0) {
+      const searchWords = normalizeString(debouncedSearchTerm)
+        .split(/\s+/)
+        .filter((w) => w.length > 0);
 
       filtered = filtered.filter((l) => {
         // Encontra o nome do produto / tarefa
@@ -939,6 +957,13 @@ export function HistoricoProducaoScreen({
         let tradeName = "";
         let orderCode = "";
         let status = "";
+        let color = l.color || "";
+        let size = l.size || "";
+        let variation = l.variation || "";
+        let notes = l.notes || "";
+        let partName = (l as any).partName || (l as any).nestedPartName || "";
+        let thirdPartyName = (l as any).thirdPartyName || "";
+
         if (l.type === "CORTE_LASER" && l.orderId && !name) {
           const nest = db.nestTasks?.find((t) => t.id === l.orderId);
           name = nest ? nest.partName : "Peça Desconhecida";
@@ -982,37 +1007,62 @@ export function HistoricoProducaoScreen({
           }
         }
 
+        if (l.itemId && !name) {
+          const item = db.items.find((i) => i.id === l.itemId);
+          if (item) {
+            name = item.name;
+            code = item.code || "";
+          }
+        }
+
+        const operatorUser = db.users.find(
+          (u) =>
+            u.id === l.operatorId ||
+            normalizeString(u.id) === normalizeString(l.operatorId || "") ||
+            normalizeString(u.name) === normalizeString(l.operatorId || "")
+        );
         const operatorName =
-          db.users.find(
-            (u) =>
-              u.id === l.operatorId ||
-              normalizeString(u.id) === normalizeString(l.operatorId || "") ||
-              normalizeString(u.name) === normalizeString(l.operatorId || "")
-          )?.name ||
+          operatorUser?.name ||
           l.customOperatorName ||
           l.operatorId ||
           "";
 
+        const typeLabels: Record<string, string> = {
+          CORTE_LASER: "Corte Laser CNC",
+          DOBRA: "Dobra",
+          SOLDA: "Solda",
+          PINTURA: "Pintura Eletrostática",
+          EMBALAGEM: "Embalagem",
+          FATURAMENTO: "Faturamento",
+          BANHO_QUIMICO: "Banho Químico",
+          PRENSA_EDUARDO: "Prensa Eduardo",
+          PRENSA_RAFAEL: "Prensa Rafael",
+          TORNO_CNC_WILLIAN: "Torno CNC Willian",
+          TORNO_CNC_HENRIQUE: "Torno CNC Henrique",
+          INJETORA: "Injetora",
+          MONTAGEM_RETRATIL: "Montagem Retrátil",
+        };
+        const friendlyType = typeLabels[l.type] || l.type || "";
+
         const searchTarget = normalizeString(
-          `${name} ${code} ${client} ${tradeName} ${orderCode} ${status} ${operatorName} ${l.type || "DESCONHECIDO"}`,
+          `${name} ${code} ${client} ${tradeName} ${orderCode} ${status} ${operatorName} ${friendlyType} ${l.type || ""} ${color} ${size} ${variation} ${notes} ${partName} ${thirdPartyName}`
         );
-        return searchTarget.includes(normSearch);
+
+        return searchWords.every((word) => searchTarget.includes(word));
       });
     }
 
     if (startDate) {
       filtered = filtered.filter((l) => {
-        const d = new Date(l.timestamp);
-        const isoDate = d.toISOString().split("T")[0];
-        return isoDate >= startDate;
+        const localDate = getLocalDateString(l.timestamp);
+        return localDate ? localDate >= startDate : false;
       });
     }
 
     if (endDate) {
       filtered = filtered.filter((l) => {
-        const d = new Date(l.timestamp);
-        const isoDate = d.toISOString().split("T")[0];
-        return isoDate <= endDate;
+        const localDate = getLocalDateString(l.timestamp);
+        return localDate ? localDate <= endDate : false;
       });
     }
 
@@ -1021,13 +1071,16 @@ export function HistoricoProducaoScreen({
     db.logs,
     db.orders,
     db.items,
+    db.customers,
     db.users,
     db.nestTasks,
+    db.coilCuttingPlans,
     currentUser,
     debouncedSearchTerm,
     startDate,
     endDate,
     selectedOperatorId,
+    selectedProcessType,
   ]);
 
   const getActivityTypeColor = (type?: string) => {
@@ -1796,71 +1849,51 @@ export function HistoricoProducaoScreen({
         </div>
       )}
       <div
-        className={`bg-white rounded-xl shadow-sm border border-slate-250 overflow-hidden transition-all duration-300 ${isPintura ? "mb-3" : "mb-6"}`}
+        className={`bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden transition-all duration-300 ${isPintura ? "mb-3" : "mb-6"}`}
       >
-        <button
-          type="button"
-          onClick={() => setFiltersCollapsed(!filtersCollapsed)}
-          className={`w-full bg-slate-50 hover:bg-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 transition-colors text-slate-700 border-b border-transparent focus:outline-none cursor-pointer ${isPintura ? "px-3 py-1.5" : "px-4 py-3"}`}
-          style={{
-            borderBottomColor: filtersCollapsed ? "transparent" : "#e2e8f0",
-          }}
+        <div
+          className={`w-full bg-slate-50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 transition-colors text-slate-700 border-b border-slate-200 ${isPintura ? "px-3 py-2" : "px-4 py-2.5"}`}
         >
-          <div
-            className="flex flex-wrap items-center gap-1.5 text-left flex-1"
-            onClick={(e) => {
-              if (
-                (e.target as HTMLElement).closest(".collapsible-search-wrapper")
-              ) {
-                e.stopPropagation();
-              }
-            }}
-          >
-            <Search
-              size={isPintura ? 13 : 16}
-              className="text-indigo-600 shrink-0"
-            />
-            <span
-              className={`font-bold text-slate-800 tracking-tight mr-2 select-none ${isPintura ? "text-xs" : "text-sm"}`}
-            >
-              Filtros e Busca
-            </span>
-
-            {/* RETRACTABLE COLLAPSIBLE SEARCH BAR WITH SMOOTH WIDTH SLIDE TRANSITION */}
-            <div className="collapsible-search-wrapper relative flex items-center h-8 transition-all duration-300 mr-2">
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsSearchExpanded(!isSearchExpanded);
-                }}
-                className={`w-8 bg-white border border-slate-250 rounded-lg cursor-pointer flex items-center justify-center transition-colors shrink-0 shadow-3xs ${isPintura ? "h-7 hover:bg-slate-150" : "h-8 hover:bg-slate-200"}`}
-                title="Expandir busca por Código ou Cliente"
-              >
-                <Search size={isPintura ? 11 : 14} />
-              </div>
-              <input
-                type="text"
-                placeholder="Pesquisar por Código ou Cliente..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                onFocus={(e) => {
-                  e.stopPropagation();
-                  setIsSearchExpanded(true);
-                }}
-                className={`ml-1 px-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-300 font-medium text-slate-800 placeholder-slate-400 shadow-3xs ${isPintura ? "h-7 text-[10px]" : "h-8 text-xs"} ${isSearchExpanded || searchTerm ? "w-36 sm:w-48 opacity-100" : "w-0 opacity-0 pointer-events-none"}`}
-              />
+          <div className="flex flex-wrap items-center gap-2 text-left flex-1">
+            <div className="flex items-center gap-1.5 text-indigo-700 font-black tracking-tight text-xs sm:text-sm">
+              <Filter size={isPintura ? 13 : 15} className="shrink-0" />
+              <span>Filtros e Busca</span>
             </div>
 
-            {/* Visual labels indicating active filters when collapsed/minimized */}
-            <div className="flex flex-wrap items-center gap-1.5 select-none">
+            {/* QUICK SEARCH BAR (ALWAYS VISIBLE & WORKING) */}
+            <div className="relative flex items-center min-w-[200px] max-w-xs flex-1">
+              <Search
+                size={13}
+                className="absolute left-2.5 text-slate-400 pointer-events-none"
+              />
+              <input
+                type="text"
+                placeholder="Buscar por produto, cliente, OP, operador..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-7 py-1 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800 placeholder-slate-400 shadow-3xs"
+              />
               {searchTerm && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] bg-indigo-50 text-indigo-700 font-bold rounded-md border border-indigo-150">
-                  Busca: "{searchTerm}"
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
+                  title="Limpar busca"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            {/* Visual chips indicating active filters */}
+            <div className="flex flex-wrap items-center gap-1.5 select-none">
+              {selectedProcessType !== "ALL" && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] bg-purple-50 text-purple-700 font-bold rounded-md border border-purple-200">
+                  ⚙️ {selectedProcessType}
                 </span>
               )}
               {(startDate || endDate) && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] bg-amber-50 text-amber-700 font-bold rounded-md border border-amber-150">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] bg-amber-50 text-amber-700 font-bold rounded-md border border-amber-200">
                   📅{" "}
                   {startDate
                     ? startDate.split("-").reverse().join("/")
@@ -1869,81 +1902,135 @@ export function HistoricoProducaoScreen({
                 </span>
               )}
               {selectedOperatorId !== "ALL" && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] bg-teal-50 text-teal-700 font-bold rounded-md border border-teal-150">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] bg-teal-50 text-teal-700 font-bold rounded-md border border-teal-200">
                   👤{" "}
                   {db.users.find((u) => u.id === selectedOperatorId)?.name ||
-                    "Op"}
+                    selectedOperatorId}
                 </span>
               )}
-              {!searchTerm &&
-                !startDate &&
-                !endDate &&
-                selectedOperatorId === "ALL" && (
-                  <span className="text-[11px] text-slate-400 italic font-medium ml-1">
-                    (Toque para filtros de Data e Operador)
-                  </span>
-                )}
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-1.5 text-xs font-bold text-indigo-650 shrink-0 select-none">
-            {filtersCollapsed ? (
-              <>
-                <span>Mais Filtros</span>
-                <ChevronDown size={14} />
-              </>
-            ) : (
-              <>
-                <span>Recolher</span>
-                <ChevronUp size={14} />
-              </>
+          <div className="flex items-center justify-end gap-2 shrink-0">
+            {(searchTerm ||
+              startDate ||
+              endDate ||
+              selectedOperatorId !== "ALL" ||
+              selectedProcessType !== "ALL") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm("");
+                  setStartDate("");
+                  setEndDate("");
+                  setSelectedOperatorId("ALL");
+                  setSelectedProcessType("ALL");
+                }}
+                className="px-2.5 py-1 text-[11px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition active:scale-95 cursor-pointer"
+              >
+                Limpar Filtros
+              </button>
             )}
+            <button
+              type="button"
+              onClick={() => setFiltersCollapsed(!filtersCollapsed)}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-white hover:bg-indigo-50 border border-slate-300 rounded-lg transition cursor-pointer select-none"
+            >
+              {filtersCollapsed ? (
+                <>
+                  <span>Mais Filtros</span>
+                  <ChevronDown size={14} />
+                </>
+              ) : (
+                <>
+                  <span>Recolher</span>
+                  <ChevronUp size={14} />
+                </>
+              )}
+            </button>
           </div>
-        </button>
+        </div>
 
         {!filtersCollapsed && (
           <div
-            className={`flex flex-col md:flex-row bg-white animate-in slide-in-from-top-1 duration-150 ${isPintura ? "p-2.5 gap-2" : "p-4 gap-4"}`}
+            className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 bg-white animate-in slide-in-from-top-1 duration-150 border-t border-slate-100 ${isPintura ? "p-3 gap-2.5" : "p-4 gap-3.5"}`}
           >
-            <div className="flex-1 relative">
+            {/* 1. Busca ampla */}
+            <div className="relative">
               <label
                 className={`block font-bold text-slate-500 uppercase tracking-wider ${isPintura ? "text-[9px] mb-1" : "text-xs mb-1.5"}`}
               >
-                Palavra-chave (Produto, cliente, pedido, status...)
+                Palavra-chave (Produto, cliente, pedido, OP...)
               </label>
               <div className="relative">
                 <Search
                   className="absolute left-3 top-2.5 text-slate-400"
-                  size={isPintura ? 14 : 18}
+                  size={isPintura ? 13 : 15}
                 />
                 <input
                   type="text"
-                  placeholder="Pesquisar por Código ou Cliente..."
+                  placeholder="Pesquisar por Código, Nome, Cliente..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className={`pl-10 pr-4 py-1.5 border border-slate-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-slate-700 placeholder-slate-400 ${isPintura ? "text-[11px]" : "text-sm"}`}
+                  className={`pl-8 pr-7 py-1.5 border border-slate-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-slate-800 placeholder-slate-400 ${isPintura ? "text-[11px]" : "text-xs"}`}
                 />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
               </div>
             </div>
-            <div className="w-full md:w-64 relative flex gap-2">
+
+            {/* 2. Setor / Processo */}
+            <div className="relative">
+              <label
+                className={`block font-bold text-slate-500 uppercase tracking-wider ${isPintura ? "text-[9px] mb-1" : "text-xs mb-1.5"}`}
+              >
+                Setor / Tipo de Processo
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedProcessType}
+                  onChange={(e) => setSelectedProcessType(e.target.value)}
+                  className={`px-3 py-1.5 bg-white border border-slate-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-semibold text-slate-800 cursor-pointer ${isPintura ? "text-[11px]" : "text-xs"}`}
+                >
+                  <option value="ALL">Todos os Setores / Processos</option>
+                  <option value="CORTE_LASER">Corte Laser CNC</option>
+                  <option value="DOBRA">Dobra</option>
+                  <option value="SOLDA">Solda</option>
+                  <option value="PINTURA">Pintura Eletrostática</option>
+                  <option value="EMBALAGEM">Embalagem</option>
+                  <option value="FATURAMENTO">Faturamento</option>
+                  <option value="BANHO_QUIMICO">Banho Químico</option>
+                  <option value="PRENSA_EDUARDO">Prensa Eduardo</option>
+                  <option value="PRENSA_RAFAEL">Prensa Rafael</option>
+                  <option value="TORNO_CNC_WILLIAN">Torno CNC Willian</option>
+                  <option value="TORNO_CNC_HENRIQUE">Torno CNC Henrique</option>
+                  <option value="INJETORA">Injetora</option>
+                  <option value="MONTAGEM_RETRATIL">Montagem Retrátil</option>
+                </select>
+              </div>
+            </div>
+
+            {/* 3. Período de Datas */}
+            <div className="relative flex gap-2">
               <div className="flex-1">
                 <label
                   className={`block font-bold text-slate-500 uppercase tracking-wider ${isPintura ? "text-[9px] mb-1" : "text-xs mb-1.5"}`}
                 >
                   Data Inicial
                 </label>
-                <div className="relative">
-                  <Calendar
-                    className="absolute left-3 top-2.5 text-slate-400"
-                    size={isPintura ? 14 : 18}
-                  />
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className={`pl-10 pr-2 py-1.5 border border-slate-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-slate-700 cursor-pointer ${isPintura ? "text-[11px]" : "text-sm"}`}
-                  />
-                </div>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className={`px-2 py-1.5 border border-slate-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-slate-800 cursor-pointer ${isPintura ? "text-[11px]" : "text-xs"}`}
+                />
               </div>
               <div className="flex-1">
                 <label
@@ -1951,31 +2038,27 @@ export function HistoricoProducaoScreen({
                 >
                   Data Final
                 </label>
-                <div className="relative">
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className={`px-2.5 py-1.5 border border-slate-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-slate-700 cursor-pointer ${isPintura ? "text-[11px]" : "text-sm"}`}
-                  />
-                </div>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className={`px-2 py-1.5 border border-slate-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-slate-800 cursor-pointer ${isPintura ? "text-[11px]" : "text-xs"}`}
+                />
               </div>
             </div>
-            <div className="w-full md:w-60 relative">
+
+            {/* 4. Operador */}
+            <div className="relative">
               <label
                 className={`block font-bold text-slate-500 uppercase tracking-wider ${isPintura ? "text-[9px] mb-1" : "text-xs mb-1.5"}`}
               >
                 Operador Responsável
               </label>
               <div className="relative">
-                <UserIcon
-                  className="absolute left-3 top-2.5 text-slate-400"
-                  size={isPintura ? 14 : 18}
-                />
                 <select
                   value={selectedOperatorId}
                   onChange={(e) => setSelectedOperatorId(e.target.value)}
-                  className={`pl-10 pr-8 py-1.5 bg-white border border-slate-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-slate-700 cursor-pointer appearance-none ${isPintura ? "text-[11px]" : "text-sm"}`}
+                  className={`px-3 py-1.5 bg-white border border-slate-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-semibold text-slate-800 cursor-pointer ${isPintura ? "text-[11px]" : "text-xs"}`}
                 >
                   <option value="ALL">Todos os Operadores</option>
                   {db.users.map((u) => (
@@ -1984,32 +2067,8 @@ export function HistoricoProducaoScreen({
                     </option>
                   ))}
                 </select>
-                <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400">
-                  <ChevronDown size={16} />
-                </div>
               </div>
             </div>
-
-            {/* Clear filters button only shown when some filters are active */}
-            {(searchTerm ||
-              startDate ||
-              endDate ||
-              selectedOperatorId !== "ALL") && (
-              <div className="flex items-end justify-start">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchTerm("");
-                    setStartDate("");
-                    setEndDate("");
-                    setSelectedOperatorId("ALL");
-                  }}
-                  className="px-3.5 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 active:scale-95 text-xs font-bold transition-all w-full md:w-auto shrink-0 uppercase tracking-wider cursor-pointer"
-                >
-                  Limpar
-                </button>
-              </div>
-            )}
           </div>
         )}
       </div>
