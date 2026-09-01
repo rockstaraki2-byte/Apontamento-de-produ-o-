@@ -18,11 +18,26 @@ export default defineConfig(() => {
         workbox: {
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-          globIgnores: ['**/pdf.worker*', '**/vendor-pdf*'],
+          globIgnores: [
+            '**/pdf.worker*',
+            '**/vendor-pdf*',
+            '**/jspdf*',
+            '**/html2canvas*',
+            '**/CatalogImportModal*',
+          ],
           navigateFallback: '/index.html',
           // Removido importScripts — risco de quebrar o registro do SW principal.
           // O firebase-messaging-sw.js agora é registrado separadamente (ver main.tsx).
           runtimeCaching: [
+            {
+              urlPattern: /\/assets\/(?:jspdf|html2canvas|CatalogImportModal|pdf\.worker)[^/]*\.(?:js|mjs)$/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'pdf-tools-cache',
+                expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 30 },
+                cacheableResponse: { statuses: [0, 200] },
+              },
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',
@@ -82,9 +97,6 @@ export default defineConfig(() => {
             if (id.includes('node_modules')) {
               if (id.includes('firebase')) return 'vendor-firebase';
               if (id.includes('lucide-react')) return 'vendor-icons';
-              if (id.includes('recharts') || id.includes('d3')) return 'vendor-charts';
-              if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('pdfjs')) return 'vendor-pdf';
-              return 'vendor';
             }
           },
         },

@@ -4,8 +4,6 @@
  */
 
 import React, { useState, useEffect } from "react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { motion, AnimatePresence } from "motion/react";
 import {
   BrowserRouter,
@@ -67,64 +65,19 @@ import {
   Maximize,
   Minimize,
 } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  Cell,
-} from "recharts";
 import { useDatabase } from "./useDatabase";
 import type { User, OrderStatus, Role, Order, AppNotification } from "./types";
 import { calculateWorkingMillis } from "./timeUtils";
 import { ColorBadgeWithImage, getColorAttribute } from "./components/ColorBadgeWithImage";
 import { getItemUnit } from "./utils/unitUtils";
 
-import { ProducaoScreen } from "./ProducaoScreen";
-import { PinturaScreen } from "./PinturaScreen";
-import { CorteLaserScreen } from "./CorteLaserScreen";
-import { RelatoriosScreen } from "./RelatoriosScreen";
-import { EmbalagemScreen } from "./EmbalagemScreen";
 import { LoteGeralWidget } from "./components/LoteGeralWidget";
 import { usePushNotifications } from "./usePushNotifications";
-import { EstoqueScreen } from "./EstoqueScreen";
-import { EstoqueNestingScreen } from "./EstoqueNestingScreen";
-import { EstoqueChapasScreen } from "./EstoqueChapasScreen";
-import { RepresentanteScreen } from "./RepresentanteScreen";
-import { UploadNestScreen } from "./UploadNestScreen";
-import { HistoricoProducaoScreen } from "./HistoricoProducaoScreen";
-import { PCPScreen } from "./PCPScreen";
-import { QualidadeScreen } from "./components/QualidadeScreen";
-import { RelatoriosProducaoEQualidade } from "./components/RelatoriosProducaoEQualidade";
-import { FilaRitmoScreen } from "./FilaRitmoScreen";
-import { PedidosSemLoteScreen } from "./PedidosSemLoteScreen";
-import { GestaoClientesScreen } from "./GestaoClientesScreen";
-import { LotesScreen } from "./LotesScreen";
-import { EtiquetasTab } from "./EtiquetasTab";
-import { FinanceiroScreen } from "./FinanceiroScreen";
-import { SuperAdminScreen } from "./components/SuperAdminScreen";
 import { ShieldAlert } from "lucide-react";
-
-import { BanhoQuimicoScreen } from "./BanhoQuimicoScreen";
-import { PrensaEduardoScreen } from "./PrensaEduardoScreen";
-import { TornoCncWillianScreen } from "./TornoCncWillianScreen";
-import { TornoCncHenriqueScreen } from "./TornoCncHenriqueScreen";
-import { PrensaRafaelScreen } from "./PrensaRafaelScreen";
-import { InjetoraScreen } from "./InjetoraScreen";
-import { LogisticaScreen } from "./LogisticaScreen";
-import { OrcamentoLaserScreen } from "./OrcamentoLaserScreen";
-import { MontagemRetratilScreen } from "./MontagemRetratilScreen";
 import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
-import { OrderEditModal } from "./components/OrderEditModal";
 import { normalizeString, findCustomerForOrder, getCustomerLocationLabel } from "./searchUtils";
 
 // Custom virtualization and metrics components
-import { MonitoramentoMetricsSummary } from "./components/MonitoramentoMetricsSummary";
-import { RealTimeFactoryMonitoring } from "./components/RealTimeFactoryMonitoring";
 import { useVirtualScroll } from "./hooks/useVirtualScroll";
 import {
   ScreenLayout,
@@ -140,10 +93,62 @@ import {
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { storage } from "./firebase";
 
-import { CatalogImportModal } from "./CatalogImportModal";
-import { EvolucaoEmbalagemTab } from "./EvolucaoEmbalagemTab";
-import { GestaoPessoasTab } from "./components/GestaoPessoasTab";
 import { COLOR_MAP, isSubTabAllowed } from "./types";
+
+const lazyNamed = (
+  loader: () => Promise<Record<string, any>>,
+  exportName: string,
+) =>
+  React.lazy(async () => {
+    const module = await loader();
+    return { default: module[exportName] as React.ComponentType<any> };
+  });
+
+const ProducaoScreen = lazyNamed(() => import("./ProducaoScreen"), "ProducaoScreen");
+const PinturaScreen = lazyNamed(() => import("./PinturaScreen"), "PinturaScreen");
+const CorteLaserScreen = lazyNamed(() => import("./CorteLaserScreen"), "CorteLaserScreen");
+const RelatoriosScreen = lazyNamed(() => import("./RelatoriosScreen"), "RelatoriosScreen");
+const EmbalagemScreen = lazyNamed(() => import("./EmbalagemScreen"), "EmbalagemScreen");
+const EstoqueScreen = lazyNamed(() => import("./EstoqueScreen"), "EstoqueScreen");
+const EstoqueNestingScreen = lazyNamed(() => import("./EstoqueNestingScreen"), "EstoqueNestingScreen");
+const EstoqueChapasScreen = lazyNamed(() => import("./EstoqueChapasScreen"), "EstoqueChapasScreen");
+const RepresentanteScreen = lazyNamed(() => import("./RepresentanteScreen"), "RepresentanteScreen");
+const UploadNestScreen = lazyNamed(() => import("./UploadNestScreen"), "UploadNestScreen");
+const HistoricoProducaoScreen = lazyNamed(() => import("./HistoricoProducaoScreen"), "HistoricoProducaoScreen");
+const PCPScreen = lazyNamed(() => import("./PCPScreen"), "PCPScreen");
+const QualidadeScreen = lazyNamed(() => import("./components/QualidadeScreen"), "QualidadeScreen");
+const RelatoriosProducaoEQualidade = lazyNamed(() => import("./components/RelatoriosProducaoEQualidade"), "RelatoriosProducaoEQualidade");
+const FilaRitmoScreen = lazyNamed(() => import("./FilaRitmoScreen"), "FilaRitmoScreen");
+const PedidosSemLoteScreen = lazyNamed(() => import("./PedidosSemLoteScreen"), "PedidosSemLoteScreen");
+const GestaoClientesScreen = lazyNamed(() => import("./GestaoClientesScreen"), "GestaoClientesScreen");
+const LotesScreen = lazyNamed(() => import("./LotesScreen"), "LotesScreen");
+const EtiquetasTab = lazyNamed(() => import("./EtiquetasTab"), "EtiquetasTab");
+const FinanceiroScreen = lazyNamed(() => import("./FinanceiroScreen"), "FinanceiroScreen");
+const SuperAdminScreen = lazyNamed(() => import("./components/SuperAdminScreen"), "SuperAdminScreen");
+const BanhoQuimicoScreen = lazyNamed(() => import("./BanhoQuimicoScreen"), "BanhoQuimicoScreen");
+const PrensaEduardoScreen = lazyNamed(() => import("./PrensaEduardoScreen"), "PrensaEduardoScreen");
+const TornoCncWillianScreen = lazyNamed(() => import("./TornoCncWillianScreen"), "TornoCncWillianScreen");
+const TornoCncHenriqueScreen = lazyNamed(() => import("./TornoCncHenriqueScreen"), "TornoCncHenriqueScreen");
+const PrensaRafaelScreen = lazyNamed(() => import("./PrensaRafaelScreen"), "PrensaRafaelScreen");
+const InjetoraScreen = lazyNamed(() => import("./InjetoraScreen"), "InjetoraScreen");
+const LogisticaScreen = lazyNamed(() => import("./LogisticaScreen"), "LogisticaScreen");
+const OrcamentoLaserScreen = lazyNamed(() => import("./OrcamentoLaserScreen"), "OrcamentoLaserScreen");
+const MontagemRetratilScreen = lazyNamed(() => import("./MontagemRetratilScreen"), "MontagemRetratilScreen");
+const OrderEditModal = lazyNamed(() => import("./components/OrderEditModal"), "OrderEditModal");
+const MonitoramentoMetricsSummary = lazyNamed(() => import("./components/MonitoramentoMetricsSummary"), "MonitoramentoMetricsSummary");
+const RealTimeFactoryMonitoring = lazyNamed(() => import("./components/RealTimeFactoryMonitoring"), "RealTimeFactoryMonitoring");
+const CatalogImportModal = lazyNamed(() => import("./CatalogImportModal"), "CatalogImportModal");
+const EvolucaoEmbalagemTab = lazyNamed(() => import("./EvolucaoEmbalagemTab"), "EvolucaoEmbalagemTab");
+const GestaoPessoasTab = lazyNamed(() => import("./components/GestaoPessoasTab"), "GestaoPessoasTab");
+const BarChart = lazyNamed(() => import("recharts"), "BarChart");
+const Bar = lazyNamed(() => import("recharts"), "Bar");
+const XAxis = lazyNamed(() => import("recharts"), "XAxis");
+const YAxis = lazyNamed(() => import("recharts"), "YAxis");
+const CartesianGrid = lazyNamed(() => import("recharts"), "CartesianGrid");
+const Tooltip = lazyNamed(() => import("recharts"), "Tooltip");
+const Legend = lazyNamed(() => import("recharts"), "Legend");
+const ResponsiveContainer = lazyNamed(() => import("recharts"), "ResponsiveContainer");
+const Cell = lazyNamed(() => import("recharts"), "Cell");
 
 class ScreenErrorBoundary extends React.Component<
   { children: React.ReactNode; screenName?: string },
@@ -182,6 +187,17 @@ class ScreenErrorBoundary extends React.Component<
 
     return (this as any).props.children;
   }
+}
+
+function ScreenLoadingFallback() {
+  return (
+    <div className="flex-1 min-h-[240px] flex items-center justify-center bg-slate-50 text-slate-600">
+      <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
+        <span className="h-5 w-5 rounded-full border-2 border-slate-200 border-t-indigo-600 animate-spin" />
+        <span className="text-xs font-bold uppercase tracking-wide">Carregando tela…</span>
+      </div>
+    </div>
+  );
 }
 
 const BottomNavContext = React.createContext<{ isCollapsed: boolean }>({ isCollapsed: false });
@@ -2236,11 +2252,13 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
       )}
 
       {/* Catalog PDF Import Modal */}
-      <CatalogImportModal
-        isOpen={isCatalogModalOpen}
-        onClose={() => setIsCatalogModalOpen(false)}
-        db={db}
-      />
+      {isCatalogModalOpen && (
+        <CatalogImportModal
+          isOpen={isCatalogModalOpen}
+          onClose={() => setIsCatalogModalOpen(false)}
+          db={db}
+        />
+      )}
 
       {/* Modal Lote Imagens */}
       {isBatchImageModalOpen && (
@@ -2494,6 +2512,8 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                             <img
                               src={attr.imageUrl}
                               alt={attr.value}
+                              loading="lazy"
+                              decoding="async"
                               className="w-10 h-10 object-cover rounded-md shadow-xs border border-gray-200 cursor-pointer hover:opacity-80 transition"
                               onClick={() => setFullSizeImage(attr.imageUrl || null)}
                             />
@@ -2848,6 +2868,8 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                   <img
                     src={it.imageUrl}
                     alt={it.name}
+                    loading="lazy"
+                    decoding="async"
                     className="w-10 h-10 object-cover rounded shadow-sm border border-gray-200 cursor-pointer hover:opacity-80 transition"
                     onClick={() => setFullSizeImage(it.imageUrl || null)}
                   />
@@ -6544,7 +6566,11 @@ function PedidosScreen({
     setVisibleCount(30);
   }, [activeSubTab, debouncedSearchTerm]);
 
-  const handleExportPdfGrouped = () => {
+  const handleExportPdfGrouped = async () => {
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
     const doc = new jsPDF();
     
     // Header
@@ -6619,7 +6645,11 @@ function PedidosScreen({
     doc.save(`pedidos_${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
     const doc = new jsPDF();
     
     // Header
@@ -10898,6 +10928,8 @@ function PedidosScreen({
                             <img
                               src={item.imageUrl}
                               alt={item.name}
+                              loading="lazy"
+                              decoding="async"
                               className="w-10 h-10 object-cover rounded-lg border border-slate-200 bg-slate-50 shrink-0"
                               referrerPolicy="no-referrer"
                             />
@@ -13493,57 +13525,35 @@ function AdminScreen({
                 </h3>
                 <div className="w-full h-64 mt-2 bg-gray-50/30 rounded-lg flex items-center justify-center border border-gray-100 relative min-h-[16rem]">
                   {chartsReady ? (
-                    <ResponsiveContainer
-                      width="100%"
-                      height={240}
-                      minWidth={0}
-                      minHeight={0}
-                      initialDimension={{ width: 1, height: 1 }}
-                    >
-                      <BarChart
-                        data={efficiencyData}
-                        margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
+                    <React.Suspense fallback={<span className="text-xs text-gray-400 font-medium">Carregando gráfico...</span>}>
+                      <ResponsiveContainer
+                        width="100%"
+                        height={240}
+                        minWidth={0}
+                        minHeight={0}
+                        initialDimension={{ width: 1, height: 1 }}
                       >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          vertical={false}
-                          stroke="#E5E7EB"
-                        />
-                        <XAxis
-                          dataKey="name"
-                          tick={{ fontSize: 12 }}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          tick={{ fontSize: 12 }}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <Tooltip
-                          cursor={{ fill: "transparent" }}
-                          contentStyle={{
-                            borderRadius: "8px",
-                            border: "none",
-                            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                          }}
-                        />
-                        <Legend
-                          iconType="circle"
-                          wrapperStyle={{ fontSize: "12px" }}
-                        />
-                        <Bar
-                          dataKey="Capacidade"
-                          fill="#E5E7EB"
-                          radius={[4, 4, 0, 0]}
-                        />
-                        <Bar
-                          dataKey="Média Diária"
-                          fill="#3B82F6"
-                          radius={[4, 4, 0, 0]}
-                        />
-                      </BarChart>
-                    </ResponsiveContainer>
+                        <BarChart
+                          data={efficiencyData}
+                          margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                          <XAxis dataKey="name" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                          <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                          <Tooltip
+                            cursor={{ fill: "transparent" }}
+                            contentStyle={{
+                              borderRadius: "8px",
+                              border: "none",
+                              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+                            }}
+                          />
+                          <Legend iconType="circle" wrapperStyle={{ fontSize: "12px" }} />
+                          <Bar dataKey="Capacidade" fill="#E5E7EB" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="Média Diária" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </React.Suspense>
                   ) : (
                     <div className="flex flex-col items-center gap-2">
                       <div className="w-6 h-6 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin"></div>
@@ -13563,69 +13573,39 @@ function AdminScreen({
                 </div>
                 <div className="w-full h-64 mt-2 mb-6 bg-gray-50/30 rounded-lg flex items-center justify-center border border-gray-100 relative min-h-[16rem]">
                   {chartsReady ? (
-                    <ResponsiveContainer
-                      width="100%"
-                      height={240}
-                      minWidth={0}
-                      minHeight={0}
-                      initialDimension={{ width: 1, height: 1 }}
-                    >
-                      <BarChart
-                        data={sectorOccupancyData}
-                        margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
+                    <React.Suspense fallback={<span className="text-xs text-gray-400 font-medium">Carregando gráfico...</span>}>
+                      <ResponsiveContainer
+                        width="100%"
+                        height={240}
+                        minWidth={0}
+                        minHeight={0}
+                        initialDimension={{ width: 1, height: 1 }}
                       >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          vertical={false}
-                          stroke="#E5E7EB"
-                        />
-                        <XAxis
-                          dataKey="name"
-                          tick={{ fontSize: 12 }}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          tick={{ fontSize: 12 }}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <Tooltip
-                          cursor={{ fill: "transparent" }}
-                          contentStyle={{
-                            borderRadius: "8px",
-                            border: "none",
-                            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                          }}
-                        />
-                        <Legend
-                          iconType="circle"
-                          wrapperStyle={{ fontSize: "12px" }}
-                        />
-                        <Bar
-                          name="Capacidade Diária"
-                          dataKey="capacity"
-                          fill="#D1D5DB"
-                          radius={[4, 4, 0, 0]}
-                        />
-                        <Bar
-                          name="Carga Agrupada"
-                          dataKey="quantity"
-                          radius={[4, 4, 0, 0]}
+                        <BarChart
+                          data={sectorOccupancyData}
+                          margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
                         >
-                          {sectorOccupancyData.map(
-                            (entry: any, index: number) => (
-                              <Cell
-                                key={`cell-${index}`}
-                                fill={
-                                  entry.isOverloaded ? "#EF4444" : "#6366F1"
-                                }
-                              />
-                            ),
-                          )}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                          <XAxis dataKey="name" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                          <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                          <Tooltip
+                            cursor={{ fill: "transparent" }}
+                            contentStyle={{
+                              borderRadius: "8px",
+                              border: "none",
+                              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+                            }}
+                          />
+                          <Legend iconType="circle" wrapperStyle={{ fontSize: "12px" }} />
+                          <Bar name="Capacidade Diária" dataKey="capacity" fill="#D1D5DB" radius={[4, 4, 0, 0]} />
+                          <Bar name="Carga Agrupada" dataKey="quantity" radius={[4, 4, 0, 0]}>
+                            {sectorOccupancyData.map((entry: any, index: number) => (
+                              <Cell key={`cell-${index}`} fill={entry.isOverloaded ? "#EF4444" : "#6366F1"} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </React.Suspense>
                   ) : (
                     <div className="flex flex-col items-center gap-2">
                       <div className="w-6 h-6 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin"></div>
@@ -15202,7 +15182,9 @@ export default function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-hidden w-full max-w-7xl mx-auto flex flex-col min-h-0 bg-slate-50 relative">
-          <Routes>
+          <ScreenErrorBoundary screenName="Aplicação">
+            <React.Suspense fallback={<ScreenLoadingFallback />}>
+              <Routes>
             <Route
               path="/"
               element={<Welcome currentUser={currentUser} db={db} />}
@@ -15505,7 +15487,9 @@ export default function App() {
                 element={<SuperAdminScreen db={db} currentUser={currentUser} />}
               />
             )}
-          </Routes>
+              </Routes>
+            </React.Suspense>
+          </ScreenErrorBoundary>
         </main>
 
         {/* Bottom Navigation */}
