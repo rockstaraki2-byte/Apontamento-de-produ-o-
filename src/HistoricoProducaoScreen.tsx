@@ -909,10 +909,10 @@ export function HistoricoProducaoScreen({
     if (logOpNameNorm && (logOpNameNorm === targetIdNorm || logOpNameNorm === targetNameNorm)) return true;
 
     // Substring matches (e.g. "solda - Raul", "cortelaser_giovani")
-    if (targetIdNorm && (logOpIdNorm.includes(targetIdNorm) || targetIdNorm.includes(logOpIdNorm))) return true;
-    if (targetNameNorm && (logOpIdNorm.includes(targetNameNorm) || targetNameNorm.includes(logOpIdNorm))) return true;
-    if (targetIdNorm && (logOpNameNorm.includes(targetIdNorm) || targetIdNorm.includes(logOpNameNorm))) return true;
-    if (targetNameNorm && (logOpNameNorm.includes(targetNameNorm) || targetNameNorm.includes(logOpNameNorm))) return true;
+    if (targetIdNorm && logOpIdNorm && (logOpIdNorm.includes(targetIdNorm) || targetIdNorm.includes(logOpIdNorm))) return true;
+    if (targetNameNorm && logOpIdNorm && (logOpIdNorm.includes(targetNameNorm) || targetNameNorm.includes(logOpIdNorm))) return true;
+    if (targetIdNorm && logOpNameNorm && (logOpNameNorm.includes(targetIdNorm) || targetIdNorm.includes(logOpNameNorm))) return true;
+    if (targetNameNorm && logOpNameNorm && (logOpNameNorm.includes(targetNameNorm) || targetNameNorm.includes(logOpNameNorm))) return true;
 
     return false;
   };
@@ -939,7 +939,10 @@ export function HistoricoProducaoScreen({
     }
 
     if (selectedProcessType && selectedProcessType !== "ALL") {
-      filtered = filtered.filter((l) => l.type === selectedProcessType);
+      const normalizedProcessType = selectedProcessType.trim().toUpperCase();
+      filtered = filtered.filter(
+        (l) => String(l.type || "").trim().toUpperCase() === normalizedProcessType,
+      );
     }
 
     filtered = filtered.sort((a, b) => b.timestamp - a.timestamp);

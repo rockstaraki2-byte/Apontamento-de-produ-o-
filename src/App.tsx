@@ -3353,6 +3353,15 @@ function PedidosScreen({
   const groupedOrders = React.useMemo(() => {
     const map = new Map<string, typeof db.orders>();
     const term = debouncedSearchTerm.trim().toLowerCase();
+    const launchedAtByOrderCode = new Map<string, number>();
+
+    db.orders.forEach((order) => {
+      const launchedAt = Number(order.createdAt) || 0;
+      const currentLatest = launchedAtByOrderCode.get(order.orderCode) || 0;
+      if (launchedAt > currentLatest) {
+        launchedAtByOrderCode.set(order.orderCode, launchedAt);
+      }
+    });
 
     const filtered = db.orders.filter((o) => {
       if (currentUser?.role === "PROJETISTA" && !o.isThirdPartyLaser) {
@@ -3388,7 +3397,10 @@ function PedidosScreen({
         }
       }
 
-      if (filterNotInvoicedOnly && o.status === "FATURADO") {
+      const isFaturadoParcial = o.status === "FATURADO_PARCIAL" || ((o.invoicedQuantity || 0) > 0 && (o.invoicedQuantity || 0) < o.totalQuantity);
+      const isFaturado = o.status === "FATURADO" || (o.invoicedQuantity || 0) >= o.totalQuantity;
+
+      if (filterNotInvoicedOnly && isFaturado) {
         return false;
       }
 
@@ -3405,9 +3417,6 @@ function PedidosScreen({
       }
 
       const deliveryStatus = getDeliveryStatus(o);
-      const isFaturadoParcial = o.status === "FATURADO_PARCIAL" || ((o.invoicedQuantity || 0) > 0 && (o.invoicedQuantity || 0) < o.totalQuantity);
-      const isFaturado = o.status === "FATURADO" || (o.invoicedQuantity || 0) >= o.totalQuantity;
-
       let dKey = "";
       if (isFaturado) dKey = "FATURADO";
       else if (isFaturadoParcial) dKey = "FATURADO_PARCIAL";
@@ -3462,9 +3471,13 @@ function PedidosScreen({
       map.get(o.orderCode)!.push(o);
     });
 
-    return Array.from(map.entries()).sort(
-      (a, b) => b[1][0].createdAt - a[1][0].createdAt,
-    );
+    return Array.from(map.entries()).sort((a, b) => {
+      const launchedAtDifference =
+        (launchedAtByOrderCode.get(b[0]) || 0) -
+        (launchedAtByOrderCode.get(a[0]) || 0);
+      if (launchedAtDifference !== 0) return launchedAtDifference;
+      return b[0].localeCompare(a[0], "pt-BR", { numeric: true });
+    });
   }, [
     db.orders,
     debouncedSearchTerm,
@@ -16283,6 +16296,9 @@ export default function App() {
                                   <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"} text-center w-6`}>
                                     #
                                   </th>
+                                  <th className={`${isFull ? "py-2 px-1" : "py-1 px-0.5"} text-center w-12`}>
+                                    Foto
+                                  </th>
                                   <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"}`}>
                                     Código / Produto
                                   </th>
@@ -16330,6 +16346,23 @@ export default function App() {
                                         } text-center font-bold text-gray-500`}
                                       >
                                         #{index + 1}
+                                      </td>
+                                      <td
+                                        className={`${
+                                          isFull ? "py-1 px-1" : "py-0.5 px-0.5"
+                                        } text-center`}
+                                      >
+                                        {itemInGroup?.imageUrl ? (
+                                          <img
+                                            src={itemInGroup.imageUrl}
+                                            alt={prodLabel}
+                                            loading="eager"
+                                            referrerPolicy="no-referrer"
+                                            className={`${isFull ? "w-10 h-10" : "w-7 h-7"} object-contain rounded border border-slate-200 bg-white mx-auto`}
+                                          />
+                                        ) : (
+                                          <span className="text-[8px] text-slate-400">—</span>
+                                        )}
                                       </td>
                                       <td
                                         className={`${
@@ -16397,7 +16430,7 @@ export default function App() {
                                 {orderDiscountPercent && orderDiscountPercent > 0 ? (
                                   <>
                                     <tr className="bg-slate-800 text-slate-200 text-[9px] font-bold border-t border-slate-700">
-                                      <td colSpan={5} className="py-1 px-2 text-right uppercase tracking-wider text-slate-300">
+                                      <td colSpan={6} className="py-1 px-2 text-right uppercase tracking-wider text-slate-300">
                                         Subtotal Bruto:
                                       </td>
                                       <td className="py-1 px-1 text-center font-mono text-slate-200">
@@ -16411,7 +16444,7 @@ export default function App() {
                                       </td>
                                     </tr>
                                     <tr className="bg-slate-800 text-emerald-300 text-[9px] font-bold">
-                                      <td colSpan={5} className="py-1 px-2 text-right uppercase tracking-wider">
+                                      <td colSpan={6} className="py-1 px-2 text-right uppercase tracking-wider">
                                         Desconto ({orderDiscountPercent}%):
                                       </td>
                                       <td className="py-1 px-1"></td>
@@ -16423,7 +16456,7 @@ export default function App() {
                                       </td>
                                     </tr>
                                     <tr className={`bg-slate-900 text-white font-extrabold ${isFull ? "text-xs" : "text-[9.5px]"}`}>
-                                      <td colSpan={5} className="py-2 px-2 text-right uppercase tracking-wider text-[8px] sm:text-[10px] text-gray-300">
+                                      <td colSpan={6} className="py-2 px-2 text-right uppercase tracking-wider text-[8px] sm:text-[10px] text-gray-300">
                                         Total Final com Desconto:
                                       </td>
                                       <td className="py-2 px-1 text-center font-mono text-emerald-400 font-black">
@@ -16444,7 +16477,7 @@ export default function App() {
                                     }`}
                                   >
                                     <td
-                                      colSpan={5}
+                                      colSpan={6}
                                       className="py-2 px-2 text-right uppercase tracking-wider text-[8px] sm:text-[10px] text-gray-300"
                                     >
                                       Total do Pedido:

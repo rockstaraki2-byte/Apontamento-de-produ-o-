@@ -98,6 +98,11 @@ export function LotesScreen({
 
   // Pagination for batch list: show 10 batches by default
   const [visibleCount, setVisibleCount] = useState(10);
+  const printableCompanyInfo = resolveCompanyInfo(
+    db.activeTenant,
+    db.systemSettings?.[0],
+    db.tenants,
+  );
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -1740,10 +1745,10 @@ export function LotesScreen({
                   {/* Internal A4 elements mimicking real printed layout */}
                   <div className="border-b-2 border-slate-200 pb-4 mb-5 flex justify-between items-start">
                     <div className="flex items-center gap-3">
-                      <ReportHeaderLogo logoUrl={db.activeTenant?.logoUrl} className="w-10 h-10 object-contain" alt="Logo Império" />
+                      <ReportHeaderLogo logoUrl={printableCompanyInfo.logoUrl} className="w-10 h-10 object-contain" alt="Logo da empresa" />
                       <div>
                         <span className="text-[9px] font-black text-emerald-650 uppercase tracking-widest block mb-0.5">
-                          {db.activeTenant?.name || "SUA EMPRESA"}
+                          {printableCompanyInfo.companyName || "SUA EMPRESA"}
                         </span>
                         <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
                           {previewBatch.name}

@@ -4,6 +4,7 @@ import { jsPDF } from "jspdf";
 import { ProductionBatch, Order, User } from "./types";
 import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
 import { findCustomerForOrder } from "./searchUtils";
+import { resolveCompanyInfo } from "./utils/companyUtils";
 
 interface BatchPrintSheetProps {
   batch: ProductionBatch;
@@ -88,8 +89,13 @@ const formatDateShort = (dateString?: string) => {
 export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>((props, ref) => {
   const { batch, orderIds = [], customDeadline, customNotes, db, currentUser } = props;
 
-  const logoUrl = (db as any).activeTenant?.logoUrl || "/icon.png";
-  const companyName = (db as any).activeTenant?.name || "SUA EMPRESA";
+  const companyInfo = resolveCompanyInfo(
+    (db as any).activeTenant,
+    (db as any).systemSettings?.[0],
+    (db as any).tenants,
+  );
+  const logoUrl = companyInfo.logoUrl || "/icon.png";
+  const companyName = companyInfo.companyName || "SUA EMPRESA";
 
   // Filter orders
   const batchOrderIds = Array.isArray(batch?.orderIds) ? batch.orderIds : [];
