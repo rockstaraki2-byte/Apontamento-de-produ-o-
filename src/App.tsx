@@ -3069,13 +3069,15 @@ function PedidosScreen({
   const normalizedUserRole = currentUser.role.trim().toUpperCase();
   const isImperioTenantContext =
     db.activeTenantId === "imperio" && currentUser.tenantId === "imperio";
-  const canUseImperioOrderEditor =
-    isImperioTenantContext &&
+  const isAuthorizedImperioOrderEditor =
     (normalizedUserRole === "PCP" ||
       normalizedUserId === "pcp" ||
       normalizedUserId === "pcp.imperio" ||
       normalizedUserId === "gerencia" ||
       normalizedUserId === "gerencia.imperio");
+  const canUseOrderEditor = isImperioTenantContext
+    ? isAuthorizedImperioOrderEditor
+    : currentUser.role !== "LEITURA";
 
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
@@ -5794,7 +5796,7 @@ function PedidosScreen({
   };
 
   const handleOpenOrderGroupEditModal = (orderCode: string) => {
-    if (!canUseImperioOrderEditor) {
+    if (!canUseOrderEditor) {
       alert("Acesso negado: a edição completa de pedidos está disponível apenas para PCP e Gerência da Império.");
       return;
     }
@@ -10543,7 +10545,7 @@ function PedidosScreen({
                               >
                                 <Printer size={11} /> PDF Meia Folha
                               </button>
-                              {canUseImperioOrderEditor && (
+                              {canUseOrderEditor && (
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -10766,7 +10768,7 @@ function PedidosScreen({
                               </button>
                             </>
                           )}
-                          {canUseImperioOrderEditor && (
+                          {canUseOrderEditor && (
                             <button
                               type="button"
                               onClick={() => handleOpenOrderGroupEditModal(selectedOrderCode)}
