@@ -118,6 +118,17 @@ export function StatusScreen({
   const isRepresentative =
     currentUser?.role === "REPRESENTANTE" ||
     String(currentUser?.role).toUpperCase() === "REPRESENTANTE";
+  const normalizedUserId = currentUser.id.trim().toLowerCase();
+  const normalizedUserRole = currentUser.role.trim().toUpperCase();
+  const isImperioTenantContext =
+    db.activeTenantId === "imperio" && currentUser.tenantId === "imperio";
+  const canUseImperioOrderEditor =
+    isImperioTenantContext &&
+    (normalizedUserRole === "PCP" ||
+      normalizedUserId === "pcp" ||
+      normalizedUserId === "pcp.imperio" ||
+      normalizedUserId === "gerencia" ||
+      normalizedUserId === "gerencia.imperio");
   const [selectedBatchToLink, setSelectedBatchToLink] = useState<string>("");
   const [newBatchNameInput, setNewBatchNameInput] = useState<string>("");
 
@@ -282,6 +293,7 @@ export function StatusScreen({
   };
 
   const canEditGroup = (ordersInGroup: Order[]) => {
+    if (canUseImperioOrderEditor) return true;
     if (currentUser.role === "LEITURA") return false;
     if (
       currentUser.id === "raul" ||

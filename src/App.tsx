@@ -3065,6 +3065,18 @@ function PedidosScreen({
   db: ReturnType<typeof useDatabase>;
   currentUser: User;
 }) {
+  const normalizedUserId = currentUser.id.trim().toLowerCase();
+  const normalizedUserRole = currentUser.role.trim().toUpperCase();
+  const isImperioTenantContext =
+    db.activeTenantId === "imperio" && currentUser.tenantId === "imperio";
+  const canUseImperioOrderEditor =
+    isImperioTenantContext &&
+    (normalizedUserRole === "PCP" ||
+      normalizedUserId === "pcp" ||
+      normalizedUserId === "pcp.imperio" ||
+      normalizedUserId === "gerencia" ||
+      normalizedUserId === "gerencia.imperio");
+
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
 
@@ -5782,6 +5794,10 @@ function PedidosScreen({
   };
 
   const handleOpenOrderGroupEditModal = (orderCode: string) => {
+    if (!canUseImperioOrderEditor) {
+      alert("Acesso negado: a edição completa de pedidos está disponível apenas para PCP e Gerência da Império.");
+      return;
+    }
     const group = db.orders.filter((o) => o.orderCode === orderCode);
     if (group.length === 0) return;
     const first = group[0];
@@ -10527,17 +10543,19 @@ function PedidosScreen({
                               >
                                 <Printer size={11} /> PDF Meia Folha
                               </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenOrderGroupEditModal(code);
-                                }}
-                                className="p-1 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] rounded-lg border border-indigo-200 transition flex items-center gap-1 cursor-pointer"
-                                title="Editar dados do pedido (número, cliente, data, status)"
-                              >
-                                <Edit3 size={11} /> Editar
-                              </button>
+                              {canUseImperioOrderEditor && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenOrderGroupEditModal(code);
+                                  }}
+                                  className="p-1 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] rounded-lg border border-indigo-200 transition flex items-center gap-1 cursor-pointer"
+                                  title="Editar dados do pedido (número, cliente, data, status)"
+                                >
+                                  <Edit3 size={11} /> Editar
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -10748,14 +10766,16 @@ function PedidosScreen({
                               </button>
                             </>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenOrderGroupEditModal(selectedOrderCode)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl shadow-xs hover:shadow-sm transition-all flex items-center gap-1 leading-none cursor-pointer"
-                            title="Editar Pedido (Número de Acompanhamento, Cliente, Data, Status)"
-                          >
-                            <Edit3 size={13} /> Editar Pedido
-                          </button>
+                          {canUseImperioOrderEditor && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenOrderGroupEditModal(selectedOrderCode)}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl shadow-xs hover:shadow-sm transition-all flex items-center gap-1 leading-none cursor-pointer"
+                              title="Editar Pedido (Número de Acompanhamento, Cliente, Data, Status)"
+                            >
+                              <Edit3 size={13} /> Editar Pedido
+                            </button>
+                          )}
                         </>
                       );
                     })()}
