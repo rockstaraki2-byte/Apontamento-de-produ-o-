@@ -14520,9 +14520,10 @@ export default function App() {
   };
 
   useEffect(() => {
+    const displayModeQuery = window.matchMedia("(display-mode: standalone)");
     const checkStandalone = () => {
       const isStandaloneMode =
-        window.matchMedia("(display-mode: standalone)").matches ||
+        displayModeQuery.matches ||
         (window.navigator as any).standalone ||
         document.referrer.includes("android-app://");
       setIsStandalone(!!isStandaloneMode);
@@ -14539,12 +14540,22 @@ export default function App() {
       setDeferredPrompt(e);
     };
 
+    const handleAppInstalled = () => {
+      setDeferredPrompt(null);
+      setIsStandalone(true);
+      setShowPWAModal(false);
+    };
+
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+    displayModeQuery.addEventListener?.("change", checkStandalone);
     return () => {
       window.removeEventListener(
         "beforeinstallprompt",
         handleBeforeInstallPrompt,
       );
+      window.removeEventListener("appinstalled", handleAppInstalled);
+      displayModeQuery.removeEventListener?.("change", checkStandalone);
     };
   }, []);
 
