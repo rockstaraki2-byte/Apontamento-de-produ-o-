@@ -13,7 +13,7 @@ interface BatchPrintSheetProps {
   customNotes?: string;
   db: {
     orders: Order[];
-    items: { id: number; name: string }[];
+    items: { id: number; name: string; imageUrl?: string }[];
     customers?: any[];
   };
   currentUser: User;
@@ -223,6 +223,7 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
                   <tr className="bg-slate-100 text-slate-600 font-extrabold uppercase text-[9px] tracking-wider border-b border-slate-350">
                     <th className="py-2.5 px-3">Pedido</th>
                     <th className="py-2.5 px-3">Cliente</th>
+                    <th className="py-2.5 px-1.5 text-center" style={{ width: "58px" }}>Foto</th>
                     <th className="py-2.5 px-3">Produto</th>
                     <th className="py-2.5 px-3">Cor</th>
                     <th className="py-2.5 px-2 text-center">Qtd.</th>
@@ -252,6 +253,20 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
                             Prazo: {formatDateShort(o.deliveryDate)}
                           </div>
                         </td>
+                        <td className="py-2 px-1.5 text-center align-middle">
+                          {item?.imageUrl ? (
+                            <img
+                              src={item.imageUrl}
+                              alt={`Foto de ${item.name}`}
+                              crossOrigin="anonymous"
+                              className="w-12 h-12 object-contain mx-auto rounded border border-slate-200 bg-white p-0.5"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 mx-auto rounded border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-[8px] font-bold text-slate-400 uppercase">
+                              Sem foto
+                            </div>
+                          )}
+                        </td>
                         <td className="py-3 px-3">
                           <div className="font-extrabold text-slate-900">
                             {item?.name || "Desconhecido"}
@@ -277,7 +292,7 @@ export const BatchPrintSheet = forwardRef<HTMLDivElement, BatchPrintSheetProps>(
 
                   {pageOrders.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-slate-400 uppercase font-black tracking-wider text-[10px]">
+                      <td colSpan={7} className="py-12 text-center text-slate-400 uppercase font-black tracking-wider text-[10px]">
                         Nenhum pedido nesta página.
                       </td>
                     </tr>
