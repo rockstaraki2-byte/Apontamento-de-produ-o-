@@ -53,6 +53,10 @@ export interface NestTask {
   isActive: boolean;
   createdAt: number;
   completedAt?: number;
+  batchId?: number | null;
+  coilPlanId?: number | null;
+  laserQuoteId?: string | null;
+  tenantId?: string;
 }
 export type OrderStatus =
   | "AGUARDANDO_APROVACAO"
@@ -228,6 +232,7 @@ export interface Item {
   imageUrl?: string;
   standardCycles?: Record<number, number>; // sectorId -> time in minutes
   fluxos?: string[]; // Vínculo com N fluxos de produção
+  requiresLaserCut?: boolean; // Produto que precisa passar pelo setor de corte a laser
 }
 
 export interface Employee {

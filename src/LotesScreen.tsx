@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useCallback } from "react";
 import { useDatabase } from "./useDatabase";
 import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
 import {
@@ -61,6 +61,7 @@ export function LotesScreen({
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "PENDING" | "IN_PRODUCTION" | "COMPLETED">("ALL");
+  const [laserProductsOnly, setLaserProductsOnly] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [previewBatch, setPreviewBatch] = useState<ProductionBatch | null>(null);
   const [pdfItems, setPdfItems] = useState<number[]>([]);
@@ -380,6 +381,24 @@ export function LotesScreen({
     return assigned.length > 0 ? assigned : baseList;
   }, [db.productionBatches, currentUser]);
 
+  const laserOrderIds = useMemo(() => {
+    const laserItemIds = new Set(
+      (db.items || []).filter((item) => item?.requiresLaserCut).map((item) => item.id),
+    );
+    return new Set(
+      (db.orders || [])
+        .filter((order) => order && laserItemIds.has(order.itemId))
+        .map((order) => order.id),
+    );
+  }, [db.items, db.orders]);
+
+  const getVisibleBatchOrderIds = useCallback((batch: ProductionBatch | null) => {
+    const orderIds = Array.isArray(batch?.orderIds) ? batch.orderIds : [];
+    return laserProductsOnly
+      ? orderIds.filter((orderId) => laserOrderIds.has(orderId))
+      : orderIds;
+  }, [laserProductsOnly, laserOrderIds]);
+
   // Apply search term and status filters
   const filteredBatches = useMemo(() => {
     let result = Array.isArray(batches) ? batches : [];
@@ -392,6 +411,10 @@ export function LotesScreen({
         if (statusFilter === "COMPLETED") return b.status === "CONCLUIDO";
         return true;
       });
+    }
+
+    if (laserProductsOnly) {
+      result = result.filter((batch) => getVisibleBatchOrderIds(batch).length > 0);
     }
 
     if (searchTerm.trim() !== "") {
@@ -443,7 +466,7 @@ export function LotesScreen({
       const timeB = typeof b.createdAt === "number" ? b.createdAt : (new Date(b.createdAt || 0).getTime() || 0);
       return timeB - timeA; // Within same group, show newest first
     });
-  }, [batches, searchTerm, statusFilter, db.orders, db.items, dateStart, dateEnd]);
+  }, [batches, searchTerm, statusFilter, db.orders, db.items, dateStart, dateEnd, laserProductsOnly, getVisibleBatchOrderIds]);
 
   const paginatedBatches = useMemo(() => {
     return (filteredBatches || []).slice(0, visibleCount);
@@ -457,10 +480,11 @@ export function LotesScreen({
 
     (batches || []).forEach((b) => {
       if (!b) return;
-      const orderCount = Array.isArray(b.orderIds) ? b.orderIds.length : 0;
+      const visibleOrderIds = getVisibleBatchOrderIds(b);
+      const orderCount = visibleOrderIds.length;
       totalItems += orderCount;
-      checkedItems += Array.isArray(b.checkedOrderIds) ? b.checkedOrderIds.length : 0;
-      liberatedItems += Array.isArray(b.liberatedOrderIds) ? b.liberatedOrderIds.length : 0;
+      checkedItems += Array.isArray(b.checkedOrderIds) ? b.checkedOrderIds.filter((id) => visibleOrderIds.includes(id)).length : 0;
+      liberatedItems += Array.isArray(b.liberatedOrderIds) ? b.liberatedOrderIds.filter((id) => visibleOrderIds.includes(id)).length : 0;
     });
 
     return {
@@ -470,7 +494,7 @@ export function LotesScreen({
       checkedItems,
       totalItems
     };
-  }, [batches]);
+  }, [batches, getVisibleBatchOrderIds]);
 
   const handleToggleCheck = async (batch: ProductionBatch, orderId: number) => {
     const checked = batch.checkedOrderIds || [];
@@ -540,9 +564,9 @@ export function LotesScreen({
     ]);
   };
 
-  const handleExportBatchExcel = (batch: ProductionBatch) => {
+  const handleExportBatchExcel = (batch: ProductionBatch, selectedOrderIds?: number[]) => {
     // Collect orders
-    const orders = batch.orderIds
+    const orders = (selectedOrderIds || getVisibleBatchOrderIds(batch))
       .map((oid) => db.orders.find((x) => x.id === oid))
       .filter(Boolean) as Order[];
 
@@ -834,7 +858,7 @@ export function LotesScreen({
     let ordersToExport: { batch: ProductionBatch; order: Order; item: any; produced: number; missing: number; inProductionString: string; sectorName: string }[] = [];
 
     filteredBatches.forEach(batch => {
-      const batchOrders = batch.orderIds
+      const batchOrders = getVisibleBatchOrderIds(batch)
         .map(oid => db.orders.find(o => o.id === oid))
         .filter(Boolean) as Order[];
       
@@ -1055,6 +1079,21 @@ export function LotesScreen({
                   />
                 </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setLaserProductsOnly((current) => !current)}
+                aria-pressed={laserProductsOnly}
+                className={`h-9 px-3 rounded-lg border text-xs font-extrabold flex items-center gap-1.5 whitespace-nowrap transition ${
+                  laserProductsOnly
+                    ? "bg-cyan-600 border-cyan-600 text-white shadow-xs"
+                    : "bg-cyan-50 border-cyan-200 text-cyan-900 hover:bg-cyan-100"
+                }`}
+                title="Exibir e imprimir apenas produtos marcados como Corte a laser"
+              >
+                <Sparkles size={14} />
+                Corte a laser
+              </button>
             </div>
 
             <div className="flex gap-2 w-full xl:w-auto overflow-x-auto select-none py-0.5 scrollbar-none shrink-0">
@@ -1109,10 +1148,10 @@ export function LotesScreen({
           ) : (
             paginatedBatches.map((b) => {
               if (!b) return null;
-              const batchOrderIds = Array.isArray(b.orderIds) ? b.orderIds : [];
+              const batchOrderIds = getVisibleBatchOrderIds(b);
               const total = batchOrderIds.length;
-              const checkCount = Array.isArray(b.checkedOrderIds) ? b.checkedOrderIds.length : 0;
-              const libCount = Array.isArray(b.liberatedOrderIds) ? b.liberatedOrderIds.length : 0;
+              const checkCount = Array.isArray(b.checkedOrderIds) ? b.checkedOrderIds.filter((id) => batchOrderIds.includes(id)).length : 0;
+              const libCount = Array.isArray(b.liberatedOrderIds) ? b.liberatedOrderIds.filter((id) => batchOrderIds.includes(id)).length : 0;
               const isFullyLiberated = total > 0 && libCount === total;
 
               let formattedCreatedAt = "-";
@@ -1206,7 +1245,7 @@ export function LotesScreen({
 
                       {/* Botão de Exportação para Excel */}
                       <button
-                        onClick={() => handleExportBatchExcel(b)}
+                        onClick={() => handleExportBatchExcel(b, batchOrderIds)}
                         className="bg-emerald-50 border border-emerald-200/80 text-emerald-800 hover:bg-emerald-100 text-[10px] font-black px-3 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer transition active:scale-95 uppercase tracking-wide"
                       >
                         <FileSpreadsheet size={13} className="text-emerald-600" />
@@ -1685,7 +1724,7 @@ export function LotesScreen({
                     </span>
                     <button
                       onClick={() => {
-                        const batchOrderIds = Array.isArray(previewBatch?.orderIds) ? previewBatch.orderIds : [];
+                        const batchOrderIds = getVisibleBatchOrderIds(previewBatch);
                         if (pdfItems.length === batchOrderIds.length) {
                           setPdfItems([]);
                         } else {
@@ -1694,12 +1733,12 @@ export function LotesScreen({
                       }}
                       className="text-[9px] text-emerald-400 font-black hover:underline uppercase cursor-pointer bg-transparent border-0"
                     >
-                      {pdfItems.length === (Array.isArray(previewBatch?.orderIds) ? previewBatch.orderIds.length : 0) ? "Nenhum" : "Todos"}
+                      {pdfItems.length === getVisibleBatchOrderIds(previewBatch).length ? "Nenhum" : "Todos"}
                     </button>
                   </div>
 
                   <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 bg-slate-900/50 p-2 rounded-lg border border-slate-900">
-                    {(Array.isArray(previewBatch?.orderIds) ? previewBatch.orderIds : []).map((oid) => {
+                    {getVisibleBatchOrderIds(previewBatch).map((oid) => {
                       const o = (db.orders || []).find((x) => x && x.id === oid);
                       if (!o) return null;
                       const it = (db.items || []).find((i) => i && i.id === o.itemId);
@@ -1822,7 +1861,7 @@ export function LotesScreen({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-150">
-                        {(Array.isArray(previewBatch?.orderIds) ? previewBatch.orderIds : [])
+                        {getVisibleBatchOrderIds(previewBatch)
                           .filter((oid) => pdfItems.includes(oid))
                           .map((oid) => {
                             const o = (db.orders || []).find((x) => x && x.id === oid);
@@ -1882,7 +1921,7 @@ export function LotesScreen({
                       </span>
                       <strong className="text-slate-900 text-sm font-black">
                         Total Geral:{" "}
-                        {(Array.isArray(previewBatch?.orderIds) ? previewBatch.orderIds : [])
+                        {getVisibleBatchOrderIds(previewBatch)
                           .filter((oid) => pdfItems.includes(oid))
                           .map((oid) => (db.orders || []).find((x) => x && x.id === oid))
                           .filter(Boolean)
@@ -1932,7 +1971,7 @@ export function LotesScreen({
                 <button
                   disabled={isGeneratingPdf}
                   onClick={async () => {
-                    const ordersToPrint = (Array.isArray(previewBatch?.orderIds) ? previewBatch.orderIds : [])
+                    const ordersToPrint = getVisibleBatchOrderIds(previewBatch)
                       .filter((oid) => pdfItems.includes(oid))
                       .map((oid) => (db.orders || []).find((x) => x && x.id === oid))
                       .filter(Boolean) as Order[];
@@ -2024,7 +2063,7 @@ export function LotesScreen({
 
                 <button
                   disabled={isGeneratingPdf || isDirectPrinting}
-                  onClick={() => handleExportBatchExcel(previewBatch)}
+                  onClick={() => handleExportBatchExcel(previewBatch, pdfItems)}
                   className="px-5 py-2.5 text-xs font-black text-white rounded-xl cursor-pointer flex items-center gap-1.5 transition active:scale-95 bg-teal-600 hover:bg-teal-500 shadow-lg shadow-teal-700/20"
                 >
                   <FileSpreadsheet size={14} />
@@ -2139,12 +2178,12 @@ export function LotesScreen({
                           Peças / Pedidos na Ficha
                         </span>
                         <span className="text-[11px] text-indigo-600 font-bold">
-                          {acompSelectedOrderIds.length} de {(Array.isArray(previewAcompBatch?.orderIds) ? previewAcompBatch.orderIds.length : 0)} selecionados
+                          {acompSelectedOrderIds.length} de {getVisibleBatchOrderIds(previewAcompBatch).length} selecionados
                         </span>
                       </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => setAcompSelectedOrderIds(Array.isArray(previewAcompBatch?.orderIds) ? previewAcompBatch.orderIds : [])}
+                          onClick={() => setAcompSelectedOrderIds(getVisibleBatchOrderIds(previewAcompBatch))}
                           className="text-[10px] text-indigo-600 font-extrabold hover:underline uppercase cursor-pointer bg-indigo-50 px-2 py-1 rounded"
                         >
                           Todos
@@ -2159,7 +2198,7 @@ export function LotesScreen({
                     </div>
 
                     <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                      {(Array.isArray(previewAcompBatch?.orderIds) ? previewAcompBatch.orderIds : []).map((oid) => {
+                      {getVisibleBatchOrderIds(previewAcompBatch).map((oid) => {
                         const o = (db.orders || []).find((x) => x && x.id === oid);
                         if (!o) return null;
                         const it = (db.items || []).find((i) => i && i.id === o.itemId);
@@ -2207,7 +2246,7 @@ export function LotesScreen({
                         );
                       })}
 
-                      {(!Array.isArray(previewAcompBatch?.orderIds) || previewAcompBatch.orderIds.length === 0) && (
+                      {getVisibleBatchOrderIds(previewAcompBatch).length === 0 && (
                         <div className="text-center p-4 text-slate-400 text-xs italic">
                           Nenhum pedido encontrado neste lote.
                         </div>
@@ -2443,12 +2482,12 @@ export function LotesScreen({
                           Peças no Lote
                         </span>
                         <span className="text-[11px] text-amber-700 font-bold">
-                          {etiquetasSelectedOrderIds.length} de {(Array.isArray(previewEtiquetasBatch?.orderIds) ? previewEtiquetasBatch.orderIds.length : 0)} selecionados
+                          {etiquetasSelectedOrderIds.length} de {getVisibleBatchOrderIds(previewEtiquetasBatch).length} selecionados
                         </span>
                       </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => setEtiquetasSelectedOrderIds(Array.isArray(previewEtiquetasBatch?.orderIds) ? previewEtiquetasBatch.orderIds : [])}
+                          onClick={() => setEtiquetasSelectedOrderIds(getVisibleBatchOrderIds(previewEtiquetasBatch))}
                           className="text-[10px] text-amber-700 font-extrabold hover:underline uppercase cursor-pointer bg-amber-50 px-2 py-1 rounded"
                         >
                           Todos
@@ -2475,7 +2514,7 @@ export function LotesScreen({
                     </div>
 
                     <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
-                      {(Array.isArray(previewEtiquetasBatch?.orderIds) ? previewEtiquetasBatch.orderIds : [])
+                      {getVisibleBatchOrderIds(previewEtiquetasBatch)
                         .filter((oid) => {
                           if (!etiquetasSearchTerm.trim()) return true;
                           const o = (db.orders || []).find((x) => x && x.id === oid);
@@ -2537,7 +2576,7 @@ export function LotesScreen({
                           );
                         })}
 
-                      {(!Array.isArray(previewEtiquetasBatch?.orderIds) || previewEtiquetasBatch.orderIds.length === 0) && (
+                      {getVisibleBatchOrderIds(previewEtiquetasBatch).length === 0 && (
                         <div className="text-center p-4 text-slate-400 text-xs italic">
                           Nenhum pedido encontrado neste lote.
                         </div>

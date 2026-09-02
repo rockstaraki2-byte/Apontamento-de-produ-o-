@@ -11,8 +11,20 @@ import {
   Route,
   Link,
   useNavigate,
+  useLocation,
   Navigate,
 } from "react-router-dom";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 import {
   Box,
   Home,
@@ -76,6 +88,7 @@ import { usePushNotifications } from "./usePushNotifications";
 import { ShieldAlert } from "lucide-react";
 import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
 import { normalizeString, findCustomerForOrder, getCustomerLocationLabel } from "./searchUtils";
+import { RealTimeFactoryMonitoring } from "./components/RealTimeFactoryMonitoring";
 
 // Custom virtualization and metrics components
 import { useVirtualScroll } from "./hooks/useVirtualScroll";
@@ -135,21 +148,9 @@ const LogisticaScreen = lazyNamed(() => import("./LogisticaScreen"), "LogisticaS
 const OrcamentoLaserScreen = lazyNamed(() => import("./OrcamentoLaserScreen"), "OrcamentoLaserScreen");
 const MontagemRetratilScreen = lazyNamed(() => import("./MontagemRetratilScreen"), "MontagemRetratilScreen");
 const OrderEditModal = lazyNamed(() => import("./components/OrderEditModal"), "OrderEditModal");
-const MonitoramentoMetricsSummary = lazyNamed(() => import("./components/MonitoramentoMetricsSummary"), "MonitoramentoMetricsSummary");
-const RealTimeFactoryMonitoring = lazyNamed(() => import("./components/RealTimeFactoryMonitoring"), "RealTimeFactoryMonitoring");
 const CatalogImportModal = lazyNamed(() => import("./CatalogImportModal"), "CatalogImportModal");
 const EvolucaoEmbalagemTab = lazyNamed(() => import("./EvolucaoEmbalagemTab"), "EvolucaoEmbalagemTab");
 const GestaoPessoasTab = lazyNamed(() => import("./components/GestaoPessoasTab"), "GestaoPessoasTab");
-const BarChart = lazyNamed(() => import("recharts"), "BarChart");
-const Bar = lazyNamed(() => import("recharts"), "Bar");
-const XAxis = lazyNamed(() => import("recharts"), "XAxis");
-const YAxis = lazyNamed(() => import("recharts"), "YAxis");
-const CartesianGrid = lazyNamed(() => import("recharts"), "CartesianGrid");
-const Tooltip = lazyNamed(() => import("recharts"), "Tooltip");
-const Legend = lazyNamed(() => import("recharts"), "Legend");
-const ResponsiveContainer = lazyNamed(() => import("recharts"), "ResponsiveContainer");
-const Cell = lazyNamed(() => import("recharts"), "Cell");
-
 class ScreenErrorBoundary extends React.Component<
   { children: React.ReactNode; screenName?: string },
   { hasError: boolean; error: Error | null }
@@ -187,6 +188,16 @@ class ScreenErrorBoundary extends React.Component<
 
     return (this as any).props.children;
   }
+}
+
+function RouteErrorBoundary({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+
+  return (
+    <ScreenErrorBoundary key={location.pathname} screenName="Aplicação">
+      {children}
+    </ScreenErrorBoundary>
+  );
 }
 
 function ScreenLoadingFallback() {
@@ -1439,6 +1450,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [imageUrl, setImageUrl] = useState<string>("");
   const [standardCycles, setStandardCycles] = useState<Record<number, number>>({});
   const [itemFluxos, setItemFluxos] = useState<string[]>([]);
+  const [requiresLaserCut, setRequiresLaserCut] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageUploadProgress, setImageUploadProgress] = useState(0);
   const [fullSizeImage, setFullSizeImage] = useState<string | null>(null);
@@ -1947,6 +1959,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           imageUrl: imageUrl || existing.imageUrl || "",
           standardCycles,
           fluxos: itemFluxos,
+          requiresLaserCut: itemType === "PRODUTO" && requiresLaserCut,
         });
       }
       setEditingId(null);
@@ -1965,6 +1978,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
         imageUrl: imageUrl || "",
         standardCycles,
         fluxos: itemFluxos,
+        requiresLaserCut: itemType === "PRODUTO" && requiresLaserCut,
       });
     }
     setCode("");
@@ -1976,6 +1990,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     setImageUrl("");
     setStandardCycles({});
     setItemFluxos([]);
+    setRequiresLaserCut(false);
   };
 
   const handleEdit = (it: (typeof db.items)[0]) => {
@@ -1991,6 +2006,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     setImageUrl(it.imageUrl || "");
     setStandardCycles(it.standardCycles || {});
     setItemFluxos(it.fluxos || []);
+    setRequiresLaserCut(Boolean(it.requiresLaserCut));
     setActiveTab(
       it.type === "PECA" ? "PECAS" : it.type === "EPI" ? "EPIS" : "PRODUTOS",
     );
@@ -2754,6 +2770,28 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
               })()}
             </div>
 
+            {/* Encaminhamento ao corte a laser */}
+            {activeTab === "PRODUTOS" && (
+              <label className={`mt-2 flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${
+                requiresLaserCut
+                  ? "border-cyan-300 bg-cyan-50 text-cyan-950"
+                  : "border-gray-200 bg-gray-50 text-gray-700"
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={requiresLaserCut}
+                  onChange={(e) => setRequiresLaserCut(e.target.checked)}
+                  className="h-4 w-4 accent-cyan-600"
+                />
+                <span>
+                  <span className="block text-xs font-extrabold">Corte a laser</span>
+                  <span className="block text-[10px] font-medium opacity-75">
+                    Marque quando este produto precisar passar pelo setor de corte a laser.
+                  </span>
+                </span>
+              </label>
+            )}
+
             {/* Fluxos do Produto */}
             <div className="mt-2 bg-indigo-50/60 p-3 rounded border border-indigo-100 flex flex-col gap-2">
               <label className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
@@ -2842,6 +2880,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                     setBasePrice("");
                     setProductionPoints("");
                     setImageUrl("");
+                    setRequiresLaserCut(false);
                   }}
                   className="bg-gray-200 text-gray-700 font-bold p-2 rounded hover:bg-gray-300 transition text-sm"
                 >
@@ -2889,6 +2928,11 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                           </span>
                         ))}
                       </div>
+                    )}
+                    {it.requiresLaserCut && (
+                      <span className="text-[9px] font-extrabold bg-cyan-100 text-cyan-900 border border-cyan-200 px-1.5 py-0.5 rounded">
+                        CORTE A LASER
+                      </span>
                     )}
                   </div>
                   <span className="text-gray-600 text-sm">{it.name}</span>
@@ -15182,7 +15226,7 @@ export default function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-hidden w-full max-w-7xl mx-auto flex flex-col min-h-0 bg-slate-50 relative">
-          <ScreenErrorBoundary screenName="Aplicação">
+          <RouteErrorBoundary>
             <React.Suspense fallback={<ScreenLoadingFallback />}>
               <Routes>
             <Route
@@ -15489,7 +15533,7 @@ export default function App() {
             )}
               </Routes>
             </React.Suspense>
-          </ScreenErrorBoundary>
+          </RouteErrorBoundary>
         </main>
 
         {/* Bottom Navigation */}

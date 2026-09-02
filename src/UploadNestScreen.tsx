@@ -42,7 +42,7 @@ export function UploadNestScreen({
   const [isUploadBoxOpen, setIsUploadBoxOpen] = useState(false);
 
   // States to link a nest or specific task to a production batch / PCP plan
-  const [linkingTask, setLinkingTask] = useState<any | null>(null);
+  const [linkingTask, setLinkingTask] = useState<NestTask | null>(null);
   const [linkingNestName, setLinkingNestName] = useState<string | null>(null);
 
   const [formPartName, setFormPartName] = useState("");
@@ -1104,6 +1104,17 @@ export function UploadNestScreen({
                             }
                             return null;
                           })()}
+                          {(() => {
+                            const linkedQuote = items.find((t) => t.laserQuoteId);
+                            const quote = linkedQuote
+                              ? (db.laserQuotes || []).find((q) => q.id === linkedQuote.laserQuoteId)
+                              : undefined;
+                            return quote ? (
+                              <span className="bg-cyan-100 text-cyan-900 text-[9px] px-1.5 py-0.5 rounded-full font-extrabold border border-cyan-200">
+                                Orçamento: {quote.quoteCode}
+                              </span>
+                            ) : null;
+                          })()}
                         </h4>
                         <p className="text-xs text-indigo-700 mt-1">
                           {items.length} itens{" "}
@@ -1188,7 +1199,7 @@ export function UploadNestScreen({
                               }}
                               className="text-indigo-600 hover:text-indigo-800 font-semibold text-xs transition mr-3 inline-block cursor-pointer flex items-center gap-1"
                             >
-                              <Link size={12} /> Vincular Nest a Lote/PCP
+                              <Link size={12} /> Vincular Nest
                             </button>
                             <button
                               onClick={(e) => {
@@ -1291,6 +1302,14 @@ export function UploadNestScreen({
                                         </span>
                                       ) : null;
                                     })()}
+                                    {t.laserQuoteId && (() => {
+                                      const quote = (db.laserQuotes || []).find(q => q.id === t.laserQuoteId);
+                                      return quote ? (
+                                        <span className="bg-cyan-100 text-cyan-900 px-1.5 py-0.5 rounded text-[10px] font-bold border border-cyan-200">
+                                          Orçamento: {quote.quoteCode} · {quote.customerName}
+                                        </span>
+                                      ) : null;
+                                    })()}
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -1298,7 +1317,7 @@ export function UploadNestScreen({
                                       }}
                                       className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer flex items-center gap-0.5"
                                     >
-                                      <Link size={10} /> {t.batchId || t.coilPlanId ? "Alterar Vínculo" : "Vincular a Lote/PCP"}
+                                      <Link size={10} /> {t.batchId || t.coilPlanId || t.laserQuoteId ? "Alterar Vínculo" : "Vincular origem"}
                                     </button>
                                   </div>
                                 </div>
@@ -2070,14 +2089,14 @@ export function UploadNestScreen({
         </div>
       )}
 
-      {/* Linking Task or Nest to Batch / PCP Plan Modal */}
+      {/* Linking Task or Nest to Batch / PCP Plan / Laser Quote Modal */}
       {(linkingTask || linkingNestName) && (
         <div className="fixed inset-0 bg-black/60 z-[250] flex items-center justify-center p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 flex flex-col gap-4 animate-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 flex flex-col gap-4 animate-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-extrabold text-lg text-slate-900 flex items-center gap-2">
                 <Link size={20} className="text-indigo-600" />
-                Vincular a Lote / Plano PCP
+                Vincular origem do Nest
               </h3>
               <button
                 onClick={() => {
@@ -2094,11 +2113,11 @@ export function UploadNestScreen({
               <p className="text-xs text-slate-600 leading-relaxed">
                 {linkingTask ? (
                   <>
-                    Vincular a peça <strong className="text-indigo-900">{linkingTask.partName}</strong> (Tamanho: {linkingTask.size}) a um dos lotes ou planos disponíveis no sistema para acompanhar a produção.
+                    Vincular a peça <strong className="text-indigo-900">{linkingTask.partName}</strong> (Tamanho: {linkingTask.size}) a um lote, plano PCP e/ou orçamento de corte a laser.
                   </>
                 ) : (
                   <>
-                    Vincular todos os cortes do Nesting <strong className="text-indigo-900">{linkingNestName}</strong> a um lote de produção ou plano de PCP.
+                    Vincular todos os cortes do Nesting <strong className="text-indigo-900">{linkingNestName}</strong> a um lote, plano PCP e/ou orçamento de corte a laser.
                   </>
                 )}
               </p>
@@ -2120,6 +2139,30 @@ export function UploadNestScreen({
                     .map((b) => (
                       <option key={b.id} value={b.id}>
                         📦 Lote: {b.name} ({b.status})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="text-center font-extrabold text-[10px] text-slate-400 uppercase tracking-widest my-1">
+                E/OU
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">
+                  Selecione um Orçamento de Corte a Laser
+                </label>
+                <select
+                  className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50 text-slate-800 focus:outline-none focus:border-cyan-500 font-medium"
+                  defaultValue={linkingTask?.laserQuoteId || (linkingNestName ? (db.nestTasks.find(t => t.nestName === linkingNestName && t.laserQuoteId)?.laserQuoteId || "") : "")}
+                  id="select-laser-quote-link"
+                >
+                  <option value="">-- Nenhum Orçamento Selecionado --</option>
+                  {[...(db.laserQuotes || [])]
+                    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+                    .map((quote) => (
+                      <option key={quote.id} value={quote.id}>
+                        {quote.quoteCode} · {quote.customerName} ({quote.status.replaceAll("_", " ")})
                       </option>
                     ))}
                 </select>
@@ -2158,16 +2201,18 @@ export function UploadNestScreen({
                     if (linkingTask) {
                       db.updateNestTasks([{
                         ...linkingTask,
-                        batchId: undefined,
-                        coilPlanId: undefined
+                        batchId: null,
+                        coilPlanId: null,
+                        laserQuoteId: null
                       }]);
                     } else if (linkingNestName) {
                       const updated = (db.nestTasks || [])
                         .filter(t => t.nestName === linkingNestName)
                         .map(t => ({
                           ...t,
-                          batchId: undefined,
-                          coilPlanId: undefined
+                          batchId: null,
+                          coilPlanId: null,
+                          laserQuoteId: null
                         }));
                       db.updateNestTasks(updated);
                     }
@@ -2197,14 +2242,17 @@ export function UploadNestScreen({
                   onClick={() => {
                     const batchSelect = document.getElementById("select-batch-link") as HTMLSelectElement;
                     const planSelect = document.getElementById("select-plan-link") as HTMLSelectElement;
-                    const batchVal = batchSelect?.value ? parseInt(batchSelect.value, 10) : undefined;
-                    const planVal = planSelect?.value ? parseInt(planSelect.value, 10) : undefined;
+                    const quoteSelect = document.getElementById("select-laser-quote-link") as HTMLSelectElement;
+                    const batchVal = batchSelect?.value ? parseInt(batchSelect.value, 10) : null;
+                    const planVal = planSelect?.value ? parseInt(planSelect.value, 10) : null;
+                    const quoteVal = quoteSelect?.value || null;
 
                     if (linkingTask) {
                       db.updateNestTasks([{
                         ...linkingTask,
                         batchId: batchVal,
-                        coilPlanId: planVal
+                        coilPlanId: planVal,
+                        laserQuoteId: quoteVal
                       }]);
                     } else if (linkingNestName) {
                       const updated = (db.nestTasks || [])
@@ -2212,7 +2260,8 @@ export function UploadNestScreen({
                         .map(t => ({
                           ...t,
                           batchId: batchVal,
-                          coilPlanId: planVal
+                          coilPlanId: planVal,
+                          laserQuoteId: quoteVal
                         }));
                       db.updateNestTasks(updated);
                     }
