@@ -24,6 +24,7 @@ import type {
   AppNotification,
 } from "./types";
 import { ScreenLayout, ScrollContainer } from "./components/Layout";
+import { isApprovedPackagingSource, isImperioPackagingUser } from "./utils/imperioPackagingUtils";
 
 const getProductKey = (
   itemId: number,
@@ -50,6 +51,7 @@ export function EmbalagemScreen({
   currentUser,
   SVGQRCode,
 }: EmbalagemScreenProps) {
+  const isImperioCollector = isImperioPackagingUser(db.activeTenantId, currentUser);
   const [view, setView] = useState<
     "LIST_ACTIVE" | "NEW_PACK" | "FINISH_PACK" | "MANUAL_PRODUCTION"
   >("LIST_ACTIVE");
@@ -342,8 +344,10 @@ export function EmbalagemScreen({
     });
 
     // 2. Add approved production steps that are NOT already linked to an order in pendingOrders
-    const approvedSteps = steps.filter(
-      (s) => s.status === "aprovado" || (s as any).qualidadeAprovada === true
+    const approvedSteps = steps.filter((step) =>
+      isImperioCollector
+        ? isApprovedPackagingSource(step as any)
+        : step.status === "aprovado" || (step as any).qualidadeAprovada === true,
     );
 
     approvedSteps.forEach((step) => {
@@ -430,7 +434,7 @@ export function EmbalagemScreen({
     });
 
     return Array.from(groups.values());
-  }, [pendingOrders, db.productionSteps, db.logs, (db as any).productionLogs, db.items]);
+  }, [pendingOrders, db.productionSteps, db.logs, (db as any).productionLogs, db.items, isImperioCollector]);
 
   const startPackaging = (group: (typeof productGroups)[0]) => {
     setOperatorModalTarget(group);

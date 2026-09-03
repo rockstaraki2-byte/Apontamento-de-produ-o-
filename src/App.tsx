@@ -83,6 +83,7 @@ import type { User, OrderStatus, Role, Order, AppNotification } from "./types";
 import { calculateWorkingMillis } from "./timeUtils";
 import { ColorBadgeWithImage, getColorAttribute } from "./components/ColorBadgeWithImage";
 import { getItemUnit } from "./utils/unitUtils";
+import { isImperioPackagingUser } from "./utils/imperioPackagingUtils";
 
 import { LoteGeralWidget } from "./components/LoteGeralWidget";
 import { usePushNotifications } from "./usePushNotifications";
@@ -15153,6 +15154,7 @@ export default function App() {
   };
 
   const isScreenAllowed = (screenKey: string) => {
+    if (screenKey === "embalagem" && isImperioPackagingUser(db.activeTenantId, currentUser)) return true;
     if (currentUser?.id === "raul") return true;
     if (
       currentUser?.role === "ADMIN" ||
@@ -15846,11 +15848,11 @@ export default function App() {
           {isScreenAllowed("embalagem") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "EMBALAGEM") && 
-            (currentUser.id === "raul" || hasSector("embalagem")) && (
+            (currentUser.id === "raul" || hasSector("embalagem") || isImperioPackagingUser(db.activeTenantId, currentUser)) && (
             <NavLink
               to="/embalagem"
               icon={<Box size={24} />}
-              label="Embalagem"
+              label={isImperioPackagingUser(db.activeTenantId, currentUser) ? "Embalar" : "Embalagem"}
             />
           )}
 

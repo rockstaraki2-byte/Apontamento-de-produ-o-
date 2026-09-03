@@ -28,6 +28,7 @@ import { useDatabase } from "./useDatabase";
 import type { User, ProductionLog, Item } from "./types";
 import { normalizeString } from "./searchUtils";
 import { getQueue, removeFromQueue, processQueueItem } from "./syncQueue";
+import { isImperioPackagingUser } from "./utils/imperioPackagingUtils";
 
 interface ParsedSpreadsheetRow {
   dateStr: string;
@@ -1113,6 +1114,7 @@ export function HistoricoProducaoScreen({
   };
 
   const isPintura = currentUser.role === "PINTURA" || currentUser.role === "EMBALAGEM";
+  const isImperioCollector = isImperioPackagingUser(db.activeTenantId, currentUser);
 
   return (
     <div
@@ -1852,10 +1854,12 @@ export function HistoricoProducaoScreen({
         </div>
       )}
       <div
-        className={`bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden transition-all duration-300 ${isPintura ? "mb-3" : "mb-6"}`}
+        data-testid={isImperioCollector && !filtersCollapsed ? "collector-expanded-filters" : undefined}
+        style={isImperioCollector && !filtersCollapsed ? { maxHeight: "52dvh", overflowY: "auto", overscrollBehavior: "contain" } : undefined}
+        className={`bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden transition-all duration-300 ${isPintura ? "mb-3" : "mb-6"} ${isImperioCollector && !filtersCollapsed ? "shrink-0 scrollbar-thin" : ""}`}
       >
         <div
-          className={`w-full bg-slate-50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 transition-colors text-slate-700 border-b border-slate-200 ${isPintura ? "px-3 py-2" : "px-4 py-2.5"}`}
+          className={`w-full bg-slate-50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 transition-colors text-slate-700 border-b border-slate-200 ${isPintura ? "px-3 py-2" : "px-4 py-2.5"} ${isImperioCollector && !filtersCollapsed ? "sticky top-0 z-10" : ""}`}
         >
           <div className="flex flex-wrap items-center gap-2 text-left flex-1">
             <div className="flex items-center gap-1.5 text-indigo-700 font-black tracking-tight text-xs sm:text-sm">
