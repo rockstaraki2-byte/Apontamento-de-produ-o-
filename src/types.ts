@@ -892,7 +892,8 @@ export interface LaserQuote {
   extraCosts?: number;          // Custos adicionais fixos (mão de obra, frete, etc.) em R$ rateados nos unitários
   additionPercent?: number;     // Porcentagem adicional aplicada nos valores unitários (padrão 0%)
   notes?: string;
-  status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "APROVADO_COM_MATERIAL" | "APROVADO_SEM_MATERIAL" | "REJEITADO" | "CORTADO" | "FINALIZADO";
+  status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "APROVADO_COM_MATERIAL" | "APROVADO_SEM_MATERIAL" | "REJEITADO" | "CORTADO" | "FINALIZADO" | "CORTADO_COM_MATERIAL" | "CORTADO_SEM_MATERIAL";
+  approvalMaterialMode?: "COM_MATERIAL" | "SEM_MATERIAL" | null;
   tenantId?: string;
 }
 

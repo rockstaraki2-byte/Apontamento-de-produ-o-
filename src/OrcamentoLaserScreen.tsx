@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { getLaserQuoteDisplayStatus, getLaserQuoteFinishedStatus, getLaserQuoteMaterialMode, isFinishedLaserQuote, matchesLaserQuoteStatus } from "./utils/laserQuoteStatus";
 
 interface Props {
   db: ReturnType<typeof useDatabase>;
@@ -120,6 +121,7 @@ const generateQuoteCode = (num: number, clientName: string, dateStr?: string) =>
 };
 
 export function OrcamentoLaserScreen({ db, currentUser }: Props) {
+  const isImperio = db.activeTenantId === "imperio";
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("TODOS");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -135,7 +137,8 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     new Date().toISOString().split("T")[0]
   );
   const [validityDays, setValidityDays] = useState<number>(10);
-  const [quoteStatus, setQuoteStatus] = useState<"RASCUNHO" | "ENVIADO" | "APROVADO" | "APROVADO_COM_MATERIAL" | "APROVADO_SEM_MATERIAL" | "REJEITADO" | "CORTADO" | "FINALIZADO">("RASCUNHO");
+  const [quoteStatus, setQuoteStatus] = useState<LaserQuote["status"]>("RASCUNHO");
+  const [approvalMaterialMode, setApprovalMaterialMode] = useState<LaserQuote["approvalMaterialMode"]>(null);
   const [notes, setNotes] = useState("");
   const [additionPercent, setAdditionPercent] = useState<number>(0);
   const [extraCosts, setExtraCosts] = useState<number>(0);
@@ -146,8 +149,12 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
   const [selectedReportMode, setSelectedReportMode] = useState<"AMBOS" | "COM_MATERIAL" | "SEM_MATERIAL">("AMBOS");
 
   // Status badge styling helper
-  const getStatusBadge = (st: string) => {
-    switch (st) {
+  const getStatusBadge = (quote: Pick<LaserQuote, "status" | "approvalMaterialMode">) => {
+    switch (getLaserQuoteDisplayStatus(db.activeTenantId, quote)) {
+      case "CORTADO_COM_MATERIAL":
+        return { label: "✂️ CORTADO / FINALIZADO C/ MATERIAL", bg: "bg-purple-100 text-purple-800 border-purple-300" };
+      case "CORTADO_SEM_MATERIAL":
+        return { label: "✂️ CORTADO / FINALIZADO S/ MATERIAL", bg: "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300" };
       case "CORTADO":
       case "FINALIZADO":
         return { label: "✂️ CORTADO / FINALIZADO", bg: "bg-purple-100 text-purple-800 border-purple-300" };
@@ -167,12 +174,44 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
   };
 
   const handleFinishQuote = async (quote: LaserQuote) => {
-    if (window.confirm(`Deseja finalizar o orçamento #${quote.quoteCode} (${quote.customerName})?\nO status será alterado para CORTADO / FINALIZADO.`)) {
-      await db.updateLaserQuote(quote.id, { status: "CORTADO" });
-      if (viewingQuote && viewingQuote.id === quote.id) {
-        setViewingQuote({ ...viewingQuote, status: "CORTADO" });
+    const latestQuote = db.laserQuotes.find((entry) => entry.id === quote.id) || quote;
+    if (isFinishedLaserQuote(latestQuote.status)) return;
+    const status = getLaserQuoteFinishedStatus(db.activeTenantId, latestQuote);
+    if (isImperio && status === "CORTADO") {
+      alert("Antes de finalizar, edite o orçamento e marque se ele foi aprovado com material ou sem material.");
+      return;
+    }
+    const updates: Partial<LaserQuote> = {
+      status,
+      ...(isImperio ? { approvalMaterialMode: getLaserQuoteMaterialMode(latestQuote) } : {}),
+    };
+    const label = getStatusBadge({ ...latestQuote, ...updates }).label;
+    if (window.confirm(`Deseja finalizar o orçamento #${quote.quoteCode} (${quote.customerName})?\nO status será alterado para ${label}.`)) {
+      try {
+        await db.updateLaserQuote(quote.id, updates);
+        if (viewingQuote && viewingQuote.id === quote.id) {
+          setViewingQuote({ ...latestQuote, ...updates });
+        }
+        alert(`Orçamento #${quote.quoteCode} finalizado com sucesso! Status alterado para ${label}.`);
+      } catch {
+        alert("Não foi possível finalizar o orçamento. Tente novamente.");
       }
-      alert(`Orçamento #${quote.quoteCode} finalizado com sucesso! Status alterado para CORTADO / FINALIZADO.`);
+    }
+  };
+
+  const handleQuoteStatusChange = (nextStatus: LaserQuote["status"]) => {
+    if (isImperio && isFinishedLaserQuote(nextStatus)) {
+      const finishedStatus = getLaserQuoteFinishedStatus(db.activeTenantId, { status: quoteStatus, approvalMaterialMode });
+      if (finishedStatus === "CORTADO") {
+        alert("Selecione primeiro APROVADO C/ MATERIAL ou APROVADO S/ MATERIAL para finalizar conforme a aprovação.");
+        return;
+      }
+      setQuoteStatus(finishedStatus);
+      return;
+    }
+    setQuoteStatus(nextStatus);
+    if (isImperio && ["APROVADO", "APROVADO_COM_MATERIAL", "APROVADO_SEM_MATERIAL"].includes(nextStatus)) {
+      setApprovalMaterialMode(getLaserQuoteMaterialMode({ status: nextStatus }));
     }
   };
 
@@ -227,14 +266,10 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
         q.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         q.quoteCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
         q.items.some((it) => it.description.toLowerCase().includes(searchTerm.toLowerCase()));
-      const matchStatus =
-        statusFilter === "TODOS" ||
-        q.status === statusFilter ||
-        (statusFilter === "APROVADO" &&
-          (q.status === "APROVADO" || q.status === "APROVADO_COM_MATERIAL" || q.status === "APROVADO_SEM_MATERIAL"));
+      const matchStatus = matchesLaserQuoteStatus(db.activeTenantId, q, statusFilter);
       return matchSearch && matchStatus;
     }).sort((a, b) => b.createdAt - a.createdAt);
-  }, [db.laserQuotes, searchTerm, statusFilter]);
+  }, [db.laserQuotes, searchTerm, statusFilter, db.activeTenantId]);
 
   // Handle open modal for new quote
   const handleNewQuote = () => {
@@ -247,6 +282,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     setCreatedDate(new Date().toISOString().split("T")[0]);
     setValidityDays(10);
     setQuoteStatus("RASCUNHO");
+    setApprovalMaterialMode(null);
     setNotes("");
     setExtraCosts(0);
     setAdditionPercent(0);
@@ -269,6 +305,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     setCreatedDate(quote.createdDate);
     setValidityDays(quote.validityDays || 10);
     setQuoteStatus(quote.status);
+    setApprovalMaterialMode(getLaserQuoteMaterialMode(quote));
     setNotes(quote.notes || "");
     setExtraCosts(quote.extraCosts || 0);
     setAdditionPercent(quote.additionPercent || 0);
@@ -583,6 +620,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       additionPercent: additionPercent || 0,
       notes,
       status: quoteStatus,
+      ...(isImperio ? { approvalMaterialMode: getLaserQuoteMaterialMode({ status: quoteStatus, approvalMaterialMode }) } : {}),
     };
 
     if (editingQuote) {
@@ -974,6 +1012,10 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
               { id: "APROVADO_COM_MATERIAL", label: "APROVADO C/ MAT." },
               { id: "APROVADO_SEM_MATERIAL", label: "APROVADO S/ MAT." },
               { id: "CORTADO", label: "✂️ CORTADO" },
+              ...(isImperio ? [
+                { id: "CORTADO_COM_MATERIAL", label: "✂️ CORTADO C/ MATERIAL" },
+                { id: "CORTADO_SEM_MATERIAL", label: "✂️ CORTADO S/ MATERIAL" },
+              ] : []),
               { id: "REJEITADO", label: "REJEITADO" },
             ].map((st) => (
               <button
@@ -1031,7 +1073,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                     </td>
                     <td className="p-3 text-center">
                       {(() => {
-                        const badge = getStatusBadge(q.status);
+                        const badge = getStatusBadge(q);
                         return (
                           <span
                             className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase border ${badge.bg}`}
@@ -1051,7 +1093,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                         >
                           <Eye size={14} />
                         </button>
-                        {q.status !== "CORTADO" && q.status !== "FINALIZADO" && (
+                        {!isFinishedLaserQuote(q.status) && (
                           <button
                             onClick={() => handleFinishQuote(q)}
                             title="Finalizar Orçamento (Marcar como Cortado)"
@@ -1747,7 +1789,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                   </label>
                   <select
                     value={quoteStatus}
-                    onChange={(e) => setQuoteStatus(e.target.value as any)}
+                    onChange={(e) => handleQuoteStatusChange(e.target.value as LaserQuote["status"])}
                     className="w-full p-2 border border-slate-200 rounded-lg text-xs font-bold bg-white text-slate-800"
                   >
                     <option value="RASCUNHO">RASCUNHO</option>
@@ -1756,6 +1798,9 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                     <option value="APROVADO_SEM_MATERIAL">APROVADO S/ MATERIAL</option>
                     <option value="APROVADO">APROVADO (GERAL)</option>
                     <option value="CORTADO">CORTADO / FINALIZADO</option>
+                    {quoteStatus === "FINALIZADO" && <option value="FINALIZADO">CORTADO / FINALIZADO</option>}
+                    {isImperio && quoteStatus === "CORTADO_COM_MATERIAL" && <option value="CORTADO_COM_MATERIAL">CORTADO / FINALIZADO C/ MATERIAL</option>}
+                    {isImperio && quoteStatus === "CORTADO_SEM_MATERIAL" && <option value="CORTADO_SEM_MATERIAL">CORTADO / FINALIZADO S/ MATERIAL</option>}
                     <option value="REJEITADO">REJEITADO</option>
                   </select>
                 </div>
@@ -1818,7 +1863,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                       Visualizar Orçamento #{viewingQuote.quoteCode}
                     </h2>
                     {(() => {
-                      const badge = getStatusBadge(viewingQuote.status);
+                      const badge = getStatusBadge(viewingQuote);
                       return (
                         <span className={`px-2.5 py-0.5 rounded-md text-xs font-bold border ${badge.bg}`}>
                           {badge.label}
@@ -1932,7 +1977,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 uppercase font-bold block">Status</span>
-                    <span className="text-xs font-bold text-emerald-400 uppercase">{viewingQuote.status}</span>
+                    <span className="text-xs font-bold text-emerald-400 uppercase">{isImperio ? getStatusBadge(viewingQuote).label : viewingQuote.status}</span>
                   </div>
                 </div>
 
@@ -1971,7 +2016,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
               </button>
 
               <div className="flex items-center gap-2">
-                {viewingQuote.status !== "CORTADO" && viewingQuote.status !== "FINALIZADO" && (
+                {!isFinishedLaserQuote(viewingQuote.status) && (
                   <button
                     onClick={() => handleFinishQuote(viewingQuote)}
                     className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
