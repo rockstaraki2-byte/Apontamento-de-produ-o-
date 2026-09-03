@@ -35,6 +35,21 @@ export function EstoqueScreen({
   db: ReturnType<typeof useDatabase>;
   currentUser: import("./types").User;
 }) {
+  const isImperio = db.activeTenantId === "imperio";
+  const [epiHistoryLimit, setEpiHistoryLimit] = useState(50);
+  const [uniformHistoryLimit, setUniformHistoryLimit] = useState(50);
+  const epiHistory = React.useMemo(() => [...db.epiDistributions].sort((a, b) => b.date - a.date), [db.epiDistributions]);
+  const uniformHistory = React.useMemo(() => [...db.uniformDistributions].sort((a, b) => b.date - a.date), [db.uniformDistributions]);
+  const itemsById = React.useMemo(() => new Map(db.items.map((item) => [item.id, item])), [db.items]);
+  const epiStocksByItem = React.useMemo(() => {
+    const result = new Map<number, typeof db.stocks>();
+    if (isImperio) db.stocks.forEach((stock) => {
+      const entries = result.get(stock.itemId) || [];
+      entries.push(stock);
+      result.set(stock.itemId, entries);
+    });
+    return result;
+  }, [isImperio, db.stocks]);
   const [activeTab, setActiveTab] = useState<
     "PRODUTOS" | "EPIS" | "COLABORADORES" | "UNIFORMES" | "RELATORIOS"
   >("PRODUTOS");
@@ -681,9 +696,12 @@ export function EstoqueScreen({
     return Object.values(groups);
   };
 
-  const filteredStocks = db.stocks
+  const filteredStocks = React.useMemo(() => {
+    // Distribution forms do not need the product stock grid or its expensive sorting.
+    if (isImperio && activeTab !== "PRODUTOS") return [];
+    return db.stocks
     .filter((s) => {
-      const item = db.items.find((i) => i.id === s.itemId);
+      const item = itemsById.get(s.itemId);
       if (item?.type === "EPI") return false;
 
       if (!debouncedSearchTerm) return true;
@@ -700,8 +718,20 @@ export function EstoqueScreen({
           s.variation === variation &&
           s.stage === stage),
     );
+  }, [isImperio, activeTab, db.stocks, itemsById, debouncedSearchTerm, itemId, color, size, variation, stage]);
+
+  const recentStockEntries = React.useMemo(() => {
+    const result = new Map<number, number>();
+    if (isImperio && activeTab === "PRODUTOS") {
+      (db.stockMovements || []).forEach((movement) => {
+        if (movement.type === "ENTRADA") result.set(movement.itemId, Math.max(result.get(movement.itemId) || 0, movement.timestamp));
+      });
+    }
+    return result;
+  }, [isImperio, activeTab, db.stockMovements]);
 
   const getMostRecentStockInTimestamp = React.useCallback((g: GroupedStock) => {
+    if (isImperio) return recentStockEntries.get(g.itemId) || 0;
     const movements = db.stockMovements || [];
     let maxTime = 0;
     movements.forEach((m) => {
@@ -712,7 +742,7 @@ export function EstoqueScreen({
       }
     });
     return maxTime;
-  }, [db.stockMovements]);
+  }, [db.stockMovements, isImperio, recentStockEntries]);
 
   const sortedGroupedStocks = React.useMemo(() => {
     const rawGrouped = groupStocksByItem(filteredStocks);
@@ -2216,7 +2246,7 @@ export function EstoqueScreen({
                   db.items
                     .filter((i) => i.type === "EPI")
                     .map((epi) => {
-                      const stockEntries = db.stocks.filter(
+                      const stockEntries = isImperio ? (epiStocksByItem.get(epi.id) || []) : db.stocks.filter(
                         (s) => s.itemId === epi.id,
                       );
                       const totalStock = stockEntries.reduce(
@@ -2345,8 +2375,7 @@ export function EstoqueScreen({
                     Nenhum EPI distribuído ainda.
                   </div>
                 ) : (
-                  [...db.epiDistributions]
-                    .sort((a, b) => b.date - a.date)
+                  epiHistory.slice(0, isImperio ? epiHistoryLimit : undefined)
                     .map((dist) => {
                       const emp = db.employees.find(
                         (e) =>
@@ -2383,6 +2412,11 @@ export function EstoqueScreen({
                     })
                 )}
               </div>
+              {isImperio && epiHistoryLimit < epiHistory.length && (
+                <button type="button" onClick={() => setEpiHistoryLimit((limit) => limit + 50)} className="w-full p-3 text-sm font-bold text-emerald-700">
+                  Carregar mais entregas ({Math.min(epiHistoryLimit, epiHistory.length)} de {epiHistory.length})
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -2821,8 +2855,7 @@ export function EstoqueScreen({
                       Nenhuma ficha de entrega no histórico.
                     </div>
                   ) : (
-                    [...db.uniformDistributions]
-                      .sort((a, b) => b.date - a.date)
+                    uniformHistory.slice(0, isImperio ? uniformHistoryLimit : undefined)
                       .map((dist) => {
                         const emp = db.employees.find(
                           (e) =>
@@ -2886,6 +2919,11 @@ export function EstoqueScreen({
                       })
                   )}
                 </div>
+                {isImperio && uniformHistoryLimit < uniformHistory.length && (
+                  <button type="button" onClick={() => setUniformHistoryLimit((limit) => limit + 50)} className="w-full p-3 text-sm font-bold text-emerald-700">
+                    Carregar mais entregas ({Math.min(uniformHistoryLimit, uniformHistory.length)} de {uniformHistory.length})
+                  </button>
+                )}
               </div>
             </div>
           </div>

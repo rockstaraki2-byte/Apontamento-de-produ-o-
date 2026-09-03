@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   BrowserRouter,
@@ -1435,7 +1436,47 @@ function LoginScreen({
   );
 }
 
+function ItemEditorContainer({ modal, onClose, children }: {
+  modal: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  const closeRef = React.useRef(onClose);
+  closeRef.current = onClose;
+  React.useEffect(() => {
+    if (!modal) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    dialog?.querySelector<HTMLInputElement>("input")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); closeRef.current(); }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]')) as HTMLElement[];
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.removeEventListener("keydown", onKeyDown); previousFocus?.focus(); };
+  }, [modal]);
+  if (!modal) return <div className="bg-white rounded-lg shadow-sm border mb-6 overflow-hidden">{children}</div>;
+  return createPortal(
+    <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Editar item" className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto overscroll-contain">
+        <div className="sticky top-0 z-10 bg-white border-b px-4 py-3 flex justify-between items-center">
+          <h2 className="font-bold text-slate-800">Editar item</h2>
+          <button type="button" aria-label="Fechar edição" onClick={onClose} className="p-2 rounded hover:bg-slate-100"><X size={20} /></button>
+        </div>
+        {children}
+      </div>
+    </div>, document.body,
+  );
+}
+
 function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
+  const isImperio = db.activeTenantId === "imperio";
   const [activeTab, setActiveTab] = useState<
     "PRODUTOS" | "PECAS" | "EPIS" | "CORES" | "VARIACOES" | "TAMANHOS"
   >("PRODUTOS");
@@ -2575,9 +2616,15 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           </div>
         ) : (
           <>
-            <div className="bg-white rounded-lg shadow-sm border mb-6 overflow-hidden">
+            <ItemEditorContainer modal={isImperio && editingId !== null} onClose={() => {
+              setEditingId(null);
+              setCode(""); setName(""); setUnit("UN"); setBasePrice("");
+              setProductiveCost(""); setProductionPoints(""); setImageUrl("");
+              setStandardCycles({}); setItemFluxos([]); setRequiresLaserCut(false);
+            }}>
             <button
-              onClick={() => setIsFormCollapsed(!isFormCollapsed)}
+              disabled={isImperio && editingId !== null}
+              onClick={() => { if (!(isImperio && editingId !== null)) setIsFormCollapsed(!isFormCollapsed); }}
               className="w-full flex justify-between items-center px-4 py-3 bg-gray-50 border-b hover:bg-gray-100/80 transition text-left cursor-pointer"
             >
               <span className="font-bold text-gray-700 text-sm flex items-center gap-2">
@@ -2592,7 +2639,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                   </span>
                 )}
               </span>
-              <div className="flex items-center gap-2 text-gray-500">
+              <div className={`flex items-center gap-2 text-gray-500 ${isImperio && editingId !== null ? "hidden" : ""}`}>
                 <span className="text-xs">
                   {isFormCollapsed ? "Expandir" : "Minimizar"}
                 </span>
@@ -2890,7 +2937,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
             </div>
           </div>
         )}
-      </div>
+      </ItemEditorContainer>
       <div className="w-full">
         {filteredItems.length === 0 ? (
           <p className="text-gray-500 text-center mt-4">

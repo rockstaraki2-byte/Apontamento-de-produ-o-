@@ -86,9 +86,42 @@ function LocalSVGBarcode({ data, codeText }: { data: string; codeText?: string }
 }
 
 export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
+  const isImperio = db.activeTenantId === "imperio";
+  const [visibleLogCount, setVisibleLogCount] = useState(100);
+  const ordersById = useMemo(() => new Map(db.orders.map((order) => [String(order.id), order])), [db.orders]);
+  const itemsById = useMemo(() => new Map(db.items.map((item) => [item.id, item])), [db.items]);
+  const customersByName = useMemo(() => {
+    const result = new Map<string, (typeof db.customers)[0]>();
+    if (isImperio) (db.customers || []).forEach((customer) => {
+      for (const name of [customer.name, customer.tradeName]) {
+        if (name && !result.has(name)) result.set(name, customer);
+      }
+    });
+    return result;
+  }, [isImperio, db.customers]);
+  const labelIndexes = useMemo(() => {
+    const parts = new Map<string, Item>();
+    const assignments = new Map<string, typeof db.orders>();
+    if (isImperio) {
+      db.items.forEach((item) => {
+        if (!parts.has(item.name)) parts.set(item.name, item);
+        if (!parts.has(item.code)) parts.set(item.code, item);
+      });
+      db.orders.forEach((order) => {
+        new Set<string>(order.laserAssignments?.map((assignment) => assignment.partName) || []).forEach((name) => {
+          const list = assignments.get(name) || [];
+          list.push(order);
+          assignments.set(name, list);
+        });
+      });
+    }
+    return { parts, assignments };
+  }, [isImperio, db.items, db.orders]);
   // Filters state
   const [selectedSector, setSelectedSector] = useState<string>("ALL");
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const deferredSearch = React.useDeferredValue(searchTerm);
+  const effectiveSearch = isImperio ? deferredSearch : searchTerm;
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [onlyUnprinted, setOnlyUnprinted] = useState<boolean>(false);
@@ -96,11 +129,12 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
   // Selection state
   const [selectedLogIds, setSelectedLogIds] = useState<number[]>([]);
+  const selectedLogIdSet = useMemo(() => new Set(selectedLogIds), [selectedLogIds]);
 
   // Grouped logs selected list for the hidden PDF templates and preview
   const selectedLogs = useMemo(() => {
-    return db.logs.filter((l) => selectedLogIds.includes(l.id));
-  }, [db.logs, selectedLogIds]);
+    return db.logs.filter((l) => selectedLogIdSet.has(l.id));
+  }, [db.logs, selectedLogIdSet]);
 
   // Preview and customization modal states
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState<boolean>(false);
@@ -118,6 +152,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
   const [isLinkModalOpen, setIsLinkModalOpen] = useState<boolean>(false);
   const [logToLink, setLogToLink] = useState<any>(null);
   const [linkOrderSearch, setLinkOrderSearch] = useState<string>("");
+  const deferredLinkSearch = React.useDeferredValue(linkOrderSearch);
   const [selectedOrderToLink, setSelectedOrderToLink] = useState<any>(null);
   const [linkQuantity, setLinkQuantity] = useState<number | "">("");
 
@@ -137,6 +172,11 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
   const confirmLinkOrder = () => {
     if (!logToLink || !selectedOrderToLink) return;
+    if (isImperio && ordersById.get(String(selectedOrderToLink.id))?.status === "FATURADO") {
+      alert("Este pedido já foi faturado. Selecione outro pedido para vincular.");
+      setSelectedOrderToLink(null);
+      return;
+    }
     const details = getLogDetails(logToLink);
     const qtyToLinkNum = Number(linkQuantity);
     const maxQty = details.quantity;
@@ -388,10 +428,10 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
       }
 
       // Match search term (Product name, Code, Order Code, Customer, Operator)
-      if (searchTerm.trim()) {
-        const s = searchTerm.toLowerCase();
-        const itemObj = log.orderId ? db.orders.find((o) => o.id === log.orderId) : null;
-        const realItem = itemObj ? db.items.find((i) => i.id === itemObj.itemId) : db.items.find((i) => i.id === log.orderId); // fallback
+      if (effectiveSearch.trim()) {
+        const s = effectiveSearch.toLowerCase();
+        const itemObj = log.orderId ? (isImperio ? ordersById.get(String(log.orderId)) : db.orders.find((o) => o.id === log.orderId)) : null;
+        const realItem = isImperio ? itemsById.get(itemObj?.itemId ?? log.itemId ?? log.orderId) : (itemObj ? db.items.find((i) => i.id === itemObj.itemId) : db.items.find((i) => i.id === log.orderId));
         
         const itemName = realItem?.name?.toLowerCase() || log.customProductName?.toLowerCase() || "";
         const itemCode = realItem?.code?.toLowerCase() || "";
@@ -414,11 +454,14 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
       return true;
     }).sort((a, b) => b.timestamp - a.timestamp);
-  }, [db.logs, db.orders, db.items, selectedSector, searchTerm, startDate, endDate, onlyUnprinted]);
+  }, [db.logs, db.orders, db.items, selectedSector, effectiveSearch, startDate, endDate, onlyUnprinted, isImperio, ordersById, itemsById]);
+
+  React.useEffect(() => { setVisibleLogCount(100); }, [effectiveSearch, selectedSector, startDate, endDate, onlyUnprinted]);
+  const visibleLogs = isImperio ? logsList.slice(0, visibleLogCount) : logsList;
 
   // Handle master checkbox toggle
   const handleSelectAll = () => {
-    if (selectedLogIds.length === logsList.length) {
+    if (isImperio ? logsList.length > 0 && logsList.every((log) => selectedLogIdSet.has(log.id)) : selectedLogIds.length === logsList.length) {
       setSelectedLogIds([]);
     } else {
       setSelectedLogIds(logsList.map((l) => l.id));
@@ -434,8 +477,8 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
   // Resolve standard descriptive details for a log
   const getLogDetails = (log: ProductionLog) => {
-    let linkedOrder = log.orderId ? db.orders.find((o) => String(o.id) === String(log.orderId)) : null;
-    let item = linkedOrder 
+    let linkedOrder = log.orderId ? (isImperio ? ordersById.get(String(log.orderId)) : db.orders.find((o) => String(o.id) === String(log.orderId))) : null;
+    let item = isImperio ? (itemsById.get(linkedOrder?.itemId ?? log.itemId) || itemsById.get(log.orderId)) : linkedOrder
       ? db.items.find((i) => i.id === linkedOrder.itemId) 
       : db.items.find((i) => i.id === log.itemId || i.id === log.orderId); // fallback
 
@@ -452,12 +495,12 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
       const partName = log.nestedPartName || log.customProductName;
       
       if (partName) {
-        item = db.items.find((i) => i.name === partName || i.code === partName) || null;
+        item = (isImperio ? labelIndexes.parts.get(partName) : db.items.find((i) => i.name === partName || i.code === partName)) || null;
       }
 
       // Check if this part has active assignments to any orders (ESTOQUE DE PEÇAS CORTADAS)
       if (partName) {
-        assignedOrders = db.orders.filter(o => 
+        assignedOrders = isImperio ? (labelIndexes.assignments.get(partName) || []) : db.orders.filter(o =>
           o.laserAssignments?.some(la => la.partName === partName)
         );
         if (assignedOrders.length > 0) {
@@ -1182,7 +1225,8 @@ ${barcodeBlock}
                 <th className="p-3 w-10 text-center">
                   <input
                     type="checkbox"
-                    checked={logsList.length > 0 && selectedLogIds.length === logsList.length}
+                    checked={logsList.length > 0 && (isImperio ? logsList.every((log) => selectedLogIdSet.has(log.id)) : selectedLogIds.length === logsList.length)}
+                    aria-label={isImperio ? `Selecionar todas as ${logsList.length} etiquetas filtradas` : undefined}
                     onChange={handleSelectAll}
                     className="w-4 h-4 text-black rounded cursor-pointer"
                   />
@@ -1205,8 +1249,8 @@ ${barcodeBlock}
                   </td>
                 </tr>
               ) : (
-                logsList.map((log) => {
-                  const isSelected = selectedLogIds.includes(log.id);
+                visibleLogs.map((log) => {
+                  const isSelected = selectedLogIdSet.has(log.id);
                   const details = getLogDetails(log);
                   const { name, code, quantity, color, size, variation, orderCode, customer, sectorLabel } = details;
 
@@ -1306,6 +1350,16 @@ ${barcodeBlock}
         </div>
       </div>
 
+      {isImperio && (
+        <p className="text-xs text-slate-500">
+          Exibindo {visibleLogs.length} de {logsList.length} registros. A seleção geral inclui todos os resultados do filtro.
+        </p>
+      )}
+      {isImperio && visibleLogCount < logsList.length && (
+        <button type="button" onClick={() => setVisibleLogCount((count) => count + 100)} className="p-3 bg-white border rounded-lg text-sm font-bold">
+          Carregar mais etiquetas ({visibleLogs.length} de {logsList.length})
+        </button>
+      )}
       {/* === LINK ORDER MODAL === */}
       {isLinkModalOpen && logToLink && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/85 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -1341,10 +1395,12 @@ ${barcodeBlock}
 
               if (!selectedOrderToLink) {
                 // Filter logic matching the query (split by space)
-                const queryParts = linkOrderSearch.toLowerCase().trim().split(/\s+/).filter(Boolean);
+                const queryParts = (isImperio ? deferredLinkSearch : linkOrderSearch).toLowerCase().trim().split(/\s+/).filter(Boolean);
                 const filteredOrdersList = db.orders.filter(o => {
-                  const item = db.items.find(i => i.id === o.itemId);
-                  const customer = db.customers.find(c => c.name === o.customerName || c.tradeName === o.customerName);
+                  if (isImperio && o.status === "FATURADO") return false;
+                  if (queryParts.length === 0) return true;
+                  const item = isImperio ? itemsById.get(o.itemId) : db.items.find(i => i.id === o.itemId);
+                  const customer = isImperio ? customersByName.get(o.customerName) : db.customers.find(c => c.name === o.customerName || c.tradeName === o.customerName);
                   const searchStr = `${o.orderCode} ${o.customerName} ${customer?.tradeName || ""} ${item?.name || ""} ${item?.code || ""} ${o.status || ""}`.toLowerCase();
                   
                   if (queryParts.length === 0) return true;
@@ -1940,6 +1996,8 @@ ${barcodeBlock}
       {/* ========================================================= */}
       {/* --- HIDDEN CANVAS FOR THERMAL PRINT (100mm x 50mm) --- */}
       {/* ========================================================= */}
+      {(!isImperio || isPreviewModalOpen || isPrinting || isGeneratingZPL) && (
+      <>
       <div
         style={{
           position: "fixed",
@@ -2182,6 +2240,8 @@ ${barcodeBlock}
           })()}
         </div>
       </div>
+      </>
+      )}
 
       </div>
     </ScrollContainer>

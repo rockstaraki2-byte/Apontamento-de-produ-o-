@@ -33,6 +33,7 @@ import {
 import { ProductivityCard } from "./components/ProductivityCard";
 import { MachineStopWidget } from "./components/OperatorActions";
 import { parseQty } from "./quantityUtils";
+import { isRetratilMechanism, restrictToRetratilMechanisms } from "./utils/imperioWorkflowUtils";
 
 const getProductKey = (
   itemId: number,
@@ -116,6 +117,8 @@ export function ProducaoScreen({
       .filter(Boolean);
   }, [currentUser?.sectorIds, db.sectors]);
 
+  const onlyRetratilMechanisms = restrictToRetratilMechanisms(db.activeTenantId, currentUser, userSectorNames);
+
   // If user has NO explicit sectors linked, they fallback to checking role
   const hasLinkedSectors = (currentUser?.sectorIds || []).length > 0;
 
@@ -188,14 +191,16 @@ export function ProducaoScreen({
 
   const retratilPcpPlans = React.useMemo(() => {
     return (db.coilCuttingPlans || []).filter(
-      (p) => p.type === "MONTAGEM_RETRATIL" && p.status !== "CONCLUIDO"
+      (p) => p.type === "MONTAGEM_RETRATIL" && p.status !== "CONCLUIDO" &&
+        (!onlyRetratilMechanisms || isRetratilMechanism(db.items.find((item) => item.id === p.targetItemIds?.[0])?.name))
     );
-  }, [db.coilCuttingPlans]);
+  }, [db.coilCuttingPlans, onlyRetratilMechanisms, db.items]);
 
   const startPcpPlan = (plan: any) => {
     if (!plan) return;
     const targetItemId = plan.targetItemIds?.[0] || 0;
     const targetItem = db.items.find((i) => i.id === targetItemId);
+    if (onlyRetratilMechanisms && !isRetratilMechanism(targetItem?.name)) return;
 
     db.addActivePack({
       id: Date.now(),
@@ -280,6 +285,7 @@ export function ProducaoScreen({
 
   const pendingOrders = React.useMemo(() => {
     return db.orders.filter((o) => {
+      if (onlyRetratilMechanisms && !isRetratilMechanism(db.items.find((item) => item.id === o.itemId)?.name)) return false;
       const totalQty = parseQty(o.totalQuantity ?? (o as any).quantity);
       const packedQty = parseQty(o.packedQuantity);
       if (
@@ -319,6 +325,7 @@ export function ProducaoScreen({
     isRodrigo,
     isRetratil,
     retratilPcpPlans,
+    onlyRetratilMechanisms,
   ]);
 
   const batchesByItemId = React.useMemo(() => {
@@ -424,6 +431,11 @@ export function ProducaoScreen({
     const isManual =
       directIsManual !== undefined ? directIsManual : pendingIsManual;
     const group = directGroup !== undefined ? directGroup : pendingGroupToStart;
+    const productName = isManual ? manualProduct : db.items.find((item) => item.id === group?.itemId)?.name;
+    if (onlyRetratilMechanisms && !isRetratilMechanism(productName)) {
+      alert("Neste setor, selecione apenas produtos com Mecanismo Retrátil no nome.");
+      return;
+    }
 
     const targetSectorId = selectedSectorId || (currentUser.sectorIds && currentUser.sectorIds.length === 1 ? currentUser.sectorIds[0] : undefined);
     const targetSectorName = selectedSectorName || (targetSectorId ? db.sectors?.find(s => s.id === targetSectorId)?.name : selectedProcess);
@@ -1596,8 +1608,14 @@ export function ProducaoScreen({
               value={manualProduct}
               onChange={(e) => setManualProduct(e.target.value)}
               className="border p-2 rounded focus:outline-indigo-500"
-              placeholder="Ex: Cadeiras Mod. C"
+              placeholder={onlyRetratilMechanisms ? "Ex: Mecanismo Retrátil" : "Ex: Cadeiras Mod. C"}
+              list={onlyRetratilMechanisms ? "retratil-mechanisms" : undefined}
             />
+            {onlyRetratilMechanisms && (
+              <datalist id="retratil-mechanisms">
+                {db.items.filter((item) => isRetratilMechanism(item.name)).map((item) => <option key={item.id} value={item.name} />)}
+              </datalist>
+            )}
           </div>
 
           <button
