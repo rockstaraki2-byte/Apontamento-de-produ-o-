@@ -23,6 +23,8 @@ export function PinturaScreen({
   db: ReturnType<typeof useDatabase>;
   currentUser: User;
 }) {
+  const isImperioPaintingCollector =
+    db.activeTenantId === "imperio" && currentUser.role === "PINTURA";
   const [view, setView] = useState<
     "LIST_ACTIVE" | "NEW_PACK" | "FINISH_PACK" | "MANUAL_PRODUCTION"
   >("LIST_ACTIVE");
@@ -414,19 +416,21 @@ export function PinturaScreen({
   };
 
   return (
-    <ScreenLayout className="bg-slate-50 relative text-[11px] md:text-xs">
+    <ScreenLayout
+      className={`bg-slate-50 relative ${isImperioPaintingCollector ? "text-[10px]" : "text-[11px] md:text-xs"}`}
+    >
       <ScrollContainer
         paddingSize="dense"
-        className="w-full max-w-xl mx-auto flex flex-col gap-3 py-2"
+        className={`w-full max-w-xl mx-auto flex flex-col ${isImperioPaintingCollector ? "gap-2 py-1" : "gap-3 py-2"}`}
       >
         {/* Header Widget */}
-        <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-500 p-2.5 rounded-lg text-white shadow-sm shrink-0">
-          <Activity className="animate-pulse w-5 h-5 shrink-0" />
+        <div className={`flex items-center bg-gradient-to-r from-emerald-600 to-teal-500 rounded-lg text-white shadow-sm shrink-0 ${isImperioPaintingCollector ? "gap-1.5 p-1.5" : "gap-2 p-2.5"}`}>
+          <Activity className={`animate-pulse shrink-0 ${isImperioPaintingCollector ? "w-4 h-4" : "w-5 h-5"}`} />
           <div className="min-w-0 flex-1">
-            <h2 className="text-xs md:text-sm font-bold font-sans text-white leading-tight truncate">
+            <h2 className={`${isImperioPaintingCollector ? "text-[10px]" : "text-xs md:text-sm"} font-bold font-sans text-white leading-tight truncate`}>
               Produção - Pintura Eletrostática
             </h2>
-            <p className="text-[9px] md:text-[10px] text-emerald-100 font-mono truncate">
+            <p className={`${isImperioPaintingCollector ? "text-[8px]" : "text-[9px] md:text-[10px]"} text-emerald-100 font-mono truncate`}>
               Operador: {currentUser.name} | Cabina de Pintura Ativa
             </p>
           </div>
@@ -678,18 +682,21 @@ export function PinturaScreen({
             });
 
             return (
-              <div className="flex flex-col h-full overflow-y-auto animate-fade-in p-2 sm:p-4 max-w-4xl mx-auto w-full">
+              <div
+                data-testid={isImperioPaintingCollector ? "imperio-painting-product-list" : undefined}
+                className={`flex flex-col h-full overflow-y-auto animate-fade-in max-w-4xl mx-auto w-full ${isImperioPaintingCollector ? "p-1" : "p-2 sm:p-4"}`}
+              >
                 <button
                   onClick={() => setView("LIST_ACTIVE")}
-                  className="flex items-center gap-2 self-start text-pink-600 font-semibold mb-3 hover:text-pink-800 text-sm transition"
+                  className={`flex items-center self-start text-pink-600 font-semibold hover:text-pink-800 transition ${isImperioPaintingCollector ? "gap-1 mb-1 text-[10px]" : "gap-2 mb-3 text-sm"}`}
                 >
-                  <ArrowLeft size={18} /> Pinturas Ativas
+                  <ArrowLeft size={isImperioPaintingCollector ? 13 : 18} /> Pinturas Ativas
                 </button>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                  <h2 className="text-lg sm:text-xl font-bold text-gray-800">
+                <div className={`flex flex-col sm:flex-row sm:items-center justify-between ${isImperioPaintingCollector ? "gap-0.5 mb-1.5" : "gap-2 mb-3"}`}>
+                  <h2 className={`${isImperioPaintingCollector ? "text-xs" : "text-lg sm:text-xl"} font-bold text-gray-800`}>
                     Lista de Pinturas Pendentes (Pedidos)
                   </h2>
-                  <span className="text-xs text-gray-500 font-medium">
+                  <span className={`${isImperioPaintingCollector ? "text-[9px]" : "text-xs"} text-gray-500 font-medium`}>
                     {filteredGroups.length} {filteredGroups.length === 1 ? "produto para pintura" : "produtos para pintura"}
                   </span>
                 </div>
@@ -698,57 +705,57 @@ export function PinturaScreen({
                   placeholder="Pesquisar produto associado nos pedidos..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full border border-gray-300 p-2.5 rounded-lg mb-3 text-sm focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white text-gray-800"
+                  className={`w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white text-gray-800 ${isImperioPaintingCollector ? "p-1.5 mb-1.5 text-[10px]" : "p-2.5 mb-3 text-sm"}`}
                 />
                 <div className="flex-1 overflow-y-auto w-full pr-0.5">
                   {filteredGroups.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8 text-sm">
+                    <p className={`text-gray-500 text-center ${isImperioPaintingCollector ? "py-4 text-[10px]" : "py-8 text-sm"}`}>
                       Nenhum produto em aberto para pintura encontrado nos
                       pedidos.
                     </p>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3">
+                    <div className={`grid grid-cols-1 md:grid-cols-2 ${isImperioPaintingCollector ? "gap-1.5" : "gap-2.5 sm:gap-3"}`}>
                       {filteredGroups.map((g, idx) => {
                         const item = db.items.find((i) => i.id === g.itemId);
                         return (
                           <div
                             key={idx}
                             onClick={() => startPackaging(g)}
-                            className="bg-white p-3 sm:p-4 border border-gray-200 flex items-center justify-between rounded-xl shadow-xs cursor-pointer hover:border-pink-400 hover:shadow-md transition gap-3 w-full"
+                            className={`bg-white border border-gray-200 flex items-center justify-between shadow-xs cursor-pointer hover:border-pink-400 hover:shadow-md transition w-full ${isImperioPaintingCollector ? "p-1.5 rounded-lg gap-1.5" : "p-3 sm:p-4 rounded-xl gap-3"}`}
                           >
-                            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                            <div className={`flex items-center min-w-0 flex-1 ${isImperioPaintingCollector ? "gap-1.5" : "gap-2.5 sm:gap-3"}`}>
                               {item?.imageUrl ? (
                                 <img
                                   src={item.imageUrl}
                                   alt={item.name}
-                                  className="w-12 h-12 sm:w-14 sm:h-14 object-cover rounded-lg shadow-2xs border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0"
+                                  className={`${isImperioPaintingCollector ? "w-9 h-9 rounded" : "w-12 h-12 sm:w-14 sm:h-14 rounded-lg"} object-cover shadow-2xs border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0`}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setFullSizeImage(item.imageUrl || null);
                                   }}
                                 />
                               ) : (
-                                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
-                                  <PaintRoller size={22} />
+                                <div className={`${isImperioPaintingCollector ? "w-9 h-9 rounded" : "w-12 h-12 sm:w-14 sm:h-14 rounded-lg"} bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 shrink-0`}>
+                                  <PaintRoller size={isImperioPaintingCollector ? 16 : 22} />
                                 </div>
                               )}
                               <div className="flex flex-col min-w-0 flex-1 text-left">
-                                <span className="font-bold text-sm sm:text-base text-gray-800 break-words leading-tight" title={item?.name || "Item"}>
+                                <span className={`font-bold text-gray-800 break-words leading-tight ${isImperioPaintingCollector ? "text-[10px]" : "text-sm sm:text-base"}`} title={item?.name || "Item"}>
                                   {item?.name || "Item"}
                                 </span>
-                                <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1 mt-0.5">
+                                <div className={`${isImperioPaintingCollector ? "text-[8px] gap-0.5" : "text-xs gap-1"} text-gray-500 flex flex-wrap items-center mt-0.5`}>
                                   {g.color && g.color !== "-" && (
-                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-700">
+                                    <span className={`bg-slate-100 rounded font-medium text-slate-700 ${isImperioPaintingCollector ? "px-1 py-px text-[8px]" : "px-1.5 py-0.5 text-[11px]"}`}>
                                       Cor: {g.color}
                                     </span>
                                   )}
                                   {g.size && g.size !== "-" && (
-                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-700">
+                                    <span className={`bg-slate-100 rounded font-medium text-slate-700 ${isImperioPaintingCollector ? "px-1 py-px text-[8px]" : "px-1.5 py-0.5 text-[11px]"}`}>
                                       Tam: {g.size}
                                     </span>
                                   )}
                                   {g.variation && g.variation !== "-" && (
-                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-700">
+                                    <span className={`bg-slate-100 rounded font-medium text-slate-700 ${isImperioPaintingCollector ? "px-1 py-px text-[8px]" : "px-1.5 py-0.5 text-[11px]"}`}>
                                       Var: {g.variation}
                                     </span>
                                   )}
@@ -756,11 +763,11 @@ export function PinturaScreen({
                                 </div>
                               </div>
                             </div>
-                            <div className="flex flex-col items-end shrink-0 pl-2 border-l border-slate-100">
-                              <span className="text-[10px] sm:text-xs text-gray-500 font-medium whitespace-nowrap mb-0.5">
+                            <div className={`flex flex-col items-end shrink-0 border-l border-slate-100 ${isImperioPaintingCollector ? "pl-1" : "pl-2"}`}>
+                              <span className={`${isImperioPaintingCollector ? "text-[8px]" : "text-[10px] sm:text-xs"} text-gray-500 font-medium whitespace-nowrap mb-0.5`}>
                                 Para Pintar
                               </span>
-                              <span className="font-extrabold text-base sm:text-xl text-pink-600 leading-tight">
+                              <span className={`font-extrabold text-pink-600 leading-tight ${isImperioPaintingCollector ? "text-xs" : "text-base sm:text-xl"}`}>
                                 {g.totalRemaining}
                               </span>
                             </div>
@@ -776,7 +783,7 @@ export function PinturaScreen({
 
         {/* --- VIEW 4: LIST_ACTIVE (Main dashboard) --- */}
         {view === "LIST_ACTIVE" && (
-          <div className="flex flex-col gap-3">
+          <div className={`flex flex-col ${isImperioPaintingCollector ? "gap-2" : "gap-3"}`}>
             {/* RESUMO DIÁRIO */}
             <div className="text-[10px] transform scale-98 origin-top">
               <DailySummaryWidget db={db} currentUser={currentUser} />
@@ -789,7 +796,7 @@ export function PinturaScreen({
             </div>
 
             {activePacksList.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-6 bg-white border border-dashed border-slate-200 rounded-lg max-w-sm mx-auto text-center mt-1">
+              <div className={`flex flex-col items-center justify-center bg-white border border-dashed border-slate-200 rounded-lg max-w-sm mx-auto text-center mt-1 ${isImperioPaintingCollector ? "p-3" : "p-6"}`}>
                 <Activity
                   size={28}
                   className="mb-2 text-slate-400 animate-pulse"
@@ -809,7 +816,7 @@ export function PinturaScreen({
                     <div
                       key={pack.id}
                       onClick={() => openFinishScreen(pack.id)}
-                      className="bg-white border p-2.5 rounded-lg shadow-3xs flex justify-between items-center transition relative overflow-hidden border-pink-205 hover:border-pink-400 cursor-pointer hover:shadow-2xs"
+                      className={`bg-white border rounded-lg shadow-3xs flex justify-between items-center transition relative overflow-hidden border-pink-205 hover:border-pink-400 cursor-pointer hover:shadow-2xs ${isImperioPaintingCollector ? "p-1.5" : "p-2.5"}`}
                     >
                       <div className="absolute top-0 left-0 w-1 h-full bg-pink-500"></div>
 
@@ -818,7 +825,7 @@ export function PinturaScreen({
                           <img
                             src={item.imageUrl}
                             alt={item.name}
-                            className="w-12 h-12 object-cover rounded shadow-3xs border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0"
+                            className={`${isImperioPaintingCollector ? "w-9 h-9" : "w-12 h-12"} object-cover rounded shadow-3xs border border-slate-200 cursor-pointer hover:opacity-80 transition shrink-0`}
                             onClick={(e) => {
                               e.stopPropagation();
                               setFullSizeImage(item.imageUrl || null);
@@ -886,16 +893,16 @@ export function PinturaScreen({
 
       {/* FOOTER & BUTTONS - ONLY IF ON LIST_ACTIVE VIEW */}
       {view === "LIST_ACTIVE" && (
-        <div className="bg-white p-2 border-t border-slate-200 shadow-lg flex gap-2 z-30 justify-between shrink-0">
+        <div className={`bg-white border-t border-slate-200 shadow-lg flex z-30 justify-between shrink-0 ${isImperioPaintingCollector ? "p-1.5 gap-1.5" : "p-2 gap-2"}`}>
           <button
             onClick={() => setView("MANUAL_PRODUCTION")}
-            className="bg-slate-100 text-slate-700 font-bold py-1.5 px-3 rounded shadow-3xs hover:bg-slate-200 transition text-[9px] uppercase tracking-wider text-center"
+            className={`bg-slate-100 text-slate-700 font-bold rounded shadow-3xs hover:bg-slate-200 transition uppercase tracking-wider text-center ${isImperioPaintingCollector ? "py-1 px-2 text-[8px]" : "py-1.5 px-3 text-[9px]"}`}
           >
             Pintura Avulsa
           </button>
           <button
             onClick={() => setView("NEW_PACK")}
-            className="bg-emerald-600 text-white font-extrabold py-1.5 px-3 rounded shadow-sm hover:bg-emerald-700 flex items-center justify-center gap-1.5 text-[9px] uppercase tracking-wider transition text-center"
+            className={`bg-emerald-600 text-white font-extrabold rounded shadow-sm hover:bg-emerald-700 flex items-center justify-center uppercase tracking-wider transition text-center ${isImperioPaintingCollector ? "py-1 px-2 gap-1 text-[8px]" : "py-1.5 px-3 gap-1.5 text-[9px]"}`}
           >
             <span>🎨 INICIAR PROGRAMA</span>
           </button>
@@ -904,8 +911,11 @@ export function PinturaScreen({
 
       {/* --- CART AND DETAIL MODAL (ALWAYS AVAILABLE AT THE ROOT OF THE RENDER TO AVOID EARLY RENDERING TRAPS) --- */}
       {cartModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-[280px] flex flex-col p-3.5 gap-2.5 my-auto relative text-left">
+        <div className={`fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 ${isImperioPaintingCollector ? "p-1.5" : "p-3"}`}>
+          <div
+            data-testid={isImperioPaintingCollector ? "imperio-painting-cart-modal" : undefined}
+            className={`bg-white rounded-lg shadow-xl w-full flex flex-col my-auto relative text-left overflow-y-auto ${isImperioPaintingCollector ? "max-w-[260px] max-h-[94dvh] p-2 gap-1.5" : "max-w-[280px] p-3.5 gap-2.5"}`}
+          >
             <button
               onClick={() => setCartModalOpen(false)}
               className="absolute top-2.5 right-2.5 text-slate-400 hover:text-slate-600 font-bold text-xs"
@@ -924,11 +934,11 @@ export function PinturaScreen({
                 );
                 if (itemObj?.imageUrl) {
                   return (
-                    <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 p-2 rounded-lg mb-1">
+                    <div className={`flex items-center bg-slate-50 border border-slate-100 rounded-lg ${isImperioPaintingCollector ? "gap-1.5 p-1 mb-0.5" : "gap-3 p-2 mb-1"}`}>
                       <img
                         src={itemObj.imageUrl}
                         alt={itemObj.name}
-                        className="w-12 h-12 object-cover rounded shadow-sm border border-slate-200 cursor-pointer hover:opacity-80 transition"
+                        className={`${isImperioPaintingCollector ? "w-9 h-9" : "w-12 h-12"} object-cover rounded shadow-sm border border-slate-200 cursor-pointer hover:opacity-80 transition`}
                         onClick={() =>
                           setFullSizeImage(itemObj.imageUrl || null)
                         }
@@ -976,7 +986,7 @@ export function PinturaScreen({
                 <span className="text-[9px] font-bold text-slate-500 block mb-1">
                   Cores Cadastradas (toque para selecionar):
                 </span>
-                <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1 bg-white border border-slate-200 rounded">
+                <div className={`flex flex-wrap gap-1 overflow-y-auto p-1 bg-white border border-slate-200 rounded ${isImperioPaintingCollector ? "max-h-16" : "max-h-24"}`}>
                   {registeredColorList.map((color) => (
                     <button
                       key={color}
