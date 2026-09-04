@@ -272,6 +272,9 @@ export function PrensaEduardoScreen({
     );
     setStartProcess(availableProc || PRENSA_PROCESSES[0]);
 
+    // The modal is rendered by the main dashboard. Return there automatically
+    // so selecting an item from a batch opens the modal immediately.
+    setView("LIST_ACTIVE");
     setStartModalOpen(true);
   };
 

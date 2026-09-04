@@ -1080,6 +1080,7 @@ function Welcome({
 
 function LoginScreen({
   users,
+  usersLoaded,
   tenants,
   onLogin,
   deferredPrompt,
@@ -1090,6 +1091,7 @@ function LoginScreen({
   handleInstallClick,
 }: {
   users: User[];
+  usersLoaded: boolean;
   tenants?: import('./types').Tenant[];
   onLogin: (u: User) => void;
   deferredPrompt: any;
@@ -1164,6 +1166,8 @@ function LoginScreen({
   }, [usernameInput, tenants, selectedLoginTenantId]);
 
   const handleLogin = () => {
+    if (!usersLoaded) return;
+
     const rawTyped = (usernameInput || "").trim();
     const typed = normalizeStr(rawTyped);
     if (!typed) {
@@ -1348,10 +1352,11 @@ function LoginScreen({
 
         <button
           onClick={handleLogin}
-          className="w-full text-black font-bold p-3 rounded-lg hover:brightness-110 transition text-lg mt-2 tracking-wide"
+          disabled={!usersLoaded}
+          className="w-full text-black font-bold p-3 rounded-lg hover:brightness-110 transition text-lg mt-2 tracking-wide disabled:cursor-wait disabled:opacity-70"
           style={{ backgroundColor: detectedTenant.primaryColor || '#00b14f' }}
         >
-          Entrar
+          {usersLoaded ? "Entrar" : "Carregando acessos…"}
         </button>
       </div>
 
@@ -15113,7 +15118,13 @@ export default function App() {
         nameLower.includes("marcos") ||
         nameLower.includes("embalagem");
 
-      if (isMarcosOrEmbalagem) {
+      if (
+        currentUser.id === "prensa_eduardo" ||
+        roleLower === "prensa_eduardo"
+      ) {
+        // Compacta a estação da Prensa Eduardo para exibir mais itens por tela.
+        document.documentElement.style.fontSize = "15px";
+      } else if (isMarcosOrEmbalagem) {
         // Aumenta ligeiramente para Marcos/Embalagem (não tão grande)
         document.documentElement.style.fontSize = "16.5px";
       } else {
@@ -15132,6 +15143,7 @@ export default function App() {
     return (
       <LoginScreen
         users={db.allUsers}
+        usersLoaded={db.usersLoaded}
         tenants={db.tenants}
         onLogin={setCurrentUser}
         deferredPrompt={deferredPrompt}

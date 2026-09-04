@@ -226,6 +226,7 @@ const INITIAL_USERS: User[] = [
 ];
 
 export function useDatabase(currentUser?: User | null) {
+  const [usersLoaded, setUsersLoaded] = useState(false);
   const [selectedTenantId, setSelectedTenantIdState] = useState<string>(() => {
     return localStorage.getItem("active_tenant_id") || "imperio";
   });
@@ -662,8 +663,12 @@ export function useDatabase(currentUser?: User | null) {
           localStorage.setItem("producao_users_v2", JSON.stringify(merged));
           return merged;
         });
+        setUsersLoaded(true);
       },
-      (err) => handleSnapshotError("users", err),
+      (err) => {
+        setUsersLoaded(true);
+        handleSnapshotError("users", err);
+      },
     );
 
     const unsubItems = onSnapshot(
@@ -2034,6 +2039,7 @@ export function useDatabase(currentUser?: User | null) {
 
   return {
     permissionError,
+    usersLoaded,
     users: filteredUsers,
     allUsers: users,
     updateUser,
