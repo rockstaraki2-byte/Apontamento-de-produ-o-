@@ -28,6 +28,8 @@ export function PinturaScreen({
   const [view, setView] = useState<
     "LIST_ACTIVE" | "NEW_PACK" | "FINISH_PACK" | "MANUAL_PRODUCTION"
   >("LIST_ACTIVE");
+  const isCompactProgramSelection =
+    isImperioPaintingCollector && view === "NEW_PACK";
   const [selectedPackId, setSelectedPackId] = useState<number | null>(null);
   const [packQuantity, setPackQuantity] = useState<number | "">("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -421,25 +423,29 @@ export function PinturaScreen({
     >
       <ScrollContainer
         paddingSize="dense"
-        className={`w-full max-w-xl mx-auto flex flex-col ${isImperioPaintingCollector ? "gap-2 py-1" : "gap-3 py-2"}`}
+        className={`w-full max-w-xl mx-auto flex flex-col ${isCompactProgramSelection ? "gap-0 py-0 overflow-hidden" : isImperioPaintingCollector ? "gap-2 py-1" : "gap-3 py-2"}`}
       >
         {/* Header Widget */}
-        <div className={`flex items-center bg-gradient-to-r from-emerald-600 to-teal-500 rounded-lg text-white shadow-sm shrink-0 ${isImperioPaintingCollector ? "gap-1.5 p-1.5" : "gap-2 p-2.5"}`}>
-          <Activity className={`animate-pulse shrink-0 ${isImperioPaintingCollector ? "w-4 h-4" : "w-5 h-5"}`} />
-          <div className="min-w-0 flex-1">
-            <h2 className={`${isImperioPaintingCollector ? "text-[10px]" : "text-xs md:text-sm"} font-bold font-sans text-white leading-tight truncate`}>
-              Produção - Pintura Eletrostática
-            </h2>
-            <p className={`${isImperioPaintingCollector ? "text-[8px]" : "text-[9px] md:text-[10px]"} text-emerald-100 font-mono truncate`}>
-              Operador: {currentUser.name} | Cabina de Pintura Ativa
-            </p>
+        {!isCompactProgramSelection && (
+          <div className={`flex items-center bg-gradient-to-r from-emerald-600 to-teal-500 rounded-lg text-white shadow-sm shrink-0 ${isImperioPaintingCollector ? "gap-1.5 p-1.5" : "gap-2 p-2.5"}`}>
+            <Activity className={`animate-pulse shrink-0 ${isImperioPaintingCollector ? "w-4 h-4" : "w-5 h-5"}`} />
+            <div className="min-w-0 flex-1">
+              <h2 className={`${isImperioPaintingCollector ? "text-[10px]" : "text-xs md:text-sm"} font-bold font-sans text-white leading-tight truncate`}>
+                Produção - Pintura Eletrostática
+              </h2>
+              <p className={`${isImperioPaintingCollector ? "text-[8px]" : "text-[9px] md:text-[10px]"} text-emerald-100 font-mono truncate`}>
+                Operador: {currentUser.name} | Cabina de Pintura Ativa
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
-        <ProductivityCard db={db} currentUser={currentUser} />
+        {!isCompactProgramSelection && (
+          <ProductivityCard db={db} currentUser={currentUser} />
+        )}
 
         {/* Offline Sync Status Banner */}
-        {db.syncQueueCount !== undefined && (
+        {!isCompactProgramSelection && db.syncQueueCount !== undefined && (
           <div className="bg-emerald-50 border border-emerald-100 text-[#0f5132] px-3 py-1.5 rounded-lg flex items-center justify-between gap-3 shadow-3xs text-[10px] font-bold flex-wrap">
             <div className="flex items-center gap-1.5">
               <span
@@ -684,7 +690,7 @@ export function PinturaScreen({
             return (
               <div
                 data-testid={isImperioPaintingCollector ? "imperio-painting-product-list" : undefined}
-                className={`flex flex-col h-full overflow-y-auto animate-fade-in max-w-4xl mx-auto w-full ${isImperioPaintingCollector ? "p-1" : "p-2 sm:p-4"}`}
+                className={`flex flex-col min-h-0 overflow-hidden animate-fade-in max-w-4xl mx-auto w-full ${isCompactProgramSelection ? "flex-1 p-1" : isImperioPaintingCollector ? "h-full p-1" : "h-full p-2 sm:p-4"}`}
               >
                 <button
                   onClick={() => setView("LIST_ACTIVE")}
@@ -692,7 +698,10 @@ export function PinturaScreen({
                 >
                   <ArrowLeft size={isImperioPaintingCollector ? 13 : 18} /> Pinturas Ativas
                 </button>
-                <div className={`flex flex-col sm:flex-row sm:items-center justify-between ${isImperioPaintingCollector ? "gap-0.5 mb-1.5" : "gap-2 mb-3"}`}>
+                <div
+                  data-testid={isCompactProgramSelection ? "imperio-painting-list-header" : undefined}
+                  className={`flex flex-col sm:flex-row sm:items-center justify-between shrink-0 ${isImperioPaintingCollector ? "gap-0.5 mb-1.5" : "gap-2 mb-3"}`}
+                >
                   <h2 className={`${isImperioPaintingCollector ? "text-xs" : "text-lg sm:text-xl"} font-bold text-gray-800`}>
                     Lista de Pinturas Pendentes (Pedidos)
                   </h2>
@@ -707,7 +716,10 @@ export function PinturaScreen({
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className={`w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:outline-none bg-white text-gray-800 ${isImperioPaintingCollector ? "p-1.5 mb-1.5 text-[10px]" : "p-2.5 mb-3 text-sm"}`}
                 />
-                <div className="flex-1 overflow-y-auto w-full pr-0.5">
+                <div
+                  data-testid={isCompactProgramSelection ? "imperio-painting-items-scroll" : undefined}
+                  className="flex-1 min-h-0 overflow-y-auto w-full pr-0.5"
+                >
                   {filteredGroups.length === 0 ? (
                     <p className={`text-gray-500 text-center ${isImperioPaintingCollector ? "py-4 text-[10px]" : "py-8 text-sm"}`}>
                       Nenhum produto em aberto para pintura encontrado nos
