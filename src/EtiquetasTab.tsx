@@ -22,6 +22,11 @@ import { jsPDF } from "jspdf";
 import { ScrollContainer } from "./components/Layout";
 import { resolveCompanyInfo, CompanyLogo } from "./utils/companyUtils";
 import { imageToZPLHex } from "./utils/zplUtils";
+import {
+  buildLinkedQuantityByOrderAndSource,
+  getAlreadyLinkedQuantity as getAlreadyLinkedQuantityFromMap,
+  getRemainingLinkQuantity,
+} from "./utils/labelLinkUtils";
 
 interface EtiquetasTabProps {
   db: ReturnType<typeof useDatabase>;
@@ -117,6 +122,13 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     }
     return { parts, assignments };
   }, [isImperio, db.items, db.orders]);
+  const linkedQuantityByOrderAndSource = useMemo(() => {
+    if (!isImperio) return new Map<string, number>();
+    return buildLinkedQuantityByOrderAndSource(
+      db.logs,
+      new Set(db.orders.map((order) => String(order.id))),
+    );
+  }, [isImperio, db.logs, db.orders]);
   // Filters state
   const [selectedSector, setSelectedSector] = useState<string>("ALL");
   const [searchTerm, setSearchTerm] = useState<string>("");
@@ -156,18 +168,37 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
   const [selectedOrderToLink, setSelectedOrderToLink] = useState<any>(null);
   const [linkQuantity, setLinkQuantity] = useState<number | "">("");
 
+  const getLinkedQuantityForOrder = (order: any, sourceLog: ProductionLog | null = logToLink) => {
+    if (!isImperio || !order) return 0;
+    return getAlreadyLinkedQuantityFromMap(linkedQuantityByOrderAndSource, order.id, sourceLog);
+  };
+
+  const getLinkAvailabilityForOrder = (order: any, sourceLog: ProductionLog | null = logToLink) => {
+    if (!order) return 0;
+    if (!isImperio) return Math.max(0, Number(order.totalQuantity || 0) - Number(order.invoicedQuantity || 0));
+    return getRemainingLinkQuantity(
+      Number(order.totalQuantity || 0),
+      Number(order.invoicedQuantity || 0),
+      getLinkedQuantityForOrder(order, sourceLog),
+    );
+  };
+
   const handleOpenLinkModal = (log: any) => {
     setLogToLink(log);
-    setLinkOrderSearch("");
+    const details = getLogDetails(log);
+    setLinkOrderSearch(isImperio && details.code && details.code !== "S/C" ? details.code : "");
     setSelectedOrderToLink(null);
     setLinkQuantity("");
     setIsLinkModalOpen(true);
   };
 
   const handleLinkOrderClick = (order: any) => {
-    setSelectedOrderToLink(order);
     const details = getLogDetails(logToLink);
-    setLinkQuantity(details.quantity);
+    const available = getLinkAvailabilityForOrder(order, logToLink);
+    if (isImperio && available <= 0) return;
+    setSelectedOrderToLink(order);
+    const suggestedQty = isImperio ? Math.min(details.quantity, available) : details.quantity;
+    setLinkQuantity(suggestedQty > 0 ? suggestedQty : "");
   };
 
   const confirmLinkOrder = () => {
@@ -179,11 +210,21 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     }
     const details = getLogDetails(logToLink);
     const qtyToLinkNum = Number(linkQuantity);
-    const maxQty = details.quantity;
+    const sourceQty = details.quantity;
+    const availableToLink = getLinkAvailabilityForOrder(selectedOrderToLink, logToLink);
+    const maxQty = isImperio ? Math.min(sourceQty, availableToLink) : sourceQty;
     
-    if (qtyToLinkNum <= 0 || qtyToLinkNum > maxQty) return;
+    if (qtyToLinkNum <= 0 || qtyToLinkNum > maxQty) {
+      if (isImperio) {
+        const alreadyLinked = getLinkedQuantityForOrder(selectedOrderToLink, logToLink);
+        alert(
+          `Quantidade inválida. Este pedido já possui ${alreadyLinked} un vinculadas nesta etapa e permite vincular no máximo mais ${maxQty} un agora.`,
+        );
+      }
+      return;
+    }
 
-    if (qtyToLinkNum < maxQty) {
+    if (qtyToLinkNum < sourceQty) {
       // split the log
       const originalUpdated = { ...logToLink };
       if (originalUpdated.quantityPacked) originalUpdated.quantityPacked -= qtyToLinkNum;
@@ -1406,15 +1447,21 @@ ${barcodeBlock}
                   if (queryParts.length === 0) return true;
                   return queryParts.every(part => searchStr.includes(part));
                 });
+                const logDetails = getLogDetails(logToLink);
 
                 return (
                   <>
-                    <p className="text-xs text-slate-500 mb-4 font-medium">
+                    <p className="text-xs text-slate-500 mb-2 font-medium">
                       Esse apontamento foi feito de forma avulsa. Localize um pedido para vinculá-lo.
                     </p>
+                    {isImperio && logDetails.code !== "S/C" && (
+                      <p className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1.5 mb-3 font-semibold">
+                        Filtro inicial aplicado automaticamente pelo código do item: <strong>{logDetails.code}</strong>. Você pode complementar a busca com pedido ou cliente.
+                      </p>
+                    )}
                     <input 
                       type="text" 
-                      placeholder="Pesquisar por cliente, pedido, status ou produto..." 
+                      placeholder="Pesquisar por código, cliente, pedido, status ou produto..." 
                       value={linkOrderSearch} 
                       onChange={e => setLinkOrderSearch(e.target.value)} 
                       className="border border-slate-200 p-2 pl-3 rounded-lg mb-4 text-xs w-full focus:ring-1 focus:ring-indigo-500 outline-none"
@@ -1422,24 +1469,35 @@ ${barcodeBlock}
 
                     <div className="flex-1 max-h-[340px] overflow-y-auto border border-slate-150 rounded-xl bg-slate-50 p-2 flex flex-col gap-2 scrollbar-thin">
                       {filteredOrdersList.slice(0, 40).map(o => {
-                        const item = db.items.find(i => i.id === o.itemId);
+                        const item = isImperio ? itemsById.get(o.itemId) : db.items.find(i => i.id === o.itemId);
                         const statusObj = getStatusLabelAndStyles(o.status);
-                        const qtyDisponivel = Math.max(0, o.totalQuantity - (o.invoicedQuantity || 0));
+                        const alreadyLinked = getLinkedQuantityForOrder(o, logToLink);
+                        const qtyDisponivel = getLinkAvailabilityForOrder(o, logToLink);
+                        const noLinkBalance = isImperio && qtyDisponivel <= 0;
 
                         return (
                           <div 
                             key={o.id} 
                             onClick={() => handleLinkOrderClick(o)} 
-                            className="bg-white border border-slate-100 hover:border-indigo-400 rounded-lg p-3 text-xs cursor-pointer hover:bg-slate-50/70 transition flex flex-col gap-2.5 shadow-2xs"
+                            className={`bg-white border rounded-lg p-3 text-xs transition flex flex-col gap-2.5 shadow-2xs ${
+                              noLinkBalance
+                                ? "border-slate-200 opacity-60 cursor-not-allowed"
+                                : "border-slate-100 hover:border-indigo-400 cursor-pointer hover:bg-slate-50/70"
+                            }`}
                           >
                             <div className="flex justify-between items-start gap-1">
                               <div>
                                 <span className="font-extrabold text-slate-800 text-xs">Ped: {o.orderCode}</span>
                                 <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">Cliente: {o.customerName}</span>
                               </div>
-                              <span className={`px-2 py-0.5 rounded border font-bold shrink-0 text-[10px] ${statusObj.classes}`}>
-                                {statusObj.label}
-                              </span>
+                              <div className="flex flex-col items-end gap-1">
+                                <span className={`px-2 py-0.5 rounded border font-bold shrink-0 text-[10px] ${statusObj.classes}`}>
+                                  {statusObj.label}
+                                </span>
+                                {noLinkBalance && (
+                                  <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-100 rounded px-1.5 py-0.5">SEM SALDO</span>
+                                )}
+                              </div>
                             </div>
 
                             <div className="bg-slate-50 border border-slate-100 rounded-md p-2 font-medium">
@@ -1448,7 +1506,7 @@ ${barcodeBlock}
                             </div>
 
                             {/* Info bar of quantities */}
-                            <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-bold">
+                            <div className={`grid ${isImperio ? "grid-cols-4" : "grid-cols-3"} gap-2 text-center text-[10px] font-bold`}>
                               <div className="bg-slate-100 rounded-md py-1">
                                 <span className="text-slate-400 text-[9px] block font-normal uppercase">Qtd Pedido</span>
                                 <span className="text-slate-700">{o.totalQuantity} un</span>
@@ -1457,9 +1515,15 @@ ${barcodeBlock}
                                 <span className="text-emerald-500 text-[9px] block font-normal uppercase">Faturado</span>
                                 <span className="text-emerald-700">{o.invoicedQuantity || 0} un</span>
                               </div>
+                              {isImperio && (
+                                <div className="bg-amber-50 rounded-md py-1 text-amber-800">
+                                  <span className="text-amber-600 text-[9px] block font-normal uppercase">Já vinculado</span>
+                                  <span className="text-amber-800">{alreadyLinked} un</span>
+                                </div>
+                              )}
                               <div className="bg-indigo-50/80 rounded-md py-1 text-indigo-800">
-                                <span className="text-indigo-500 text-[9px] block font-normal uppercase">Atrelável</span>
-                                <span className="text-indigo-705">{qtyDisponivel} un</span>
+                                <span className="text-indigo-500 text-[9px] block font-normal uppercase">{isImperio ? "Saldo vínculo" : "Atrelável"}</span>
+                                <span className="text-indigo-700">{qtyDisponivel} un</span>
                               </div>
                             </div>
                           </div>
@@ -1467,7 +1531,7 @@ ${barcodeBlock}
                       })}
 
                       {filteredOrdersList.length === 0 && (
-                        <div className="text-center text-xs text-slate-400 p-6 font-medium">Nenhum pedido encontrado.</div>
+                        <div className="text-center text-xs text-slate-400 p-6 font-medium">Nenhum pedido encontrado para o filtro atual.</div>
                       )}
                     </div>
 
@@ -1481,7 +1545,12 @@ ${barcodeBlock}
                 );
               } else {
                 const statusObj = getStatusLabelAndStyles(selectedOrderToLink.status);
-                const qtyDisponivel = Math.max(0, selectedOrderToLink.totalQuantity - (selectedOrderToLink.invoicedQuantity || 0));
+                const alreadyLinked = getLinkedQuantityForOrder(selectedOrderToLink, logToLink);
+                const qtyDisponivel = getLinkAvailabilityForOrder(selectedOrderToLink, logToLink);
+                const sourceQuantity = getLogDetails(logToLink).quantity;
+                const maxLinkQuantity = isImperio ? Math.min(sourceQuantity, qtyDisponivel) : sourceQuantity;
+                const typedQuantity = Number(linkQuantity || 0);
+                const invalidLinkQuantity = typedQuantity <= 0 || typedQuantity > maxLinkQuantity;
 
                 return (
                   <>
@@ -1498,12 +1567,12 @@ ${barcodeBlock}
 
                       <div className="text-xs text-indigo-900 border-t border-indigo-100/50 pt-2 font-medium">
                         Produto: {(() => {
-                          const item = db.items.find(i => i.id === selectedOrderToLink.itemId);
+                          const item = isImperio ? itemsById.get(selectedOrderToLink.itemId) : db.items.find(i => i.id === selectedOrderToLink.itemId);
                           return `${item?.name || "Sem nome"} (${item?.code || "S/C"})`;
                         })()}
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-bold mt-1 bg-white/80 p-2 rounded-lg border border-indigo-100/30">
+                      <div className={`grid ${isImperio ? "grid-cols-4" : "grid-cols-3"} gap-2 text-center text-[10px] font-bold mt-1 bg-white/80 p-2 rounded-lg border border-indigo-100/30`}>
                         <div>
                           <span className="text-slate-400 text-[9px] block font-normal uppercase">Qtd Pedido</span>
                           <span className="text-slate-800 font-extrabold">{selectedOrderToLink.totalQuantity} un</span>
@@ -1512,29 +1581,54 @@ ${barcodeBlock}
                           <span className="text-emerald-500 text-[9px] block font-normal uppercase">Faturado</span>
                           <span className="text-emerald-700 font-extrabold">{selectedOrderToLink.invoicedQuantity || 0} un</span>
                         </div>
+                        {isImperio && (
+                          <div>
+                            <span className="text-amber-600 text-[9px] block font-normal uppercase">Já vinculado</span>
+                            <span className="text-amber-800 font-extrabold">{alreadyLinked} un</span>
+                          </div>
+                        )}
                         <div>
-                          <span className="text-indigo-500 text-[9px] block font-normal uppercase">Atrelável</span>
+                          <span className="text-indigo-500 text-[9px] block font-normal uppercase">{isImperio ? "Saldo vínculo" : "Atrelável"}</span>
                           <span className="text-indigo-700 font-extrabold">{qtyDisponivel} un</span>
                         </div>
                       </div>
                     </div>
+
+                    {isImperio && alreadyLinked > 0 && (
+                      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 font-semibold">
+                        Atenção: este pedido já possui <strong>{alreadyLinked} un</strong> vinculadas nesta mesma etapa de etiqueta. Restam <strong>{qtyDisponivel} un</strong> disponíveis para novo vínculo.
+                      </div>
+                    )}
 
                     <p className="text-xs font-bold text-slate-600 mb-1.5">
                       Quantidade a vincular:
                     </p>
                     <input 
                       type="number" 
+                      min={1}
                       value={linkQuantity} 
                       onChange={e => setLinkQuantity(Number(e.target.value) || "")} 
-                      className="border border-slate-200 p-2.5 rounded-lg mb-4 text-sm w-full outline-indigo-500 font-extrabold text-lg"
-                      max={getLogDetails(logToLink).quantity}
+                      className={`border p-2.5 rounded-lg text-sm w-full outline-indigo-500 font-extrabold text-lg ${
+                        invalidLinkQuantity && linkQuantity !== "" ? "border-rose-300 bg-rose-50" : "border-slate-200"
+                      }`}
+                      max={maxLinkQuantity}
+                      disabled={isImperio && maxLinkQuantity <= 0}
                     />
+                    {isImperio && (
+                      <p className={`text-[10px] mt-1 mb-3 font-semibold ${invalidLinkQuantity && linkQuantity !== "" ? "text-rose-700" : "text-slate-500"}`}>
+                        Máximo permitido neste vínculo: {maxLinkQuantity} un (considerando a quantidade desta etiqueta e o saldo do pedido).
+                      </p>
+                    )}
                     
                     <div className="flex gap-2.5 mt-2">
                       <button onClick={() => setSelectedOrderToLink(null)} className="flex-1 p-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-lg text-xs transition">
                         Voltar
                       </button>
-                      <button onClick={confirmLinkOrder} className="flex-1 p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition">
+                      <button
+                        onClick={confirmLinkOrder}
+                        disabled={isImperio && invalidLinkQuantity}
+                        className="flex-1 p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
                         Confirmar Vínculo
                       </button>
                     </div>
