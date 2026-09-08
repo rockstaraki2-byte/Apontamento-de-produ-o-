@@ -45,20 +45,60 @@ function cleanUndefined<T>(obj: T): T {
   return cleaned as T;
 }
 
+function isCriticalBillingAction(type: string, payload: any): boolean {
+  if (type === "UPDATE_ORDERS") {
+    return !!payload?.orders?.some((o: any) => o?.status === "FATURADO");
+  }
+
+  if (type === "ADD_LOGS") {
+    return !!payload?.logs?.some((l: any) => l?.type === "FATURAMENTO");
+  }
+
+  if (type === "ADD_STOCK_MOVEMENT") {
+    const movement = payload?.movement;
+    const description = String(movement?.description || "").toLowerCase();
+    return movement?.type === "SAIDA" && description.includes("fatur");
+  }
+
+  return false;
+}
+
 export async function enqueueAction(type: string, payload: any): Promise<number> {
   const database = await getDB();
-  return new Promise((resolve, reject) => {
+  const clonedPayload = JSON.parse(JSON.stringify(payload));
+  const createdAt = Date.now();
+
+  const id = await new Promise<number>((resolve, reject) => {
     const transaction = database.transaction(STORE_NAME, "readwrite");
     const store = transaction.objectStore(STORE_NAME);
     const item = {
       type,
-      payload: JSON.parse(JSON.stringify(payload)), // Deep clone to detach proxy representations
-      createdAt: Date.now()
+      payload: clonedPayload, // Deep clone to detach proxy representations
+      createdAt
     };
     const request = store.add(item);
     request.onsuccess = () => resolve(request.result as number);
     request.onerror = () => reject(request.error);
   });
+
+  // Faturamento is a financially critical operation: do not acknowledge success
+  // to the UI until Firestore has actually accepted the order/log/movement write.
+  // The item is enqueued first, so a failed remote write is still recoverable by
+  // the regular background sync queue.
+  if (isCriticalBillingAction(type, clonedPayload)) {
+    try {
+      await processQueueItem({ id, type, payload: clonedPayload, createdAt });
+      await removeFromQueue(id);
+    } catch (error) {
+      console.error(
+        `Critical billing sync failed for queue item ${id} (${type}). Item kept for retry.`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  return id;
 }
 
 function isEmbalagemItem(item: QueueItem): boolean {
