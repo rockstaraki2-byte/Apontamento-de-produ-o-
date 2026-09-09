@@ -15,7 +15,7 @@ import {
   normalizePaymentTerms,
   resolveFiscalType,
   resolveRET,
-} from "./orderImportRules.ts";
+} from "./orderImportRules.js";
 
 export interface ImportMeta {
   tenantId: string;
