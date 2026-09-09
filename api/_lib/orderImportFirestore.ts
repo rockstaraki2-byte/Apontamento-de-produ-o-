@@ -17,7 +17,11 @@ import type {
   ImportAuditInput,
   OrderImportRepository,
 } from "./orderImportCore.js";
-import type { CatalogSnapshot } from "./orderImportRules.js";
+import {
+  normalizePaymentTerms,
+  normalizeText,
+  type CatalogSnapshot,
+} from "./orderImportRules.js";
 
 // Vercel transpiles these API files to native ESM. Loading the shared JSON config
 // through createRequire avoids Node's ESM JSON import-attribute requirement while
@@ -74,6 +78,36 @@ function nextOrderLineIds(count: number, seed = Date.now()): number[] {
   return ids;
 }
 
+/**
+ * Converte os rótulos vindos da API/Tek-System para os mesmos valores que a
+ * tela de pedidos usa nas opções padrão. Assim, por exemplo, "Boleto
+ * Bancário" não é persistido como uma forma personalizada quando já existe a
+ * opção BOLETO no sistema.
+ */
+function normalizeSystemPaymentCondition(value: unknown): string {
+  const normalized = normalizeText(value);
+  if (!normalized) return "";
+  if (normalized.startsWith("BOLETO")) return "BOLETO";
+  if (normalized.startsWith("PIX")) return "PIX";
+  if (normalized === "CARTEIRA") return "CARTEIRA";
+  if (normalized === "DEPOSITO" || normalized === "DEPOSITO EM CONTA") {
+    return "DEPÓSITO";
+  }
+  return String(value ?? "").trim();
+}
+
+function samePaymentTerms(current: number[], previous: number[]): boolean {
+  if (current.length !== previous.length) return false;
+  return current.every((value, index) => value === previous[index]);
+}
+
+interface PreviousCustomerPayment {
+  paymentCondition: string;
+  paymentTerms: string;
+  paymentTermsDays: number[];
+  createdAt: number;
+}
+
 export class FirestoreOrderImportRepository implements OrderImportRepository {
   async loadCatalog(tenantId: string): Promise<CatalogSnapshot> {
     const [customersSnap, itemsSnap, usersSnap] = await Promise.all([
@@ -103,12 +137,68 @@ export class FirestoreOrderImportRepository implements OrderImportRepository {
       .map((row) => row.id);
   }
 
+  /**
+   * Busca somente pedidos do tenant ativo e somente do cliente atual.
+   * A combinação tenantId + customerName preserva o isolamento multi-tenant
+   * aprovado para esta alteração e evita consultar histórico de outra empresa.
+   */
+  private async findLatestCustomerPayment(
+    tenantId: string,
+    customerName: string,
+  ): Promise<PreviousCustomerPayment | null> {
+    if (!tenantId || !customerName) return null;
+
+    const snap = await getDocs(
+      query(
+        collection(db, "orders"),
+        where("tenantId", "==", tenantId),
+        where("customerName", "==", customerName),
+      ),
+    );
+
+    const latest = snap.docs
+      .map((d) => d.data())
+      .filter((row) => tenantMatches(row, tenantId))
+      .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0))[0];
+
+    if (!latest) return null;
+
+    const previousTermsDays = Array.isArray(latest.paymentTermsDays)
+      ? normalizePaymentTerms(latest.paymentTermsDays)
+      : normalizePaymentTerms(latest.paymentTerms || "");
+
+    return {
+      paymentCondition: normalizeSystemPaymentCondition(latest.paymentCondition),
+      paymentTerms: String(latest.paymentTerms || ""),
+      paymentTermsDays: previousTermsDays,
+      createdAt: Number(latest.createdAt) || 0,
+    };
+  }
+
   async createOrderAtomically(input: AtomicCreateInput): Promise<AtomicCreateResult> {
     const markerId = keyForOrder(input.tenantId, input.prepared.codigoPedido);
     const markerRef = doc(db, "orderImportKeys", markerId);
     const auditId = crypto.randomUUID();
     const auditRef = doc(db, "orderImportAudits", auditId);
     const orderIds = nextOrderLineIds(input.prepared.lines.length, input.createdAt);
+
+    const normalizedPaymentCondition = normalizeSystemPaymentCondition(
+      input.prepared.paymentCondition,
+    );
+    const previousPayment = await this.findLatestCustomerPayment(
+      input.tenantId,
+      input.prepared.customerName,
+    );
+    const shouldReuseLastPayment =
+      !!previousPayment &&
+      previousPayment.paymentCondition === normalizedPaymentCondition &&
+      samePaymentTerms(
+        input.prepared.paymentTermsDays,
+        previousPayment.paymentTermsDays,
+      );
+    const billingRule: "cadastro" | "ultimo_pedido" = shouldReuseLastPayment
+      ? "ultimo_pedido"
+      : "cadastro";
 
     return runTransaction(db, async (tx) => {
       const markerSnap = await tx.get(markerRef);
@@ -145,9 +235,10 @@ export class FirestoreOrderImportRepository implements OrderImportRepository {
           isActive: true,
           createdAt: input.createdAt,
           deliveryDate: input.prepared.deliveryDate,
-          paymentCondition: input.prepared.paymentCondition,
+          paymentCondition: normalizedPaymentCondition,
           paymentTerms: input.prepared.paymentTerms,
           paymentTermsDays: input.prepared.paymentTermsDays,
+          billingRule,
           fiscalType: input.prepared.fiscalType,
           unitPrice: line.unitPrice,
           unitPriceScaled: line.unitPriceScaled,
