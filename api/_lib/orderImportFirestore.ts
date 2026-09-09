@@ -1,14 +1,16 @@
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
+import { getApps, initializeApp } from "firebase/app";
 import {
   collection,
   doc,
   getDocs,
+  initializeFirestore,
   query,
   runTransaction,
   setDoc,
   where,
 } from "firebase/firestore";
-import { db } from "../../src/firebase.js";
 import type {
   AtomicCreateInput,
   AtomicCreateResult,
@@ -16,6 +18,41 @@ import type {
   OrderImportRepository,
 } from "./orderImportCore.js";
 import type { CatalogSnapshot } from "./orderImportRules.js";
+
+// Vercel transpiles these API files to native ESM. Loading the shared JSON config
+// through createRequire avoids Node's ESM JSON import-attribute requirement while
+// keeping this serverless module isolated from the browser Firebase bootstrap.
+const require = createRequire(import.meta.url);
+const firebaseConfigFile = require("../../firebase-applet-config.json") as {
+  apiKey: string;
+  authDomain?: string;
+  projectId: string;
+  storageBucket?: string;
+  messagingSenderId?: string;
+  appId: string;
+  firestoreDatabaseId?: string;
+};
+
+const ORDER_IMPORT_FIREBASE_APP_NAME = "order-import-api";
+const firebaseApp =
+  getApps().find((app) => app.name === ORDER_IMPORT_FIREBASE_APP_NAME) ||
+  initializeApp(
+    {
+      apiKey: firebaseConfigFile.apiKey,
+      authDomain: firebaseConfigFile.authDomain,
+      projectId: firebaseConfigFile.projectId,
+      storageBucket: firebaseConfigFile.storageBucket,
+      messagingSenderId: firebaseConfigFile.messagingSenderId,
+      appId: firebaseConfigFile.appId,
+    },
+    ORDER_IMPORT_FIREBASE_APP_NAME,
+  );
+
+const db = initializeFirestore(
+  firebaseApp,
+  { experimentalForceLongPolling: true },
+  firebaseConfigFile.firestoreDatabaseId,
+);
 
 function tenantMatches(value: any, tenantId: string): boolean {
   return String(value?.tenantId || "imperio") === tenantId;
