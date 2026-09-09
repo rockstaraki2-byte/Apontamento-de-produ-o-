@@ -1,6 +1,41 @@
 import { FirestoreOrderImportRepository } from "./_lib/orderImportFirestore.js";
 import { processOrderImport } from "./_lib/orderImportCore.js";
 
+function normalizeTextLocal(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+class BatchOrderImportRepository extends FirestoreOrderImportRepository {
+  async loadCatalog(tenantId: string) {
+    const catalog = await super.loadCatalog(tenantId);
+    const targetDescription = normalizeTextLocal(
+      "BARRA CHATA REFORÇO 53 CM 2 FUROS - PERFILADA",
+    );
+    const codeMatches = catalog.items.filter(
+      (item) => normalizeTextLocal(String(item.code || "").replace(/\..*$/, "")) === "2517",
+    );
+    const exactDescriptionMatches = codeMatches.filter(
+      (item) => normalizeTextLocal(item.name) === targetDescription,
+    );
+
+    if (exactDescriptionMatches.length === 1) {
+      const selectedId = exactDescriptionMatches[0].id;
+      catalog.items = catalog.items.filter((item) => {
+        const base = normalizeTextLocal(String(item.code || "").replace(/\..*$/, ""));
+        return base !== "2517" || item.id === selectedId;
+      });
+    }
+
+    return catalog;
+  }
+}
+
 const payload = {
   origem: "TEKSYSTEM_PDF",
   tenantId: "imperio",
@@ -150,7 +185,7 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ sucesso: false, erro: "Método não permitido." });
   }
 
-  const repository = new FirestoreOrderImportRepository();
+  const repository = new BatchOrderImportRepository();
   const meta = {
     tenantId: "imperio",
     origem: "TEKSYSTEM_PDF",
