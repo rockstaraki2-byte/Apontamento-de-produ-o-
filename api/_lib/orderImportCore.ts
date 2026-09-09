@@ -7,6 +7,7 @@ import {
   calculateLineTotals,
   deriveProductIdentity,
   mapPaymentMethod,
+  mapRepresentativeName,
   matchCustomer,
   matchProduct,
   matchRepresentative,
@@ -16,6 +17,7 @@ import {
   resolveFiscalType,
   resolveRET,
 } from "./orderImportRules.js";
+import { getSystemRepresentativeByCanonicalName } from "./systemRepresentatives.js";
 
 export interface ImportMeta {
   tenantId: string;
@@ -142,7 +144,18 @@ export function prepareOrder(
 
   const customerMatch = matchCustomer(order.cliente, catalog.customers);
   errors.push(...customerMatch.errors);
-  const representativeMatch = matchRepresentative(order.representante, catalog.users);
+
+  let representativeMatch = matchRepresentative(order.representante, catalog.users);
+  if (!representativeMatch.representative && representativeMatch.errors.length > 0) {
+    const canonicalName = mapRepresentativeName(order.representante);
+    const systemRepresentative = getSystemRepresentativeByCanonicalName(canonicalName);
+    if (systemRepresentative) {
+      representativeMatch = { representative: systemRepresentative, errors: [] };
+      warnings.push(
+        `Representante ${systemRepresentative.name} foi associado pelo cadastro padrão do sistema.`,
+      );
+    }
+  }
   errors.push(...representativeMatch.errors);
 
   const paymentCondition = mapPaymentMethod(order.formaPagamento);
