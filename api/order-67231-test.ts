@@ -12,13 +12,13 @@ const payload = {
         codigo: "1115",
         nome: "KAVIN ESTOFADOS LTDA",
       },
-      representante: "KESSE",
+      representante: null,
       formaPagamento: "BOLETO 30 DIAS",
       prazos: [30],
       promEntrega: "11/09/2026",
       previsao: "11/09/2026",
       possuiRET: false,
-      observacoes: "Pedido TekSystem 67231 - emissão 09/09/2026 09:36:58",
+      observacoes: "Pedido TekSystem 67231 - emissão 09/09/2026 09:36:58 | Consultor TekSystem: KESSE (sem usuário representante correspondente no sistema)",
       itens: [
         {
           codigoOriginal: "5484.3",
@@ -40,14 +40,6 @@ export default async function handler(req: any, res: any) {
   const repository = new FirestoreOrderImportRepository();
 
   try {
-    if (mode === "inspect-representative") {
-      const catalog = await repository.loadCatalog("imperio");
-      const matches = catalog.users
-        .filter((u: any) => String(u.name || "").toUpperCase().includes("KESSE"))
-        .map((u: any) => ({ id: u.id, name: u.name, role: u.role, tenantId: u.tenantId }));
-      return res.status(200).json({ sucesso: true, matches });
-    }
-
     const dryRun = mode !== "create";
     const result = await processOrderImport(
       repository,
