@@ -9,7 +9,8 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:order-import": "tsx --test tests/orderImport.test.ts"
   },
   "dependencies": {
     "@babel/parser": "^8.0.4",
