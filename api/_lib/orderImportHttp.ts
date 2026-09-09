@@ -1,6 +1,6 @@
-import type { OrderImportPayload } from "./orderImportRules.ts";
-import { processOrderImport } from "./orderImportCore.ts";
-import { FirestoreOrderImportRepository } from "./orderImportFirestore.ts";
+import type { OrderImportPayload } from "./orderImportRules.js";
+import { processOrderImport } from "./orderImportCore.js";
+import { FirestoreOrderImportRepository } from "./orderImportFirestore.js";
 
 function getBearerToken(req: any): string {
   const header = String(req.headers?.authorization || "");

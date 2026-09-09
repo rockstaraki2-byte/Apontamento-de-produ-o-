@@ -8,14 +8,14 @@ import {
   setDoc,
   where,
 } from "firebase/firestore";
-import { db } from "../../src/firebase.ts";
+import { db } from "../../src/firebase.js";
 import type {
   AtomicCreateInput,
   AtomicCreateResult,
   ImportAuditInput,
   OrderImportRepository,
-} from "./orderImportCore.ts";
-import type { CatalogSnapshot } from "./orderImportRules.ts";
+} from "./orderImportCore.js";
+import type { CatalogSnapshot } from "./orderImportRules.js";
 
 function tenantMatches(value: any, tenantId: string): boolean {
   return String(value?.tenantId || "imperio") === tenantId;
