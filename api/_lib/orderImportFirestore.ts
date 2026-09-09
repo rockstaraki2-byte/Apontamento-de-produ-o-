@@ -54,7 +54,7 @@ export class FirestoreOrderImportRepository implements OrderImportRepository {
         .filter((row) => tenantMatches(row, tenantId)),
       users: usersSnap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((row) => row.tenantId === "global" || tenantMatches(row, tenantId)),
+        .filter((row: any) => row.tenantId === "global" || tenantMatches(row, tenantId)),
     };
   }
 
