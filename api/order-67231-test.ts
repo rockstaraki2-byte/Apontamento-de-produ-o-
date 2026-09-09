@@ -37,10 +37,18 @@ export default async function handler(req: any, res: any) {
   if (req.method !== "GET") return res.status(405).json({ sucesso: false, erro: "METHOD_NOT_ALLOWED" });
 
   const mode = String(req.query?.mode || "validate").toLowerCase();
-  const dryRun = mode !== "create";
   const repository = new FirestoreOrderImportRepository();
 
   try {
+    if (mode === "inspect-representative") {
+      const catalog = await repository.loadCatalog("imperio");
+      const matches = catalog.users
+        .filter((u: any) => String(u.name || "").toUpperCase().includes("KESSE"))
+        .map((u: any) => ({ id: u.id, name: u.name, role: u.role, tenantId: u.tenantId }));
+      return res.status(200).json({ sucesso: true, matches });
+    }
+
+    const dryRun = mode !== "create";
     const result = await processOrderImport(
       repository,
       payload,
