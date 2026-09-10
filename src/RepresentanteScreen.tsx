@@ -4,6 +4,7 @@ import { User, COLOR_MAP } from "./types";
 import { useDatabase } from "./useDatabase";
 import { normalizeString } from "./searchUtils";
 import { StatusScreen } from "./StatusScreen";
+import { RepresentativeOpenOrdersReportTab } from "./RepresentativeOpenOrdersReportTab";
 
 export function RepresentanteScreen({
   db,
@@ -12,7 +13,7 @@ export function RepresentanteScreen({
   db: ReturnType<typeof useDatabase>;
   currentUser: User;
 }) {
-  const [activeTab, setActiveTab] = useState<"STATUS" | "NOVO_PEDIDO">(
+  const [activeTab, setActiveTab] = useState<"STATUS" | "NOVO_PEDIDO" | "RELATORIO">(
     "STATUS",
   );
   const [searchTerm, setSearchTerm] = useState("");
@@ -786,6 +787,15 @@ export function RepresentanteScreen({
         >
           + Novo Pedido
         </button>
+        {/* IMPERIO_REP_REPORT_TAB_BUTTON */}
+        {db.activeTenantId === "imperio" && (
+          <button
+            className={`flex-1 min-w-[120px] py-2 text-sm font-semibold transition ${activeTab === "RELATORIO" ? "bg-blue-600 text-white" : "bg-white text-blue-600"}`}
+            onClick={() => setActiveTab("RELATORIO")}
+          >
+            Relatório
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto w-full pb-6">
@@ -793,6 +803,11 @@ export function RepresentanteScreen({
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
             <StatusScreen db={db} currentUser={currentUser} />
           </div>
+        )}
+
+        {/* IMPERIO_REP_REPORT_TAB_CONTENT */}
+        {activeTab === "RELATORIO" && db.activeTenantId === "imperio" && (
+          <RepresentativeOpenOrdersReportTab db={db} currentUser={currentUser} />
         )}
 
         {activeTab === "NOVO_PEDIDO" && (

@@ -1921,6 +1921,14 @@ export function StatusScreen({
                               Embalado: {o.packedQuantity || 0} / Total do
                               Pedido: {o.totalQuantity || 0}
                             </span>
+                            {/* IMPERIO_REP_REMAINING_QTY */}
+                            {db.activeTenantId === "imperio" &&
+                              (o.invoicedQuantity || 0) > 0 &&
+                              (o.invoicedQuantity || 0) < (o.totalQuantity || 0) && (
+                                <span className="text-xs text-amber-800 font-bold font-sans mt-1 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded w-max">
+                                  Faturado: {o.invoicedQuantity || 0} / Restante: {Math.max(0, (o.totalQuantity || 0) - (o.invoicedQuantity || 0))}
+                                </span>
+                              )}
                             <div className="flex flex-col">
                               {(() => {
                                 let itemDateFormatted = o.deliveryDate || "-";

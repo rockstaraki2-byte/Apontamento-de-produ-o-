@@ -11053,6 +11053,14 @@ function PedidosScreen({
                               <span className="text-[8px] sm:text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded leading-none">
                                 Fat: {o.invoicedQuantity || 0} un
                               </span>
+                              {/* IMPERIO_REMAINING_QTY_BADGE */}
+                              {db.activeTenantId === "imperio" &&
+                                (o.invoicedQuantity || 0) > 0 &&
+                                (o.invoicedQuantity || 0) < (o.totalQuantity || 0) && (
+                                  <span className="text-[8px] sm:text-[10px] text-amber-800 font-bold bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded leading-none">
+                                    Restante: {Math.max(0, (o.totalQuantity || 0) - (o.invoicedQuantity || 0))} un
+                                  </span>
+                                )}
                               {(() => {
                                 const batch = db.productionBatches.find((b) =>
                                   b.orderIds.includes(o.id),
