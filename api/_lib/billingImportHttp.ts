@@ -45,9 +45,10 @@ function findCustomerOrderCodes(snapshot: any, tenantId: string, customer: unkno
         const candidate = normalizeText(order?.customerName);
         return candidate.includes(customerQuery) || customerQuery.includes(candidate);
       });
-  return Array.from(
-    new Set(matches.map((order: any) => String(order?.orderCode || "").trim()).filter(Boolean)),
-  ).sort();
+  const orderCodes: string[] = matches
+    .map((order: any) => String(order?.orderCode || "").trim())
+    .filter((code: string) => Boolean(code));
+  return Array.from(new Set<string>(orderCodes)).sort();
 }
 
 export async function handleBillingImportHttp(req: any, res: any, forceDryRun = false) {
