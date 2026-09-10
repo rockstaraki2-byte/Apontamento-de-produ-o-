@@ -1,0 +1,32 @@
+name: Billing smoke test
+
+on:
+  push:
+    branches:
+      - feature/chat-billing-api
+    paths:
+      - '.github/workflows/billing-smoke-test.yml'
+      - 'scripts/billing-smoke-test.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  run-billing-smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run guarded billing smoke test
+        run: npx tsx scripts/billing-smoke-test.ts
