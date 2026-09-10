@@ -8,6 +8,7 @@ import {
   BillingStateChangedError,
   FirestoreBillingRepository,
 } from "./billingImportFirestore.js";
+import { normalizeText } from "./orderImportRules.js";
 
 function getBearerToken(req: any): string {
   const header = String(req.headers?.authorization || "");
@@ -27,6 +28,26 @@ function onlyNoopStatuses(plan: ReturnType<typeof buildBillingPlan>): boolean {
       (line) => line.status === "JA_PROCESSADO" || line.status === "JA_FATURADO",
     )
   );
+}
+
+function findCustomerOrderCodes(snapshot: any, tenantId: string, customer: unknown): string[] {
+  const customerQuery = normalizeText(customer);
+  if (!customerQuery) return [];
+  const tenantOrders = (snapshot.orders || []).filter(
+    (order: any) => String(order?.tenantId || "imperio") === tenantId,
+  );
+  const exact = tenantOrders.filter(
+    (order: any) => normalizeText(order?.customerName) === customerQuery,
+  );
+  const matches = exact.length > 0
+    ? exact
+    : tenantOrders.filter((order: any) => {
+        const candidate = normalizeText(order?.customerName);
+        return candidate.includes(customerQuery) || customerQuery.includes(candidate);
+      });
+  return Array.from(
+    new Set(matches.map((order: any) => String(order?.orderCode || "").trim()).filter(Boolean)),
+  ).sort();
 }
 
 export async function handleBillingImportHttp(req: any, res: any, forceDryRun = false) {
@@ -128,6 +149,29 @@ export async function handleBillingImportHttp(req: any, res: any, forceDryRun = 
   try {
     const repository = new FirestoreBillingRepository();
     const snapshot = await repository.loadSnapshot(tenantId);
+
+    // Se a busca veio apenas pelo cliente, reproduzimos a decisão humana da tela:
+    // quando existem vários pedidos desse cliente, não escolhemos um pedido por inferência.
+    const customerOnlyAmbiguities = faturamentos
+      .map((line, index) => {
+        const hasOrderCode = String(line?.codigoPedido ?? "").trim().length > 0;
+        if (hasOrderCode || !String(line?.cliente ?? "").trim()) return null;
+        const orderCodes = findCustomerOrderCodes(snapshot, tenantId, line.cliente);
+        return orderCodes.length > 1
+          ? { linha: index + 1, cliente: String(line.cliente), pedidos: orderCodes }
+          : null;
+      })
+      .filter(Boolean);
+    if (customerOnlyAmbiguities.length > 0) {
+      return res.status(422).json({
+        sucesso: false,
+        erro: "CLIENTE_COM_MULTIPLOS_PEDIDOS",
+        mensagem:
+          "A busca pelo cliente retornou mais de um pedido. Informe o codigoPedido correto antes de faturar; nenhuma alteração foi feita.",
+        linhas: customerOnlyAmbiguities,
+      });
+    }
+
     const sourceKeys = collectSourceKeys(normalizedPayload, snapshot);
     const processedSourceKeys = await repository.findProcessedSourceKeys(
       tenantId,
