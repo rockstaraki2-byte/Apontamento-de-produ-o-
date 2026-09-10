@@ -1,0 +1,29 @@
+name: Billing batch Sep 10 morning preview
+
+on:
+  push:
+    branches:
+      - feature/chat-billing-api
+    paths:
+      - '.github/workflows/billing-batch-2026-09-10-manha-preview.yml'
+      - 'scripts/billing-batch-2026-09-10-manha-preview.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Preview batch
+        run: npx tsx scripts/billing-batch-2026-09-10-manha-preview.ts
