@@ -1,0 +1,8 @@
+{
+  "appUrl": "https://apontamento-de-producao.vercel.app/",
+  "rootFolder": "C:\\Users\\Micro\\Documents\\Exports Faturamento TekSystem",
+  "githubRepo": "rockstaraki2-byte/Apontamento-de-produ-o-",
+  "githubOwner": "rockstaraki2-byte",
+  "pollSeconds": 20,
+  "headless": true
+}
