@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  preview:
+  execute:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -27,5 +27,5 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Preview afternoon orders
-        run: npx tsx scripts/billing-batch-2026-09-10-tarde-preview.ts
+      - name: Execute validated afternoon batch
+        run: npx tsx scripts/billing-batch-2026-09-10-tarde-execute.ts
