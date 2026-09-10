@@ -11,38 +11,47 @@ async function main() {
   const snapshot = await repo.loadSnapshot(tenantId);
 
   const item3931 = snapshot.items.find((item) => normalizeText(item.code) === "3931");
-  if (!item3931) {
-    throw new Error("Item de código 3931 não encontrado. Nenhuma alteração foi feita.");
-  }
+  if (!item3931) throw new Error("Item 3931 não encontrado.");
 
   const candidates = snapshot.orders.filter((order) =>
     normalizeText(order.orderCode) === normalizeText(orderCode) &&
     Number(order.itemId) === Number(item3931.id) &&
     normalizeText(order.customerName).includes("CYRNE"),
   );
-
   if (candidates.length !== 1) {
-    throw new Error(
-      `Esperava exatamente 1 linha para '${orderCode}' + CYRNE + item 3931; encontrei ${candidates.length}. Nenhuma alteração foi feita.`,
-    );
+    throw new Error(`Esperava 1 alvo exato e encontrei ${candidates.length}.`);
   }
 
   const target = candidates[0];
-  console.log("ALVO:", {
+  const currentTotal = Number(target.totalQuantity || 0);
+  const currentInvoiced = Number(target.invoicedQuantity || 0);
+  console.log("ALVO ATUAL:", {
     id: target.id,
     orderCode: target.orderCode,
     customerName: target.customerName,
     itemCode: item3931.code,
     itemName: item3931.name,
-    totalQuantity: target.totalQuantity,
-    invoicedQuantity: target.invoicedQuantity || 0,
+    totalQuantity: currentTotal,
+    invoicedQuantity: currentInvoiced,
     status: target.status,
     isActive: target.isActive,
   });
 
-  if (Number(target.totalQuantity) !== 50 || Number(target.invoicedQuantity || 0) !== 0) {
+  // Se a execução anterior já concluiu a gravação mas ficou viva por causa da conexão Firebase,
+  // apenas confirma o resultado e encerra sem escrever novamente.
+  if (
+    currentTotal === 50 &&
+    currentInvoiced === 25 &&
+    target.status === "FATURADO_PARCIAL" &&
+    target.isActive !== false
+  ) {
+    console.log("SMOKE TEST OK: faturamento de 25 unidades já está aplicado e conferido.");
+    process.exit(0);
+  }
+
+  if (currentTotal !== 50 || currentInvoiced !== 0) {
     throw new Error(
-      `Estado diferente do previamente conferido (esperado total=50 e faturado=0; atual total=${target.totalQuantity}, faturado=${target.invoicedQuantity || 0}). Nenhuma alteração foi feita.`,
+      `Estado não seguro para iniciar o teste: esperado 50/0; encontrado ${currentTotal}/${currentInvoiced}.`,
     );
   }
 
@@ -64,12 +73,7 @@ async function main() {
     ],
   };
 
-  const processedSourceKeys = await repo.findProcessedSourceKeys(
-    tenantId,
-    documentKey,
-    ["item:1"],
-  );
-
+  const processedSourceKeys = await repo.findProcessedSourceKeys(tenantId, documentKey, ["item:1"]);
   const plan = buildBillingPlan(snapshot, payload, {
     tenantId,
     origem: "CHATGPT_SMOKE_TEST",
@@ -88,22 +92,19 @@ async function main() {
         orderCode: line.operation.orderCode,
         customerName: line.operation.customerName,
         itemCode: line.operation.itemCode,
-        itemName: line.operation.itemName,
         billingQuantity: line.operation.billingQuantity,
         currentTotalQuantity: line.operation.currentTotalQuantity,
         currentInvoicedQuantity: line.operation.currentInvoicedQuantity,
         newTotalQuantity: line.operation.newTotalQuantity,
         newInvoicedQuantity: line.operation.newInvoicedQuantity,
-        quantityAdjustedBy: line.operation.quantityAdjustedBy,
         resultingStatus: line.operation.resultingStatus,
         reservationConflict: line.operation.reservationConflict || null,
       },
     })),
-    previewHash: plan.previewHash,
   }, null, 2));
 
   if (!plan.canConfirm || plan.linhas.length !== 1 || !plan.linhas[0].operation) {
-    throw new Error("A prévia não autorizou exatamente uma operação. Nenhuma alteração foi feita.");
+    throw new Error("A prévia não autorizou exatamente uma operação.");
   }
 
   const op = plan.linhas[0].operation;
@@ -119,18 +120,11 @@ async function main() {
     normalizeText(op.customerName).includes("CYRNE") === false ||
     normalizeText(op.itemCode) !== "3931"
   ) {
-    throw new Error("A operação planejada não corresponde exatamente ao teste autorizado. Nenhuma alteração foi feita.");
+    throw new Error("A operação planejada não corresponde ao teste autorizado.");
   }
 
   const result = await repo.applyPlan(plan);
   console.log("RESULTADO:", JSON.stringify(result, null, 2));
-
-  if (
-    result.resumo.aplicados !== 1 ||
-    result.resumo.quantidadeFaturada !== 25
-  ) {
-    throw new Error("O resultado da gravação não corresponde ao faturamento de 25 unidades esperado.");
-  }
 
   const after = await repo.loadSnapshot(tenantId);
   const updated = after.orders.find((order) => order.id === target.id);
@@ -151,10 +145,11 @@ async function main() {
     updated.status !== "FATURADO_PARCIAL" ||
     updated.isActive === false
   ) {
-    throw new Error("A conferência pós-faturamento não encontrou o estado esperado (50 total / 25 faturado / parcial)." );
+    throw new Error("Conferência pós-faturamento diferente de 50 total / 25 faturado / parcial.");
   }
 
   console.log("SMOKE TEST OK: 25 unidades do item 3931 faturadas no pedido de teste da Cyrne.");
+  process.exit(0);
 }
 
 main().catch((error) => {
