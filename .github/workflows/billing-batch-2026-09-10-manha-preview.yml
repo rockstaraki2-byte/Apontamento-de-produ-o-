@@ -7,7 +7,6 @@ on:
     paths:
       - '.github/workflows/billing-batch-2026-09-10-manha-preview.yml'
       - 'scripts/billing-batch-2026-09-10-manha-preview.ts'
-      - 'scripts/billing-batch-2026-09-10-manha-diagnose.ts'
 
 permissions:
   contents: read
@@ -26,5 +25,5 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Diagnose order colors
-        run: npx tsx scripts/billing-batch-2026-09-10-manha-diagnose.ts
+      - name: Preview batch
+        run: npx tsx scripts/billing-batch-2026-09-10-manha-preview.ts
