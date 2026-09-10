@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App.tsx";
+import { OrderPdfExportBridge } from "./OrderPdfExportBridge";
 import "./index.css";
 
 const updateSW = registerSW({
@@ -28,5 +29,6 @@ if ("serviceWorker" in navigator) {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />
+    <OrderPdfExportBridge />
   </StrictMode>,
 );
