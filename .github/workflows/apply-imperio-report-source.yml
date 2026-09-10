@@ -1,0 +1,39 @@
+name: Apply Imperio report source changes
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/apply-imperio-open-orders-report.cjs
+      - .github/workflows/apply-imperio-report-source.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-source-changes:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply source patches
+        run: node scripts/apply-imperio-open-orders-report.cjs
+
+      - name: Commit source changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/StatusScreen.tsx src/RepresentanteScreen.tsx
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git commit -m "feat: apply Imperio open-order report UI"
+          git push origin HEAD:main
