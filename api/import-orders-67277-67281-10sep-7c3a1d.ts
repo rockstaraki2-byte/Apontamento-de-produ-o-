@@ -1,6 +1,20 @@
 import { FirestoreOrderImportRepository } from "./_lib/orderImportFirestore.js";
 import { processOrderImport } from "./_lib/orderImportCore.js";
 
+class Exact3143Repository extends FirestoreOrderImportRepository {
+  async loadCatalog(tenantId: string) {
+    const catalog = await super.loadCatalog(tenantId);
+    const exact = catalog.items.find((item: any) => String(item.code || "").trim() === "3143.3" && String(item.name || "").trim().toUpperCase() === "BASE CADEIRA LUIZA");
+    if (exact) {
+      catalog.items = catalog.items.filter((item: any) => {
+        const base = String(item.code || "").replace(/\..*$/, "").trim();
+        return base !== "3143" || String(item.id) === String((exact as any).id);
+      });
+    }
+    return catalog;
+  }
+}
+
 const payload = {
   origem: "TEKSYSTEM_PDF",
   tenantId: "imperio",
@@ -73,7 +87,7 @@ export default async function handler(req: any, res: any) {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ sucesso: false, erro: "Método não permitido." });
   }
-  const repository = new FirestoreOrderImportRepository();
+  const repository = new Exact3143Repository();
   const meta = { tenantId: "imperio", origem: "TEKSYSTEM_PDF", solicitadoPor: "chatgpt_pedidos_67277_67281_10set" };
   const validacao = await processOrderImport(repository, payload, meta, true);
   if (validacao.resultados.some((r) => r.status === "ERRO")) {
