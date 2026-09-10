@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test:order-import": "tsx --test tests/orderImport.test.ts"
+    "test:order-import": "tsx --test tests/orderImport.test.ts",
+    "pdf-agent": "node tools/order-pdf-agent.mjs",
+    "pdf-agent:setup": "node tools/order-pdf-agent.mjs --setup"
   },
   "dependencies": {
     "@babel/parser": "^8.0.4",
