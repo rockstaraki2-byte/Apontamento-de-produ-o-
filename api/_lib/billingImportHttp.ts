@@ -67,11 +67,33 @@ export async function handleBillingImportHttp(req: any, res: any, forceDryRun = 
     });
   }
 
-  if (faturamentos.length + pedidosInteiros.length > 250) {
+  // Mantém cada transação abaixo de um volume seguro de escritas no Firestore,
+  // inclusive quando o item possui componentes/BOM e gera movimentações extras.
+  if (faturamentos.length + pedidosInteiros.length > 50) {
     return res.status(413).json({
       sucesso: false,
       erro: "LOTE_MUITO_GRANDE",
-      mensagem: "O limite inicial é de 250 linhas/pedidos por requisição.",
+      mensagem:
+        "O limite é de 50 linhas/pedidos por requisição. Divida documentos maiores em lotes mantendo o mesmo documentKey e lineId únicos.",
+    });
+  }
+
+  const missingLocatorIndexes = faturamentos
+    .map((line, index) => ({
+      index,
+      hasLocator:
+        String(line?.codigoPedido ?? "").trim().length > 0 ||
+        String(line?.cliente ?? "").trim().length > 0,
+    }))
+    .filter((entry) => !entry.hasLocator)
+    .map((entry) => entry.index + 1);
+  if (missingLocatorIndexes.length > 0) {
+    return res.status(400).json({
+      sucesso: false,
+      erro: "LOCALIZADOR_PEDIDO_OBRIGATORIO",
+      mensagem:
+        "Cada linha de faturamento deve informar codigoPedido ou cliente. O sistema nunca escolhe um pedido apenas pelo produto.",
+      linhas: missingLocatorIndexes,
     });
   }
 
