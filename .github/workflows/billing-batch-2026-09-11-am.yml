@@ -1,0 +1,27 @@
+name: Billing batch Sep 11 AM
+
+on:
+  push:
+    branches:
+      - feature/chat-billing-api
+    paths:
+      - '.github/workflows/billing-batch-2026-09-11-am.yml'
+      - 'scripts/billing-batch-2026-09-11-am-diagnose.ts'
+      - 'scripts/billing-batch-2026-09-11-am-execute.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Diagnose Sep 11 AM billings
+        run: npx tsx scripts/billing-batch-2026-09-11-am-diagnose.ts
