@@ -77,7 +77,12 @@ async function main() {
   if (!billingPlan.canConfirm) throw new Error("Billing preview possui pendências.");
 
   const orderRepo = new FirestoreOrderImportRepository();
-  const orderPreview = await processOrderImport(missingOrdersPayload, orderRepo, { dryRun: true });
+  const orderPreview = await processOrderImport(
+    orderRepo,
+    missingOrdersPayload,
+    { tenantId, origem: "CHATGPT_PDF", solicitadoPor: "raul" },
+    true,
+  );
   console.log("ORDER_IMPORT_PREVIEW", JSON.stringify(orderPreview));
   if (orderPreview.resumo.comErro !== 0 || orderPreview.resumo.validos !== 2) throw new Error("Prévia dos pedidos ausentes falhou.");
 
