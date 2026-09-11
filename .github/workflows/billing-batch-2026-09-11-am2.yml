@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
+  preview:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,5 +24,5 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Diagnose Sep 11 AM2 billings
-        run: npx tsx scripts/billing-batch-2026-09-11-am2-diagnose.ts
+      - name: Preview Sep 11 AM2 billings
+        run: npx tsx scripts/billing-batch-2026-09-11-am2-preview.ts
