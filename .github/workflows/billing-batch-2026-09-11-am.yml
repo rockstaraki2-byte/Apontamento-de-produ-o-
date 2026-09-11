@@ -7,13 +7,14 @@ on:
     paths:
       - '.github/workflows/billing-batch-2026-09-11-am.yml'
       - 'scripts/billing-batch-2026-09-11-am-diagnose.ts'
+      - 'scripts/billing-batch-2026-09-11-am-preview.ts'
       - 'scripts/billing-batch-2026-09-11-am-execute.ts'
 
 permissions:
   contents: read
 
 jobs:
-  diagnose:
+  preview:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -23,5 +24,5 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Diagnose Sep 11 AM billings
-        run: npx tsx scripts/billing-batch-2026-09-11-am-diagnose.ts
+      - name: Preview Sep 11 AM billings
+        run: npx tsx scripts/billing-batch-2026-09-11-am-preview.ts
