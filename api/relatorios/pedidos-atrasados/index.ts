@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { getApps, initializeApp } from "firebase/app";
 import { collection, getDocs, initializeFirestore } from "firebase/firestore";
@@ -14,6 +15,10 @@ const firebaseConfigFile = require("../../../firebase-applet-config.json") as {
 };
 
 const APP_NAME = "overdue-orders-report-api";
+// Hash SHA-256 de uma chave exclusiva da rotina de leitura. A chave em texto
+// puro nunca é versionada no repositório.
+const REPORT_TOKEN_SHA256 = "438e86d265406e36170c2b192b26a411ea73624839754fa885d1664576e92afc";
+
 const firebaseApp =
   getApps().find((app) => app.name === APP_NAME) ||
   initializeApp(
@@ -49,6 +54,28 @@ function getAccessToken(req: any): string {
   // Query-token support exists specifically for read-only schedulers that cannot
   // attach Authorization headers. Prefer Bearer auth whenever possible.
   return String(req.query?.token || "").trim();
+}
+
+function secureEquals(a: string, b: string): boolean {
+  const aBuffer = Buffer.from(a);
+  const bBuffer = Buffer.from(b);
+  if (aBuffer.length !== bBuffer.length) return false;
+  return crypto.timingSafeEqual(aBuffer, bBuffer);
+}
+
+function isAuthorized(req: any): boolean {
+  const providedToken = getAccessToken(req);
+  if (!providedToken) return false;
+
+  const envToken =
+    process.env.ORDER_REPORT_API_TOKEN ||
+    process.env.INTEGRATION_TOKEN ||
+    process.env.ORDER_IMPORT_API_TOKEN;
+
+  if (envToken) return secureEquals(providedToken, envToken);
+
+  const providedHash = crypto.createHash("sha256").update(providedToken).digest("hex");
+  return secureEquals(providedHash, REPORT_TOKEN_SHA256);
 }
 
 function dateKeyInTimeZone(now = new Date(), timeZone = SAO_PAULO_TZ): string {
@@ -121,8 +148,6 @@ function lineProgress(order: any) {
     invoicedQuantity: invoicedComplete ? totalQuantity : invoicedQuantity,
     pendingPackaging,
     pendingBilling,
-    // The operational open quantity represents what is still missing from at
-    // least one of the two final stages (packing or billing).
     openQuantity: Math.max(pendingPackaging, pendingBilling),
     packedComplete,
     invoicedComplete,
@@ -153,21 +178,7 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ sucesso: false, erro: "METHOD_NOT_ALLOWED" });
   }
 
-  const expectedToken =
-    process.env.ORDER_REPORT_API_TOKEN ||
-    process.env.INTEGRATION_TOKEN ||
-    process.env.ORDER_IMPORT_API_TOKEN;
-
-  if (!expectedToken) {
-    return res.status(503).json({
-      sucesso: false,
-      erro: "API_TOKEN_NAO_CONFIGURADO",
-      mensagem:
-        "Configure ORDER_REPORT_API_TOKEN (recomendado) ou INTEGRATION_TOKEN no ambiente da Vercel.",
-    });
-  }
-
-  if (getAccessToken(req) !== expectedToken) {
+  if (!isAuthorized(req)) {
     return res.status(401).json({ sucesso: false, erro: "NAO_AUTORIZADO" });
   }
 
