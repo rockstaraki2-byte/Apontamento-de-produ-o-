@@ -155,7 +155,8 @@ function lineProgress(order: any) {
     invoicedQuantity: invoicedComplete ? totalQuantity : invoicedQuantity,
     pendingPackaging,
     pendingBilling,
-    openQuantity: roundQuantity(Math.max(pendingPackaging, pendingBilling)),
+    // Para este relatório, "em aberto" significa saldo ainda não faturado.
+    openQuantity: pendingBilling,
     packedComplete,
     invoicedComplete,
   };
@@ -240,9 +241,12 @@ export default async function handler(req: any, res: any) {
 
     const report = Array.from(grouped.entries())
       .map(([orderCode, lines]) => {
+        // Um pedido totalmente faturado sai do relatório, independentemente
+        // do estágio de embalagem. Em faturamento parcial, mostramos somente
+        // as linhas que ainda possuem saldo a faturar.
         const productLines = lines
           .map((line) => ({ line, progress: lineProgress(line) }))
-          .filter(({ progress }) => !(progress.packedComplete && progress.invoicedComplete));
+          .filter(({ progress }) => !progress.invoicedComplete);
 
         if (productLines.length === 0) return null;
 
@@ -282,6 +286,7 @@ export default async function handler(req: any, res: any) {
       dataBase: dateBase,
       geradoEm: new Date().toISOString(),
       incluiOrdensInternas: includeInternal,
+      criterio: "somente_pedidos_com_saldo_a_faturar",
       quantidade: report.length,
       pedidos: report,
     });
