@@ -50,9 +50,6 @@ function getAccessToken(req: any): string {
   const header = String(req.headers?.authorization || "");
   const bearerMatch = header.match(/^Bearer\s+(.+)$/i);
   if (bearerMatch) return bearerMatch[1].trim();
-
-  // Query-token support exists specifically for read-only schedulers that cannot
-  // attach Authorization headers. Prefer Bearer auth whenever possible.
   return String(req.query?.token || "").trim();
 }
 
@@ -109,10 +106,20 @@ function positiveNumber(value: unknown): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+function roundQuantity(value: number): number {
+  return Math.round((value + Number.EPSILON) * 1000) / 1000;
+}
+
 function clampLimit(value: unknown): number {
   const parsed = Math.floor(Number(value));
   if (!Number.isFinite(parsed)) return 10;
   return Math.min(50, Math.max(1, parsed));
+}
+
+function isInternalPcpOrder(order: any): boolean {
+  const orderCode = String(order.orderCode || "").trim().toUpperCase();
+  const customer = String(order.customerName || "").trim().toUpperCase();
+  return orderCode.startsWith("PCP-INT-") || customer === "ESTOQUE INTERNO (PCP)";
 }
 
 function displayProductName(order: any, itemById: Map<number, any>): string {
@@ -131,16 +138,16 @@ function displayProductCode(order: any, itemById: Map<number, any>): string {
 }
 
 function lineProgress(order: any) {
-  const totalQuantity = positiveNumber(order.totalQuantity);
+  const totalQuantity = roundQuantity(positiveNumber(order.totalQuantity));
   const status = String(order.status || "PENDENTE").toUpperCase();
-  const packedQuantity = Math.min(totalQuantity, positiveNumber(order.packedQuantity));
-  const invoicedQuantity = Math.min(totalQuantity, positiveNumber(order.invoicedQuantity));
+  const packedQuantity = roundQuantity(Math.min(totalQuantity, positiveNumber(order.packedQuantity)));
+  const invoicedQuantity = roundQuantity(Math.min(totalQuantity, positiveNumber(order.invoicedQuantity)));
 
   const packedComplete = status === "EMBALADO" || packedQuantity >= totalQuantity;
   const invoicedComplete = status === "FATURADO" || invoicedQuantity >= totalQuantity;
 
-  const pendingPackaging = packedComplete ? 0 : Math.max(0, totalQuantity - packedQuantity);
-  const pendingBilling = invoicedComplete ? 0 : Math.max(0, totalQuantity - invoicedQuantity);
+  const pendingPackaging = packedComplete ? 0 : roundQuantity(Math.max(0, totalQuantity - packedQuantity));
+  const pendingBilling = invoicedComplete ? 0 : roundQuantity(Math.max(0, totalQuantity - invoicedQuantity));
 
   return {
     totalQuantity,
@@ -148,7 +155,7 @@ function lineProgress(order: any) {
     invoicedQuantity: invoicedComplete ? totalQuantity : invoicedQuantity,
     pendingPackaging,
     pendingBilling,
-    openQuantity: Math.max(pendingPackaging, pendingBilling),
+    openQuantity: roundQuantity(Math.max(pendingPackaging, pendingBilling)),
     packedComplete,
     invoicedComplete,
   };
@@ -184,6 +191,7 @@ export default async function handler(req: any, res: any) {
 
   const tenantId = String(req.query?.tenantId || req.headers?.["x-tenant-id"] || "imperio").trim() || "imperio";
   const limit = clampLimit(req.query?.limit);
+  const includeInternal = String(req.query?.includeInternal || "false").toLowerCase() === "true";
   const dateBase = String(req.query?.date || dateKeyInTimeZone()).trim();
   const todayUtcMs = dateOnlyToUtcMs(dateBase);
 
@@ -212,6 +220,7 @@ export default async function handler(req: any, res: any) {
       .filter((order) => tenantMatches(order, tenantId))
       .filter((order) => order.isActive !== false)
       .filter((order) => String(order.status || "").toUpperCase() !== "CANCELADO")
+      .filter((order) => includeInternal || !isInternalPcpOrder(order))
       .map((order) => {
         const deliveryUtcMs = dateOnlyToUtcMs(order.deliveryDate);
         if (deliveryUtcMs === null) return null;
@@ -272,6 +281,7 @@ export default async function handler(req: any, res: any) {
       tenantId,
       dataBase: dateBase,
       geradoEm: new Date().toISOString(),
+      incluiOrdensInternas: includeInternal,
       quantidade: report.length,
       pedidos: report,
     });
