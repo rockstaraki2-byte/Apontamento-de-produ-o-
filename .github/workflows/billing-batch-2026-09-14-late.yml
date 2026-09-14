@@ -1,0 +1,28 @@
+name: Billing batch Sep 14 late
+
+on:
+  push:
+    branches:
+      - feature/chat-billing-api
+    paths:
+      - '.github/workflows/billing-batch-2026-09-14-late.yml'
+      - 'scripts/billing-batch-2026-09-14-late-diagnose.ts'
+      - 'scripts/billing-batch-2026-09-14-late-preview.ts'
+      - 'scripts/billing-batch-2026-09-14-late-execute.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Diagnose Sep 14 late billings
+        run: npx tsx scripts/billing-batch-2026-09-14-late-diagnose.ts
