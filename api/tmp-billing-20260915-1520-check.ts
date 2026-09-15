@@ -58,7 +58,16 @@ export default async function handler(req: any, res: any) {
         };
       });
   }
-  return res.status(200).json({ ok:true, orders });
+
+  const catalogCodes = ["1848","937","4233","5448"];
+  const catalog: Record<string, any[]> = {};
+  for (const code of catalogCodes) {
+    catalog[code] = items
+      .filter((item: any) => String(item.code ?? item.id).trim() === code || String(item.code ?? "").startsWith(`${code}.`))
+      .map((item: any) => ({ id:item.id, code:item.code, name:item.name, productionPoints:item.productionPoints??null, basePrice:item.basePrice??null }));
+  }
+
+  return res.status(200).json({ ok:true, orders, catalog });
 }
 
 // Temporary endpoint; remove immediately after this billing reconciliation.
