@@ -1,21 +1,51 @@
-import { FirestoreBillingRepository } from "./_lib/billingImportFirestore.js";
+import { createRequire } from "node:module";
+import { getApps, initializeApp } from "firebase/app";
+import { collection, getDocs, initializeFirestore } from "firebase/firestore";
 
 const TOKEN = "sep15-1520-7c6f9d8a3b2149f0aee4c2c7d4b8f6a1";
+const require = createRequire(import.meta.url);
+const firebaseConfigFile = require("../firebase-applet-config.json") as {
+  apiKey: string;
+  authDomain?: string;
+  projectId: string;
+  storageBucket?: string;
+  messagingSenderId?: string;
+  appId: string;
+  firestoreDatabaseId?: string;
+};
+const APP_NAME = "tmp-billing-20260915-1520-check";
+const app = getApps().find((a) => a.name === APP_NAME) || initializeApp({
+  apiKey: firebaseConfigFile.apiKey,
+  authDomain: firebaseConfigFile.authDomain,
+  projectId: firebaseConfigFile.projectId,
+  storageBucket: firebaseConfigFile.storageBucket,
+  messagingSenderId: firebaseConfigFile.messagingSenderId,
+  appId: firebaseConfigFile.appId,
+}, APP_NAME);
+const db = initializeFirestore(app, { experimentalForceLongPolling: true }, firebaseConfigFile.firestoreDatabaseId);
+
+function tenantMatches(value: any) {
+  return String(value?.tenantId || "imperio") === "imperio";
+}
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") return res.status(405).json({ error: "method" });
   if (String(req.query?.token || "") !== TOKEN) return res.status(404).json({ error: "not_found" });
 
-  const repo = new FirestoreBillingRepository();
-  const snapshot = await repo.loadSnapshot("imperio");
-  const itemMap = new Map(snapshot.items.map((item) => [String(item.id), item]));
+  const [ordersSnap, itemsSnap] = await Promise.all([
+    getDocs(collection(db, "orders")),
+    getDocs(collection(db, "items")),
+  ]);
+  const ordersAll = ordersSnap.docs.map((d) => ({ id: d.id, ...d.data() as any })).filter(tenantMatches);
+  const items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() as any })).filter(tenantMatches);
+  const itemMap = new Map(items.map((item: any) => [String(item.id), item]));
   const codes = ["66848","67451","67108","67455","66959","67279","66458","65025","67042"];
   const orders: Record<string, any[]> = {};
   for (const code of codes) {
-    orders[code] = snapshot.orders
-      .filter((o) => String(o.orderCode).trim() === code)
-      .map((o) => {
-        const item = itemMap.get(String(o.itemId));
+    orders[code] = ordersAll
+      .filter((o: any) => String(o.orderCode).trim() === code)
+      .map((o: any) => {
+        const item: any = itemMap.get(String(o.itemId));
         return {
           id:o.id, orderCode:o.orderCode, customerName:o.customerName, customerId:o.customerId??null,
           itemId:o.itemId, itemCode:item?.code??null, itemName:item?.name??o.customProductName??null,
