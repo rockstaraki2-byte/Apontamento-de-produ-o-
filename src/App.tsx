@@ -84,6 +84,7 @@ import { calculateWorkingMillis } from "./timeUtils";
 import { ColorBadgeWithImage, getColorAttribute } from "./components/ColorBadgeWithImage";
 import { getItemUnit } from "./utils/unitUtils";
 import { isImperioPackagingUser } from "./utils/imperioPackagingUtils";
+import { canManageExpedition, canViewExpeditionTV } from "./expeditionAccess";
 
 import { LoteGeralWidget } from "./components/LoteGeralWidget";
 import { usePushNotifications } from "./usePushNotifications";
@@ -147,6 +148,8 @@ const TornoCncHenriqueScreen = lazyNamed(() => import("./TornoCncHenriqueScreen"
 const PrensaRafaelScreen = lazyNamed(() => import("./PrensaRafaelScreen"), "PrensaRafaelScreen");
 const InjetoraScreen = lazyNamed(() => import("./InjetoraScreen"), "InjetoraScreen");
 const LogisticaScreen = lazyNamed(() => import("./LogisticaScreen"), "LogisticaScreen");
+const ProgramacaoCargasScreen = lazyNamed(() => import("./ProgramacaoCargasScreen"), "ProgramacaoCargasScreen");
+const ExpedicaoTVScreen = lazyNamed(() => import("./ExpedicaoTVScreen"), "ExpedicaoTVScreen");
 const OrcamentoLaserScreen = lazyNamed(() => import("./OrcamentoLaserScreen"), "OrcamentoLaserScreen");
 const MontagemRetratilScreen = lazyNamed(() => import("./MontagemRetratilScreen"), "MontagemRetratilScreen");
 const OrderEditModal = lazyNamed(() => import("./components/OrderEditModal"), "OrderEditModal");
@@ -6190,6 +6193,82 @@ function PedidosScreen({
 
   const [orderToastMessage, setOrderToastMessage] = useState("");
 
+  // IMPERIO_ORDER_LOAD_PLANNER_STATE
+  const [selectedExpeditionCargaId, setSelectedExpeditionCargaId] = useState("");
+  const expeditionCustomer = React.useMemo(() => {
+    const normalized = normalizeString(customerName || "");
+    if (!normalized) return null;
+    return db.customers.find((c) => {
+      const full = normalizeString(`${c.id} ${c.name} ${c.tradeName || ""}`);
+      return (
+        normalizeString(c.name) === normalized ||
+        normalizeString(c.tradeName || "") === normalized ||
+        full.includes(normalized) ||
+        normalized.includes(normalizeString(c.name)) ||
+        (c.tradeName && normalized.includes(normalizeString(c.tradeName)))
+      );
+    }) || null;
+  }, [customerName, db.customers]);
+
+  const expeditionRoutesForCustomer = React.useMemo(() => {
+    if (!expeditionCustomer || db.activeTenantId !== "imperio") return [];
+    return (db.expeditionRoutes || []).filter(
+      (r: any) => r.active !== false && (r.customerIds || []).includes(expeditionCustomer.id),
+    );
+  }, [expeditionCustomer, db.expeditionRoutes, db.activeTenantId]);
+
+  const expeditionLoadsForCustomer = React.useMemo(() => {
+    const routeIds = new Set(expeditionRoutesForCustomer.map((r: any) => r.id));
+    return (db.cargas || [])
+      .filter((c: any) => c.routeId && routeIds.has(c.routeId))
+      .sort((a: any, b: any) => String(a.scheduledDate || a.departureDate || "").localeCompare(String(b.scheduledDate || b.departureDate || "")));
+  }, [db.cargas, expeditionRoutesForCustomer]);
+
+  const expeditionSuggestedLoad = React.useMemo(() => {
+    const today = new Date().toISOString().split("T")[0];
+    return expeditionLoadsForCustomer.find((c: any) =>
+      (c.status === "ABERTA" || c.status === "PLANEJADA") &&
+      String(c.scheduledDate || c.departureDate || "") >= today
+    ) || null;
+  }, [expeditionLoadsForCustomer]);
+
+  const expeditionLastLoad = React.useMemo(() => {
+    const today = new Date().toISOString().split("T")[0];
+    return [...expeditionLoadsForCustomer]
+      .filter((c: any) => String(c.scheduledDate || c.departureDate || "") < today)
+      .sort((a: any, b: any) => String(b.scheduledDate || b.departureDate || "").localeCompare(String(a.scheduledDate || a.departureDate || "")))[0] || null;
+  }, [expeditionLoadsForCustomer]);
+
+  const linkCreatedOrdersToSelectedCarga = async (createdItems: { id: number; qty: number }[]) => {
+    if (!selectedExpeditionCargaId || createdItems.length === 0) return;
+    const carga = (db.cargas || []).find((c: any) => c.id === selectedExpeditionCargaId);
+    if (!carga || !(carga.status === "ABERTA" || carga.status === "PLANEJADA")) return;
+
+    const ids = Array.from(new Set([
+      ...(carga.orderIds || []),
+      ...createdItems.map((item) => item.id),
+    ]));
+    const quantities = { ...(carga.orderQuantities || {}) } as Record<number, number>;
+    createdItems.forEach((item) => {
+      quantities[item.id] = item.qty;
+    });
+
+    await db.updateCarga({
+      ...carga,
+      orderIds: ids,
+      orderQuantities: quantities,
+      auditTrail: [
+        ...(carga.auditTrail || []),
+        {
+          timestamp: Date.now(),
+          userId: currentUser.id,
+          userName: currentUser.name,
+          action: `Pedido ${orderCode} vinculado no lançamento (${createdItems.reduce((sum, item) => sum + item.qty, 0)} un em ${createdItems.length} item(ns))`,
+        },
+      ],
+    });
+  };
+
   const handleCadastrar = async () => {
     if (editingId) {
       if (
@@ -6285,6 +6364,7 @@ function PedidosScreen({
           : paymentType.toUpperCase();
 
       let successCount = 0;
+      const createdExpeditionItems: { id: number; qty: number }[] = [];
       for (const itemInfo of itemsToProcess) {
         const numItemId = Number(itemInfo.itemId);
         const numTotalQuantity = Number(itemInfo.totalQuantity);
@@ -6305,7 +6385,7 @@ function PedidosScreen({
           }
         }
 
-        await db.addOrder({
+        const createdOrderId = await db.addOrder({
           orderCode,
           itemId: numItemId,
           customerName,
@@ -6333,6 +6413,7 @@ function PedidosScreen({
           deliveryDate,
           status: status,
         });
+        createdExpeditionItems.push({ id: createdOrderId, qty: numTotalQuantity });
 
         if (itemInfo.isThirdPartyLaser) {
           await db.addNotification({
@@ -6342,6 +6423,8 @@ function PedidosScreen({
         }
         successCount++;
       }
+
+      await linkCreatedOrdersToSelectedCarga(createdExpeditionItems);
 
       // Trigger FCM Push notification
       sendServerPush(
@@ -6375,6 +6458,7 @@ function PedidosScreen({
     setDiscountPercent("");
     setHasRET(false);
     setLineItems([]);
+    setSelectedExpeditionCargaId(""); // IMPERIO_ORDER_LOAD_PLANNER_RESET
     setIsFormVisible(false);
   };
 
@@ -9480,6 +9564,41 @@ function PedidosScreen({
                       </div>
                     )}
                   </div>
+
+                  {/* IMPERIO_ORDER_LOAD_PLANNER_UI */}
+                  {db.activeTenantId === "imperio" && expeditionCustomer && (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 flex flex-col gap-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-blue-700">🚚 Programação de carga</span>
+                          <p className="text-[10px] text-slate-600 mt-0.5">Cliente: <strong>{expeditionCustomer.tradeName || expeditionCustomer.name}</strong></p>
+                        </div>
+                        <button type="button" onClick={() => window.open("/cargas", "_blank")} className="px-2.5 py-1.5 rounded-lg bg-white border border-blue-200 text-blue-700 text-[10px] font-extrabold hover:bg-blue-100">Abrir programação</button>
+                      </div>
+                      {expeditionRoutesForCustomer.length === 0 ? (
+                        <div className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">Cliente ainda não está vinculado a uma rota de carga. O pedido poderá ser vinculado depois em Programação de Cargas.</div>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[10px]">
+                            <div className="bg-white border border-blue-100 rounded-lg px-2.5 py-2 text-slate-600">Última carga: <strong className="text-slate-800">{expeditionLastLoad ? `${expeditionLastLoad.routeName || expeditionLastLoad.name} • ${expeditionLastLoad.scheduledDate || expeditionLastLoad.departureDate || "-"}` : "Nenhuma carga anterior"}</strong></div>
+                            <div className="bg-white border border-blue-100 rounded-lg px-2.5 py-2 text-slate-600">Próxima aberta: <strong className="text-blue-700">{expeditionSuggestedLoad ? `${expeditionSuggestedLoad.routeName || expeditionSuggestedLoad.name} • ${expeditionSuggestedLoad.scheduledDate || expeditionSuggestedLoad.departureDate || "-"}` : "Nenhuma carga programada"}</strong></div>
+                          </div>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <select value={selectedExpeditionCargaId} onChange={(e) => setSelectedExpeditionCargaId(e.target.value)} className="flex-1 h-8 rounded-lg border border-blue-200 bg-white px-2 text-[10px] font-semibold text-slate-700">
+                              <option value="">Não vincular agora / escolher depois</option>
+                              {expeditionLoadsForCustomer.filter((c: any) => c.status === "ABERTA" || c.status === "PLANEJADA").map((c: any) => (
+                                <option key={c.id} value={c.id}>{c.scheduledDate || c.departureDate || "Sem data"} • {c.routeName || c.name}</option>
+                              ))}
+                            </select>
+                            {expeditionSuggestedLoad && (
+                              <button type="button" onClick={() => setSelectedExpeditionCargaId(expeditionSuggestedLoad.id)} className="h-8 px-3 rounded-lg bg-blue-600 text-white text-[10px] font-extrabold hover:bg-blue-700">Usar próxima carga</button>
+                            )}
+                          </div>
+                          {selectedExpeditionCargaId && <p className="text-[9px] text-blue-800 font-bold">✓ Todos os itens adicionados neste lançamento serão vinculados à carga selecionada com suas respectivas quantidades.</p>}
+                        </>
+                      )}
+                    </div>
+                  )}
 
                   {/* Row 4: Config flags & status indicators */}
                   <div className="flex flex-wrap items-center gap-4 py-1.5 border-t border-b border-slate-100/80 my-1 justify-start">
@@ -15587,6 +15706,18 @@ export default function App() {
                 }
               />
             )}
+            {canManageExpedition(db.activeTenantId, currentUser) && (
+              <Route
+                path="/cargas"
+                element={<ProgramacaoCargasScreen db={db} currentUser={currentUser} />}
+              />
+            )}
+            {canViewExpeditionTV(db.activeTenantId, currentUser) && (
+              <Route
+                path="/cargas-tv"
+                element={<ExpedicaoTVScreen db={db} currentUser={currentUser} />}
+              />
+            )}
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "GERENCIA") && (
               <Route
@@ -15704,6 +15835,22 @@ export default function App() {
               to="/pedidos"
               icon={<ShoppingCart size={24} />}
               label="Pedidos"
+            />
+          )}
+
+          {canManageExpedition(db.activeTenantId, currentUser) && (
+            <NavLink
+              to="/cargas"
+              icon={<Truck size={24} />}
+              label="Cargas"
+            />
+          )}
+
+          {currentUser.role === "EMBALAGEM" && canViewExpeditionTV(db.activeTenantId, currentUser) && (
+            <NavLink
+              to="/cargas-tv"
+              icon={<Monitor size={24} />}
+              label="Cargas TV"
             />
           )}
 

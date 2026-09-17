@@ -187,6 +187,8 @@ export const ALL_AVAILABLE_SCREENS: ScreenOption[] = [
   { key: "pcp", label: "Cadastros PCP", category: "PCP e Pedidos", path: "/pcp" },
   { key: "pedidos", label: "Gestão de Pedidos", category: "PCP e Pedidos", path: "/pedidos" },
   { key: "lotes", label: "Gestão de Lotes", category: "PCP e Pedidos", path: "/lotes" },
+  { key: "cargas", label: "Programação de Cargas", category: "PCP e Pedidos", path: "/cargas" },
+  { key: "cargas-tv", label: "Expedição - Modo TV", category: "Produção e Setores", path: "/cargas-tv" },
   { key: "gestao-clientes", label: "Gestão de Clientes", category: "PCP e Pedidos", path: "/gestao-clientes" },
   { key: "itens", label: "Cadastro de Itens", category: "PCP e Pedidos", path: "/itens" },
   { key: "orcamentos", label: "Orçamentos Laser", category: "PCP e Pedidos", path: "/orcamentos" },
@@ -724,12 +726,41 @@ export interface CoilCuttingPlan {
   batchId?: number; // Para associar a um lote de produção manual
 }
 
+export type ExpeditionShift = "MANHA" | "TARDE";
+
+export interface ExpeditionRoute {
+  id: string;
+  name: string;
+  weekday: number; // 0=Domingo ... 6=Sábado
+  shift: ExpeditionShift;
+  cutoffTime?: string;
+  customerIds: number[];
+  active: boolean;
+  notes?: string;
+  createdAt: number;
+  tenantId?: string;
+}
+
+export interface CargaAuditEntry {
+  timestamp: number;
+  userId: string;
+  userName: string;
+  action: string;
+  reason?: string;
+}
+
 export interface Carga {
   id: string;
   name: string;
   dayOfWeek?: string;
+  routeId?: string;
+  routeName?: string;
+  shift?: ExpeditionShift;
+  scheduledDate?: string;
   orderIds: number[];
   orderQuantities?: Record<number, number>;
+  separatedQuantities?: Record<number, number>;
+  stagingLocation?: string;
   stockEntries?: {
     id: string; // `${itemId}|${color}|${size}|${variation}|${stage}`
     itemId: number;
@@ -739,12 +770,27 @@ export interface Carga {
     quantity: number;
   }[];
   route?: string[];
-  status: "PLANEJADA" | "EM_TRANSITO" | "ENTREGUE" | "FATURADA";
+  status:
+    | "PLANEJADA"
+    | "ABERTA"
+    | "FECHADA"
+    | "LIBERADA"
+    | "EM_SEPARACAO"
+    | "PRONTA"
+    | "CARREGADA"
+    | "DESPACHADA"
+    | "EM_TRANSITO"
+    | "ENTREGUE"
+    | "FATURADA";
   createdAt: number;
+  closedAt?: number;
+  releasedAt?: number;
   notes?: string;
   driverName?: string;
   vehiclePlate?: string;
   departureDate?: string;
+  auditTrail?: CargaAuditEntry[];
+  tenantId?: string;
 }
 
 export interface ProductionSchedule {

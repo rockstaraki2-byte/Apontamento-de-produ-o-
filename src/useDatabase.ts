@@ -21,6 +21,7 @@ import type {
   ProductionAgenda,
   CoilCuttingPlan,
   Carga,
+  ExpeditionRoute,
   ProductionSchedule,
   ExtraHourEntry,
   ItemPriceHistory,
@@ -564,6 +565,7 @@ export function useDatabase(currentUser?: User | null) {
     [],
   );
   const [cargas, setCargas] = useState<Carga[]>([]);
+  const [expeditionRoutes, setExpeditionRoutes] = useState<ExpeditionRoute[]>([]);
   const [productionSchedules, setProductionSchedules] = useState<
     ProductionSchedule[]
   >([]);
@@ -833,6 +835,11 @@ export function useDatabase(currentUser?: User | null) {
       (snap) => setCargas(snap.docs.map((d) => d.data() as Carga)),
       (err) => handleSnapshotError("cargas", err),
     );
+    const unsubExpeditionRoutes = onSnapshot(
+      collection(db, "expeditionRoutes"),
+      (snap) => setExpeditionRoutes(snap.docs.map((d) => d.data() as ExpeditionRoute)),
+      (err) => handleSnapshotError("expeditionRoutes", err),
+    );
     const unsubSchedules = onSnapshot(
       collection(db, "productionSchedules"),
       (snap) => {
@@ -1000,6 +1007,7 @@ export function useDatabase(currentUser?: User | null) {
       unsubAgendas();
       unsubCoilPlans();
       unsubCargas();
+      unsubExpeditionRoutes();
       unsubSchedules();
       unsubExtraHours();
       unsubSystemSettings();
@@ -2012,6 +2020,7 @@ export function useDatabase(currentUser?: User | null) {
   const filteredProductionAgendas = useMemo(() => productionAgendas.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [productionAgendas, matchesTenant]);
   const filteredCoilCuttingPlans = useMemo(() => coilCuttingPlans.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [coilCuttingPlans, matchesTenant]);
   const filteredCargas = useMemo(() => cargas.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [cargas, matchesTenant]);
+  const filteredExpeditionRoutes = useMemo(() => expeditionRoutes.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [expeditionRoutes, matchesTenant]);
   const filteredExtraHours = useMemo(() => extraHours.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [extraHours, matchesTenant]);
   const filteredPriceHistories = useMemo(() => priceHistories.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [priceHistories, matchesTenant]);
   const filteredSystemSettings = useMemo(() => systemSettings.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [systemSettings, matchesTenant]);
@@ -2430,6 +2439,25 @@ export function useDatabase(currentUser?: User | null) {
     },
     deleteCarga: async (id: string) => {
       await deleteDoc(doc(db, "cargas", id));
+    },
+
+    expeditionRoutes: filteredExpeditionRoutes,
+    addExpeditionRoute: async (route: Omit<ExpeditionRoute, "id"> & { id?: string }) => {
+      const id = route.id || `route_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      await setDoc(
+        doc(db, "expeditionRoutes", id),
+        cleanUndefined({ ...route, id, tenantId: (route as any).tenantId || activeTenantId }),
+      );
+      return id;
+    },
+    updateExpeditionRoute: async (route: ExpeditionRoute) => {
+      const current = expeditionRoutes.find((r) => r.id === route.id);
+      const updated = { ...route, tenantId: route.tenantId || (current as any)?.tenantId || activeTenantId };
+      if (current && JSON.stringify(current) === JSON.stringify(updated)) return;
+      await setDoc(doc(db, "expeditionRoutes", route.id), cleanUndefined(updated), { merge: true });
+    },
+    deleteExpeditionRoute: async (id: string) => {
+      await deleteDoc(doc(db, "expeditionRoutes", id));
     },
 
     productionSchedules,
