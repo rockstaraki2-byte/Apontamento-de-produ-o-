@@ -1,0 +1,37 @@
+import { createRequire } from "node:module";
+import { getApps, initializeApp } from "firebase/app";
+import { collection, doc, getDoc, getDocs, initializeFirestore, query, setDoc, where } from "firebase/firestore";
+import { buildBillingPlan, collectSourceKeys, type BillingImportPayload } from "./_lib/billingImportCore.js";
+import { FirestoreBillingRepository } from "./_lib/billingImportFirestore.js";
+
+const TOKEN="sep17-diff-exec-92ab41e7";
+const require=createRequire(import.meta.url);const cfg=require("../firebase-applet-config.json") as any;const APP="tmp-billing-20260917-diff-exec";const app=getApps().find(a=>a.name===APP)||initializeApp({apiKey:cfg.apiKey,authDomain:cfg.authDomain,projectId:cfg.projectId,storageBucket:cfg.storageBucket,messagingSenderId:cfg.messagingSenderId,appId:cfg.appId},APP);const db=initializeFirestore(app,{experimentalForceLongPolling:true},cfg.firestoreDatabaseId);
+
+async function hasOrder(code:string){const s=await getDocs(query(collection(db,"orders"),where("orderCode","==",code)));return s.docs.some(d=>String((d.data() as any).tenantId||"imperio")==="imperio");}
+function row(id:number,orderCode:string,itemId:number,customerId:number,customerName:string,totalQuantity:number,unitPrice:number,color:string,paymentCondition:string,paymentTermsDays:number[],fiscalType:"COM_NF"|"SEM_NF",representativeName:string,originalProductCode:string){const now=Date.now();const up=Math.round(unitPrice*10000);const gross=Math.round(totalQuantity*unitPrice*10000);return{id,tenantId:"imperio",orderCode,itemId,color,size:"-",variation:"-",customerName,customerId,representativeName,representativeId:"",totalQuantity,quantityScaled:totalQuantity*10000,packedQuantity:0,producedQuantity:0,paintedQuantity:0,cutQuantity:0,invoicedQuantity:0,isActive:true,createdAt:now,deliveryDate:"2026-09-17",paymentCondition,paymentTerms:paymentTermsDays.length?`${paymentTermsDays.join("/")} Dias`:"",paymentTermsDays,billingRule:"cadastro",fiscalType,unitPrice,unitPriceScaled:up,discountPercent:0,discountPercentScaled:0,discountAmount:0,discountAmountScaled:0,grossTotalScaled:gross,netTotalScaled:gross,hasRET:false,status:"PENDENTE",statusOriginalPdf:"CHATGPT_PDF",notes:"",itemNotes:"",originalProductCode,importOrigin:"CHATGPT_PDF",importedAt:now,importedBy:"chatgpt-integration",importPayloadHash:"sep17-diff-0830"};}
+async function ensureMissing(){const created:string[]=[];const itemRef=doc(db,"items","5536");const itemSnap=await getDoc(itemRef);if(!itemSnap.exists()){await setDoc(itemRef,{id:5536,tenantId:"imperio",code:"5536",name:'CHAPA 1/4" X 755MM X 176MM C/ 17 FUROS',basePrice:119.8,productionPoints:0});created.push("item5536");}
+if(!(await hasOrder("67543"))){await setDoc(doc(db,"orders","7331175430002551"),row(7331175430002551,"67543",2551,1605,"ELLEGANCE ESTOFADOS",450,2.30,"ZINCADO","INDEFINIDA",[30],"SEM_NF","Kesse Representante","2551.1"));created.push("67543");}
+if(!(await hasOrder("67546"))){await setDoc(doc(db,"orders","7331175460005536"),row(7331175460005536,"67546",5536,173,"TORNO DELTA",2,119.80,"-","CARTEIRA",[30],"SEM_NF","Império Representante","5536"));created.push("67546");}
+if(!(await hasOrder("67551"))){await setDoc(doc(db,"orders","7331175510005486"),row(7331175510005486,"67551",1788984817493,1224,"VIARIA SINALIZACAO DO BRASIL LTDA",40,3.96,"-","PIX",[],"COM_NF","Império Representante","5486"));await setDoc(doc(db,"orders","7331175510005487"),row(7331175510005487,"67551",1788984838462,1224,"VIARIA SINALIZACAO DO BRASIL LTDA",103,3.18,"-","PIX",[],"COM_NF","Império Representante","5487"));created.push("67551");}return created;}
+
+const payload:BillingImportPayload={tenantId:"imperio",origem:"CHATGPT_PDF",solicitadoPor:"chatgpt-integration",documentKey:"FATURADOS-17-SET-0830-DIFF-2026-09-17",allowBreakReservations:false,faturamentos:[
+{lineId:"p6-67105-5127-8",codigoPedido:"67105",itemId:1782852415059,quantidade:8},
+{lineId:"p9-64753-3145-10",codigoPedido:"64753",itemId:2314,quantidade:10},
+{lineId:"p11-67543-2551-450",codigoPedido:"67543",itemId:2551,quantidade:450},
+{lineId:"p12-67546-5536-2",codigoPedido:"67546",itemId:5536,quantidade:2},
+{lineId:"p13-66174-3193-250",codigoPedido:"66174",itemId:2140,quantidade:250},
+{lineId:"p14-66684-3175-100",codigoPedido:"66684",itemId:1087,quantidade:100},
+{lineId:"p15-67524-2459-1000",codigoPedido:"67524",itemId:1779765282864,quantidade:1000},
+{lineId:"p16-67215-1088-10000",codigoPedido:"67215",itemId:1088,quantidade:10000},
+{lineId:"p17-67115-1137-6000",codigoPedido:"67115",itemId:1137,quantidade:6000,numeroNota:"6326"},
+{lineId:"p18-67542-2-1000",codigoPedido:"67542",itemId:2,quantidade:1000,numeroNota:"6327"},
+{lineId:"p18-67542-507-10000",codigoPedido:"67542",itemId:1782222685809,quantidade:10000,numeroNota:"6327"},
+{lineId:"p18-67542-1880-1000",codigoPedido:"67542",itemId:1880,quantidade:1000,numeroNota:"6327"},
+{lineId:"p19-67525-1880-2000",codigoPedido:"67525",itemId:1880,quantidade:2000},
+{lineId:"p19-67525-2739-250",codigoPedido:"67525",itemId:2739,quantidade:250},
+{lineId:"p10-67551-5486-40",codigoPedido:"67551",itemId:1788984817493,quantidade:40,numeroNota:"6325"},
+{lineId:"p10-67551-5487-103",codigoPedido:"67551",itemId:1788984838462,quantidade:103,numeroNota:"6325"}
+]};
+const expected=new Map<string,[number,number]>([["67105|1782852415059",[10,0]],["64753|2314",[60,0]],["67543|2551",[450,0]],["67546|5536",[2,0]],["66174|2140",[1000,610]],["66684|1087",[100,0]],["67524|1779765282864",[1000,0]],["67215|1088",[10000,0]],["67115|1137",[6000,0]],["67542|2",[1000,0]],["67542|1782222685809",[10000,0]],["67542|1880",[1000,0]],["67525|1880",[2000,0]],["67525|2739",[250,0]],["67551|1788984817493",[40,0]],["67551|1788984838462",[103,0]]]);
+
+export default async function handler(req:any,res:any){if(req.method!=="GET")return res.status(405).json({error:"method"});if(String(req.query?.token||"")!==TOKEN)return res.status(404).json({error:"not_found"});try{const created=await ensureMissing();const repo=new FirestoreBillingRepository();const snapshot=await repo.loadSnapshot("imperio");const keys=collectSourceKeys(payload,snapshot);const processed=await repo.findProcessedSourceKeys("imperio",String(payload.documentKey),keys);const plan=buildBillingPlan(snapshot,payload,{tenantId:"imperio",origem:"CHATGPT_PDF",solicitadoPor:"chatgpt-integration",processedSourceKeys:processed});const r=plan.resumo;if(r.total!==16||r.prontos!==16||r.ajustesQuantidade!==0||r.conflitosReserva!==0||r.pendencias!==0||r.quantidadeAFaturar!==32213)return res.status(422).json({ok:false,phase:"preview_summary_mismatch",created,preview:r,lines:plan.linhas});for(const l of plan.linhas){if(!l.operation)continue;const k=`${l.operation.orderCode}|${l.operation.itemId}`;const e=expected.get(k);if(!e||l.operation.currentTotalQuantity!==e[0]||l.operation.currentInvoicedQuantity!==e[1])return res.status(409).json({ok:false,phase:"state_mismatch",created,key:k,expected:e,operation:l.operation});}const result=await repo.applyPlan(plan);const after=await repo.loadSnapshot("imperio");const verification=after.orders.filter(o=>Array.from(expected.keys()).some(k=>k===`${o.orderCode}|${o.itemId}`)).map(o=>({orderCode:o.orderCode,itemId:o.itemId,totalQuantity:o.totalQuantity,invoicedQuantity:o.invoicedQuantity,status:o.status,isActive:o.isActive}));return res.status(200).json({ok:true,created,preview:{hash:plan.previewHash,resumo:r},result,verification});}catch(e:any){return res.status(500).json({ok:false,error:e?.message||String(e)});}}
