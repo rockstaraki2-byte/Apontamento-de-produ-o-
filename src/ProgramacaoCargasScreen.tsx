@@ -220,8 +220,21 @@ export function ProgramacaoCargasScreen({
         map.set(id, (map.get(id) || 0) + qty);
       });
     });
+
+    // IMPERIO_INVOICED_COMMITMENT_RELEASE
+    // O faturamento é acumulado no pedido. Consideramos que ele atende primeiro
+    // as cargas mais antigas; portanto, essa quantidade deixa de bloquear novas cargas.
+    db.orders.forEach((order) => {
+      const allocated = map.get(order.id) || 0;
+      if (allocated <= 0) return;
+      map.set(
+        order.id,
+        Math.max(0, allocated - Math.max(0, Number(order.invoicedQuantity || 0))),
+      );
+    });
+
     return map;
-  }, [db.cargas]);
+  }, [db.cargas, db.orders]);
 
   const pendingRows = useMemo(() => {
     const q = normalizeString(orderSearch);
