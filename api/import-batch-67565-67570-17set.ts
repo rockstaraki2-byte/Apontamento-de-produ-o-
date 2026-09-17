@@ -1,6 +1,20 @@
 import { processOrderImport } from "./_lib/orderImportCore.js";
 import { FirestoreOrderImportRepository } from "./_lib/orderImportFirestore.js";
 
+class Sep17ImportRepository extends FirestoreOrderImportRepository {
+  async loadCatalog(tenantId: string) {
+    const catalog = await super.loadCatalog(tenantId);
+    return {
+      ...catalog,
+      items: catalog.items.filter((item: any) => {
+        const code = String(item.code ?? item.id ?? "");
+        if (!(code === "3187" || code.startsWith("3187."))) return true;
+        return Number(item.id) === 2401;
+      }),
+    };
+  }
+}
+
 const payload = {
   origem: "CHATGPT_PDF",
   tenantId: "imperio",
@@ -17,7 +31,7 @@ const payload = {
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") return res.status(405).json({ sucesso: false });
-  const repo = new FirestoreOrderImportRepository();
+  const repo = new Sep17ImportRepository();
   const ctx = { tenantId: "imperio", origem: "CHATGPT_PDF", solicitadoPor: "raul", now: new Date() };
   const validation = await processOrderImport(repo, payload as any, ctx, true);
   if (!validation.sucesso || validation.resumo.comErro > 0) return res.status(422).json({ sucesso: false, fase: "VALIDACAO", validation });
