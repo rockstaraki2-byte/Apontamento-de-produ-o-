@@ -2429,6 +2429,7 @@ export function useDatabase(currentUser?: User | null) {
         carga.id ||
         Date.now().toString() + Math.random().toString(36).substring(2, 6);
       await setDoc(doc(db, "cargas", id), cleanUndefined({ ...carga, id }));
+      return id;
     },
     updateCarga: async (carga: Carga) => {
       const current = cargas.find((c) => c.id === carga.id);

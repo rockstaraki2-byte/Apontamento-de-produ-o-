@@ -28,6 +28,7 @@ import { normalizeString } from "./searchUtils";
 
 const DAY_NAMES = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const SHIFT_LABEL: Record<string, string> = { MANHA: "Manhã", TARDE: "Tarde" };
+const MONTH_ABBR = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const FINAL_STATUSES = new Set(["DESPACHADA", "ENTREGUE", "FATURADA"]);
 const EDITABLE_STATUSES = new Set(["PLANEJADA", "ABERTA"]);
 
@@ -330,11 +331,6 @@ export function ProgramacaoCargasScreen({
       alert("Informe o nome da rota/região.");
       return;
     }
-    if (routeCustomerIds.length === 0) {
-      alert("Selecione ao menos um cliente para esta rota.");
-      return;
-    }
-
     const payload: Omit<ExpeditionRoute, "id"> = {
       name: routeName.trim(),
       weekday: routeWeekday,
@@ -399,10 +395,12 @@ export function ProgramacaoCargasScreen({
       if (!ok) return;
     }
 
-    const pretty = selectedDate?.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) || loadDate;
-    const name = `${route.name} • ${pretty} • ${SHIFT_LABEL[route.shift]}`;
+    const pretty = selectedDate
+      ? `${String(selectedDate.getDate()).padStart(2, "0")}/${MONTH_ABBR[selectedDate.getMonth()]}`
+      : loadDate;
+    const name = `Carga do dia ${pretty}`;
 
-    await db.addCarga({
+    const cargaId = await db.addCarga({
       name,
       routeId: route.id,
       routeName: route.name,
@@ -427,8 +425,11 @@ export function ProgramacaoCargasScreen({
       ],
     });
 
+    setTargetCargaId(cargaId);
+    setSelectedQuantities({});
+    setOrderSearch("");
     setShowLoadForm(false);
-    setTab("SEMANA");
+    setTab("PEDIDOS");
   };
 
   const attachSelectedOrders = async () => {
@@ -670,7 +671,7 @@ export function ProgramacaoCargasScreen({
       <div className="flex rounded-xl overflow-hidden border border-slate-200 bg-white shadow-sm flex-wrap">
         {[
           ["SEMANA", "Cargas da Semana", CalendarDays],
-          ["PEDIDOS", "Pedidos sem Carga", ClipboardList],
+          ["PEDIDOS", "Adicionar Pedidos", ClipboardList],
           ["ROTAS", "Rotas", RouteIcon],
           ["HISTORICO", "Histórico", FileText],
         ].map(([key, label, Icon]: any) => (
@@ -712,14 +713,14 @@ export function ProgramacaoCargasScreen({
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div>
-                <h3 className="font-extrabold text-slate-900">Vinculação rápida de pedidos</h3>
-                <p className="text-xs text-slate-500">Mostra somente o saldo ainda não distribuído em uma carga ativa.</p>
+                <h3 className="font-extrabold text-slate-900">Adicionar pedidos à carga</h3>
+                <p className="text-xs text-slate-500">Busque qualquer pedido com saldo disponível, inclusive pedidos que já estejam loteados. O lote de produção não interfere na programação da carga.</p>
               </div>
               <div className="flex flex-col sm:flex-row gap-2 min-w-0 lg:min-w-[520px]">
                 <div className="relative flex-1"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" /><input value={orderSearch} onChange={(e) => setOrderSearch(e.target.value)} placeholder="Cliente, pedido ou produto..." className="w-full h-9 pl-8 pr-2 border border-slate-300 rounded-lg text-xs" /></div>
                 <select value={targetCargaId} onChange={(e) => setTargetCargaId(e.target.value)} className="h-9 border border-slate-300 rounded-lg px-2 text-xs bg-white sm:w-[260px]">
                   <option value="">Selecione a carga destino...</option>
-                  {editableLoads.map((c) => <option key={c.id} value={c.id}>{formatDate(getLoadDate(c))} • {c.routeName || c.name}</option>)}
+                  {editableLoads.map((c) => <option key={c.id} value={c.id}>{c.name} • {c.routeName || "Sem rota"}</option>)}
                 </select>
               </div>
             </div>
@@ -769,11 +770,11 @@ export function ProgramacaoCargasScreen({
       {tab === "ROTAS" && (
         <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 h-max">
-            <div><h3 className="font-extrabold text-slate-900">{editingRouteId ? "Editar rota" : "Nova rota recorrente"}</h3><p className="text-xs text-slate-500">Defina região, dia, turno e clientes atendidos.</p></div>
+            <div><h3 className="font-extrabold text-slate-900">{editingRouteId ? "Editar rota" : "Nova rota recorrente"}</h3><p className="text-xs text-slate-500">Defina a rota fixa, o dia e o turno. Vincular clientes é opcional.</p></div>
             <input value={routeName} onChange={(e) => setRouteName(e.target.value)} placeholder="Ex: Visconde do Rio Branco" className="w-full h-9 border border-slate-300 rounded-lg px-3 text-xs" />
             <div className="grid grid-cols-2 gap-2"><select value={routeWeekday} onChange={(e) => setRouteWeekday(Number(e.target.value))} className="h-9 border border-slate-300 rounded-lg px-2 text-xs bg-white">{DAY_NAMES.map((d, i) => <option key={d} value={i}>{d}</option>)}</select><select value={routeShift} onChange={(e) => setRouteShift(e.target.value as any)} className="h-9 border border-slate-300 rounded-lg px-2 text-xs bg-white"><option value="MANHA">Manhã</option><option value="TARDE">Tarde</option></select></div>
             <label className="block"><span className="text-[10px] uppercase font-extrabold text-slate-500">Horário limite de inclusão</span><input type="time" value={routeCutoff} onChange={(e) => setRouteCutoff(e.target.value)} className="mt-1 w-full h-9 border border-slate-300 rounded-lg px-2 text-xs" /></label>
-            <div className="border border-slate-200 rounded-xl overflow-hidden"><div className="p-2 border-b border-slate-100"><input value={routeCustomerSearch} onChange={(e) => setRouteCustomerSearch(e.target.value)} placeholder="Buscar cliente..." className="w-full h-8 border border-slate-300 rounded px-2 text-xs" /></div><div className="max-h-[280px] overflow-y-auto divide-y divide-slate-100">{customerMatches.map((c) => <label key={c.id} className="flex items-center gap-2 p-2 hover:bg-slate-50 text-xs cursor-pointer"><input type="checkbox" checked={routeCustomerIds.includes(c.id)} onChange={(e) => setRouteCustomerIds((prev) => e.target.checked ? [...prev, c.id] : prev.filter((id) => id !== c.id))} /><span><strong>{c.tradeName || c.name}</strong><span className="text-slate-400 ml-1">#{c.id}</span></span></label>)}</div></div>
+            <div className="border border-slate-200 rounded-xl overflow-hidden"><div className="px-2 pt-2 text-[10px] uppercase font-extrabold text-slate-500">Clientes vinculados (opcional)</div><div className="p-2 border-b border-slate-100"><input value={routeCustomerSearch} onChange={(e) => setRouteCustomerSearch(e.target.value)} placeholder="Buscar cliente..." className="w-full h-8 border border-slate-300 rounded px-2 text-xs" /></div><div className="max-h-[280px] overflow-y-auto divide-y divide-slate-100">{customerMatches.map((c) => <label key={c.id} className="flex items-center gap-2 p-2 hover:bg-slate-50 text-xs cursor-pointer"><input type="checkbox" checked={routeCustomerIds.includes(c.id)} onChange={(e) => setRouteCustomerIds((prev) => e.target.checked ? [...prev, c.id] : prev.filter((id) => id !== c.id))} /><span><strong>{c.tradeName || c.name}</strong><span className="text-slate-400 ml-1">#{c.id}</span></span></label>)}</div></div>
             <div className="flex gap-2"><button onClick={saveRoute} className="flex-1 h-9 bg-blue-600 text-white rounded-lg text-xs font-extrabold">{editingRouteId ? "Salvar alterações" : "Cadastrar rota"}</button>{editingRouteId && <button onClick={resetRouteForm} className="h-9 px-3 border border-slate-300 rounded-lg text-xs font-bold">Cancelar</button>}</div>
           </div>
 
@@ -783,7 +784,7 @@ export function ProgramacaoCargasScreen({
               const relatedLoads = (db.cargas || []).filter((c) => c.routeId === r.id).sort(loadSort);
               const last = [...relatedLoads].filter((c) => getLoadDate(c) < dateKey(new Date())).pop();
               const next = relatedLoads.find((c) => EDITABLE_STATUSES.has(c.status) && getLoadDate(c) >= dateKey(new Date()));
-              return <div key={r.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3"><div className="flex justify-between gap-2"><div><h3 className="font-extrabold text-slate-900">{r.name}</h3><span className="text-xs font-bold text-blue-700">{DAY_NAMES[r.weekday]} • {SHIFT_LABEL[r.shift]} {r.cutoffTime ? `• fecha ${r.cutoffTime}` : ""}</span></div><RouteIcon size={20} className="text-slate-300" /></div><p className="text-xs text-slate-500"><strong>{customerNames.length}</strong> cliente(s) vinculados</p><div className="text-[10px] bg-slate-50 border border-slate-100 rounded-lg p-2 space-y-1"><p>Última carga: <strong>{last ? formatDate(getLoadDate(last)) : "nenhuma"}</strong></p><p>Próxima aberta: <strong className="text-blue-700">{next ? formatDate(getLoadDate(next)) : "não programada"}</strong></p></div><div className="flex gap-2"><button onClick={() => openNewLoad(r)} className="flex-1 h-8 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-extrabold">+ Próxima carga</button><button onClick={() => editRoute(r)} className="h-8 px-3 border border-slate-300 rounded-lg text-[10px] font-bold">Editar</button></div></div>;
+              return <div key={r.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3"><div className="flex justify-between gap-2"><div><h3 className="font-extrabold text-slate-900">{r.name}</h3><span className="text-xs font-bold text-blue-700">{DAY_NAMES[r.weekday]} • {SHIFT_LABEL[r.shift]} {r.cutoffTime ? `• fecha ${r.cutoffTime}` : ""}</span></div><RouteIcon size={20} className="text-slate-300" /></div><p className="text-xs text-slate-500">{customerNames.length > 0 ? <><strong>{customerNames.length}</strong> cliente(s) vinculados</> : "Sem clientes fixos — os pedidos serão incluídos manualmente nas cargas."}</p><div className="text-[10px] bg-slate-50 border border-slate-100 rounded-lg p-2 space-y-1"><p>Última carga: <strong>{last ? formatDate(getLoadDate(last)) : "nenhuma"}</strong></p><p>Próxima aberta: <strong className="text-blue-700">{next ? formatDate(getLoadDate(next)) : "não programada"}</strong></p></div><div className="flex gap-2"><button onClick={() => openNewLoad(r)} className="flex-1 h-8 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-extrabold">+ Próxima carga</button><button onClick={() => editRoute(r)} className="h-8 px-3 border border-slate-300 rounded-lg text-[10px] font-bold">Editar</button></div></div>;
             })}
             {routes.length === 0 && <div className="md:col-span-2 p-10 text-center bg-white border border-dashed border-slate-300 rounded-2xl text-sm text-slate-500">Cadastre a primeira rota para começar a programar as cargas.</div>}
           </div>
@@ -799,7 +800,7 @@ export function ProgramacaoCargasScreen({
       {showLoadForm && (
         <div className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowLoadForm(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-start"><div><h3 className="font-extrabold text-slate-900 text-lg">Programar nova carga</h3><p className="text-xs text-slate-500">A carga nasce aberta e pode receber pedidos até o fechamento.</p></div><button onClick={() => setShowLoadForm(false)} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={18} /></button></div>
+            <div className="flex justify-between items-start"><div><h3 className="font-extrabold text-slate-900 text-lg">Programar nova carga</h3><p className="text-xs text-slate-500">Escolha a rota fixa e a data. Depois você será levado para buscar e incluir os pedidos, inclusive os já loteados.</p></div><button onClick={() => setShowLoadForm(false)} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={18} /></button></div>
             <label className="block"><span className="text-[10px] uppercase font-extrabold text-slate-500">Rota</span><select value={loadRouteId} onChange={(e) => { setLoadRouteId(e.target.value); const r = routes.find((x) => x.id === e.target.value); if (r) setLoadDate(dateKey(nextWeekday(r.weekday))); }} className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm bg-white"><option value="">Selecione...</option>{routes.map((r) => <option key={r.id} value={r.id}>{r.name} • {DAY_NAMES[r.weekday]} • {SHIFT_LABEL[r.shift]}</option>)}</select></label>
             <div className="grid grid-cols-2 gap-3"><label><span className="text-[10px] uppercase font-extrabold text-slate-500">Data da carga</span><input type="date" value={loadDate} onChange={(e) => setLoadDate(e.target.value)} className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm" /></label><label><span className="text-[10px] uppercase font-extrabold text-slate-500">Área/Pallet</span><input value={loadLocation} onChange={(e) => setLoadLocation(e.target.value)} placeholder="Ex: A-03" className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm" /></label></div>
             <textarea value={loadNotes} onChange={(e) => setLoadNotes(e.target.value)} placeholder="Observações da carga..." className="w-full min-h-[90px] border border-slate-300 rounded-lg p-2 text-sm" />
