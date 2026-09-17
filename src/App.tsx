@@ -6221,8 +6221,23 @@ function PedidosScreen({
     const routeIds = new Set(expeditionRoutesForCustomer.map((r: any) => r.id));
     return (db.cargas || [])
       .filter((c: any) => c.routeId && routeIds.has(c.routeId))
-      .sort((a: any, b: any) => String(a.scheduledDate || a.departureDate || "").localeCompare(String(b.scheduledDate || b.departureDate || "")));
+      .sort((a: any, b: any) => {
+        const dateCompare = String(a.scheduledDate || a.departureDate || "").localeCompare(String(b.scheduledDate || b.departureDate || ""));
+        if (dateCompare !== 0) return dateCompare;
+        const shiftRank = (shift?: string) => shift === "MANHA" ? 0 : shift === "TARDE" ? 1 : 2;
+        return shiftRank(a.shift) - shiftRank(b.shift) || Number(a.createdAt || 0) - Number(b.createdAt || 0);
+      });
   }, [db.cargas, expeditionRoutesForCustomer]);
+
+  // IMPERIO_LOAD_SELECTION_CUSTOMER_GUARD
+  React.useEffect(() => {
+    if (
+      selectedExpeditionCargaId &&
+      !expeditionLoadsForCustomer.some((c: any) => c.id === selectedExpeditionCargaId)
+    ) {
+      setSelectedExpeditionCargaId("");
+    }
+  }, [selectedExpeditionCargaId, expeditionLoadsForCustomer]);
 
   const expeditionSuggestedLoad = React.useMemo(() => {
     const today = new Date().toISOString().split("T")[0];
@@ -6240,9 +6255,19 @@ function PedidosScreen({
   }, [expeditionLoadsForCustomer]);
 
   const linkCreatedOrdersToSelectedCarga = async (createdItems: { id: number; qty: number }[]) => {
-    if (!selectedExpeditionCargaId || createdItems.length === 0) return;
+    // IMPERIO_LOAD_LINK_ACCESS_GUARD
+    if (
+      !canManageExpedition(db.activeTenantId, currentUser) ||
+      !selectedExpeditionCargaId ||
+      createdItems.length === 0
+    ) return;
     const carga = (db.cargas || []).find((c: any) => c.id === selectedExpeditionCargaId);
-    if (!carga || !(carga.status === "ABERTA" || carga.status === "PLANEJADA")) return;
+    const belongsToCustomerRoute = !!carga?.routeId && expeditionRoutesForCustomer.some((r: any) => r.id === carga.routeId);
+    if (
+      !carga ||
+      !belongsToCustomerRoute ||
+      !(carga.status === "ABERTA" || carga.status === "PLANEJADA")
+    ) return;
 
     const ids = Array.from(new Set([
       ...(carga.orderIds || []),
@@ -9566,8 +9591,8 @@ function PedidosScreen({
                   </div>
 
                   {/* IMPERIO_ORDER_LOAD_PLANNER_UI */}
-                  {db.activeTenantId === "imperio" && expeditionCustomer && (
-                    <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 flex flex-col gap-2">
+                  {canManageExpedition(db.activeTenantId, currentUser) && expeditionCustomer && (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 flex flex-col gap-2" data-feature="IMPERIO_ORDER_LOAD_PLANNER_AUTHORIZED_UI">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
                           <span className="text-[10px] uppercase tracking-wider font-extrabold text-blue-700">🚚 Programação de carga</span>

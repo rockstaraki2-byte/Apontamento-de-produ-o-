@@ -110,8 +110,16 @@ function isFinalLoad(carga: Carga) {
   return FINAL_STATUSES.has(carga.status);
 }
 
+function expeditionShiftRank(shift?: string) {
+  return shift === "MANHA" ? 0 : shift === "TARDE" ? 1 : 2;
+}
+
 function loadSort(a: Carga, b: Carga) {
-  return getLoadDate(a).localeCompare(getLoadDate(b)) || a.createdAt - b.createdAt;
+  return (
+    getLoadDate(a).localeCompare(getLoadDate(b)) ||
+    expeditionShiftRank(a.shift) - expeditionShiftRank(b.shift) ||
+    a.createdAt - b.createdAt
+  );
 }
 
 export function ProgramacaoCargasScreen({
@@ -201,16 +209,19 @@ export function ProgramacaoCargasScreen({
     return { last, next };
   };
 
+  // IMPERIO_COMMITTED_LOAD_ALLOCATIONS
+  // Uma carga despachada continua comprometendo a quantidade até o faturamento
+  // reduzir o saldo do pedido. Isso evita que o mesmo item seja alocado duas vezes.
   const allocationsByOrder = useMemo(() => {
     const map = new Map<number, number>();
-    activeLoads.forEach((c) => {
+    (db.cargas || []).forEach((c) => {
       (c.orderIds || []).forEach((id) => {
         const qty = Number(c.orderQuantities?.[id] || 0);
         map.set(id, (map.get(id) || 0) + qty);
       });
     });
     return map;
-  }, [activeLoads]);
+  }, [db.cargas]);
 
   const pendingRows = useMemo(() => {
     const q = normalizeString(orderSearch);
@@ -238,6 +249,24 @@ export function ProgramacaoCargasScreen({
     [selectedQuantities],
   );
 
+  const packedForLoad = (carga: Carga, orderId: number) => {
+    const order = ordersById.get(orderId);
+    if (!order) return 0;
+
+    let packedAvailable = Math.max(0, Number(order.packedQuantity || 0));
+    const relatedLoads = (db.cargas || [])
+      .filter((c) => (c.orderIds || []).includes(orderId))
+      .sort(loadSort);
+
+    for (const related of relatedLoads) {
+      const allocated = Math.max(0, Number(related.orderQuantities?.[orderId] || 0));
+      const packedHere = Math.min(allocated, packedAvailable);
+      if (related.id === carga.id) return packedHere;
+      packedAvailable = Math.max(0, packedAvailable - allocated);
+    }
+    return 0;
+  };
+
   const loadMetrics = (carga: Carga) => {
     const ids = carga.orderIds || [];
     let required = 0;
@@ -252,7 +281,7 @@ export function ProgramacaoCargasScreen({
       if (!order) return;
       const qty = Number(carga.orderQuantities?.[id] || 0);
       const sep = Math.min(qty, Number(carga.separatedQuantities?.[id] || 0));
-      const pack = Math.min(qty, Number(order.packedQuantity || 0));
+      const pack = packedForLoad(carga, id);
       required += qty;
       packed += pack;
       separated += sep;
@@ -518,7 +547,7 @@ export function ProgramacaoCargasScreen({
         order?.orderCode || String(id),
         order?.customProductName || item?.name || "Item",
         String(qty),
-        String(Math.min(qty, Number(order?.packedQuantity || 0))),
+        String(packedForLoad(carga, id)),
         String(Math.min(qty, sep)),
       ];
     });
@@ -782,7 +811,7 @@ export function ProgramacaoCargasScreen({
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">{(() => { const m = loadMetrics(selectedCarga); return <><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.customerCount}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Clientes</span></div><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.orderCount}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Pedidos</span></div><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.required}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Necessário</span></div><div className="p-3 rounded-xl bg-blue-50 border border-blue-100"><strong className="block text-xl text-blue-700">{m.packed}</strong><span className="text-[9px] uppercase text-blue-600 font-bold">Embalado</span></div><div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100"><strong className="block text-xl text-emerald-700">{m.separated}</strong><span className="text-[9px] uppercase text-emerald-600 font-bold">Separado</span></div></>; })()}</div>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="p-3">Cliente</th><th className="p-3">Pedido</th><th className="p-3">Produto</th><th className="p-3 text-right">Qtd. carga</th><th className="p-3 text-right">Embalado</th><th className="p-3 text-right">Separado</th><th className="p-3"></th></tr></thead><tbody className="divide-y divide-slate-100">{(selectedCarga.orderIds || []).map((id) => { const o = ordersById.get(id); const item = o ? itemsById.get(o.itemId) : undefined; const qty = Number(selectedCarga.orderQuantities?.[id] || 0); return <tr key={id}><td className="p-3 text-xs font-bold">{o?.customerName || "-"}</td><td className="p-3 text-xs font-mono">#{o?.orderCode || id}</td><td className="p-3 text-xs">{o?.customProductName || item?.name || "Item"}</td><td className="p-3 text-xs font-bold text-right">{qty}</td><td className="p-3 text-xs text-blue-700 font-bold text-right">{Math.min(qty, Number(o?.packedQuantity || 0))}</td><td className="p-3 text-xs text-emerald-700 font-black text-right">{Math.min(qty, Number(selectedCarga.separatedQuantities?.[id] || 0))}</td><td className="p-3 text-right">{EDITABLE_STATUSES.has(selectedCarga.status) && <button onClick={() => removeAllocation(selectedCarga, id)} className="text-[10px] font-bold text-rose-600 hover:underline">Remover</button>}</td></tr>; })}</tbody></table></div>{(selectedCarga.orderIds || []).length === 0 && <div className="p-8 text-center text-sm text-slate-500">Carga ainda sem itens vinculados.</div>}</div>
+              <div className="border border-slate-200 rounded-xl overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="p-3">Cliente</th><th className="p-3">Pedido</th><th className="p-3">Produto</th><th className="p-3 text-right">Qtd. carga</th><th className="p-3 text-right">Embalado</th><th className="p-3 text-right">Separado</th><th className="p-3"></th></tr></thead><tbody className="divide-y divide-slate-100">{(selectedCarga.orderIds || []).map((id) => { const o = ordersById.get(id); const item = o ? itemsById.get(o.itemId) : undefined; const qty = Number(selectedCarga.orderQuantities?.[id] || 0); return <tr key={id}><td className="p-3 text-xs font-bold">{o?.customerName || "-"}</td><td className="p-3 text-xs font-mono">#{o?.orderCode || id}</td><td className="p-3 text-xs">{o?.customProductName || item?.name || "Item"}</td><td className="p-3 text-xs font-bold text-right">{qty}</td><td className="p-3 text-xs text-blue-700 font-bold text-right">{packedForLoad(selectedCarga, id)}</td><td className="p-3 text-xs text-emerald-700 font-black text-right">{Math.min(qty, Number(selectedCarga.separatedQuantities?.[id] || 0))}</td><td className="p-3 text-right">{EDITABLE_STATUSES.has(selectedCarga.status) && <button onClick={() => removeAllocation(selectedCarga, id)} className="text-[10px] font-bold text-rose-600 hover:underline">Remover</button>}</td></tr>; })}</tbody></table></div>{(selectedCarga.orderIds || []).length === 0 && <div className="p-8 text-center text-sm text-slate-500">Carga ainda sem itens vinculados.</div>}</div>
 
               {(selectedCarga.auditTrail || []).length > 0 && <div><h4 className="text-[10px] uppercase tracking-widest font-extrabold text-slate-500 mb-2">Histórico da carga</h4><div className="space-y-1">{[...(selectedCarga.auditTrail || [])].reverse().slice(0, 10).map((a, idx) => <div key={`${a.timestamp}-${idx}`} className="text-[10px] bg-slate-50 border border-slate-100 rounded-lg p-2 flex justify-between gap-2"><span><strong>{a.userName}</strong> • {a.action}{a.reason ? ` — ${a.reason}` : ""}</span><span className="text-slate-400 whitespace-nowrap">{new Date(a.timestamp).toLocaleString("pt-BR")}</span></div>)}</div></div>}
             </div>

@@ -64,6 +64,18 @@ function loadDate(carga: Carga) {
   return carga.scheduledDate || carga.departureDate || "";
 }
 
+function tvShiftRank(shift?: string) {
+  return shift === "MANHA" ? 0 : shift === "TARDE" ? 1 : 2;
+}
+
+function tvLoadSort(a: Carga, b: Carga) {
+  return (
+    loadDate(a).localeCompare(loadDate(b)) ||
+    tvShiftRank(a.shift) - tvShiftRank(b.shift) ||
+    a.createdAt - b.createdAt
+  );
+}
+
 function formatDate(value?: string) {
   const d = parseDate(value);
   return d ? d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" }).replace(".", "") : "Sem data";
@@ -106,12 +118,30 @@ export function ExpedicaoTVScreen({
           const d = loadDate(c);
           return d && d >= start && d <= end && !FINAL_STATUSES.has(c.status);
         })
-        .sort((a, b) => loadDate(a).localeCompare(loadDate(b)) || a.createdAt - b.createdAt),
+        .sort(tvLoadSort),
     [db.cargas, start, end],
   );
 
   const ordersById = useMemo(() => new Map(db.orders.map((o) => [o.id, o])), [db.orders]);
   const itemsById = useMemo(() => new Map(db.items.map((i) => [i.id, i])), [db.items]);
+
+  const packedForLoad = (carga: Carga, orderId: number) => {
+    const order = ordersById.get(orderId);
+    if (!order) return 0;
+
+    let packedAvailable = Math.max(0, Number(order.packedQuantity || 0));
+    const relatedLoads = (db.cargas || [])
+      .filter((c) => (c.orderIds || []).includes(orderId))
+      .sort(tvLoadSort);
+
+    for (const related of relatedLoads) {
+      const allocated = Math.max(0, Number(related.orderQuantities?.[orderId] || 0));
+      const packedHere = Math.min(allocated, packedAvailable);
+      if (related.id === carga.id) return packedHere;
+      packedAvailable = Math.max(0, packedAvailable - allocated);
+    }
+    return 0;
+  };
 
   const metrics = (carga: Carga) => {
     let required = 0;
@@ -126,7 +156,7 @@ export function ExpedicaoTVScreen({
       if (!o) return;
       const qty = Number(carga.orderQuantities?.[id] || 0);
       const sep = Math.min(qty, Number(carga.separatedQuantities?.[id] || 0));
-      const pack = Math.min(qty, Number(o.packedQuantity || 0));
+      const pack = packedForLoad(carga, id);
       required += qty;
       packed += pack;
       separated += sep;
@@ -282,7 +312,7 @@ export function ExpedicaoTVScreen({
                   const item = o ? itemsById.get(o.itemId) : undefined;
                   const allocated = Number(selectedCarga.orderQuantities?.[id] || 0);
                   const separated = Math.min(allocated, Number(selectedCarga.separatedQuantities?.[id] || 0));
-                  const packed = Math.min(allocated, Number(o?.packedQuantity || 0));
+                  const packed = packedForLoad(selectedCarga, id);
                   return (
                     <div key={id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                       <div className="min-w-0"><div className="flex items-center gap-2 flex-wrap"><span className="text-xs font-black bg-slate-800 px-2 py-1 rounded-lg">PEDIDO #{o?.orderCode || id}</span><span className="text-sm font-bold text-slate-200">{o?.customerName || "Cliente"}</span></div><h3 className="text-lg font-black mt-2 truncate">{o?.customProductName || item?.name || "Item"}</h3><p className="text-xs text-slate-500 mt-0.5">{o?.color || "-"} • {o?.size || "-"} • {o?.variation || "-"}</p></div>
