@@ -1,0 +1,39 @@
+name: Fix expedition invoiced commitment
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/fix-expedition-invoiced-commitment.cjs
+      - .github/workflows/fix-expedition-commitment.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix-source:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply commitment fix
+        run: node scripts/fix-expedition-invoiced-commitment.cjs
+
+      - name: Commit source fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ProgramacaoCargasScreen.tsx
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git commit -m "fix: release invoiced quantities from load commitment"
+          git push origin HEAD:main
