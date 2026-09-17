@@ -134,3 +134,5 @@ jobs:
           git add src/ProgramacaoCargasScreen.tsx src/useDatabase.ts .github/workflows/oneoff-expedition-route-flexibility.yml
           git commit -m "feat: make expedition route-first and allow unassigned customers"
           git push origin HEAD:main
+
+# one-off trigger
