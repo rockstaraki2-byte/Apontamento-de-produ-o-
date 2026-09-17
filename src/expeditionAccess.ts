@@ -22,6 +22,7 @@ export function canManageExpedition(
     "gerencia",
     "gerencia.imperio",
     "pcp",
+    "pcp.imperio",
     "dinei",
     "encarregado_dinei",
     "encarregado.dinei",
