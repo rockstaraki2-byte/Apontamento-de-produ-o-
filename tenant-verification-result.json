@@ -1,0 +1,15 @@
+{
+  "executedAt": "2026-09-18T20:25:20.120Z",
+  "tenants": [
+    {
+      "id": "imperio",
+      "name": "IMPÉRIO JOMARCI - ACESSÓRIOS PARA MOVÉIS"
+    }
+  ],
+  "tenantCount": 1,
+  "usersByTenant": {
+    "imperio": 10,
+    "sem-tenant": 18
+  },
+  "onlyImperioTenant": true
+}
