@@ -11,12 +11,14 @@ import {
   MapPin,
   Monitor,
   PackageCheck,
+  Pencil,
   Plus,
   RefreshCcw,
   Route as RouteIcon,
   Search,
   ShieldAlert,
   Sparkles,
+  Trash2,
   Truck,
   Users,
   X,
@@ -151,6 +153,7 @@ export function ProgramacaoCargasScreen({
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
   const [selectedCarga, setSelectedCarga] = useState<Carga | null>(null);
   const [showLoadForm, setShowLoadForm] = useState(false);
+  const [editingLoadId, setEditingLoadId] = useState<string | null>(null);
   const [loadRouteId, setLoadRouteId] = useState("");
   const [loadDate, setLoadDate] = useState(dateKey(new Date()));
   const [loadLocation, setLoadLocation] = useState("");
@@ -441,6 +444,7 @@ export function ProgramacaoCargasScreen({
   };
 
   const openNewLoad = (route?: ExpeditionRoute) => {
+    setEditingLoadId(null);
     const r = route || routes[0];
     if (r) {
       setLoadRouteId(r.id);
@@ -452,6 +456,52 @@ export function ProgramacaoCargasScreen({
     setLoadLocation("");
     setLoadNotes("");
     setShowLoadForm(true);
+  };
+
+  const openEditLoad = (carga: Carga) => {
+    if (!EDITABLE_STATUSES.has(carga.status)) {
+      alert("Reabra a carga antes de editar rota, data ou informações do planejamento.");
+      return;
+    }
+
+    setEditingLoadId(carga.id);
+    setLoadRouteId(carga.routeId || "");
+    setLoadDate(getLoadDate(carga) || dateKey(new Date()));
+    setLoadLocation(carga.stagingLocation || "");
+    setLoadNotes(carga.notes || "");
+    setSelectedCarga(null);
+    setShowLoadForm(true);
+  };
+
+  const deleteLoad = async (carga: Carga) => {
+    if (!EDITABLE_STATUSES.has(carga.status)) {
+      alert("Somente cargas planejadas ou abertas podem ser excluídas. Reabra a carga primeiro, se necessário.");
+      return;
+    }
+
+    const itemCount = (carga.orderIds || []).length;
+    const ok = confirm(
+      itemCount > 0
+        ? `Excluir a carga "${carga.routeName || carga.name}"? Os ${itemCount} item(ns) vinculados serão liberados novamente para o planejamento.`
+        : `Excluir a carga "${carga.routeName || carga.name}"?`,
+    );
+    if (!ok) return;
+
+    await db.deleteCarga(carga.id);
+    if (targetCargaId === carga.id) setTargetCargaId("");
+    setSelectedCarga(null);
+  };
+
+  const includeOrdersInLoad = (carga: Carga) => {
+    if (!EDITABLE_STATUSES.has(carga.status)) {
+      alert("Reabra a carga antes de incluir novos pedidos.");
+      return;
+    }
+
+    setTargetCargaId(carga.id);
+    setSelectedQuantities({});
+    setSelectedCarga(null);
+    setTab("PEDIDOS");
   };
 
   const saveLoad = async () => {
@@ -468,24 +518,60 @@ export function ProgramacaoCargasScreen({
     const selectedDate = parseLocalDate(loadDate);
     if (selectedDate && selectedDate.getDay() !== route.weekday) {
       const ok = confirm(
-        `A rota está cadastrada para ${DAY_NAMES[route.weekday]} / ${SHIFT_LABEL[route.shift]}, mas a data escolhida cai em ${DAY_NAMES[selectedDate.getDay()]}. Deseja criar assim mesmo?`,
+        `A rota está cadastrada para ${DAY_NAMES[route.weekday]} / ${SHIFT_LABEL[route.shift]}, mas a data escolhida cai em ${DAY_NAMES[selectedDate.getDay()]}. Deseja salvar assim mesmo?`,
       );
       if (!ok) return;
     }
 
-    const pretty = selectedDate
-      ? `${String(selectedDate.getDate()).padStart(2, "0")}/${MONTH_ABBR[selectedDate.getMonth()]}`
-      : loadDate;
-    const name = `Carga do dia ${pretty}`;
+    if (editingLoadId) {
+      const current = (db.cargas || []).find((c) => c.id === editingLoadId);
+      if (!current) {
+        alert("A carga não foi encontrada. Atualize a tela e tente novamente.");
+        return;
+      }
+
+      const updated: Carga = {
+        ...current,
+        name: route.name,
+        routeId: route.id,
+        routeName: route.name,
+        route: [route.name],
+        shift: route.shift,
+        scheduledDate: loadDate,
+        departureDate: loadDate,
+        dayOfWeek: selectedDate
+          ? DAY_NAMES[selectedDate.getDay()]
+          : DAY_NAMES[route.weekday],
+        stagingLocation: loadLocation.trim() || undefined,
+        notes: loadNotes.trim() || undefined,
+        auditTrail: [
+          ...(current.auditTrail || []),
+          {
+            timestamp: Date.now(),
+            userId: currentUser.id,
+            userName: currentUser.name,
+            action: "Planejamento da carga editado",
+          },
+        ],
+      };
+
+      await db.updateCarga(updated);
+      setEditingLoadId(null);
+      setShowLoadForm(false);
+      return;
+    }
 
     const cargaId = await db.addCarga({
-      name,
+      name: route.name,
       routeId: route.id,
       routeName: route.name,
+      route: [route.name],
       shift: route.shift,
       scheduledDate: loadDate,
       departureDate: loadDate,
-      dayOfWeek: DAY_NAMES[route.weekday],
+      dayOfWeek: selectedDate
+        ? DAY_NAMES[selectedDate.getDay()]
+        : DAY_NAMES[route.weekday],
       orderIds: [],
       orderQuantities: {},
       separatedQuantities: {},
@@ -501,6 +587,7 @@ export function ProgramacaoCargasScreen({
           action: "Carga criada",
         },
       ],
+      tenantId: db.activeTenantId || undefined,
     });
 
     setTargetCargaId(cargaId);
@@ -652,55 +739,83 @@ export function ProgramacaoCargasScreen({
     const doc = new jsPDF("landscape");
     const metrics = loadMetrics(carga);
     const projectedRevenue = getLoadProjectedRevenue(carga);
+    const loadDateValue = getLoadDate(carga);
+    const loadDateObject = parseLocalDate(loadDateValue);
+    const dayLabel = loadDateObject
+      ? DAY_NAMES[loadDateObject.getDay()]
+      : carga.dayOfWeek || "Dia não definido";
+    const loadTitleName = carga.routeName || carga.name;
+    const title = `PROGRAMAÇÃO DE CARGA - ${loadTitleName} - ${dayLabel.toUpperCase()} ${formatDate(loadDateValue)}`;
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text("PROGRAMAÇÃO DE CARGA / EXPEDIÇÃO", 14, 14);
+    doc.setFontSize(14);
+    const titleLines = doc.splitTextToSize(title, 268);
+    doc.text(titleLines, 14, 14);
+
+    const titleBottom = 14 + Math.max(0, titleLines.length - 1) * 6;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    doc.text(`${carga.name} | Status: ${STATUS_LABEL[carga.status] || carga.status}`, 14, 21);
-    doc.text(`Data: ${formatDate(getLoadDate(carga))} | Local: ${carga.stagingLocation || "Não definido"} | Total: ${metrics.required} un`, 14, 27);
+    doc.text(
+      `Status: ${STATUS_LABEL[carga.status] || carga.status} | Área/Pallet: ${carga.stagingLocation || "Não definido"} | Total programado: ${metrics.required} un`,
+      14,
+      titleBottom + 7,
+    );
 
-    let startY = 33;
+    let startY = titleBottom + 14;
+
     if (includeRevenue) {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.text(
         `Faturamento previsto da carga: ${formatCurrency(projectedRevenue.total)}`,
         14,
-        34,
+        startY,
       );
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.text(
-        "Cálculo baseado na quantidade programada na carga, preço unitário do pedido e desconto percentual cadastrado.",
+        "Valor total calculado pela quantidade programada na carga, preço do pedido e desconto cadastrado.",
         14,
-        39,
+        startY + 5,
       );
+
       if (projectedRevenue.missingPriceItems > 0) {
         doc.setFont("helvetica", "bold");
         doc.text(
-          `Atenção: ${projectedRevenue.missingPriceItems} item(ns) estão sem preço cadastrado e foram considerados como R$ 0,00.`,
+          `Atenção: ${projectedRevenue.missingPriceItems} item(ns) sem preço foram considerados como R$ 0,00.`,
           14,
-          44,
+          startY + 10,
         );
+        startY += 15;
+      } else {
+        startY += 10;
       }
-      startY = projectedRevenue.missingPriceItems > 0 ? 49 : 44;
     }
 
     const rows = (carga.orderIds || []).map((id) => {
       const order = ordersById.get(id);
       const item = order ? itemsById.get(order.itemId) : undefined;
-      const qty = Number(carga.orderQuantities?.[id] || 0);
-      const sep = Number(carga.separatedQuantities?.[id] || 0);
+      const qtyInLoad = Number(carga.orderQuantities?.[id] || 0);
+      const batchIds = batchIdsByOrder.get(id) || [];
+      const loteLabel =
+        batchIds.length > 0
+          ? batchIds
+              .map((batchId) => {
+                const batch = (db.productionBatches || []).find((b) => b.id === batchId);
+                return batch?.name || `Lote ${batchId}`;
+              })
+              .join(", ")
+          : "-";
 
+      const invoiced = Math.max(0, Number(order?.invoicedQuantity || 0));
+      const ordered = Math.max(0, Number(order?.totalQuantity || 0));
       const baseColumns = [
         order?.customerName || "Pedido não encontrado",
+        loteLabel,
         order?.orderCode || String(id),
         order?.customProductName || item?.name || "Item",
-        String(qty),
+        `${invoiced} / ${ordered}`,
         String(packedForLoad(carga, id)),
-        String(Math.min(qty, sep)),
       ];
 
       if (!includeRevenue || !order) return baseColumns;
@@ -713,14 +828,10 @@ export function ProgramacaoCargasScreen({
         0,
         Math.min(100, Number(order.discountPercent || 0)),
       );
-      const lineRevenue = qty * unitPrice * (1 - discountPercent / 100);
+      const lineRevenue =
+        qtyInLoad * unitPrice * (1 - discountPercent / 100);
 
-      return [
-        ...baseColumns,
-        formatCurrency(unitPrice),
-        discountPercent > 0 ? `${discountPercent.toFixed(2)}%` : "-",
-        formatCurrency(lineRevenue),
-      ];
+      return [...baseColumns, formatCurrency(lineRevenue)];
     });
 
     autoTable(doc, {
@@ -729,39 +840,40 @@ export function ProgramacaoCargasScreen({
         includeRevenue
           ? [
               "Cliente",
+              "Lote",
               "Pedido",
               "Produto",
-              "Qtd. carga",
-              "Embalado",
-              "Separado",
-              "Valor unit.",
-              "Desc.",
-              "Faturamento",
+              "Qtd. faturado / pedido",
+              "Qtd. embalado",
+              "Valor total",
             ]
-          : ["Cliente", "Pedido", "Produto", "Qtd. carga", "Embalado", "Separado"],
+          : [
+              "Cliente",
+              "Lote",
+              "Pedido",
+              "Produto",
+              "Qtd. faturado / pedido",
+              "Qtd. embalado",
+            ],
       ],
       body: rows,
       theme: "grid",
-      styles: { fontSize: includeRevenue ? 7.2 : 8, cellPadding: 2 },
+      styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [15, 23, 42] },
       columnStyles: includeRevenue
         ? {
-            3: { halign: "right" },
             4: { halign: "right" },
             5: { halign: "right" },
-            6: { halign: "right" },
-            7: { halign: "right" },
-            8: { halign: "right", fontStyle: "bold" },
+            6: { halign: "right", fontStyle: "bold" },
           }
         : {
-            3: { halign: "right" },
             4: { halign: "right" },
             5: { halign: "right" },
           },
     });
 
     const suffix = includeRevenue ? "_com_faturamento" : "_producao";
-    const fileName = `carga_${carga.name.replace(/[^a-z0-9]+/gi, "_")}${suffix}.pdf`;
+    const fileName = `carga_${loadTitleName.replace(/[^a-z0-9]+/gi, "_")}_${loadDateValue || "sem_data"}${suffix}.pdf`;
     return { doc, fileName };
   };
 
@@ -1063,11 +1175,11 @@ export function ProgramacaoCargasScreen({
       {showLoadForm && (
         <div className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowLoadForm(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-start"><div><h3 className="font-extrabold text-slate-900 text-lg">Programar nova carga</h3><p className="text-xs text-slate-500">Escolha a rota fixa e a data. Depois você será levado para buscar e incluir os pedidos, inclusive os já loteados.</p></div><button onClick={() => setShowLoadForm(false)} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={18} /></button></div>
+            <div className="flex justify-between items-start"><div><h3 className="font-extrabold text-slate-900 text-lg">{editingLoadId ? "Editar carga" : "Programar nova carga"}</h3><p className="text-xs text-slate-500">{editingLoadId ? "Altere rota, data, área/pallet ou observações da carga." : "Escolha a rota fixa e a data. Depois você será levado para buscar e incluir os pedidos, inclusive os já loteados."}</p></div><button onClick={() => { setShowLoadForm(false); setEditingLoadId(null); }} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={18} /></button></div>
             <label className="block"><span className="text-[10px] uppercase font-extrabold text-slate-500">Rota</span><select value={loadRouteId} onChange={(e) => { setLoadRouteId(e.target.value); const r = routes.find((x) => x.id === e.target.value); if (r) setLoadDate(dateKey(nextWeekday(r.weekday))); }} className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm bg-white"><option value="">Selecione...</option>{routes.map((r) => <option key={r.id} value={r.id}>{r.name} • {DAY_NAMES[r.weekday]} • {SHIFT_LABEL[r.shift]}</option>)}</select></label>
             <div className="grid grid-cols-2 gap-3"><label><span className="text-[10px] uppercase font-extrabold text-slate-500">Data da carga</span><input type="date" value={loadDate} onChange={(e) => setLoadDate(e.target.value)} className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm" /></label><label><span className="text-[10px] uppercase font-extrabold text-slate-500">Área/Pallet</span><input value={loadLocation} onChange={(e) => setLoadLocation(e.target.value)} placeholder="Ex: A-03" className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm" /></label></div>
             <textarea value={loadNotes} onChange={(e) => setLoadNotes(e.target.value)} placeholder="Observações da carga..." className="w-full min-h-[90px] border border-slate-300 rounded-lg p-2 text-sm" />
-            <div className="flex justify-end gap-2"><button onClick={() => setShowLoadForm(false)} className="h-9 px-4 border border-slate-300 rounded-lg text-xs font-bold">Cancelar</button><button onClick={saveLoad} className="h-9 px-4 bg-emerald-600 text-white rounded-lg text-xs font-extrabold">Criar carga aberta</button></div>
+            <div className="flex justify-end gap-2"><button onClick={() => { setShowLoadForm(false); setEditingLoadId(null); }} className="h-9 px-4 border border-slate-300 rounded-lg text-xs font-bold">Cancelar</button><button onClick={saveLoad} className="h-9 px-4 bg-emerald-600 text-white rounded-lg text-xs font-extrabold">{editingLoadId ? "Salvar alterações" : "Criar carga aberta"}</button></div>
           </div>
         </div>
       )}
@@ -1078,6 +1190,7 @@ export function ProgramacaoCargasScreen({
             <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50"><div><div className="flex items-center gap-2 flex-wrap"><h3 className="font-black text-slate-900 text-lg">{selectedCarga.name}</h3><span className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${STATUS_CLASS[selectedCarga.status] || STATUS_CLASS.PLANEJADA}`}>{STATUS_LABEL[selectedCarga.status] || selectedCarga.status}</span></div><p className="text-xs text-slate-500">{formatDate(getLoadDate(selectedCarga))} • Área/Pallet: {selectedCarga.stagingLocation || "não definida"}</p></div><div className="flex items-center gap-2 flex-wrap justify-end"><button onClick={() => previewLoad(selectedCarga, false)} className="h-9 px-3 border border-slate-300 bg-white rounded-lg text-xs font-bold flex items-center gap-1.5" title="Abre a prévia sem salvar o arquivo"><Eye size={14} /> Visualizar Produção</button><button onClick={() => previewLoad(selectedCarga, true)} className="h-9 px-3 border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-lg text-xs font-extrabold flex items-center gap-1.5 hover:bg-emerald-100" title="Abre a prévia gerencial com faturamento previsto"><DollarSign size={14} /> Visualizar + Faturamento</button><button onClick={() => setSelectedCarga(null)} className="p-2 rounded-lg hover:bg-slate-200"><X size={18} /></button></div></div>
             <div className="p-4 overflow-y-auto flex-1 space-y-4">
               <div className="flex flex-wrap gap-2">
+                {EDITABLE_STATUSES.has(selectedCarga.status) && <><button onClick={() => openEditLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-blue-300 bg-blue-50 text-blue-800 text-xs font-bold flex items-center gap-1"><Pencil size={13} /> Editar carga</button><button onClick={() => includeOrdersInLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-bold flex items-center gap-1"><Plus size={13} /> Incluir pedidos</button><button onClick={() => deleteLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-rose-300 bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1"><Trash2 size={13} /> Excluir carga</button></>}
                 {(selectedCarga.status === "PLANEJADA" || selectedCarga.status === "ABERTA") && <button onClick={() => changeStatus(selectedCarga, "FECHADA")} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold">Fechar carga</button>}
                 {selectedCarga.status === "FECHADA" && <><button onClick={() => changeStatus(selectedCarga, "ABERTA")} className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 text-xs font-bold">Reabrir</button><button onClick={() => changeStatus(selectedCarga, "LIBERADA")} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold">Liberar</button></>}
                 {selectedCarga.status === "LIBERADA" && <button onClick={() => changeStatus(selectedCarga, "EM_SEPARACAO")} className="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-bold">Iniciar separação</button>}
