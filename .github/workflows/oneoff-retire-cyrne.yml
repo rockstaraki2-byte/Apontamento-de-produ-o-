@@ -163,3 +163,5 @@ jobs:
           git add tenant-cleanup-result.json
           git commit -m "ops: record Cyrne Decor cleanup result" || exit 0
           git push origin HEAD:main
+
+# retrigger verification 2026-09-18T20:21Z
