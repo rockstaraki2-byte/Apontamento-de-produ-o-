@@ -2807,3 +2807,5 @@ Retorne obrigatoriamente um array de produtos no formato JSON.
 }
 
 startServer();
+
+// Tenant cleanup deploy trigger 2026-09-18
