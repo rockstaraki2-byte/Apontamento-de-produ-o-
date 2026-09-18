@@ -85,6 +85,22 @@ export function getUniqueNumericId(): number {
   return lastAssignedId;
 }
 
+const RETIRED_TENANT_IDS = new Set(["cyrnedecor", "cirnedecor"]);
+
+function isRetiredTenantId(value?: string | null) {
+  return RETIRED_TENANT_IDS.has(String(value || "").trim().toLowerCase());
+}
+
+function isRetiredTenantUser(user: Partial<User> & { companyId?: string }) {
+  return (
+    isRetiredTenantId(user.tenantId || user.companyId) ||
+    String(user.id || "").toLowerCase().includes("cyrnedecor") ||
+    String(user.id || "").toLowerCase().includes("cirnedecor") ||
+    String(user.name || "").toLowerCase().includes("cyrne decor") ||
+    String(user.name || "").toLowerCase().includes("cirne decor")
+  );
+}
+
 const INITIAL_USERS: User[] = [
   { id: "raul", name: "Raul", role: "ADMIN", password: "230213", tenantId: "global" },
   { id: "gerencia", name: "Gerência", role: "ADMIN", password: "1111", tenantId: "imperio" },
@@ -221,15 +237,17 @@ const INITIAL_USERS: User[] = [
   },
   { id: "injetora", name: "Injetora", role: "INJETORA", tenantId: "imperio" },
   { id: "banho_quimico", name: "Banho Químico", role: "BANHO_QUIMICO", tenantId: "imperio" },
-  { id: "gerencia.cyrnedecor", name: "Gerência Cyrne Decor", role: "GERENCIA", password: "1111", tenantId: "cyrnedecor" },
-  { id: "flavio.cyrnedecor", name: "Flávio Cyrne Decor", role: "EMBALAGEM", password: "1111", tenantId: "cyrnedecor" },
-  { id: "rayane.cyrnedecor", name: "Rayane Cyrne Decor", role: "QUALIDADE", password: "1111", tenantId: "cyrnedecor" },
 ];
 
 export function useDatabase(currentUser?: User | null) {
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [selectedTenantId, setSelectedTenantIdState] = useState<string>(() => {
-    return localStorage.getItem("active_tenant_id") || "imperio";
+    const savedTenantId = localStorage.getItem("active_tenant_id") || "imperio";
+    if (isRetiredTenantId(savedTenantId)) {
+      localStorage.setItem("active_tenant_id", "imperio");
+      return "imperio";
+    }
+    return savedTenantId;
   });
   const [tenants, setTenants] = useState<Tenant[]>([]);
 
@@ -261,9 +279,12 @@ export function useDatabase(currentUser?: User | null) {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        const sanitizedParsed = Array.isArray(parsed)
+          ? parsed.filter((p: User) => !isRetiredTenantUser(p))
+          : [];
         // Garante que novos campos nos INITIAL_USERS sejam mesclados caso não existam no salvo
         const merged = INITIAL_USERS.map((initU) => {
-          const match = parsed.find((p: User) => p.id === initU.id);
+          const match = sanitizedParsed.find((p: User) => p.id === initU.id);
           const mergedU = match ? { ...initU, ...match } : initU;
           if (initU.id === "raul") {
             mergedU.password = "230213";
@@ -272,7 +293,7 @@ export function useDatabase(currentUser?: User | null) {
           }
           return mergedU;
         });
-        parsed.forEach((p: User) => {
+        sanitizedParsed.forEach((p: User) => {
           if (!merged.some((u) => u.id === p.id)) {
             merged.push(p);
           }
@@ -605,7 +626,16 @@ export function useDatabase(currentUser?: User | null) {
     const unsubTenants = onSnapshot(
       collection(db, "tenants"),
       (snap) => {
-        let list = snap.docs.map((d) => d.data() as Tenant);
+        let list = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as Tenant) }))
+          .filter((tenant) => {
+            const normalizedName = String(tenant.name || "").toLowerCase();
+            return (
+              !isRetiredTenantId(tenant.id) &&
+              !normalizedName.includes("cyrne decor") &&
+              !normalizedName.includes("cirne decor")
+            );
+          });
         const imperioIndex = list.findIndex((t) => t.id === "imperio");
         if (imperioIndex !== -1) {
           const imperio = list[imperioIndex];
@@ -626,10 +656,12 @@ export function useDatabase(currentUser?: User | null) {
     const unsubUsers = onSnapshot(
       collection(db, "users"),
       (snap) => {
-        const list = snap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as User),
-        }));
+        const list = snap.docs
+          .map((d) => ({
+            id: d.id,
+            ...(d.data() as User),
+          }))
+          .filter((user) => !isRetiredTenantUser(user));
         setUsers((prev) => {
           const merged = INITIAL_USERS.map((initU) => {
             const dbUser = list.find((u) => u.id === initU.id);
