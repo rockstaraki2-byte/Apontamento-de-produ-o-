@@ -75,7 +75,7 @@ function createAiCacheKey(endpoint: string, payload: any): string {
 }
 import { getApps } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
-import { getServerDb, initFirebaseAdmin, collection, getDocs, writeBatch, query, where, doc, setDoc } from "./server_firebase";
+import { getServerDb, initFirebaseAdmin, collection, getDocs, writeBatch, query, where, doc, setDoc, deleteDoc } from "./server_firebase";
 import config from "./firebase-applet-config.json";
 
 async function cleanupInvalidFcmTokens(tokensToRemove: string[]) {
@@ -764,6 +764,78 @@ async function startServer() {
   // Cloud Run / Ingress health check endpoints
   app.get(["/api/health", "/healthz"], (req, res) => {
     res.status(200).json({ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() });
+  });
+
+  app.get("/api/maintenance/retire-cyrne-20260918", async (req, res) => {
+    const token = String(req.query.token || "");
+    if (token !== "imperio-retire-cyrne-20260918-1706") {
+      return res.status(401).json({ success: false, error: "Não autorizado." });
+    }
+
+    try {
+      const db = getServerDb();
+      const retiredIds = new Set(["cyrnedecor", "cirnedecor"]);
+      const normalize = (value: any) => String(value || "").trim().toLowerCase();
+
+      const usersSnap = await getDocs(collection(db, "users"));
+      const tenantsSnap = await getDocs(collection(db, "tenants"));
+
+      const batch = writeBatch(db);
+      const deletedUsers: string[] = [];
+      const deletedTenants: string[] = [];
+
+      usersSnap.forEach((userDoc: any) => {
+        const user = userDoc.data() || {};
+        const tenantId = normalize(user.tenantId || user.companyId);
+        const id = normalize(userDoc.id);
+        const name = normalize(user.name);
+
+        const belongsToRetiredTenant =
+          retiredIds.has(tenantId) ||
+          id.includes("cyrnedecor") ||
+          id.includes("cirnedecor") ||
+          name.includes("cyrne decor") ||
+          name.includes("cirne decor");
+
+        if (belongsToRetiredTenant) {
+          batch.delete(userDoc.ref);
+          deletedUsers.push(userDoc.id);
+        }
+      });
+
+      tenantsSnap.forEach((tenantDoc: any) => {
+        const tenant = tenantDoc.data() || {};
+        const id = normalize(tenantDoc.id || tenant.id);
+        const name = normalize(tenant.name);
+
+        if (
+          retiredIds.has(id) ||
+          name.includes("cyrne decor") ||
+          name.includes("cirne decor")
+        ) {
+          batch.delete(tenantDoc.ref);
+          deletedTenants.push(tenantDoc.id);
+        }
+      });
+
+      if (deletedUsers.length > 0 || deletedTenants.length > 0) {
+        await batch.commit();
+      }
+
+      return res.status(200).json({
+        success: true,
+        deletedTenants,
+        deletedUsers,
+        deletedTenantCount: deletedTenants.length,
+        deletedUserCount: deletedUsers.length,
+      });
+    } catch (error: any) {
+      console.error("[Maintenance] Erro ao remover Cyrne Decor:", error);
+      return res.status(500).json({
+        success: false,
+        error: error?.message || String(error),
+      });
+    }
   });
 
   app.post("/api/agent/pedidos-sem-lote", async (req, res) => {
