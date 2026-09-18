@@ -5,16 +5,18 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  DollarSign,
+  Eye,
   FileText,
   MapPin,
   Monitor,
   PackageCheck,
   Plus,
-  Printer,
   RefreshCcw,
   Route as RouteIcon,
   Search,
   ShieldAlert,
+  Sparkles,
   Truck,
   Users,
   X,
@@ -25,6 +27,8 @@ import { useDatabase } from "./useDatabase";
 import type { Carga, ExpeditionRoute, Order, User } from "./types";
 import { canManageExpedition } from "./expeditionAccess";
 import { normalizeString } from "./searchUtils";
+import { LoadSuggestionsTab } from "./LoadSuggestionsTab";
+import { PdfPreviewModal } from "./PdfPreviewModal";
 
 const DAY_NAMES = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const SHIFT_LABEL: Record<string, string> = { MANHA: "Manhã", TARDE: "Tarde" };
@@ -143,7 +147,7 @@ export function ProgramacaoCargasScreen({
   db: ReturnType<typeof useDatabase>;
   currentUser: User;
 }) {
-  const [tab, setTab] = useState<"SEMANA" | "PEDIDOS" | "ROTAS" | "HISTORICO">("SEMANA");
+  const [tab, setTab] = useState<"SEMANA" | "PEDIDOS" | "SUGESTOES" | "ROTAS" | "HISTORICO">("SEMANA");
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
   const [selectedCarga, setSelectedCarga] = useState<Carga | null>(null);
   const [showLoadForm, setShowLoadForm] = useState(false);
@@ -168,6 +172,7 @@ export function ProgramacaoCargasScreen({
   const [orderCreatedStart, setOrderCreatedStart] = useState("");
   const [orderCreatedEnd, setOrderCreatedEnd] = useState("");
   const [orderBatchFilter, setOrderBatchFilter] = useState<"TODOS" | "COM_LOTE" | "SEM_LOTE" | number>("TODOS");
+  const [pdfPreview, setPdfPreview] = useState<{ url: string; fileName: string; title: string } | null>(null);
 
   const canManage = canManageExpedition(db.activeTenantId, currentUser);
 
@@ -643,7 +648,7 @@ export function ProgramacaoCargasScreen({
   const formatCurrency = (value: number) =>
     value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  const printLoad = (carga: Carga, includeRevenue = false) => {
+  const buildLoadPdf = (carga: Carga, includeRevenue = false) => {
     const doc = new jsPDF("landscape");
     const metrics = loadMetrics(carga);
     const projectedRevenue = getLoadProjectedRevenue(carga);
@@ -756,9 +761,27 @@ export function ProgramacaoCargasScreen({
     });
 
     const suffix = includeRevenue ? "_com_faturamento" : "_producao";
-    doc.save(
-      `carga_${carga.name.replace(/[^a-z0-9]+/gi, "_")}${suffix}.pdf`,
-    );
+    const fileName = `carga_${carga.name.replace(/[^a-z0-9]+/gi, "_")}${suffix}.pdf`;
+    return { doc, fileName };
+  };
+
+  const previewLoad = (carga: Carga, includeRevenue = false) => {
+    if (pdfPreview?.url) URL.revokeObjectURL(pdfPreview.url);
+    const { doc, fileName } = buildLoadPdf(carga, includeRevenue);
+    const blob = doc.output("blob");
+    const url = URL.createObjectURL(blob);
+    setPdfPreview({
+      url,
+      fileName,
+      title: includeRevenue
+        ? carga.name + " - com faturamento"
+        : carga.name + " - produção",
+    });
+  };
+
+  const closePdfPreview = () => {
+    if (pdfPreview?.url) URL.revokeObjectURL(pdfPreview.url);
+    setPdfPreview(null);
   };
 
   const customerMatches = useMemo(() => {
@@ -856,6 +879,7 @@ export function ProgramacaoCargasScreen({
         {[
           ["SEMANA", "Cargas da Semana", CalendarDays],
           ["PEDIDOS", "Adicionar Pedidos", ClipboardList],
+          ["SUGESTOES", "Sugestões de Carga", Sparkles],
           ["ROTAS", "Rotas", RouteIcon],
           ["HISTORICO", "Histórico", FileText],
         ].map(([key, label, Icon]: any) => (
@@ -1002,6 +1026,10 @@ export function ProgramacaoCargasScreen({
         </div>
       )}
 
+      {tab === "SUGESTOES" && (
+        <LoadSuggestionsTab db={db} currentUser={currentUser} />
+      )}
+
       {tab === "ROTAS" && (
         <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 h-max">
@@ -1047,7 +1075,7 @@ export function ProgramacaoCargasScreen({
       {selectedCarga && (
         <div className="fixed inset-0 z-[130] bg-black/50 backdrop-blur-sm flex items-center justify-center p-3" onClick={() => setSelectedCarga(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50"><div><div className="flex items-center gap-2 flex-wrap"><h3 className="font-black text-slate-900 text-lg">{selectedCarga.name}</h3><span className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${STATUS_CLASS[selectedCarga.status] || STATUS_CLASS.PLANEJADA}`}>{STATUS_LABEL[selectedCarga.status] || selectedCarga.status}</span></div><p className="text-xs text-slate-500">{formatDate(getLoadDate(selectedCarga))} • Área/Pallet: {selectedCarga.stagingLocation || "não definida"}</p></div><div className="flex items-center gap-2 flex-wrap justify-end"><button onClick={() => printLoad(selectedCarga, false)} className="h-9 px-3 border border-slate-300 bg-white rounded-lg text-xs font-bold flex items-center gap-1.5" title="Gera o relatório operacional sem preços ou faturamento"><Printer size={14} /> PDF Produção</button><button onClick={() => printLoad(selectedCarga, true)} className="h-9 px-3 border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-lg text-xs font-extrabold flex items-center gap-1.5 hover:bg-emerald-100" title="Gera o relatório gerencial com valor previsto da carga"><FileText size={14} /> PDF + Faturamento</button><button onClick={() => setSelectedCarga(null)} className="p-2 rounded-lg hover:bg-slate-200"><X size={18} /></button></div></div>
+            <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50"><div><div className="flex items-center gap-2 flex-wrap"><h3 className="font-black text-slate-900 text-lg">{selectedCarga.name}</h3><span className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${STATUS_CLASS[selectedCarga.status] || STATUS_CLASS.PLANEJADA}`}>{STATUS_LABEL[selectedCarga.status] || selectedCarga.status}</span></div><p className="text-xs text-slate-500">{formatDate(getLoadDate(selectedCarga))} • Área/Pallet: {selectedCarga.stagingLocation || "não definida"}</p></div><div className="flex items-center gap-2 flex-wrap justify-end"><button onClick={() => previewLoad(selectedCarga, false)} className="h-9 px-3 border border-slate-300 bg-white rounded-lg text-xs font-bold flex items-center gap-1.5" title="Abre a prévia sem salvar o arquivo"><Eye size={14} /> Visualizar Produção</button><button onClick={() => previewLoad(selectedCarga, true)} className="h-9 px-3 border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-lg text-xs font-extrabold flex items-center gap-1.5 hover:bg-emerald-100" title="Abre a prévia gerencial com faturamento previsto"><DollarSign size={14} /> Visualizar + Faturamento</button><button onClick={() => setSelectedCarga(null)} className="p-2 rounded-lg hover:bg-slate-200"><X size={18} /></button></div></div>
             <div className="p-4 overflow-y-auto flex-1 space-y-4">
               <div className="flex flex-wrap gap-2">
                 {(selectedCarga.status === "PLANEJADA" || selectedCarga.status === "ABERTA") && <button onClick={() => changeStatus(selectedCarga, "FECHADA")} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold">Fechar carga</button>}
@@ -1067,6 +1095,15 @@ export function ProgramacaoCargasScreen({
           </div>
         </div>
       )}
+      {pdfPreview && (
+        <PdfPreviewModal
+          url={pdfPreview.url}
+          fileName={pdfPreview.fileName}
+          title={pdfPreview.title}
+          onClose={closePdfPreview}
+        />
+      )}
+
     </div>
   );
 }
