@@ -85,6 +85,7 @@ export function getUniqueNumericId(): number {
   return lastAssignedId;
 }
 
+// Cyrne tenant retirement deployment sync 2026-09-18
 const RETIRED_TENANT_IDS = new Set(["cyrnedecor", "cirnedecor"]);
 
 function isRetiredTenantId(value?: string | null) {
