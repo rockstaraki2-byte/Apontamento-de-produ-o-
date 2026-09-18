@@ -28,7 +28,7 @@ import autoTable from "jspdf-autotable";
 import { useDatabase } from "./useDatabase";
 import type { Carga, ExpeditionRoute, Order, User } from "./types";
 import { canManageExpedition } from "./expeditionAccess";
-import { normalizeString } from "./searchUtils";
+import { findCustomerForOrder, normalizeString } from "./searchUtils";
 import { LoadSuggestionsTab } from "./LoadSuggestionsTab";
 import { PdfPreviewModal } from "./PdfPreviewModal";
 
@@ -224,12 +224,41 @@ export function ProgramacaoCargasScreen({
     return map;
   }, [db.productionBatches]);
 
-  const customerRouteIds = (order: Order) => {
-    const customer = db.customers.find(
-      (c) =>
-        normalizeString(c.name) === normalizeString(order.customerName) ||
-        normalizeString(c.tradeName || "") === normalizeString(order.customerName),
+  const getOrderCustomerCity = (order: Order) => {
+    const customer = findCustomerForOrder(order, db.customers) as any;
+
+    const explicitCity =
+      customer?.city ||
+      customer?.cidade ||
+      customer?.municipio ||
+      customer?.municipality ||
+      (order as any).customerCity ||
+      (order as any).city ||
+      (order as any).cidade ||
+      "";
+
+    if (explicitCity) return String(explicitCity).trim();
+
+    const address = String(
+      customer?.address ||
+      (order as any).customerAddress ||
+      (order as any).deliveryAddress ||
+      (order as any).address ||
+      "",
+    ).trim();
+
+    if (!address) return "-";
+
+    const cityStateMatch = address.match(
+      /(?:^|,)\s*([^,]+?)\s*[-–/]\s*[A-Za-z]{2}\s*$/,
     );
+    if (cityStateMatch?.[1]) return cityStateMatch[1].trim();
+
+    return "-";
+  };
+
+  const customerRouteIds = (order: Order) => {
+    const customer = findCustomerForOrder(order, db.customers);
     if (!customer) return [] as string[];
     return routes.filter((r) => (r.customerIds || []).includes(customer.id)).map((r) => r.id);
   };
@@ -1095,9 +1124,9 @@ export function ProgramacaoCargasScreen({
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto max-h-[620px]">
-              <table className="w-full min-w-[1220px] text-left">
+              <table className="w-full min-w-[1320px] text-left">
                 <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-500">
-                  <tr><th className="p-3">Sel.</th><th className="p-3">Pedido</th><th className="p-3">Cliente / Produto</th><th className="p-3">Lançamento</th><th className="p-3">Entrega</th><th className="p-3">Lote</th><th className="p-3 text-right">Aberto</th><th className="p-3 text-right">Já em carga</th><th className="p-3 text-right">Sem carga</th><th className="p-3">Programação sugerida</th></tr>
+                  <tr><th className="p-3">Sel.</th><th className="p-3">Pedido</th><th className="p-3">Cliente / Produto</th><th className="p-3">Cidade</th><th className="p-3">Lançamento</th><th className="p-3">Entrega</th><th className="p-3">Lote</th><th className="p-3 text-right">Aberto</th><th className="p-3 text-right">Já em carga</th><th className="p-3 text-right">Sem carga</th><th className="p-3">Programação sugerida</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {pendingRows.map((row) => {
@@ -1108,6 +1137,7 @@ export function ProgramacaoCargasScreen({
                         <td className="p-3"><input type="checkbox" checked={selected} onChange={(e) => setSelectedQuantities((prev) => { const n = { ...prev }; if (e.target.checked) n[row.order.id] = row.unallocated; else delete n[row.order.id]; return n; })} /></td>
                         <td className="p-3 text-xs font-mono font-bold text-slate-800">#{row.order.orderCode}</td>
                         <td className="p-3"><span className="block text-xs font-bold text-slate-800">{row.order.customerName}</span><span className="block text-[10px] text-slate-500">{row.order.customProductName || row.item?.name || "Item"}</span></td>
+                        <td className="p-3 text-xs font-bold text-slate-700 whitespace-nowrap">{getOrderCustomerCity(row.order)}</td>
                         <td className="p-3 text-xs text-slate-600 whitespace-nowrap">{formatTimestampDate(row.order.createdAt)}</td>
                         <td className="p-3 text-xs text-slate-600 whitespace-nowrap">{formatDate(row.order.deliveryDate)}</td>
                         <td className="p-3 text-[10px]">
