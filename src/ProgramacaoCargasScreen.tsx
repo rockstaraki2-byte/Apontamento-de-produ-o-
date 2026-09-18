@@ -613,9 +613,41 @@ export function ProgramacaoCargasScreen({
     setSelectedCarga(updated);
   };
 
-  const printLoad = (carga: Carga) => {
+  const getLoadProjectedRevenue = (carga: Carga) => {
+    let total = 0;
+    let missingPriceItems = 0;
+
+    (carga.orderIds || []).forEach((id) => {
+      const order = ordersById.get(id);
+      if (!order) return;
+      const item = itemsById.get(order.itemId);
+      const qty = Math.max(0, Number(carga.orderQuantities?.[id] || 0));
+      const unitPrice =
+        order.unitPrice !== undefined
+          ? Number(order.unitPrice || 0)
+          : Number(item?.unitPrice ?? item?.basePrice ?? 0);
+
+      if (unitPrice <= 0 && qty > 0) missingPriceItems += 1;
+
+      const discountPercent = Math.max(
+        0,
+        Math.min(100, Number(order.discountPercent || 0)),
+      );
+      const gross = qty * unitPrice;
+      total += gross * (1 - discountPercent / 100);
+    });
+
+    return { total, missingPriceItems };
+  };
+
+  const formatCurrency = (value: number) =>
+    value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  const printLoad = (carga: Carga, includeRevenue = false) => {
     const doc = new jsPDF("landscape");
     const metrics = loadMetrics(carga);
+    const projectedRevenue = getLoadProjectedRevenue(carga);
+
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
     doc.text("PROGRAMAÇÃO DE CARGA / EXPEDIÇÃO", 14, 14);
@@ -624,12 +656,40 @@ export function ProgramacaoCargasScreen({
     doc.text(`${carga.name} | Status: ${STATUS_LABEL[carga.status] || carga.status}`, 14, 21);
     doc.text(`Data: ${formatDate(getLoadDate(carga))} | Local: ${carga.stagingLocation || "Não definido"} | Total: ${metrics.required} un`, 14, 27);
 
+    let startY = 33;
+    if (includeRevenue) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text(
+        `Faturamento previsto da carga: ${formatCurrency(projectedRevenue.total)}`,
+        14,
+        34,
+      );
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.text(
+        "Cálculo baseado na quantidade programada na carga, preço unitário do pedido e desconto percentual cadastrado.",
+        14,
+        39,
+      );
+      if (projectedRevenue.missingPriceItems > 0) {
+        doc.setFont("helvetica", "bold");
+        doc.text(
+          `Atenção: ${projectedRevenue.missingPriceItems} item(ns) estão sem preço cadastrado e foram considerados como R$ 0,00.`,
+          14,
+          44,
+        );
+      }
+      startY = projectedRevenue.missingPriceItems > 0 ? 49 : 44;
+    }
+
     const rows = (carga.orderIds || []).map((id) => {
       const order = ordersById.get(id);
       const item = order ? itemsById.get(order.itemId) : undefined;
       const qty = Number(carga.orderQuantities?.[id] || 0);
       const sep = Number(carga.separatedQuantities?.[id] || 0);
-      return [
+
+      const baseColumns = [
         order?.customerName || "Pedido não encontrado",
         order?.orderCode || String(id),
         order?.customProductName || item?.name || "Item",
@@ -637,17 +697,68 @@ export function ProgramacaoCargasScreen({
         String(packedForLoad(carga, id)),
         String(Math.min(qty, sep)),
       ];
+
+      if (!includeRevenue || !order) return baseColumns;
+
+      const unitPrice =
+        order.unitPrice !== undefined
+          ? Number(order.unitPrice || 0)
+          : Number(item?.unitPrice ?? item?.basePrice ?? 0);
+      const discountPercent = Math.max(
+        0,
+        Math.min(100, Number(order.discountPercent || 0)),
+      );
+      const lineRevenue = qty * unitPrice * (1 - discountPercent / 100);
+
+      return [
+        ...baseColumns,
+        formatCurrency(unitPrice),
+        discountPercent > 0 ? `${discountPercent.toFixed(2)}%` : "-",
+        formatCurrency(lineRevenue),
+      ];
     });
 
     autoTable(doc, {
-      startY: 33,
-      head: [["Cliente", "Pedido", "Produto", "Qtd. carga", "Embalado", "Separado"]],
+      startY,
+      head: [
+        includeRevenue
+          ? [
+              "Cliente",
+              "Pedido",
+              "Produto",
+              "Qtd. carga",
+              "Embalado",
+              "Separado",
+              "Valor unit.",
+              "Desc.",
+              "Faturamento",
+            ]
+          : ["Cliente", "Pedido", "Produto", "Qtd. carga", "Embalado", "Separado"],
+      ],
       body: rows,
       theme: "grid",
-      styles: { fontSize: 8, cellPadding: 2 },
+      styles: { fontSize: includeRevenue ? 7.2 : 8, cellPadding: 2 },
       headStyles: { fillColor: [15, 23, 42] },
+      columnStyles: includeRevenue
+        ? {
+            3: { halign: "right" },
+            4: { halign: "right" },
+            5: { halign: "right" },
+            6: { halign: "right" },
+            7: { halign: "right" },
+            8: { halign: "right", fontStyle: "bold" },
+          }
+        : {
+            3: { halign: "right" },
+            4: { halign: "right" },
+            5: { halign: "right" },
+          },
     });
-    doc.save(`carga_${carga.name.replace(/[^a-z0-9]+/gi, "_")}.pdf`);
+
+    const suffix = includeRevenue ? "_com_faturamento" : "_producao";
+    doc.save(
+      `carga_${carga.name.replace(/[^a-z0-9]+/gi, "_")}${suffix}.pdf`,
+    );
   };
 
   const customerMatches = useMemo(() => {
@@ -936,7 +1047,7 @@ export function ProgramacaoCargasScreen({
       {selectedCarga && (
         <div className="fixed inset-0 z-[130] bg-black/50 backdrop-blur-sm flex items-center justify-center p-3" onClick={() => setSelectedCarga(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50"><div><div className="flex items-center gap-2 flex-wrap"><h3 className="font-black text-slate-900 text-lg">{selectedCarga.name}</h3><span className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${STATUS_CLASS[selectedCarga.status] || STATUS_CLASS.PLANEJADA}`}>{STATUS_LABEL[selectedCarga.status] || selectedCarga.status}</span></div><p className="text-xs text-slate-500">{formatDate(getLoadDate(selectedCarga))} • Área/Pallet: {selectedCarga.stagingLocation || "não definida"}</p></div><div className="flex items-center gap-2"><button onClick={() => printLoad(selectedCarga)} className="h-9 px-3 border border-slate-300 bg-white rounded-lg text-xs font-bold flex items-center gap-1.5"><Printer size={14} /> PDF</button><button onClick={() => setSelectedCarga(null)} className="p-2 rounded-lg hover:bg-slate-200"><X size={18} /></button></div></div>
+            <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50"><div><div className="flex items-center gap-2 flex-wrap"><h3 className="font-black text-slate-900 text-lg">{selectedCarga.name}</h3><span className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${STATUS_CLASS[selectedCarga.status] || STATUS_CLASS.PLANEJADA}`}>{STATUS_LABEL[selectedCarga.status] || selectedCarga.status}</span></div><p className="text-xs text-slate-500">{formatDate(getLoadDate(selectedCarga))} • Área/Pallet: {selectedCarga.stagingLocation || "não definida"}</p></div><div className="flex items-center gap-2 flex-wrap justify-end"><button onClick={() => printLoad(selectedCarga, false)} className="h-9 px-3 border border-slate-300 bg-white rounded-lg text-xs font-bold flex items-center gap-1.5" title="Gera o relatório operacional sem preços ou faturamento"><Printer size={14} /> PDF Produção</button><button onClick={() => printLoad(selectedCarga, true)} className="h-9 px-3 border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-lg text-xs font-extrabold flex items-center gap-1.5 hover:bg-emerald-100" title="Gera o relatório gerencial com valor previsto da carga"><FileText size={14} /> PDF + Faturamento</button><button onClick={() => setSelectedCarga(null)} className="p-2 rounded-lg hover:bg-slate-200"><X size={18} /></button></div></div>
             <div className="p-4 overflow-y-auto flex-1 space-y-4">
               <div className="flex flex-wrap gap-2">
                 {(selectedCarga.status === "PLANEJADA" || selectedCarga.status === "ABERTA") && <button onClick={() => changeStatus(selectedCarga, "FECHADA")} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold">Fechar carga</button>}
