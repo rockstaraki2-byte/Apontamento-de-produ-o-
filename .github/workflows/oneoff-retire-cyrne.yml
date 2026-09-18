@@ -1,0 +1,165 @@
+name: One-off retire Cyrne Decor
+
+on:
+  push:
+    paths:
+      - ".github/workflows/oneoff-retire-cyrne.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Remove retired tenant and linked users
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { initializeApp } from "firebase/app";
+          import {
+            initializeFirestore,
+            collection,
+            getDocs,
+            writeBatch,
+          } from "firebase/firestore";
+
+          const config = JSON.parse(fs.readFileSync("firebase-applet-config.json", "utf8"));
+          const app = initializeApp({
+            apiKey: config.apiKey,
+            authDomain: config.authDomain,
+            projectId: config.projectId,
+            storageBucket: config.storageBucket,
+            messagingSenderId: config.messagingSenderId,
+            appId: config.appId,
+          });
+          const db = initializeFirestore(
+            app,
+            { experimentalForceLongPolling: true },
+            config.firestoreDatabaseId,
+          );
+
+          const retiredIds = new Set(["cyrnedecor", "cirnedecor"]);
+          const normalize = (value) => String(value || "").trim().toLowerCase();
+
+          const [usersSnap, tenantsSnap] = await Promise.all([
+            getDocs(collection(db, "users")),
+            getDocs(collection(db, "tenants")),
+          ]);
+
+          const batch = writeBatch(db);
+          const deletedUsers = [];
+          const deletedTenants = [];
+
+          usersSnap.forEach((userDoc) => {
+            const user = userDoc.data() || {};
+            const tenantId = normalize(user.tenantId || user.companyId);
+            const id = normalize(userDoc.id);
+            const name = normalize(user.name);
+            const shouldDelete =
+              retiredIds.has(tenantId) ||
+              id.includes("cyrnedecor") ||
+              id.includes("cirnedecor") ||
+              name.includes("cyrne decor") ||
+              name.includes("cirne decor");
+
+            if (shouldDelete) {
+              batch.delete(userDoc.ref);
+              deletedUsers.push(userDoc.id);
+            }
+          });
+
+          tenantsSnap.forEach((tenantDoc) => {
+            const tenant = tenantDoc.data() || {};
+            const id = normalize(tenantDoc.id || tenant.id);
+            const name = normalize(tenant.name);
+            const shouldDelete =
+              retiredIds.has(id) ||
+              name.includes("cyrne decor") ||
+              name.includes("cirne decor");
+
+            if (shouldDelete) {
+              batch.delete(tenantDoc.ref);
+              deletedTenants.push(tenantDoc.id);
+            }
+          });
+
+          if (deletedUsers.length || deletedTenants.length) {
+            await batch.commit();
+          }
+
+          const verifyUsers = await getDocs(collection(db, "users"));
+          const verifyTenants = await getDocs(collection(db, "tenants"));
+
+          const remainingRetiredUsers = [];
+          const remainingRetiredTenants = [];
+
+          verifyUsers.forEach((userDoc) => {
+            const user = userDoc.data() || {};
+            const tenantId = normalize(user.tenantId || user.companyId);
+            const id = normalize(userDoc.id);
+            const name = normalize(user.name);
+            if (
+              retiredIds.has(tenantId) ||
+              id.includes("cyrnedecor") ||
+              id.includes("cirnedecor") ||
+              name.includes("cyrne decor") ||
+              name.includes("cirne decor")
+            ) {
+              remainingRetiredUsers.push(userDoc.id);
+            }
+          });
+
+          verifyTenants.forEach((tenantDoc) => {
+            const tenant = tenantDoc.data() || {};
+            const id = normalize(tenantDoc.id || tenant.id);
+            const name = normalize(tenant.name);
+            if (
+              retiredIds.has(id) ||
+              name.includes("cyrne decor") ||
+              name.includes("cirne decor")
+            ) {
+              remainingRetiredTenants.push(tenantDoc.id);
+            }
+          });
+
+          const result = {
+            executedAt: new Date().toISOString(),
+            deletedTenantCount: deletedTenants.length,
+            deletedUserCount: deletedUsers.length,
+            deletedTenants,
+            deletedUsers,
+            remainingRetiredTenantCount: remainingRetiredTenants.length,
+            remainingRetiredUserCount: remainingRetiredUsers.length,
+            remainingRetiredTenants,
+            remainingRetiredUsers,
+            success:
+              remainingRetiredTenants.length === 0 &&
+              remainingRetiredUsers.length === 0,
+          };
+
+          fs.writeFileSync("tenant-cleanup-result.json", JSON.stringify(result, null, 2) + "\n");
+          console.log(JSON.stringify(result, null, 2));
+          NODE
+
+      - name: Commit cleanup result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tenant-cleanup-result.json
+          git commit -m "ops: record Cyrne Decor cleanup result" || exit 0
+          git push origin HEAD:main
