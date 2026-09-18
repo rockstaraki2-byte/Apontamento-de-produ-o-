@@ -26,7 +26,7 @@ interface SuperAdminScreenProps {
 }
 
 export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
-  const isGlobalAdmin = (currentUser?.id === "raul" || currentUser?.tenantId === "global") && currentUser?.id !== "gerencia.cyrnedecor" && currentUser?.role === "ADMIN";
+  const isGlobalAdmin = (currentUser?.id === "raul" || currentUser?.tenantId === "global") && currentUser?.role === "ADMIN";
 
   if (!isGlobalAdmin) {
     return (
