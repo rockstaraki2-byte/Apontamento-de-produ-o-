@@ -1,0 +1,80 @@
+name: Verify current tenants
+
+on:
+  push:
+    paths:
+      - ".github/workflows/verify-tenants-once.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm ci
+
+      - name: Read current tenants and user tenant links
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { initializeApp } from "firebase/app";
+          import { initializeFirestore, collection, getDocs } from "firebase/firestore";
+
+          const config = JSON.parse(fs.readFileSync("firebase-applet-config.json", "utf8"));
+          const app = initializeApp({
+            apiKey: config.apiKey,
+            authDomain: config.authDomain,
+            projectId: config.projectId,
+            storageBucket: config.storageBucket,
+            messagingSenderId: config.messagingSenderId,
+            appId: config.appId,
+          });
+          const db = initializeFirestore(app, { experimentalForceLongPolling: true }, config.firestoreDatabaseId);
+
+          const [tenantsSnap, usersSnap] = await Promise.all([
+            getDocs(collection(db, "tenants")),
+            getDocs(collection(db, "users")),
+          ]);
+
+          const tenants = [];
+          tenantsSnap.forEach((d) => {
+            const v = d.data() || {};
+            tenants.push({ id: d.id, name: String(v.name || "") });
+          });
+
+          const usersByTenant = {};
+          usersSnap.forEach((d) => {
+            const v = d.data() || {};
+            const tenantId = String(v.tenantId || v.companyId || "sem-tenant");
+            usersByTenant[tenantId] = (usersByTenant[tenantId] || 0) + 1;
+          });
+
+          const result = {
+            executedAt: new Date().toISOString(),
+            tenants,
+            tenantCount: tenants.length,
+            usersByTenant,
+            onlyImperioTenant: tenants.length === 1 && tenants[0].id === "imperio"
+          };
+
+          fs.writeFileSync("tenant-verification-result.json", JSON.stringify(result, null, 2) + "\n");
+          console.log(JSON.stringify(result, null, 2));
+          NODE
+
+      - name: Commit verification
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tenant-verification-result.json
+          git commit -m "ops: record tenant verification result" || exit 0
+          git push origin HEAD:main
