@@ -118,17 +118,29 @@ function cityAcronym(city: string) {
     .join("");
 }
 
-function getCustomerCity(customer: any) {
+function getCustomerCity(customer: any, order?: any) {
   const explicit =
     customer?.city ||
     customer?.cidade ||
     customer?.municipio ||
     customer?.municipality ||
+    order?.customerCity ||
+    order?.city ||
+    order?.cidade ||
+    order?.municipio ||
+    order?.municipality ||
     "";
 
   if (explicit) return String(explicit).trim();
 
-  const address = String(customer?.address || "").trim();
+  const address = String(
+    customer?.address ||
+      order?.customerAddress ||
+      order?.deliveryAddress ||
+      order?.address ||
+      order?.endereco ||
+      "",
+  ).trim();
   if (!address) return "";
 
   const cityStateMatch = address.match(
@@ -173,11 +185,23 @@ function routeMatchesCity(route: ExpeditionRoute, city: string) {
   });
 }
 
+function isCarrierDispatchRoute(route: ExpeditionRoute) {
+  return (
+    normalizeWords(route.name) ===
+    normalizeWords("Cidades Despacho transportadoras")
+  );
+}
+
 function nextRouteOccurrence(route: ExpeditionRoute, from: Date) {
   const date = new Date(from);
   date.setHours(12, 0, 0, 0);
-  const delta = (route.weekday - date.getDay() + 7) % 7;
-  return addDays(date, delta);
+
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const baseDate = date < today ? today : date;
+
+  const delta = (route.weekday - baseDate.getDay() + 7) % 7;
+  return addDays(baseDate, delta);
 }
 
 function shiftRank(shift?: string) {
@@ -298,7 +322,7 @@ export function LoadSuggestionsTab({
       const revenue = available * netUnitPrice;
 
       const customer = findCustomerForOrder(order, db.customers);
-      const city = getCustomerCity(customer);
+      const city = getCustomerCity(customer, order);
       const key =
         String(order.customerName || "").trim().toLowerCase() +
         "|" +
@@ -394,13 +418,17 @@ export function LoadSuggestionsTab({
         return;
       }
 
-      const matchingRoutes = routes.filter(function (route) {
+      let matchingRoutes = routes.filter(function (route) {
         const customerMapped =
           group.customer &&
           (route.customerIds || []).includes(Number(group.customer.id));
 
         return customerMapped || routeMatchesCity(route, group.city);
       });
+
+      if (matchingRoutes.length === 0) {
+        matchingRoutes = routes.filter(isCarrierDispatchRoute);
+      }
 
       if (matchingRoutes.length === 0) {
         noRouteOrderCount += 1;
@@ -916,7 +944,7 @@ export function LoadSuggestionsTab({
                         row.order,
                         db.customers,
                       );
-                      const city = getCustomerCity(customer);
+                      const city = getCustomerCity(customer, row.order);
 
                       return (
                         <div
