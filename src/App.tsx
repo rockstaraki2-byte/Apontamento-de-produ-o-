@@ -754,9 +754,9 @@ function Welcome({
         <div className="fixed inset-0 bg-black/55 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col border border-gray-100 text-left animate-in zoom-in-95 duration-150">
             {/* Header */}
-            <div className="bg-black text-white p-4 flex justify-between items-center border-b border-[#00b14f]/20">
+            <div className="bg-black text-white p-4 flex justify-between items-center border-b border-[#FB9214]/20">
               <div className="flex items-center gap-2">
-                <Crown size={20} className="text-[#00b14f]" />
+                <Crown size={20} className="text-[#FB9214]" />
                 <h3 className="font-bold text-lg tracking-tight">
                   Ficha do Pedido: {selectedOrder.orderCode}
                 </h3>
@@ -998,7 +998,7 @@ function Welcome({
                       return (
                         <div
                           key={log.id}
-                          className="text-xs border-l-2 border-[#00b14f] pl-3 py-1 space-y-0.5"
+                          className="text-xs border-l-2 border-[#FB9214] pl-3 py-1 space-y-0.5"
                         >
                           <div className="flex justify-between font-semibold text-gray-700">
                             <span>{log.type}</span>
@@ -1035,7 +1035,7 @@ function Welcome({
                   );
                   setSelectedOrder(null);
                 }}
-                className="bg-[#00b14f] hover:bg-[#009e46] text-white font-extrabold py-1.5 px-3.5 rounded text-xs transition duration-150 cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95 duration-100"
+                className="bg-[#FB9214] hover:bg-[#E98710] text-white font-extrabold py-1.5 px-3.5 rounded text-xs transition duration-150 cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95 duration-100"
               >
                 <Printer size={13} /> PDF do Pedido
               </button>
@@ -1054,7 +1054,7 @@ function Welcome({
       {infoModalData && (
         <div className="fixed inset-0 bg-black/55 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-gray-100 text-left animate-in zoom-in-95 duration-150">
-            <div className="bg-black text-white p-4 flex justify-between items-center border-b border-[#00b14f]/20">
+            <div className="bg-black text-white p-4 flex justify-between items-center border-b border-[#FB9214]/20">
               <h3 className="font-bold text-base tracking-tight">
                 {infoModalData.title}
               </h3>
@@ -1069,7 +1069,7 @@ function Welcome({
             <div className="bg-gray-50 p-3 border-t flex justify-end">
               <button
                 onClick={() => setInfoModalData(null)}
-                className="bg-[#00b14f] hover:bg-[#00913f] text-white font-bold py-1.5 px-4 rounded text-xs transition duration-150 cursor-pointer shadow-xs"
+                className="bg-[#FB9214] hover:bg-[#E98710] text-white font-bold py-1.5 px-4 rounded text-xs transition duration-150 cursor-pointer shadow-xs"
               >
                 Fechar
               </button>
@@ -1140,7 +1140,7 @@ function LoginScreen({
         id: "imperio",
         name: "Império Jomarci",
         logoUrl: "/icon.png",
-        primaryColor: "#00b14f",
+        primaryColor: "#FB9214",
         systemName: "Apontador de Produção",
       }
     );
@@ -10569,7 +10569,7 @@ function PedidosScreen({
                         }),
                       );
                     }}
-                    className="px-2 py-0.5 bg-[#00b14f] hover:bg-emerald-600 text-white font-extrabold text-[10px] rounded shadow-xs transition cursor-pointer flex items-center gap-1"
+                    className="px-2 py-0.5 bg-[#FB9214] hover:bg-emerald-600 text-white font-extrabold text-[10px] rounded shadow-xs transition cursor-pointer flex items-center gap-1"
                   >
                     <Printer size={11} /> Meia Folha
                   </button>
@@ -10819,7 +10819,7 @@ function PedidosScreen({
                                     }),
                                   );
                                 }}
-                                className="p-1 px-2 bg-emerald-50 hover:bg-emerald-100 text-[#00b14f] font-bold text-[10px] rounded-lg border border-emerald-200/80 transition flex items-center gap-1 cursor-pointer"
+                                className="p-1 px-2 bg-emerald-50 hover:bg-emerald-100 text-[#FB9214] font-bold text-[10px] rounded-lg border border-emerald-200/80 transition flex items-center gap-1 cursor-pointer"
                                 title="Imprimir PDF do pedido em meia folha"
                               >
                                 <Printer size={11} /> PDF Meia Folha
@@ -10917,7 +10917,7 @@ function PedidosScreen({
                     }),
                   );
                 }}
-                className="px-3.5 py-1.5 bg-[#00b14f] hover:bg-emerald-600 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-500/20 active:scale-95"
+                className="px-3.5 py-1.5 bg-[#FB9214] hover:bg-emerald-600 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-500/20 active:scale-95"
               >
                 <Printer size={14} /> Imprimir Meia Folha
               </button>
@@ -11902,14 +11902,14 @@ _Mensagem do Sistema Império Jomarci_`;
         return (
           <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-xs text-left">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col overflow-hidden animate-in zoom-in-95 text-left">
-              <div className="bg-slate-900 text-[#00b14f] p-4 flex items-center justify-between border-b border-[#00b14f]/20">
+              <div className="bg-slate-900 text-[#FB9214] p-4 flex items-center justify-between border-b border-[#FB9214]/20">
                 <div className="flex items-center gap-2">
-                  <DollarSign size={22} className="text-[#00b14f]" />
+                  <DollarSign size={22} className="text-[#FB9214]" />
                   <h3 className="font-bold text-base text-white">
                     Notificar Faturamento
                   </h3>
                 </div>
-                <span className="text-[9px] bg-[#00b14f]/15 text-[#00b14f] px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
+                <span className="text-[9px] bg-[#FB9214]/15 text-[#FB9214] px-2 py-0.5 rounded-full font-black uppercase tracking-wider">
                   Pedido #{faturamentoWhatsAppShareData.orderCode}
                 </span>
               </div>
@@ -11940,7 +11940,7 @@ _Mensagem do Sistema Império Jomarci_`;
                       value={recipientEmailInput}
                       placeholder="Ex: cliente@email.com, rep@email.com"
                       onChange={(e) => setRecipientEmailInput(e.target.value)}
-                      className="w-full border p-2 text-xs rounded bg-white focus:ring-1 focus:ring-[#00b14f] outline-none text-gray-800 font-medium"
+                      className="w-full border p-2 text-xs rounded bg-white focus:ring-1 focus:ring-[#FB9214] outline-none text-gray-800 font-medium"
                     />
                   </div>
 
@@ -12054,7 +12054,7 @@ _Mensagem do Sistema Império Jomarci_`;
                     window.open(url, "_blank");
                     setFaturamentoWhatsAppShareData(null);
                   }}
-                  className="px-3.5 py-1.5 bg-[#00b14f] hover:bg-[#009e46] text-white rounded text-xs font-bold transition disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
+                  className="px-3.5 py-1.5 bg-[#FB9214] hover:bg-[#E98710] text-white rounded text-xs font-bold transition disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
                 >
                   <Phone size={13} className="text-white" /> Abrir WhatsApp
                 </button>
@@ -16227,7 +16227,7 @@ export default function App() {
 
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden max-h-[92vh] animate-in zoom-in-95 leading-normal">
                 {/* Header (non-printable) */}
-                <div className="bg-slate-900 text-[#00b14f] p-3.5 sm:p-4 flex items-center justify-between border-b border-[#00b14f]/20 non-printable shrink-0 flex-wrap gap-2">
+                <div className="bg-slate-900 text-[#FB9214] p-3.5 sm:p-4 flex items-center justify-between border-b border-[#FB9214]/20 non-printable shrink-0 flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <Printer size={18} />
                     <div>
@@ -16250,7 +16250,7 @@ export default function App() {
                         onClick={() => setPrintSheetSize("half")}
                         className={`px-2.5 py-1 rounded-lg font-extrabold text-[11px] transition cursor-pointer flex items-center gap-1 ${
                           printSheetSize === "half"
-                            ? "bg-[#00b14f] text-white shadow-xs"
+                            ? "bg-[#FB9214] text-white shadow-xs"
                             : "text-slate-400 hover:text-white hover:bg-slate-800"
                         }`}
                       >
@@ -16261,7 +16261,7 @@ export default function App() {
                         onClick={() => setPrintSheetSize("full")}
                         className={`px-2.5 py-1 rounded-lg font-extrabold text-[11px] transition cursor-pointer flex items-center gap-1 ${
                           printSheetSize === "full"
-                            ? "bg-[#00b14f] text-white shadow-xs"
+                            ? "bg-[#FB9214] text-white shadow-xs"
                             : "text-slate-400 hover:text-white hover:bg-slate-800"
                         }`}
                       >
@@ -16419,7 +16419,7 @@ export default function App() {
                               <span
                                 className={`${
                                   isFull ? "text-[10px] px-2.5 py-0.5" : "text-[8px] px-2 py-0.5"
-                                } bg-[#00b14f]/10 text-[#00b14f] border border-[#00b14f]/20 rounded font-black uppercase tracking-wider inline-block`}
+                                } bg-[#FB9214]/10 text-[#FB9214] border border-[#FB9214]/20 rounded font-black uppercase tracking-wider inline-block`}
                               >
                                 Pedido de Venda ({isFull ? "Folha Inteira" : "Meia Folha"})
                               </span>
@@ -16632,7 +16632,7 @@ export default function App() {
                                           isFull ? "py-2 px-2" : "py-1 px-1.5"
                                         } font-bold text-slate-900`}
                                       >
-                                        <span className="text-[#00b14f] font-mono font-black">
+                                        <span className="text-[#FB9214] font-mono font-black">
                                           {prodCode}
                                         </span>
                                         {prodLabel}
@@ -16870,7 +16870,7 @@ export default function App() {
                           printElementById("print-order-sheet", pdfTitle, true);
                         });
                       }}
-                      className="px-4 py-1.5 bg-[#00b14f] hover:bg-[#009e46] text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/15 active:scale-95"
+                      className="px-4 py-1.5 bg-[#FB9214] hover:bg-[#E98710] text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/15 active:scale-95"
                     >
                       <Printer size={13} /> Imprimir PDF ({orderCodesToPrintList.length} pedido{orderCodesToPrintList.length > 1 ? "s" : ""})
                     </button>
