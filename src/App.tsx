@@ -234,9 +234,9 @@ function NavLink({
       <Link
         to={to}
         title={label}
-        className="flex items-center justify-center p-1.5 min-w-[38px] h-[36px] text-gray-500 hover:text-blue-600 active:bg-blue-50 active:text-blue-700 rounded-lg transition-colors shrink-0"
+        className="flex items-center justify-center p-1.5 min-w-[38px] h-[36px] text-slate-500 hover:text-[#FB9214] active:bg-orange-50 active:text-[#D97706] rounded-lg transition-colors shrink-0"
       >
-        <div className="flex items-center justify-center text-slate-600 hover:text-blue-600">
+        <div className="flex items-center justify-center text-slate-600 hover:text-[#FB9214]">
           {React.isValidElement(icon)
             ? React.cloneElement(icon as React.ReactElement<any>, { size: 18 })
             : icon}
@@ -248,7 +248,7 @@ function NavLink({
   return (
     <Link
       to={to}
-      className="flex flex-col items-center justify-center p-2 min-w-[64px] min-h-[48px] text-gray-500 hover:text-blue-600 active:bg-blue-50 active:text-blue-700 rounded-lg transition-colors shrink-0"
+      className="flex flex-col items-center justify-center p-2 min-w-[64px] min-h-[48px] text-slate-500 hover:text-[#FB9214] active:bg-orange-50 active:text-[#D97706] rounded-lg transition-colors shrink-0"
     >
       {icon}
       <span className="text-xs mt-1 font-medium">{label}</span>
@@ -1317,19 +1317,17 @@ function LoginScreen({
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-950 items-center justify-center p-4">
-      <div className="bg-black border border-zinc-800 p-8 rounded-xl shadow-2xl w-full max-w-sm flex flex-col items-center">
-        <div className="flex flex-col items-center gap-1 mb-6">
-          {detectedTenant.logoUrl && detectedTenant.logoUrl !== "/icon.png" && detectedTenant.id !== "imperio" ? (
-            <img src={detectedTenant.logoUrl} alt="Logo" className="h-16 object-contain mb-2 max-w-[200px]" />
-          ) : (
-            <Monitor size={48} className="text-[#00b14f] mb-2" style={{ color: detectedTenant.primaryColor || '#00b14f' }} />
-          )}
-          <h1 className="text-2xl font-bold tracking-tight text-center text-[#00b14f]" style={{ color: detectedTenant.primaryColor || '#00b14f' }}>
-            Apontador de Produção
-          </h1>
-          <span className="text-[0.65rem] text-gray-400 font-medium tracking-[0.1em] text-center uppercase">
-            {detectedTenant.name && detectedTenant.id !== "imperio" ? detectedTenant.name : "Acesso ao Sistema"}
+    <div className="flex flex-col min-h-screen bg-[radial-gradient(circle_at_top,_#ffffff_0%,_#f5f7fa_46%,_#e8eef5_100%)] items-center justify-center p-4">
+      <div className="bg-white border border-slate-200 p-8 rounded-2xl shadow-2xl shadow-slate-900/10 w-full max-w-sm flex flex-col items-center">
+        <div className="flex flex-col items-center gap-2 mb-6 w-full">
+          <img
+            src="/apontapro-logo.png"
+            alt="ApontaPRO"
+            className="w-full max-w-[280px] h-auto object-contain"
+          />
+          <div className="h-px bg-slate-200 w-full mt-2" />
+          <span className="text-[0.65rem] text-slate-500 font-bold tracking-[0.1em] text-center uppercase">
+            {detectedTenant.name || "Acesso ao Sistema"}
           </span>
         </div>
 
@@ -1338,8 +1336,7 @@ function LoginScreen({
           placeholder="Usuário (Ex: gerencia.imp)"
           value={usernameInput}
           onChange={(e) => setUsernameInput(e.target.value)}
-          className="border border-zinc-750 p-3 w-full rounded-lg mb-4 text-center text-lg focus:outline-none focus:ring-2 focus:border-transparent bg-zinc-900 text-white placeholder-zinc-500"
-          style={{ '--tw-ring-color': detectedTenant.primaryColor || '#00b14f' } as any}
+          className="border border-slate-300 p-3 w-full rounded-lg mb-4 text-center text-lg focus:outline-none focus:ring-2 focus:ring-[#FB9214]/30 focus:border-[#FB9214] bg-white text-slate-900 placeholder-slate-400"
           onKeyDown={(e) => e.key === "Enter" && handleLogin()}
         />
 
@@ -1348,37 +1345,35 @@ function LoginScreen({
           placeholder="Senha"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="border border-zinc-750 p-3 w-full rounded-lg mb-4 text-center text-lg focus:outline-none focus:ring-2 focus:border-transparent bg-zinc-900 text-white placeholder-zinc-500"
-          style={{ '--tw-ring-color': detectedTenant.primaryColor || '#00b14f' } as any}
+          className="border border-slate-300 p-3 w-full rounded-lg mb-4 text-center text-lg focus:outline-none focus:ring-2 focus:ring-[#FB9214]/30 focus:border-[#FB9214] bg-white text-slate-900 placeholder-slate-400"
           onKeyDown={(e) => e.key === "Enter" && handleLogin()}
         />
 
         <button
           onClick={handleLogin}
           disabled={!usersLoaded}
-          className="w-full text-black font-bold p-3 rounded-lg hover:brightness-110 transition text-lg mt-2 tracking-wide disabled:cursor-wait disabled:opacity-70"
-          style={{ backgroundColor: detectedTenant.primaryColor || '#00b14f' }}
+          className="w-full bg-[#032D51] hover:bg-[#08243F] text-white font-bold p-3 rounded-lg transition text-lg mt-2 tracking-wide disabled:cursor-wait disabled:opacity-70 shadow-md shadow-[#032D51]/15"
         >
-          {usersLoaded ? "Entrar" : "Carregando acessos…"}
+          {usersLoaded ? "Entrar no ApontaPRO" : "Carregando acessos…"}
         </button>
       </div>
 
       {!isStandalone && (
-        <div className="mt-6 w-full max-w-sm bg-zinc-900 border border-zinc-800 p-5 rounded-xl shadow-xl flex flex-col gap-3">
-          <div className="flex items-center gap-2 border-b border-zinc-800 pb-2" style={{ color: detectedTenant.primaryColor || '#00b14f' }}>
+        <div className="mt-6 w-full max-w-sm bg-white border border-slate-200 p-5 rounded-xl shadow-xl flex flex-col gap-3">
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-2" style={{ color: "#FB9214" }}>
             <span className="text-lg">📲</span>
-            <h3 className="text-xs uppercase tracking-wider font-extrabold text-zinc-300">
+            <h3 className="text-xs uppercase tracking-wider font-extrabold text-slate-700">
               Instalar Aplicativo (Tela Cheia)
             </h3>
           </div>
 
-          <p className="text-[11px] text-zinc-400 leading-relaxed">
-            Instale o aplicativo de apontamento de produção para funcionar em{" "}
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            Instale o ApontaPRO para funcionar em{" "}
             <strong>tela inteira sem as barras do navegador</strong> e com o ícone direto no seu celular ou computador.
           </p>
 
           {isInIframe ? (
-            <div className="bg-amber-950/40 p-3 rounded-lg border border-amber-900/40 text-[10px] text-zinc-300 flex flex-col gap-1.5 leading-snug">
+            <div className="bg-amber-950/40 p-3 rounded-lg border border-amber-900/40 text-[10px] text-slate-700 flex flex-col gap-1.5 leading-snug">
               <span className="font-bold uppercase tracking-wide block text-amber-400">
                 ⚠️ Executando dentro do Editor
               </span>
@@ -1391,7 +1386,7 @@ function LoginScreen({
               <button
                 onClick={() => window.open(window.location.href, "_blank")}
                 className="w-full flex items-center justify-center gap-1.5 hover:opacity-95 text-black text-xs font-bold py-2 px-3 rounded transition-all cursor-pointer mt-1"
-                style={{ backgroundColor: detectedTenant.primaryColor || '#00b14f' }}
+                style={{ backgroundColor: "#FB9214" }}
               >
                 Abrir em Nova Aba ↗
               </button>
@@ -1400,42 +1395,42 @@ function LoginScreen({
             <button
               onClick={handleInstallClick}
               className="w-full flex items-center justify-center gap-2 hover:bg-opacity-90 text-black text-xs font-bold py-2.5 px-3 rounded-lg transition-all cursor-pointer shadow-md"
-              style={{ backgroundColor: detectedTenant.primaryColor || '#00b14f' }}
+              style={{ backgroundColor: "#FB9214" }}
             >
               <span>📥</span> Instalar Aplicativo
             </button>
           ) : isIOS ? (
-            <div className="bg-zinc-950 p-3 rounded-lg border border-zinc-800/40 text-[10px] text-zinc-400 flex flex-col gap-1.5 leading-snug">
-              <span className="font-bold uppercase tracking-wide block" style={{ color: detectedTenant.primaryColor || '#00b14f' }}>
+            <div className="bg-zinc-950 p-3 rounded-lg border border-zinc-800/40 text-[10px] text-slate-500 flex flex-col gap-1.5 leading-snug">
+              <span className="font-bold uppercase tracking-wide block" style={{ color: "#FB9214" }}>
                 Instruções para iPhone:
               </span>
               <p>
                 1. Toque no botão de <strong>Compartilhar</strong> (ícone{" "}
-                <span className="text-zinc-200">📤</span> na barra inferior do
+                <span className="text-slate-700">📤</span> na barra inferior do
                 Safari).
               </p>
               <p>
                 2. Role a lista e toque em{" "}
                 <strong>"Adicionar à Tela de Início"</strong> (ícone{" "}
-                <span className="text-zinc-200">➕</span>).
+                <span className="text-slate-700">➕</span>).
               </p>
               <p>
                 3. Toque em "Adicionar" no canto superior direito para confirmar.
               </p>
             </div>
           ) : (
-            <div className="bg-zinc-950 p-3 rounded-lg border border-zinc-800/40 text-[10px] text-zinc-400 flex flex-col gap-1.5 leading-snug">
-              <span className="font-bold uppercase tracking-wide block text-zinc-300">
+            <div className="bg-zinc-950 p-3 rounded-lg border border-zinc-800/40 text-[10px] text-slate-500 flex flex-col gap-1.5 leading-snug">
+              <span className="font-bold uppercase tracking-wide block text-slate-700">
                 Como Instalar no Celular:
               </span>
               <p>
-                1. Clique no menu de <strong className="text-zinc-200">três pontinhos</strong> no canto superior do navegador (ou toque no ícone de instalar na barra de endereço).
+                1. Clique no menu de <strong className="text-slate-700">três pontinhos</strong> no canto superior do navegador (ou toque no ícone de instalar na barra de endereço).
               </p>
               <p>
-                2. Selecione <strong className="text-zinc-200">"Instalar aplicativo"</strong> ou <strong className="text-zinc-200">"Adicionar à tela inicial"</strong>.
+                2. Selecione <strong className="text-slate-700">"Instalar aplicativo"</strong> ou <strong className="text-slate-700">"Adicionar à tela inicial"</strong>.
               </p>
-              <p className="text-[9px] block mt-1" style={{ color: detectedTenant.primaryColor || '#00b14f' }}>
-                ✓ O ícone "Apontador" será adicionado à tela do seu dispositivo!
+              <p className="text-[9px] block mt-1" style={{ color: "#FB9214" }}>
+                ✓ O ícone "ApontaPRO" será adicionado à tela do seu dispositivo!
               </p>
             </div>
           )}
@@ -15341,16 +15336,16 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <div className="flex flex-col h-screen-safe w-screen bg-slate-50 overflow-hidden font-sans antialiased">
+      <div className="apontapro-shell flex flex-col h-screen-safe w-screen bg-slate-50 overflow-hidden font-sans antialiased">
         {/* Real-time Toast Alerts Stack */}
         <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
           {toasts.map((toast) => (
             <div
               key={toast.id}
-              className="pointer-events-auto bg-slate-900 border border-[#00b14f]/30 text-white rounded-xl shadow-2xl p-4 flex flex-col gap-1 transition-all duration-300 animate-in slide-in-from-right-5 fade-in duration-200"
+              className="pointer-events-auto bg-slate-900 border border-[#FB9214]/30 text-white rounded-xl shadow-2xl p-4 flex flex-col gap-1 transition-all duration-300 animate-in slide-in-from-right-5 fade-in duration-200"
             >
               <div className="flex items-center gap-1.5 justify-between">
-                <span className="font-extrabold text-[11px] text-[#00b14f] flex items-center gap-1">
+                <span className="font-extrabold text-[11px] text-[#FB9214] flex items-center gap-1">
                   <span>🔔</span> {toast.title}
                 </span>
                 <button
@@ -15386,28 +15381,27 @@ export default function App() {
           </div>
         )}
         {/* Top Navbar */}
-        <header className="bg-black text-[#00b14f] p-4 flex justify-between items-center shadow-md shrink-0 border-b border-[#00b14f]/20" style={{ borderBottomColor: (db.activeTenant?.primaryColor || '#00b14f') + '40', color: db.activeTenant?.primaryColor || '#00b14f' }}>
-          <div className="flex items-center gap-2">
-            {db.activeTenant?.logoUrl && db.activeTenant.logoUrl !== "/icon.png" ? (
-              <img src={db.activeTenant.logoUrl} alt="Logo" className="h-8 object-contain max-w-[120px]" />
-            ) : (
-              <Crown size={28} className="text-[#00b14f]" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }} />
-            )}
-            <div className="flex flex-col leading-none">
-              <h1 className="text-xl font-bold tracking-tight" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}>
-                {db.activeTenant?.name || "IMPÉRIO"}
+        <header className="bg-[#032D51] text-white px-4 py-3 flex justify-between items-center shadow-md shrink-0 border-b-2 border-[#FB9214]">
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src="/apontapro-icon.png"
+              alt="ApontaPRO"
+              className="h-9 w-9 object-contain shrink-0"
+            />
+            <div className="flex flex-col leading-none min-w-0">
+              <h1 className="text-xl font-black tracking-tight whitespace-nowrap">
+                <span className="text-white">Aponta</span><span className="text-[#FB9214]">PRO</span>
               </h1>
-              <span className="text-[0.6rem] text-gray-400 font-medium tracking-widest uppercase">
-                {db.activeTenant?.systemName || "Apontador de Produção"}
+              <span className="text-[0.58rem] text-slate-300 font-semibold tracking-[0.12em] uppercase truncate max-w-[48vw] sm:max-w-[420px] mt-1">
+                {db.activeTenant?.name || "Empresa"}
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3 text-sm sm:text-base text-gray-300">
+          <div className="flex items-center gap-2 sm:gap-3 text-sm sm:text-base text-slate-200">
             <button
               onClick={toggleFullscreen}
               title={isFullscreen ? "Sair da Tela Cheia (Esc)" : "Entrar em Tela Cheia (Modo Fábrica)"}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 transition cursor-pointer text-xs font-semibold shadow-md border border-zinc-700/80 active:scale-95"
-              style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/10 text-white rounded-lg hover:bg-white/15 transition cursor-pointer text-xs font-semibold shadow-sm border border-white/15 active:scale-95"
             >
               {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
               <span className="hidden sm:inline text-[11px] font-bold">
@@ -15417,11 +15411,10 @@ export default function App() {
             {!isStandalone && (
               <button
                 onClick={() => setShowPWAModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 hover:text-[#00b14f] transition cursor-pointer text-xs font-semibold animate-pulse shadow-md"
-                style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FB9214] text-[#032D51] rounded-lg hover:bg-[#E98710] transition cursor-pointer text-xs font-extrabold shadow-sm"
               >
                 <span>📲</span>
-                <span className="hidden md:inline">Instalar App</span>
+                <span className="hidden md:inline">Instalar ApontaPRO</span>
               </button>
             )}
             <span className="hidden sm:inline">
@@ -15430,7 +15423,8 @@ export default function App() {
             <span className="sm:hidden">{currentUser.name.split(" ")[0]}</span>
             <button
               onClick={() => setCurrentUser(null)}
-              className="p-2 bg-zinc-800 text-white rounded-full hover:bg-zinc-700 hover:text-[#00b14f] transition"
+              aria-label="Sair do ApontaPRO"
+              className="p-2 bg-white/10 text-white rounded-full hover:bg-white/15 hover:text-[#FB9214] transition"
             >
               <LogOut size={18} />
             </button>
@@ -15763,19 +15757,19 @@ export default function App() {
 
         {/* Bottom Navigation */}
         <BottomNavContext.Provider value={{ isCollapsed: isBottomNavCollapsed }}>
-          <nav className={`bg-white border-t border-gray-200 flex items-center justify-around pb-safe shrink-0 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] overflow-x-auto transition-all duration-300 ${isBottomNavCollapsed ? "py-1 px-2 gap-1" : "p-2 sm:p-3 gap-1"}`}>
+          <nav className={`bg-white border-t-2 border-[#032D51]/10 flex items-center justify-around pb-safe shrink-0 shadow-[0_-2px_12px_rgba(3,45,81,0.08)] overflow-x-auto transition-all duration-300 ${isBottomNavCollapsed ? "py-1 px-2 gap-1" : "p-2 sm:p-3 gap-1"}`}>
             {/* Collapse / Expand Toggle Button */}
             <button
               onClick={toggleBottomNav}
               title={isBottomNavCollapsed ? "Expandir Menu de Navegação" : "Recolher Menu (Modo Compacto)"}
               className={`flex flex-col items-center justify-center border rounded-lg transition-all shrink-0 cursor-pointer ${
                 isBottomNavCollapsed
-                  ? "p-1 min-w-[34px] h-[34px] bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+                  ? "p-1 min-w-[34px] h-[34px] bg-orange-50 border-orange-200 text-[#C96F00] hover:bg-orange-100"
                   : "p-2 min-w-[56px] min-h-[48px] bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200"
               }`}
             >
               {isBottomNavCollapsed ? (
-                <ChevronUp size={18} className="text-indigo-600" />
+                <ChevronUp size={18} className="text-[#FB9214]" />
               ) : (
                 <ChevronDown size={20} className="text-slate-700" />
               )}
@@ -16895,25 +16889,25 @@ export default function App() {
           >
             <button
               onClick={() => setShowPWAModal(false)}
-              className="absolute top-4 right-4 text-zinc-400 hover:text-white cursor-pointer p-1 rounded-full hover:bg-zinc-800 transition"
+              className="absolute top-4 right-4 text-slate-500 hover:text-white cursor-pointer p-1 rounded-full hover:bg-zinc-800 transition"
             >
               <X size={20} />
             </button>
 
-            <div className="flex items-center gap-2 border-b border-zinc-800 pb-3 mb-4" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}>
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-3 mb-4" style={{ color: "#FB9214" }}>
               <span className="text-2xl">📲</span>
               <h3 className="text-sm uppercase tracking-wider font-extrabold text-zinc-100">
-                Instalar Apontador
+                Instalar ApontaPRO
               </h3>
             </div>
 
-            <p className="text-xs text-zinc-400 leading-relaxed mb-4">
-              Instale o aplicativo de apontamento de produção para rodar em{" "}
+            <p className="text-xs text-slate-500 leading-relaxed mb-4">
+              Instale o ApontaPRO para rodar em{" "}
               <strong>tela cheia sem as barras do navegador</strong> e ter acesso rápido pelo ícone no seu dispositivo.
             </p>
 
             {isInIframe ? (
-              <div className="bg-amber-950/40 p-4 rounded-xl border border-amber-900/40 text-xs text-zinc-300 flex flex-col gap-2.5 leading-snug">
+              <div className="bg-amber-950/40 p-4 rounded-xl border border-amber-900/40 text-xs text-slate-700 flex flex-col gap-2.5 leading-snug">
                 <span className="font-extrabold uppercase tracking-wider text-[10px] text-amber-400 block">
                   ⚠️ Executando no Editor de Testes
                 </span>
@@ -16926,14 +16920,14 @@ export default function App() {
                 <button
                   onClick={() => window.open(window.location.href, "_blank")}
                   className="w-full flex items-center justify-center gap-1.5 hover:opacity-90 text-black text-xs font-bold py-2.5 px-4 rounded-lg transition-all cursor-pointer mt-1"
-                  style={{ backgroundColor: db.activeTenant?.primaryColor || '#00b14f' }}
+                  style={{ backgroundColor: "#FB9214" }}
                 >
                   Abrir em Nova Aba ↗
                 </button>
               </div>
             ) : deferredPrompt ? (
               <div className="flex flex-col gap-3">
-                <p className="text-xs text-zinc-300 font-medium">
+                <p className="text-xs text-slate-700 font-medium">
                   Clique no botão abaixo para iniciar a instalação nativa do aplicativo:
                 </p>
                 <button
@@ -16942,41 +16936,41 @@ export default function App() {
                     setShowPWAModal(false);
                   }}
                   className="w-full flex items-center justify-center gap-2 hover:opacity-90 text-black text-xs font-bold py-2.5 px-4 rounded-lg transition-all cursor-pointer shadow-md shadow-emerald-950/30 animate-bounce"
-                  style={{ backgroundColor: db.activeTenant?.primaryColor || '#00b14f' }}
+                  style={{ backgroundColor: "#FB9214" }}
                 >
                   <span>📥</span> Instalar Aplicativo
                 </button>
               </div>
             ) : isIOS ? (
-              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800/40 text-xs text-zinc-400 flex flex-col gap-2 leading-relaxed">
-                <span className="font-bold uppercase tracking-wide block text-zinc-200" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}>
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800/40 text-xs text-slate-500 flex flex-col gap-2 leading-relaxed">
+                <span className="font-bold uppercase tracking-wide block text-slate-700" style={{ color: "#FB9214" }}>
                   Instruções para iPhone / iPad:
                 </span>
                 <p>
                   1. Toque no botão de <strong>Compartilhar</strong> (ícone{" "}
-                  <span className="text-zinc-200">📤</span> na barra inferior do Safari).
+                  <span className="text-slate-700">📤</span> na barra inferior do Safari).
                 </p>
                 <p>
                   2. Role para baixo e selecione{" "}
                   <strong>"Adicionar à Tela de Início"</strong> (ícone{" "}
-                  <span className="text-zinc-200">➕</span>).
+                  <span className="text-slate-700">➕</span>).
                 </p>
                 <p>
                   3. Clique em <strong>"Adicionar"</strong> no canto superior direito para confirmar.
                 </p>
               </div>
             ) : (
-              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800/40 text-xs text-zinc-400 flex flex-col gap-2.5 leading-relaxed">
-                <span className="font-bold uppercase tracking-wide block text-zinc-300">
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800/40 text-xs text-slate-500 flex flex-col gap-2.5 leading-relaxed">
+                <span className="font-bold uppercase tracking-wide block text-slate-700">
                   Como Instalar Manualmente:
                 </span>
                 <p>
-                  1. Clique no menu de <strong className="text-zinc-200">três pontinhos</strong> no canto superior do seu navegador.
+                  1. Clique no menu de <strong className="text-slate-700">três pontinhos</strong> no canto superior do seu navegador.
                 </p>
                 <p>
-                  2. Toque em <strong className="text-zinc-200">"Instalar aplicativo"</strong> ou <strong className="text-zinc-200">"Adicionar à tela inicial"</strong>.
+                  2. Toque em <strong className="text-slate-700">"Instalar aplicativo"</strong> ou <strong className="text-slate-700">"Adicionar à tela inicial"</strong>.
                 </p>
-                <p className="text-[10px] block mt-1" style={{ color: db.activeTenant?.primaryColor || '#00b14f' }}>
+                <p className="text-[10px] block mt-1" style={{ color: "#FB9214" }}>
                   ✓ Um ícone direto será criado para acesso instantâneo em tela cheia!
                 </p>
               </div>
