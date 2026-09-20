@@ -1321,7 +1321,7 @@ function LoginScreen({
       <div className="bg-white border border-slate-200 p-8 rounded-2xl shadow-2xl shadow-slate-900/10 w-full max-w-sm flex flex-col items-center">
         <div className="flex flex-col items-center gap-2 mb-6 w-full">
           <img
-            src="/apontapro-logo.png"
+            src="/apontapro-logo.svg"
             alt="ApontaPRO"
             className="w-full max-w-[280px] h-auto object-contain"
           />
@@ -15384,7 +15384,7 @@ export default function App() {
         <header className="bg-[#032D51] text-white px-4 py-3 flex justify-between items-center shadow-md shrink-0 border-b-2 border-[#FB9214]">
           <div className="flex items-center gap-3 min-w-0">
             <img
-              src="/apontapro-icon.png"
+              src="/apontapro-icon.svg"
               alt="ApontaPRO"
               className="h-9 w-9 object-contain shrink-0"
             />
