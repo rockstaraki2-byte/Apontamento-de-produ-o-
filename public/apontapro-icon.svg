@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">ApontaPRO</title>
+  <defs>
+    <style>
+      .navy{fill:#032D51}.orange{fill:#FB9214}.white{fill:#fff}
+      .ostroke{fill:none;stroke:#FB9214;stroke-width:26;stroke-linecap:round;stroke-linejoin:round}
+    </style>
+  </defs>
+  <g class="navy">
+    <rect x="222" y="18" width="68" height="78" rx="18"/>
+    <rect x="222" y="416" width="68" height="78" rx="18"/>
+    <rect x="18" y="222" width="78" height="68" rx="18"/>
+    <rect x="416" y="222" width="78" height="68" rx="18"/>
+    <rect x="77" y="77" width="68" height="82" rx="18" transform="rotate(-45 111 118)"/>
+    <rect x="367" y="353" width="68" height="82" rx="18" transform="rotate(-45 401 394)"/>
+    <rect x="353" y="77" width="82" height="68" rx="18" transform="rotate(45 394 111)"/>
+    <rect x="77" y="367" width="82" height="68" rx="18" transform="rotate(45 118 401)"/>
+    <circle cx="256" cy="256" r="190"/>
+  </g>
+  <circle class="white" cx="256" cy="256" r="142"/>
+  <g class="ostroke">
+    <rect x="154" y="148" width="184" height="220" rx="18"/>
+    <path d="M210 148v-18h92v18"/>
+    <path d="M194 217l18 18 28-34"/>
+    <path d="M194 277l18 18 28-34"/>
+    <path d="M259 218h48"/>
+    <path d="M259 278h48"/>
+  </g>
+  <circle class="orange" cx="323" cy="332" r="72"/>
+  <circle class="white" cx="323" cy="332" r="43"/>
+  <path d="M323 307v28l23 14" fill="none" stroke="#032D51" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
