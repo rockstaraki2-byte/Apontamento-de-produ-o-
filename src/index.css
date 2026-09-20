@@ -9,6 +9,14 @@
 
 :root {
   font-size: 11.5px; /* Denser base font size for desktop to shrink all components proportionally */
+  --aponta-navy: #032d51;
+  --aponta-navy-dark: #08243f;
+  --aponta-orange: #fb9214;
+  --aponta-orange-dark: #e98710;
+  --aponta-surface: #ffffff;
+  --aponta-background: #f5f7fa;
+  --aponta-text: #0f2740;
+  --aponta-muted: #64748b;
 }
 
 /* Ocupa toda a área segura incluindo notch */
@@ -147,3 +155,31 @@ html, body, #root {
 }
 
 
+
+
+/* ApontaPRO product identity.
+   Tenant/company branding remains independent and is still used by reports/labels. */
+body {
+  background: var(--aponta-background);
+  color: var(--aponta-text);
+}
+
+.apontapro-shell {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(251, 146, 20, 0.045), transparent 24rem),
+    var(--aponta-background);
+}
+
+.apontapro-shell ::selection {
+  background: rgba(251, 146, 20, 0.22);
+  color: var(--aponta-navy);
+}
+
+.apontapro-shell a:focus-visible,
+.apontapro-shell button:focus-visible,
+.apontapro-shell input:focus-visible,
+.apontapro-shell select:focus-visible,
+.apontapro-shell textarea:focus-visible {
+  outline: 2px solid var(--aponta-orange);
+  outline-offset: 2px;
+}
