@@ -66,6 +66,22 @@ function normalizePrintFilter(raw?: string): PrintFilter {
   return "TODOS";
 }
 
+function shouldExcludeFullyInvoiced(raw?: string) {
+  const value = String(raw || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+
+  return value.includes("FATUR") && (value.includes("NAO") || value.includes("SEM"));
+}
+
+function isOrderItemFullyInvoiced(order: any) {
+  if (order?.status === "FATURADO") return true;
+  const total = Number(order?.totalQuantity) || 0;
+  const invoiced = Number(order?.invoicedQuantity) || 0;
+  return total > 0 && invoiced >= total;
+}
+
 function buildSystemFilename(orderCode: string, order: any, customers: any[]) {
   const customer = order ? findCustomerForOrder(order, customers) : null;
   const rawClientName =
@@ -136,6 +152,7 @@ function AutomationController({ currentUser }: { currentUser: User }) {
         const min = Math.min(start, end);
         const max = Math.max(start, end);
         const filter = normalizePrintFilter(command.statusImpressao);
+        const excludeFullyInvoiced = shouldExcludeFullyInvoiced(command.statusImpressao);
         const selected = Array.from(groupedOrders.entries())
           .filter(([code]) => {
             const numeric = comparableOrderNumber(code);
@@ -154,6 +171,12 @@ function AutomationController({ currentUser }: { currentUser: User }) {
           }
           if (filter === "IMPRESSOS" && !isPrinted) {
             ignored.push({ pedido: code, motivo: "Pedido ainda não impresso" });
+            continue;
+          }
+
+          const isFullyInvoiced = group.length > 0 && group.every(isOrderItemFullyInvoiced);
+          if (excludeFullyInvoiced && isFullyInvoiced) {
+            ignored.push({ pedido: code, motivo: "Pedido já faturado" });
             continue;
           }
 
