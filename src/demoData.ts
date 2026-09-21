@@ -25,7 +25,11 @@ import type {
 export const isDemoModeEnabled = () => {
   if (typeof window === "undefined") return false;
   const value = new URLSearchParams(window.location.search).get("demo");
-  return value === "1" || value === "true";
+  const fromQuery = value === "1" || value === "true";
+  if (fromQuery) {
+    window.sessionStorage.setItem("apontapro_demo_mode", "1");
+  }
+  return fromQuery || window.sessionStorage.getItem("apontapro_demo_mode") === "1";
 };
 
 export const DEMO_TENANT_ID = "demo-fabrica";
