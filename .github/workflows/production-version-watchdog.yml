@@ -1,0 +1,81 @@
+name: Production Version Watchdog
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: production-version-watchdog
+  cancel-in-progress: true
+
+jobs:
+  verify-production:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+
+      - name: Compare production with current main
+        id: verify
+        shell: bash
+        env:
+          PROD_URL: https://apontamento-de-producao.vercel.app
+        run: |
+          set -u
+
+          HEAD_SHA="$(git rev-parse HEAD)"
+          HEAD_TS="$(git show -s --format=%ct HEAD)"
+          NOW_TS="$(date +%s)"
+          AGE_SECONDS="$((NOW_TS - HEAD_TS))"
+
+          echo "Current main: $HEAD_SHA"
+          echo "Main age: \${AGE_SECONDS}s"
+
+          # Give normal Git/Vercel deployments time to finish before attempting self-healing.
+          if [ "$AGE_SECONDS" -lt 600 ]; then
+            echo "Main changed less than 10 minutes ago. Waiting for the normal deployment pipeline."
+            echo "repair=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          RESPONSE="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' "$PROD_URL/api/deployment-info" 2>/dev/null || true)"
+
+          PROD_SHA="$(printf '%s' "$RESPONSE" | node -e '
+            let body="";
+            process.stdin.on("data", c => body += c);
+            process.stdin.on("end", () => {
+              try {
+                const data = JSON.parse(body);
+                process.stdout.write(String(data.gitSha || ""));
+              } catch {
+                process.stdout.write("");
+              }
+            });
+          ')"
+
+          echo "Production: \${PROD_SHA:-unknown}"
+
+          if [ -n "$PROD_SHA" ] && [ "$PROD_SHA" = "$HEAD_SHA" ]; then
+            echo "Production is already on the current main HEAD."
+            echo "repair=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "::warning::Production is not running the current main HEAD. A self-healing deployment will be triggered."
+          echo "repair=true" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger clean deployment from current main
+        if: steps.verify.outputs.repair == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "ci: self-heal production to current main"
+          git push origin HEAD:main
