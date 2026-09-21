@@ -80,6 +80,7 @@ import {
 } from "lucide-react";
 import { useDatabase } from "./useDatabase";
 import type { User, OrderStatus, Role, Order, AppNotification } from "./types";
+import { DEMO_USER, isDemoModeEnabled } from "./demoData";
 import { calculateWorkingMillis } from "./timeUtils";
 import { ColorBadgeWithImage, getColorAttribute } from "./components/ColorBadgeWithImage";
 import { getItemUnit } from "./utils/unitUtils";
@@ -14688,7 +14689,10 @@ _Mensagem do Sistema Império Jomarci_`;
 }
 
 export default function App() {
+  const isDemoMode = isDemoModeEnabled();
+
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    if (isDemoMode) return DEMO_USER;
     const saved = localStorage.getItem("imperio_logged_user");
     if (saved) {
       try {
@@ -14831,6 +14835,7 @@ export default function App() {
 
   db.updateOrders = React.useCallback(
     async (updatedOrders: any) => {
+      if (isDemoMode) return;
       const list = Array.isArray(updatedOrders)
         ? updatedOrders
         : [updatedOrders];
@@ -14970,6 +14975,7 @@ export default function App() {
   >([]);
 
   React.useEffect(() => {
+    if (isDemoMode) return;
     if (currentUser) {
       localStorage.setItem("imperio_logged_user", JSON.stringify(currentUser));
     } else {
@@ -15011,7 +15017,7 @@ export default function App() {
     }
   }, [db.allUsers, currentUser?.id]);
 
-  usePushNotifications(currentUser, db, setCurrentUser);
+  usePushNotifications(isDemoMode ? null : currentUser, db, setCurrentUser);
 
   React.useEffect(() => {
     const handleAppToast = (e: any) => {
@@ -15361,6 +15367,12 @@ export default function App() {
             </div>
           ))}
         </div>
+
+        {isDemoMode && (
+          <div className="bg-amber-100 text-amber-900 border-b border-amber-200 text-[11px] font-extrabold text-center py-1.5 px-3 tracking-wide">
+            MODO DEMONSTRAÇÃO • dados fictícios • nenhuma alteração é enviada ao banco real
+          </div>
+        )}
 
         {isOffline && (
           <div className="bg-amber-500 text-white text-xs font-bold text-center py-1 flex items-center justify-center gap-2">

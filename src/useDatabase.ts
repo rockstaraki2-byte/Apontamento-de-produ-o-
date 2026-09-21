@@ -36,7 +36,7 @@ import type {
 } from "./types";
 import { db } from "./firebase";
 import {
-  enqueueAction,
+  enqueueAction as enqueueActionFirebase,
   getQueue,
   removeFromQueue,
   processQueueItem,
@@ -44,9 +44,9 @@ import {
 import {
   collection,
   onSnapshot,
-  setDoc as setDocFirebase,
+  setDoc as firestoreSetDoc,
   doc,
-  deleteDoc,
+  deleteDoc as firestoreDeleteDoc,
   writeBatch,
   updateDoc as updateDocFirebase,
   disableNetwork,
@@ -54,6 +54,12 @@ import {
 } from "firebase/firestore";
 
 import { CUSTOMER_TRADE_NAMES } from "./data/customerTradeNames";
+import {
+  DEMO_DATABASE,
+  DEMO_TENANT,
+  DEMO_USER,
+  isDemoModeEnabled,
+} from "./demoData";
 
 function cleanUndefined<T>(obj: T): T {
   if (obj === null || typeof obj !== "object") {
@@ -241,33 +247,50 @@ const INITIAL_USERS: User[] = [
 ];
 
 export function useDatabase(currentUser?: User | null) {
+  const isDemoMode = isDemoModeEnabled();
+
+  const safeSetDocFirebase = async (...args: any[]) => {
+    if (isDemoMode) return;
+    return firestoreSetDoc(...args);
+  };
+  const safeDeleteDoc = async (...args: any[]) => {
+    if (isDemoMode) return;
+    return firestoreDeleteDoc(...args);
+  };
+  const enqueueAction = async (...args: any[]) => {
+    if (isDemoMode) return;
+    return enqueueActionFirebase(...args);
+  };
+
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [selectedTenantId, setSelectedTenantIdState] = useState<string>(() => {
-    const savedTenantId = localStorage.getItem("active_tenant_id") || "imperio";
+    const savedTenantId = isDemoMode ? DEMO_TENANT.id : (localStorage.getItem("active_tenant_id") || "imperio");
     if (isRetiredTenantId(savedTenantId)) {
       localStorage.setItem("active_tenant_id", "imperio");
       return "imperio";
     }
     return savedTenantId;
   });
-  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>(() => isDemoMode ? [DEMO_TENANT] : []);
 
   const activeTenantId = currentUser?.tenantId === "global" ? selectedTenantId : (currentUser?.tenantId || "imperio");
 
   const setSelectedTenantId = (id: string) => {
     setSelectedTenantIdState(id);
-    localStorage.setItem("active_tenant_id", id);
+    if (!isDemoMode) localStorage.setItem("active_tenant_id", id);
   };
 
   const setDoc = async (ref: any, data: any, options?: any) => {
+    if (isDemoMode) return;
     const collName = ref.parent?.id;
     if (collName && collName !== "tenants" && collName !== "users") {
       data = { tenantId: activeTenantId, ...data };
     }
-    return options ? setDocFirebase(ref, data, options) : setDocFirebase(ref, data);
+    return options ? safeSetDocFirebase(ref, data, options) : safeSetDocFirebase(ref, data);
   };
 
   const updateDoc = async (ref: any, data: any) => {
+    if (isDemoMode) return;
     const collName = ref.parent?.id;
     if (collName && collName !== "tenants" && collName !== "users") {
       data = { tenantId: activeTenantId, ...data };
@@ -276,6 +299,7 @@ export function useDatabase(currentUser?: User | null) {
   };
 
   const [users, setUsers] = useState<User[]>(() => {
+    if (isDemoMode) return [DEMO_USER];
     const saved = localStorage.getItem("producao_users_v2");
     if (saved) {
       try {
@@ -326,6 +350,7 @@ export function useDatabase(currentUser?: User | null) {
   };
 
   const runSync = async (force = false) => {
+    if (isDemoMode) return;
     if (force) {
       quotaExceededRef.current = false;
       setQuotaExceeded(false);
@@ -549,16 +574,17 @@ export function useDatabase(currentUser?: User | null) {
   };
 
   const saveCache = (key: string, data: any) => {
+    if (isDemoMode) return;
     try {
       localStorage.setItem(`producao_cache_${key}`, JSON.stringify(data));
     } catch {}
   };
 
-  const [items, setItems] = useState<Item[]>(() => loadCache("items", []));
-  const [orders, setOrdersState] = useState<Order[]>(() => loadCache("orders", []));
+  const [items, setItems] = useState<Item[]>(() => isDemoMode ? DEMO_DATABASE.items : loadCache("items", []));
+  const [orders, setOrdersState] = useState<Order[]>(() => isDemoMode ? DEMO_DATABASE.orders : loadCache("orders", []));
   const [logs, setLogsState] = useState<ProductionLog[]>([]);
   const [attributes, setAttributes] = useState<ProductAttribute[]>([]);
-  const [activePacks, setActivePacksState] = useState<ActiveTask[]>(() => loadCache("activePacks", []));
+  const [activePacks, setActivePacksState] = useState<ActiveTask[]>(() => isDemoMode ? DEMO_DATABASE.activePacks : loadCache("activePacks", []));
   const [nestTasks, setNestTasksState] = useState<NestTask[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [stocks, setStocks] = useState<StockEntry[]>([]);
@@ -571,14 +597,14 @@ export function useDatabase(currentUser?: User | null) {
   const [uniformDistributions, setUniformDistributions] = useState<
     UniformDistribution[]
   >([]);
-  const [customers, setCustomers] = useState<Customer[]>(() => loadCache("customers", []));
-  const [sectors, setSectors] = useState<Sector[]>(() => loadCache("sectors", []));
+  const [customers, setCustomers] = useState<Customer[]>(() => isDemoMode ? DEMO_DATABASE.customers : loadCache("customers", []));
+  const [sectors, setSectors] = useState<Sector[]>(() => isDemoMode ? DEMO_DATABASE.sectors : loadCache("sectors", []));
   const [productFlows, setProductFlows] = useState<ProductFlow[]>([]);
   const [flows, setFlows] = useState<import("./types").Flow[]>([]);
   const [rejectionReasons, setRejectionReasons] = useState<import("./types").RejectionReason[]>([]);
   const [productionSteps, setProductionSteps] = useState<import("./types").ProductionStep[]>([]);
   const [productionBatches, setProductionBatches] = useState<ProductionBatch[]>(
-    () => loadCache("batches", [])
+    () => isDemoMode ? DEMO_DATABASE.productionBatches : loadCache("batches", [])
   );
   const [productionAgendas, setProductionAgendas] = useState<
     ProductionAgenda[]
@@ -612,6 +638,52 @@ export function useDatabase(currentUser?: User | null) {
   const [prensaPendingProductions, setPrensaPendingProductions] = useState<import("./types").PrensaPendingProduction[]>([]);
 
   useEffect(() => {
+    if (isDemoMode) {
+      const data = DEMO_DATABASE;
+      setTenants(data.tenants);
+      setUsers(data.users);
+      setUsersLoaded(true);
+      setItems(data.items);
+      setOrdersState(data.orders);
+      setLogsState(data.logs);
+      setAttributes(data.attributes);
+      setActivePacksState(data.activePacks);
+      setNestTasksState(data.nestTasks);
+      setNotifications(data.notifications);
+      setStocks(data.stocks);
+      setStockMovements(data.stockMovements);
+      setEmployees(data.employees);
+      setEpiDistributions(data.epiDistributions);
+      setUniforms(data.uniforms);
+      setUniformDistributions(data.uniformDistributions);
+      setCustomers(data.customers);
+      setSectors(data.sectors);
+      setProductFlows(data.productFlows);
+      setFlows(data.flows);
+      setRejectionReasons(data.rejectionReasons);
+      setProductionSteps(data.productionSteps);
+      setProductionBatches(data.productionBatches);
+      setProductionAgendas(data.productionAgendas);
+      setCoilCuttingPlans(data.coilCuttingPlans);
+      setCargas(data.cargas);
+      setExpeditionRoutes(data.expeditionRoutes);
+      setProductionSchedules(data.productionSchedules);
+      setExtraHours(data.extraHours);
+      setPriceHistories(data.priceHistories);
+      setSystemSettings(data.systemSettings);
+      setAgentReports(data.agentReports);
+      setTornoEvents(data.tornoEvents);
+      setMachineStops(data.machineStops);
+      setPerformanceQuestions(data.performanceQuestions);
+      setPerformanceReviews(data.performanceReviews);
+      setAttendances(data.attendances);
+      setLaserQuotes(data.laserQuotes);
+      setSheetStocks(data.sheetStocks);
+      setSheetStockMovements(data.sheetStockMovements);
+      setPrensaPendingProductions(data.prensaPendingProductions);
+      return;
+    }
+
     updateQueueCount();
     runSync();
 
@@ -1053,7 +1125,7 @@ export function useDatabase(currentUser?: User | null) {
       unsubAttendances();
       unsubPrensaPending();
     };
-  }, [currentUser]);
+  }, [currentUser, isDemoMode]);
 
   const updateStocks = async (updatedStocks: StockEntry[]) => {
     const changed = updatedStocks.filter((updated) => {
@@ -1115,7 +1187,7 @@ export function useDatabase(currentUser?: User | null) {
 
   const deleteItem = async (id: number) => {
     await runWrite("Excluir Item", async () => {
-      await deleteDoc(doc(db, "items", id.toString()));
+      await safeDeleteDoc(doc(db, "items", id.toString()));
     });
   };
 
@@ -1167,7 +1239,7 @@ export function useDatabase(currentUser?: User | null) {
   const deleteOrder = async (id: number) => {
     await runWrite("Excluir Pedido", async () => {
       // 1. Delete order doc
-      await deleteDoc(doc(db, "orders", id.toString()));
+      await safeDeleteDoc(doc(db, "orders", id.toString()));
 
       // 2. Cascade delete steps linked to this order
       const matchingSteps = (filteredProductionSteps || []).filter(
@@ -1175,7 +1247,7 @@ export function useDatabase(currentUser?: User | null) {
       );
       for (const s of matchingSteps) {
         if (s.id) {
-          await deleteDoc(doc(db, "productionSteps", s.id.toString()));
+          await safeDeleteDoc(doc(db, "productionSteps", s.id.toString()));
         }
       }
 
@@ -1185,7 +1257,7 @@ export function useDatabase(currentUser?: User | null) {
       );
       for (const l of matchingLogs) {
         if (l.id) {
-          await deleteDoc(doc(db, "logs", l.id.toString()));
+          await safeDeleteDoc(doc(db, "logs", l.id.toString()));
         }
       }
 
@@ -1198,7 +1270,7 @@ export function useDatabase(currentUser?: User | null) {
           (oid) => Number(oid) !== Number(id)
         );
         if (updatedOrderIds.length === 0) {
-          await deleteDoc(doc(db, "productionBatches", b.id.toString()));
+          await safeDeleteDoc(doc(db, "productionBatches", b.id.toString()));
         } else {
           await setDoc(
             doc(db, "productionBatches", b.id.toString()),
@@ -1242,6 +1314,7 @@ export function useDatabase(currentUser?: User | null) {
   };
 
   const addNestTasks = async (tasks: any[]) => {
+    if (isDemoMode) return;
     const batch = writeBatch(db);
     const now = Date.now();
     tasks.forEach((t, i) => {
@@ -1280,7 +1353,7 @@ export function useDatabase(currentUser?: User | null) {
   };
 
   const deleteNestTask = async (id: number) => {
-    await deleteDoc(doc(db, "nestTasks", id.toString()));
+    await safeDeleteDoc(doc(db, "nestTasks", id.toString()));
   };
 
   const updateUser = async (id: string, partial: Partial<User>) => {
@@ -1319,7 +1392,7 @@ export function useDatabase(currentUser?: User | null) {
         localStorage.setItem("producao_users_v2", JSON.stringify(next));
         return next;
       });
-      await deleteDoc(doc(db, "users", id));
+      await safeDeleteDoc(doc(db, "users", id));
     } catch (e) {
       console.error("Error deleting user:", e);
     }
@@ -2072,11 +2145,11 @@ export function useDatabase(currentUser?: User | null) {
   }, [tenants, activeTenantId]);
 
   const addTenant = async (tenant: Tenant) => {
-    await setDocFirebase(doc(db, "tenants", tenant.id), cleanUndefined(tenant));
+    await safeSetDocFirebase(doc(db, "tenants", tenant.id), cleanUndefined(tenant));
   };
 
   const deleteTenant = async (id: string) => {
-    await deleteDoc(doc(db, "tenants", id));
+    await safeDeleteDoc(doc(db, "tenants", id));
   };
 
   return {
@@ -2115,7 +2188,7 @@ export function useDatabase(currentUser?: User | null) {
       await setDoc(doc(db, "attributes", attr.id.toString()), cleanUndefined(updated), { merge: true });
     },
     deleteAttribute: async (id: number) => {
-      await deleteDoc(doc(db, "attributes", id.toString()));
+      await safeDeleteDoc(doc(db, "attributes", id.toString()));
     },
     activePacks: filteredActivePacks,
     addActivePack,
@@ -2146,7 +2219,7 @@ export function useDatabase(currentUser?: User | null) {
     },
     deleteEmployee: async (id: string) => {
       await runWrite("Deletar Colaborador", async () => {
-        await deleteDoc(doc(db, "employees", id));
+        await safeDeleteDoc(doc(db, "employees", id));
       });
     },
     epiDistributions: filteredEpiDistributions,
@@ -2173,7 +2246,7 @@ export function useDatabase(currentUser?: User | null) {
     },
     deleteUniform: async (id: string) => {
       await runWrite("Deletar Uniforme", async () => {
-        await deleteDoc(doc(db, "uniforms", id));
+        await safeDeleteDoc(doc(db, "uniforms", id));
       });
     },
     uniformDistributions: filteredUniformDistributions,
@@ -2188,7 +2261,7 @@ export function useDatabase(currentUser?: User | null) {
     },
     deleteUniformDistribution: async (id: string) => {
       await runWrite("Deletar Distribuição de Uniforme", async () => {
-        await deleteDoc(doc(db, "uniformDistributions", id));
+        await safeDeleteDoc(doc(db, "uniformDistributions", id));
       });
     },
     priceHistories: filteredPriceHistories,
@@ -2230,7 +2303,7 @@ export function useDatabase(currentUser?: User | null) {
       
       if (actualOldId !== customer.id) {
         // ID has changed. Delete the old document and write the new document
-        await deleteDoc(doc(db, "customers", actualOldId.toString()));
+        await safeDeleteDoc(doc(db, "customers", actualOldId.toString()));
         await setDoc(
           doc(db, "customers", customer.id.toString()),
           cleanUndefined(updated)
@@ -2247,7 +2320,7 @@ export function useDatabase(currentUser?: User | null) {
       }
     },
     deleteCustomer: async (id: number) => {
-      await deleteDoc(doc(db, "customers", id.toString()));
+      await safeDeleteDoc(doc(db, "customers", id.toString()));
     },
 
     sectors: filteredSectors,
@@ -2269,7 +2342,7 @@ export function useDatabase(currentUser?: User | null) {
       );
     },
     deleteSector: async (id: number) => {
-      await deleteDoc(doc(db, "sectors", id.toString()));
+      await safeDeleteDoc(doc(db, "sectors", id.toString()));
     },
 
     productFlows: filteredProductFlows,
@@ -2291,7 +2364,7 @@ export function useDatabase(currentUser?: User | null) {
       );
     },
     deleteProductFlow: async (id: number) => {
-      await deleteDoc(doc(db, "productFlows", id.toString()));
+      await safeDeleteDoc(doc(db, "productFlows", id.toString()));
     },
 
     flows: filteredFlows,
@@ -2316,7 +2389,7 @@ export function useDatabase(currentUser?: User | null) {
       await setDoc(doc(db, "flows", String(flow.id)), updatedFlow, { merge: true });
     },
     deleteFlow: async (id: string) => {
-      await deleteDoc(doc(db, "flows", String(id)));
+      await safeDeleteDoc(doc(db, "flows", String(id)));
     },
 
     rejectionReasons: filteredRejectionReasons,
@@ -2339,7 +2412,7 @@ export function useDatabase(currentUser?: User | null) {
       await setDoc(doc(db, "rejectionReasons", String(reason.id)), updated, { merge: true });
     },
     deleteRejectionReason: async (id: string) => {
-      await deleteDoc(doc(db, "rejectionReasons", String(id)));
+      await safeDeleteDoc(doc(db, "rejectionReasons", String(id)));
     },
 
     productionSteps: filteredProductionSteps,
@@ -2364,7 +2437,7 @@ export function useDatabase(currentUser?: User | null) {
       await setDoc(doc(db, "productionSteps", String(step.id)), updated, { merge: true });
     },
     deleteProductionStep: async (id: string) => {
-      await deleteDoc(doc(db, "productionSteps", String(id)));
+      await safeDeleteDoc(doc(db, "productionSteps", String(id)));
     },
 
     productionBatches: filteredProductionBatches,
@@ -2390,7 +2463,7 @@ export function useDatabase(currentUser?: User | null) {
     deleteProductionBatch: async (id: number) => {
       await runWrite("Excluir Lote de Produção", async () => {
         // 1. Delete the batch document
-        await deleteDoc(doc(db, "productionBatches", id.toString()));
+        await safeDeleteDoc(doc(db, "productionBatches", id.toString()));
 
         // 2. Cascade delete steps linked to this batch
         const matchingSteps = (filteredProductionSteps || []).filter(
@@ -2398,7 +2471,7 @@ export function useDatabase(currentUser?: User | null) {
         );
         for (const s of matchingSteps) {
           if (s.id) {
-            await deleteDoc(doc(db, "productionSteps", s.id.toString()));
+            await safeDeleteDoc(doc(db, "productionSteps", s.id.toString()));
           }
         }
 
@@ -2408,7 +2481,7 @@ export function useDatabase(currentUser?: User | null) {
         );
         for (const l of matchingLogs) {
           if (l.id) {
-            await deleteDoc(doc(db, "logs", l.id.toString()));
+            await safeDeleteDoc(doc(db, "logs", l.id.toString()));
           }
         }
       });
@@ -2432,7 +2505,7 @@ export function useDatabase(currentUser?: User | null) {
       );
     },
     deleteProductionAgenda: async (id: number) => {
-      await deleteDoc(doc(db, "productionAgendas", id.toString()));
+      await safeDeleteDoc(doc(db, "productionAgendas", id.toString()));
     },
 
     coilCuttingPlans: filteredCoilCuttingPlans,
@@ -2453,7 +2526,7 @@ export function useDatabase(currentUser?: User | null) {
       );
     },
     deleteCoilCuttingPlan: async (id: number) => {
-      await deleteDoc(doc(db, "coilCuttingPlans", id.toString()));
+      await safeDeleteDoc(doc(db, "coilCuttingPlans", id.toString()));
     },
 
     cargas: filteredCargas,
@@ -2472,7 +2545,7 @@ export function useDatabase(currentUser?: User | null) {
       });
     },
     deleteCarga: async (id: string) => {
-      await deleteDoc(doc(db, "cargas", id));
+      await safeDeleteDoc(doc(db, "cargas", id));
     },
 
     expeditionRoutes: filteredExpeditionRoutes,
@@ -2491,7 +2564,7 @@ export function useDatabase(currentUser?: User | null) {
       await setDoc(doc(db, "expeditionRoutes", route.id), cleanUndefined(updated), { merge: true });
     },
     deleteExpeditionRoute: async (id: string) => {
-      await deleteDoc(doc(db, "expeditionRoutes", id));
+      await safeDeleteDoc(doc(db, "expeditionRoutes", id));
     },
 
     productionSchedules,
@@ -2509,7 +2582,7 @@ export function useDatabase(currentUser?: User | null) {
       await setDoc(doc(db, "extraHours", id), cleanUndefined(full));
     },
     deleteExtraHour: async (id: string) => {
-      await deleteDoc(doc(db, "extraHours", id));
+      await safeDeleteDoc(doc(db, "extraHours", id));
     },
 
     agentReports,
@@ -2553,7 +2626,7 @@ export function useDatabase(currentUser?: User | null) {
       );
     },
     deletePerformanceQuestion: async (id: string) => {
-      await deleteDoc(doc(db, "performanceQuestions", id));
+      await safeDeleteDoc(doc(db, "performanceQuestions", id));
     },
 
     performanceReviews: filteredPerformanceReviews,
@@ -2580,7 +2653,7 @@ export function useDatabase(currentUser?: User | null) {
       await setDoc(doc(db, "laserQuotes", id), cleanUndefined(updates), { merge: true });
     },
     deleteLaserQuote: async (id: string) => {
-      await deleteDoc(doc(db, "laserQuotes", id));
+      await safeDeleteDoc(doc(db, "laserQuotes", id));
     },
 
     sheetStocks: filteredSheetStocks,
@@ -2620,7 +2693,7 @@ export function useDatabase(currentUser?: User | null) {
       await setDoc(doc(db, "sheetStocks", id), cleanUndefined(updates), { merge: true });
     },
     deleteSheetStock: async (id: string) => {
-      await deleteDoc(doc(db, "sheetStocks", id));
+      await safeDeleteDoc(doc(db, "sheetStocks", id));
     },
     addSheetStockMovement: async (mov: Omit<SheetStockMovement, "id" | "timestamp"> & { id?: string; timestamp?: number }) => {
       const id = mov.id || Date.now().toString();
@@ -2649,7 +2722,7 @@ export function useDatabase(currentUser?: User | null) {
       await setDoc(doc(db, "prensaPendingProductions", id), cleanUndefined(updates), { merge: true });
     },
     removePrensaPendingProduction: async (id: string) => {
-      await deleteDoc(doc(db, "prensaPendingProductions", id));
+      await safeDeleteDoc(doc(db, "prensaPendingProductions", id));
     },
 
     tenants,
