@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+
 const REPO = "rockstaraki2-byte/Apontamento-de-produ-o-";
 const PRODUCTION_BRANCH = "main";
 
@@ -21,7 +24,34 @@ const targetEnv =
   process.env.VERCEL_ENV ||
   "";
 
+function writeDeploymentFingerprint(payload) {
+  const target = path.resolve("public", "deployment-info.json");
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(
+    target,
+    JSON.stringify(
+      {
+        app: "ApontaPRO",
+        ...payload,
+        generatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  );
+}
+
 if (!isVercel || targetEnv !== "production") {
+  writeDeploymentFingerprint({
+    environment: targetEnv || "local",
+    gitRef: process.env.VERCEL_GIT_COMMIT_REF || null,
+    gitSha:
+      process.env.VERCEL_GIT_COMMIT_SHA ||
+      process.env.VITE_VERCEL_GIT_COMMIT_SHA ||
+      null,
+    protected: false,
+  });
   console.log(
     "[deploy-guard] Ambiente não produtivo. Verificação de antiguidade ignorada.",
   );
@@ -111,6 +141,14 @@ console.log(" PROTEÇÃO DE DEPLOY APROVADA");
 console.log("============================================================");
 console.log(`Branch: ${PRODUCTION_BRANCH}`);
 console.log(`Commit: ${latestMainSha}`);
+writeDeploymentFingerprint({
+  environment: targetEnv,
+  gitRef: commitRef || PRODUCTION_BRANCH,
+  gitSha: latestMainSha,
+  protected: true,
+});
+
 console.log("Este build corresponde ao HEAD atual da main.");
+console.log("Fingerprint: public/deployment-info.json");
 console.log("============================================================");
 console.log("");
