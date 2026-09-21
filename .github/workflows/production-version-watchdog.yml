@@ -36,7 +36,7 @@ jobs:
           AGE_SECONDS="$((NOW_TS - HEAD_TS))"
 
           echo "Current main: $HEAD_SHA"
-          echo "Main age: \${AGE_SECONDS}s"
+          echo "Main age: ${AGE_SECONDS}s"
 
           # Give normal Git/Vercel deployments time to finish before attempting self-healing.
           if [ "$AGE_SECONDS" -lt 600 ]; then
@@ -60,7 +60,7 @@ jobs:
             });
           ')"
 
-          echo "Production: \${PROD_SHA:-unknown}"
+          echo "Production: ${PROD_SHA:-unknown}"
 
           if [ -n "$PROD_SHA" ] && [ "$PROD_SHA" = "$HEAD_SHA" ]; then
             echo "Production is already on the current main HEAD."
