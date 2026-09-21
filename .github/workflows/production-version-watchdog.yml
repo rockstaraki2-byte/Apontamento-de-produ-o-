@@ -45,7 +45,7 @@ jobs:
             exit 0
           fi
 
-          RESPONSE="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' "$PROD_URL/api/deployment-info" 2>/dev/null || true)"
+          RESPONSE="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' "$PROD_URL/deployment-info.json" 2>/dev/null || true)"
 
           PROD_SHA="$(printf '%s' "$RESPONSE" | node -e '
             let body="";
