@@ -5,14 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "NODE_OPTIONS=--max-old-space-size=1280 vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "node scripts/guard-production-deploy.mjs && NODE_OPTIONS=--max-old-space-size=1280 vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test:order-import": "tsx --test tests/orderImport.test.ts",
     "pdf-agent": "node tools/order-pdf-agent.mjs",
-    "pdf-agent:setup": "node tools/order-pdf-agent.mjs --setup"
+    "pdf-agent:setup": "node tools/order-pdf-agent.mjs --setup",
+    "deploy:guard": "node scripts/guard-production-deploy.mjs"
   },
   "dependencies": {
     "@babel/parser": "^8.0.4",
