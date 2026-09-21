@@ -425,7 +425,7 @@ export const DEMO_LOGS: Array<DemoRecord<ProductionLog>> = [
     orderId: 9203,
     itemId: 9005,
     operatorId: "demo-solda-1",
-    type: "SOLDA" as ProductionLog["type"],
+    type: "PRODUCAO",
     processName: "Solda de estrutura",
     quantityProcessed: 12,
     timestamp: timestamp("2026-09-20T15:10:00-03:00"),
