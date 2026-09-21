@@ -1,4 +1,30 @@
-import { getServerDb, collection, getDocs } from "../server_firebase.js";
+import { createRequire } from "node:module";
+import { getApps, initializeApp } from "firebase/app";
+import { collection, getDocs, initializeFirestore } from "firebase/firestore";
+
+const require = createRequire(import.meta.url);
+const cfg = require("../firebase-applet-config.json");
+
+const APP_NAME = "tmp-pdf-order-status";
+const app =
+  getApps().find((candidate) => candidate.name === APP_NAME) ||
+  initializeApp(
+    {
+      apiKey: cfg.apiKey,
+      authDomain: cfg.authDomain,
+      projectId: cfg.projectId,
+      storageBucket: cfg.storageBucket,
+      messagingSenderId: cfg.messagingSenderId,
+      appId: cfg.appId,
+    },
+    APP_NAME,
+  );
+
+const db = initializeFirestore(
+  app,
+  { experimentalForceLongPolling: true },
+  cfg.firestoreDatabaseId,
+);
 
 const TARGET_CODES = new Set([
   "67684","67689","67694","67695","67700",
@@ -12,7 +38,6 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const db = getServerDb();
     const snap = await getDocs(collection(db, "orders"));
     const grouped = new Map<string, any[]>();
 
@@ -23,7 +48,6 @@ export default async function handler(req: any, res: any) {
       if (String(data.tenantId || "imperio") !== "imperio") continue;
       const list = grouped.get(code) || [];
       list.push({
-        id: docSnap.id,
         status: data.status || "",
         totalQuantity: Number(data.totalQuantity) || 0,
         invoicedQuantity: Number(data.invoicedQuantity) || 0,
@@ -49,6 +73,7 @@ export default async function handler(req: any, res: any) {
 
     res.status(200).json({ result });
   } catch (error: any) {
+    console.error("[tmp-pdf-order-status]", error);
     res.status(500).json({ error: error?.message || String(error) });
   }
 }
