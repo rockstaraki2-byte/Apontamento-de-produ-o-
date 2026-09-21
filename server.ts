@@ -766,6 +766,22 @@ async function startServer() {
     res.status(200).json({ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() });
   });
 
+  // Public deployment fingerprint used only to verify that production is on the current main HEAD.
+  app.get("/api/deployment-info", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.status(200).json({
+      app: "ApontaPRO",
+      environment: process.env.VERCEL_TARGET_ENV || process.env.VERCEL_ENV || "local",
+      gitRef: process.env.VERCEL_GIT_COMMIT_REF || null,
+      gitSha:
+        process.env.VERCEL_GIT_COMMIT_SHA ||
+        process.env.VITE_VERCEL_GIT_COMMIT_SHA ||
+        null,
+      deploymentId: process.env.VERCEL_DEPLOYMENT_ID || null,
+      generatedAt: new Date().toISOString(),
+    });
+  });
+
   app.post("/api/agent/pedidos-sem-lote", async (req, res) => {
     try {
       console.log("Manual trigger: /api/agent/pedidos-sem-lote");
