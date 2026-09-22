@@ -1,8 +1,30 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
+    // O sistema atual usa autenticação própria na aplicação. Até a migração
+    // para Firebase Auth, o Firestore deve permitir somente registros do
+    // tenant operacional ativo: Império.
+    function isImperio(data) {
+      return data != null && data.tenantId == "imperio";
+    }
+
+    // Metadados necessários para abrir o sistema. Outros tenants não ficam
+    // acessíveis pelo cliente.
+    match /tenants/imperio {
       allow read, write: if true;
+    }
+
+    match /tenants/{tenantId} {
+      allow read, write: if false;
+    }
+
+    // Fail closed: registros sem tenantId também não são expostos.
+    match /{document=**} {
+      allow read: if isImperio(resource.data);
+      allow create: if isImperio(request.resource.data);
+      allow update: if isImperio(resource.data) && isImperio(request.resource.data);
+      allow delete: if isImperio(resource.data);
     }
   }
 }
