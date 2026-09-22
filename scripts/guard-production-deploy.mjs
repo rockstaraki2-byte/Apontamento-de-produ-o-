@@ -98,6 +98,17 @@ const atomEndpoint =
   `https://github.com/${REPO}/commits/${PRODUCTION_BRANCH}.atom?_=${Date.now()}`;
 
 async function readLatestMainSha() {
+  // Em builds de produção vinculados ao Git, a Vercel já fornece o SHA do
+  // commit que foi efetivamente baixado e está sendo compilado. A consulta
+  // adicional ao GitHub não é confiável no sandbox de build da Vercel;
+  // branch + SHA continuam obrigatórios acima para impedir deploy avulso.
+  if (isVercel && commitRef === PRODUCTION_BRANCH && deploymentSha.trim()) {
+    console.warn(
+      `[deploy-guard] Build Git-linked aprovado pelo SHA fornecido pela Vercel (${deploymentSha.trim()}).`,
+    );
+    return deploymentSha.trim();
+  }
+
   const failures = [];
   const attempts = [
     {
