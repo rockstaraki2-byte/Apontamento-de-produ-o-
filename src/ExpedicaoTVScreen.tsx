@@ -16,7 +16,7 @@ import { useDatabase } from "./useDatabase";
 import type { Carga, User } from "./types";
 import { canManageExpedition, canViewExpeditionTV } from "./expeditionAccess";
 
-const FINAL_STATUSES = new Set(["DESPACHADA", "ENTREGUE", "FATURADA"]);
+const FINAL_STATUSES = new Set(["DESPACHADA", "ENTREGUE", "FATURADA", "FATURADA_COMPLETA"]);
 const SHIFT_LABEL: Record<string, string> = { MANHA: "MANHÃ", TARDE: "TARDE" };
 const STATUS_LABEL: Record<string, string> = {
   PLANEJADA: "PLANEJADA",
@@ -30,6 +30,8 @@ const STATUS_LABEL: Record<string, string> = {
   EM_TRANSITO: "EM TRÂNSITO",
   ENTREGUE: "ENTREGUE",
   FATURADA: "FATURADA",
+  FATURADA_PARCIAL: "FATURADA PARCIAL",
+  FATURADA_COMPLETA: "FATURADA COMPLETA",
 };
 
 function dateKey(date: Date) {
