@@ -187,6 +187,12 @@ test("13. quantidade decimal é preservada em escala inteira", () => {
   assert.equal(result.totals?.grossTotalScaled, 30000);
 });
 
+test("13b. preço unitário zero é rejeitado", () => {
+  const result = calculateLineTotals({ quantidade: 1, precoUnitario: 0, descontoPercentual: 0 });
+  assert.equal(result.totals, null);
+  assert.equal(result.errors[0]?.code, "PRECO_INVALIDO");
+});
+
 test("14. valor brasileiro 1.225,50 é interpretado corretamente", () => {
   const result = calculateLineTotals({ quantidade: 1, precoUnitario: "1.225,50", descontoPercentual: 0 });
   assert.equal(result.totals?.unitPriceScaled, 12255000);

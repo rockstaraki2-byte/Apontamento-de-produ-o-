@@ -259,8 +259,8 @@ export function calculateLineTotals(item: OrderItemImportInput): {
   if (quantityScaled === null || quantityScaled <= 0n) {
     errors.push({ code: "QUANTIDADE_INVALIDA", message: "A quantidade deve ser maior que zero.", field: "quantidade" });
   }
-  if (unitPriceScaled === null || unitPriceScaled < 0n) {
-    errors.push({ code: "PRECO_INVALIDO", message: "O preço unitário deve ser um valor válido e não negativo.", field: "precoUnitario" });
+  if (unitPriceScaled === null || unitPriceScaled <= 0n) {
+    errors.push({ code: "PRECO_INVALIDO", message: "O preço unitário deve ser um valor válido maior que zero.", field: "precoUnitario" });
   }
   if (discountPercentScaled === null || discountPercentScaled < 0n || discountPercentScaled > 100n * PERCENT_SCALE) {
     errors.push({ code: "DESCONTO_INVALIDO", message: "O desconto percentual deve ficar entre 0 e 100.", field: "descontoPercentual" });

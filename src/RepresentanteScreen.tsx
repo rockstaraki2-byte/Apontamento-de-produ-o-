@@ -5,6 +5,7 @@ import { useDatabase } from "./useDatabase";
 import { normalizeString } from "./searchUtils";
 import { StatusScreen } from "./StatusScreen";
 import { RepresentativeOpenOrdersReportTab } from "./RepresentativeOpenOrdersReportTab";
+import { parsePositiveUnitPrice } from "./utils/orderPrice";
 
 export function RepresentanteScreen({
   db,
@@ -233,6 +234,11 @@ export function RepresentanteScreen({
 
   const handleAddProductToOrder = () => {
     if (!itemId || !totalQuantity) return;
+    const parsedUnitPrice = parsePositiveUnitPrice(unitPrice);
+    if (parsedUnitPrice === null) {
+      alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
+      return;
+    }
     setLineItems([
       ...lineItems,
       {
@@ -241,7 +247,7 @@ export function RepresentanteScreen({
         size,
         variation,
         totalQuantity: Number(totalQuantity),
-        unitPrice: unitPrice === "" ? undefined : unitPrice,
+        unitPrice: parsedUnitPrice,
       },
     ]);
     setItemId("");
@@ -258,13 +264,14 @@ export function RepresentanteScreen({
   const submitOrder = async (resolvedCustomerName: string) => {
     const itemsToProcess = [...lineItems];
     if (itemId && totalQuantity) {
+      const parsedUnitPrice = parsePositiveUnitPrice(unitPrice);
       itemsToProcess.push({
         itemId: Number(itemId),
         color,
         size,
         variation,
         totalQuantity: Number(totalQuantity),
-        unitPrice: unitPrice === "" ? undefined : Number(unitPrice),
+        unitPrice: parsedUnitPrice ?? undefined,
       });
     }
 
@@ -282,12 +289,22 @@ export function RepresentanteScreen({
       return;
     }
 
+    const invalidPriceItems = itemsToProcess.filter(
+      (it) => parsePositiveUnitPrice(it.unitPrice) === null,
+    );
+    if (invalidPriceItems.length > 0) {
+      alert(
+        "Existem itens sem preço unitário válido. Informe o preço do documento antes de enviar.",
+      );
+      return;
+    }
+
     let successCount = 0;
     // Loop and add order documents with status AGUARDANDO_APROVACAO
     for (const itemInfo of itemsToProcess) {
       const numItemId = Number(itemInfo.itemId);
       const numTotalQuantity = Number(itemInfo.totalQuantity);
-      const itemUnitPrice = typeof itemInfo.unitPrice === "string" ? Number(itemInfo.unitPrice) : itemInfo.unitPrice;
+      const itemUnitPrice = parsePositiveUnitPrice(itemInfo.unitPrice)!;
 
       // Representative orders don't affect stock or allocations until officially approved by PCP/Gerencia!
       await db.addOrder({
@@ -1182,13 +1199,15 @@ export function RepresentanteScreen({
                 <input
                   type="number"
                   step="0.01"
+                  min="0.01"
+                  required
                   value={unitPrice}
                   onChange={(e) =>
                     setUnitPrice(
                       e.target.value ? parseFloat(e.target.value) : "",
                     )
                   }
-                  placeholder="Preço Unit. (Opcional)"
+                  placeholder="Preço Unit. (obrigatório)"
                   className="border border-gray-300 p-2 pl-9 rounded w-full focus:ring-2 focus:ring-blue-500 outline-none"
                 />
                 {selectedItemObj &&

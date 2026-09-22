@@ -93,6 +93,7 @@ import { ShieldAlert } from "lucide-react";
 import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
 import { normalizeString, findCustomerForOrder, getCustomerLocationLabel } from "./searchUtils";
 import { RealTimeFactoryMonitoring } from "./components/RealTimeFactoryMonitoring";
+import { parsePositiveUnitPrice } from "./utils/orderPrice";
 
 // Custom virtualization and metrics components
 import { useVirtualScroll } from "./hooks/useVirtualScroll";
@@ -4705,6 +4706,25 @@ function PedidosScreen({
     setPdfImportProgress(5);
     let addedCount = 0;
 
+    const invalidPriceItems = pdfExtractedOrders.flatMap(
+      (order: any, orderIndex: number) =>
+        (Array.isArray(order?.items) ? order.items : []).flatMap(
+          (item: any, itemIndex: number) => {
+            if (parsePositiveUnitPrice(item?.unitPrice) !== null) return [];
+            const itemLabel =
+              item?.itemCode || item?.itemName || `item ${itemIndex + 1}`;
+            return [`Pedido ${order?.orderCode || orderIndex + 1} — ${itemLabel}`];
+          },
+        ),
+    );
+    if (invalidPriceItems.length > 0) {
+      setPdfImportProgress(0);
+      setPdfImportResult(
+        `Importação bloqueada: o preço unitário precisa ser lido do documento e ser maior que zero. Corrija: ${invalidPriceItems.join(", ")}.`,
+      );
+      return;
+    }
+
     for (let i = 0; i < pdfExtractedOrders.length; i++) {
       const o = pdfExtractedOrders[i];
       const orderCode = o.orderCode || `PDF-${Date.now()}`;
@@ -4769,7 +4789,12 @@ function PedidosScreen({
           if (f) dbItemId = f.id;
         }
 
-        const unitPriceNum = Number(item.unitPrice) || 0;
+        const unitPriceNum = parsePositiveUnitPrice(item.unitPrice);
+        if (unitPriceNum === null) {
+          throw new Error(
+            `Preço unitário ausente ou inválido no pedido ${orderCode}.`,
+          );
+        }
         const quantity = Number(item.quantity) || 1;
 
         await db.addOrder({
@@ -5770,6 +5795,11 @@ function PedidosScreen({
 
   const handleAddProductToOrder = () => {
     if (!itemId || !totalQuantity) return;
+    const parsedUnitPrice = parsePositiveUnitPrice(unitPrice);
+    if (parsedUnitPrice === null) {
+      alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
+      return;
+    }
     setLineItems([
       ...lineItems,
       {
@@ -5778,7 +5808,7 @@ function PedidosScreen({
         size,
         variation,
         totalQuantity: Number(totalQuantity),
-        unitPrice: unitPrice === "" ? undefined : Number(unitPrice),
+        unitPrice: parsedUnitPrice,
         isThirdPartyLaser,
         isUrgent,
         isProgramacao,
@@ -5815,6 +5845,11 @@ function PedidosScreen({
 
   const handleSaveCartItem = () => {
     if (editingCartIndex === null || !itemId || !totalQuantity) return;
+    const parsedUnitPrice = parsePositiveUnitPrice(unitPrice);
+    if (parsedUnitPrice === null) {
+      alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
+      return;
+    }
     const updated = [...lineItems];
     updated[editingCartIndex] = {
       itemId: Number(itemId),
@@ -5822,7 +5857,7 @@ function PedidosScreen({
       size,
       variation,
       totalQuantity: Number(totalQuantity),
-      unitPrice: unitPrice === "" ? undefined : Number(unitPrice),
+      unitPrice: parsedUnitPrice,
       isThirdPartyLaser,
       isUrgent,
       isProgramacao,
@@ -5973,6 +6008,11 @@ function PedidosScreen({
 
   const handleAddProductToEditingGroup = () => {
     if (!editingGroupItemId || !editingGroupTotalQuantity) return;
+    const parsedUnitPrice = parsePositiveUnitPrice(editingGroupUnitPrice);
+    if (parsedUnitPrice === null) {
+      alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
+      return;
+    }
     setEditingGroupLineItems((prev) => [
       ...prev,
       {
@@ -5981,7 +6021,7 @@ function PedidosScreen({
         size: editingGroupSize,
         variation: editingGroupVariation,
         totalQuantity: Number(editingGroupTotalQuantity),
-        unitPrice: editingGroupUnitPrice === "" ? undefined : Number(editingGroupUnitPrice),
+        unitPrice: parsedUnitPrice,
         isThirdPartyLaser: editingGroupIsThirdPartyLaser,
         isUrgent: editingGroupIsUrgent,
         isProgramacao: editingGroupIsProgramacao,
@@ -6018,6 +6058,11 @@ function PedidosScreen({
 
   const handleSaveEditingGroupCartItem = () => {
     if (editingGroupCartIndex === null || !editingGroupItemId || !editingGroupTotalQuantity) return;
+    const parsedUnitPrice = parsePositiveUnitPrice(editingGroupUnitPrice);
+    if (parsedUnitPrice === null) {
+      alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
+      return;
+    }
     const updated = [...editingGroupLineItems];
     updated[editingGroupCartIndex] = {
       ...updated[editingGroupCartIndex],
@@ -6026,7 +6071,7 @@ function PedidosScreen({
       size: editingGroupSize,
       variation: editingGroupVariation,
       totalQuantity: Number(editingGroupTotalQuantity),
-      unitPrice: editingGroupUnitPrice === "" ? undefined : Number(editingGroupUnitPrice),
+      unitPrice: parsedUnitPrice,
       isThirdPartyLaser: editingGroupIsThirdPartyLaser,
       isUrgent: editingGroupIsUrgent,
       isProgramacao: editingGroupIsProgramacao,
@@ -6088,6 +6133,17 @@ function PedidosScreen({
       return;
     }
 
+    if (
+      editingGroupLineItems.some(
+        (li) => parsePositiveUnitPrice(li.unitPrice) === null,
+      )
+    ) {
+      alert(
+        "O pedido possui item sem preço unitário válido. Informe os preços do documento antes de salvar.",
+      );
+      return;
+    }
+
     const newCode = editingGroupOrderCodeInput.trim() || editingOrderGroupCode;
     const newCustomerName = editingGroupCustomerName.trim() || group[0].customerName;
     const newRepresentative = editingGroupRepresentative.trim() || "";
@@ -6109,6 +6165,7 @@ function PedidosScreen({
     const newOrdersToCreate: Omit<Order, "id">[] = [];
 
     for (const li of editingGroupLineItems) {
+      const normalizedUnitPrice = parsePositiveUnitPrice(li.unitPrice)!;
       if (li.id && existingIdsInGroup.has(li.id)) {
         const existing = group.find((g) => g.id === li.id)!;
         ordersToUpdate.push({
@@ -6124,7 +6181,7 @@ function PedidosScreen({
           size: li.size,
           variation: li.variation,
           totalQuantity: li.totalQuantity,
-          unitPrice: li.unitPrice,
+          unitPrice: normalizedUnitPrice,
           isThirdPartyLaser: li.isThirdPartyLaser,
           isUrgent: li.isUrgent,
           isProgramacao: li.isProgramacao,
@@ -6147,7 +6204,7 @@ function PedidosScreen({
           paintedQuantity: 0,
           cutQuantity: 0,
           invoicedQuantity: 0,
-          unitPrice: li.unitPrice,
+          unitPrice: normalizedUnitPrice,
           isThirdPartyLaser: li.isThirdPartyLaser,
           isUrgent: li.isUrgent,
           isProgramacao: li.isProgramacao,
@@ -6300,6 +6357,11 @@ function PedidosScreen({
         !deliveryDate
       )
         return;
+      const parsedUnitPrice = parsePositiveUnitPrice(unitPrice);
+      if (parsedUnitPrice === null) {
+        alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
+        return;
+      }
       const existing = db.orders.find((o) => o.id === editingId);
       if (existing) {
         const finalPaymentCondition =
@@ -6318,7 +6380,7 @@ function PedidosScreen({
             size,
             variation,
             totalQuantity: Number(totalQuantity),
-            unitPrice: unitPrice === "" ? undefined : Number(unitPrice),
+            unitPrice: parsedUnitPrice,
             deliveryDate,
             paymentCondition: finalPaymentCondition,
             paymentTerms,
@@ -6379,6 +6441,16 @@ function PedidosScreen({
         return;
       }
 
+      const invalidPriceItems = itemsToProcess.filter(
+        (it) => parsePositiveUnitPrice(it.unitPrice) === null,
+      );
+      if (invalidPriceItems.length > 0) {
+        alert(
+          "Existem itens sem preço unitário válido. Informe o preço do documento antes de salvar.",
+        );
+        return;
+      }
+
       const finalPaymentCondition =
         paymentType === "outro"
           ? customPaymentCondition
@@ -6389,6 +6461,7 @@ function PedidosScreen({
       for (const itemInfo of itemsToProcess) {
         const numItemId = Number(itemInfo.itemId);
         const numTotalQuantity = Number(itemInfo.totalQuantity);
+        const normalizedUnitPrice = parsePositiveUnitPrice(itemInfo.unitPrice)!;
 
         const stockId = `${numItemId}|${itemInfo.color}|${itemInfo.size}|${itemInfo.variation}|ACABADO`;
         const existingStock = db.stocks.find((s) => s.id === stockId);
@@ -6415,7 +6488,7 @@ function PedidosScreen({
           size: itemInfo.size,
           variation: itemInfo.variation,
           totalQuantity: numTotalQuantity,
-          unitPrice: itemInfo.unitPrice,
+          unitPrice: normalizedUnitPrice,
           paymentCondition: finalPaymentCondition,
           paymentTerms,
           fiscalType,
@@ -8864,40 +8937,7 @@ function PedidosScreen({
                       value={excelData}
                       onChange={(e) => setExcelData(e.target.value)}
                       placeholder="Cole aqui as linhas do Excel..."
-                      className="flex-1 w-full border border-gray-300 rounded p-3 min-h-[200px] text-sm overflow-auto focus:outline-[#107c41] font-mono whitespace-pre"
-                    />
-
-                    {excelImportResult && (
-                      <div
-                        className={`mt-4 p-3 rounded text-sm font-semibold flex flex-col gap-2 ${excelImportResult.includes("Processando") ? "bg-blue-50 text-blue-700" : "bg-green-50 text-green-700 border border-green-200"}`}
-                      >
-                        <div className="flex justify-between items-center">
-                          <span>{excelImportResult}</span>
-                          {excelImportResult.includes("Processando") && (
-                            <span className="text-xs font-bold bg-blue-100 px-2 py-0.5 rounded text-blue-800">
-                              {excelImportProgress}%
-                            </span>
-                          )}
-                        </div>
-                        {excelImportResult.includes("Processando") && (
-                          <div className="w-full bg-blue-200 h-2.5 rounded-full overflow-hidden">
-                            <div
-                              className="bg-blue-600 h-2.5 rounded-full transition-all duration-150 ease-out"
-                              style={{ width: `${excelImportProgress}%` }}
-                            ></div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="flex justify-end gap-2 mt-4 shrink-0">
-                      <button
-                        onClick={() => setIsExcelModalOpen(false)}
-                        className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded font-semibold transition"
-                      >
-                        Cancelar
-                      </button>
-                      <button
+                      className="flex-1 w-full border border-gray-300 rounded p-3 min-h-[200px] text-sm overflow-auto focus:outline-[#107c41] fo�~4o+^����ם              <button
                         onClick={handleImportExcel}
                         disabled={!excelData.trim() || !!excelImportResult}
                         className="bg-[#107c41] hover:bg-[#185c37] text-white font-bold py-2 px-6 rounded shadow transition disabled:opacity-50"

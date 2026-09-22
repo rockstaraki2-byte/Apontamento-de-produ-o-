@@ -16,6 +16,7 @@ import {
   Search,
 } from "lucide-react";
 import { Order, OrderStatus, User, COLOR_MAP } from "../types";
+import { parsePositiveUnitPrice } from "../utils/orderPrice";
 
 interface OrderEditModalProps {
   orderCode: string | null;
@@ -251,7 +252,11 @@ export function OrderEditModal({
 
     const numItemId = Number(selectedItemId);
     const numQty = Number(itemQuantity);
-    const numPrice = itemUnitPrice === "" ? undefined : Number(itemUnitPrice);
+    const numPrice = parsePositiveUnitPrice(itemUnitPrice);
+    if (numPrice === null) {
+      alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
+      return;
+    }
 
     if (cartIndex !== null) {
       // Update existing item in cart
@@ -297,6 +302,16 @@ export function OrderEditModal({
       return;
     }
 
+    const invalidPriceIndex = lineItems.findIndex(
+      (li) => parsePositiveUnitPrice(li.unitPrice) === null,
+    );
+    if (invalidPriceIndex >= 0) {
+      alert(
+        `O item ${invalidPriceIndex + 1} está sem preço unitário válido. Informe o preço do documento antes de salvar.`,
+      );
+      return;
+    }
+
     const newCode = editingOrderCode.trim() || orderCode;
     const finalCustomerName = customerName.trim();
     if (!finalCustomerName) {
@@ -336,6 +351,7 @@ export function OrderEditModal({
       const newOrdersToCreate: Omit<Order, "id">[] = [];
 
       for (const li of lineItems) {
+        const normalizedUnitPrice = parsePositiveUnitPrice(li.unitPrice)!;
         if (li.id && existingIdsInGroup.has(li.id)) {
           const existing = orderGroup.find((g: Order) => g.id === li.id)!;
           ordersToUpdate.push({
@@ -359,7 +375,7 @@ export function OrderEditModal({
             size: li.size || "-",
             variation: li.variation || "-",
             totalQuantity: li.totalQuantity,
-            unitPrice: li.unitPrice,
+            unitPrice: normalizedUnitPrice,
             isThirdPartyLaser: li.isThirdPartyLaser,
           });
         } else {
@@ -389,7 +405,7 @@ export function OrderEditModal({
             paintedQuantity: 0,
             cutQuantity: 0,
             invoicedQuantity: 0,
-            unitPrice: li.unitPrice,
+            unitPrice: normalizedUnitPrice,
             isThirdPartyLaser: li.isThirdPartyLaser,
             isActive: true,
             createdAt: firstOrder?.createdAt || Date.now(),
@@ -1154,9 +1170,11 @@ export function OrderEditModal({
                   <input
                     type="number"
                     step="0.01"
+                    min="0.01"
+                    required
                     value={itemUnitPrice}
                     onChange={(e) => setItemUnitPrice(e.target.value)}
-                    placeholder="R$ Unit."
+                    placeholder="R$ Unit. (obrigatório)"
                     className="border border-slate-300 rounded-lg p-1.5 text-xs font-semibold text-slate-800 bg-white outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
