@@ -1,0 +1,580 @@
+{
+  "executedAt": "2026-09-22T05:10:24.964Z",
+  "tenant": "imperio",
+  "items": {
+    "797": {
+      "itemId": 797,
+      "orders": [
+        {
+          "orderId": "1785850544968",
+          "orderCode": "65764",
+          "customProductName": "",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 1.58,
+          "color": "ZINCADO",
+          "size": "",
+          "variation": "",
+          "customerName": "218 - J P COMERCIO DE FERRAGENS P/ MOVEIS LTDA",
+          "createdAt": 1785850544968
+        },
+        {
+          "orderId": "1785271922729",
+          "orderCode": "65411",
+          "customProductName": "SUPORTE BAIXO",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 1.58,
+          "color": "ZINCADO",
+          "size": "-",
+          "variation": "-",
+          "customerName": "RWR MOVEIS E DECORACOES",
+          "createdAt": 1785271922729
+        },
+        {
+          "orderId": "1784213335069",
+          "orderCode": "64945",
+          "customProductName": "SUPORTE BAIXO",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 1.58,
+          "color": "ZINCADO",
+          "size": "-",
+          "variation": "-",
+          "customerName": "IMPERIO ATACADO E VAREJO",
+          "createdAt": 1784213335069
+        },
+        {
+          "orderId": "1784118106651",
+          "orderCode": "64877",
+          "customProductName": "",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 1.58,
+          "color": "ZINCADO",
+          "size": "-",
+          "variation": "-",
+          "customerName": "276 - LUKA BAIÃO",
+          "createdAt": 1784118106651
+        },
+        {
+          "orderId": "1783974955867",
+          "orderCode": "64685",
+          "customProductName": "SUPORTE BAIXO",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 1.343,
+          "color": "ZINCADO",
+          "size": "-",
+          "variation": "-",
+          "customerName": "IMPERIO ATACADO E VAREJO",
+          "createdAt": 1783974955867
+        }
+      ],
+      "prices": [
+        {
+          "priceId": "797|1785271924062",
+          "unitPrice": 1.58,
+          "customerName": "RWR MOVEIS E DECORACOES",
+          "orderCode": "65411",
+          "createdAt": 1785271924062,
+          "source": "PDF"
+        },
+        {
+          "priceId": "797|1784213335968",
+          "unitPrice": 1.58,
+          "customerName": "IMPERIO ATACADO E VAREJO",
+          "orderCode": "64945",
+          "createdAt": 1784213335968,
+          "source": "PDF"
+        },
+        {
+          "priceId": "797|1784118107474",
+          "unitPrice": 1.58,
+          "customerName": "LUKA BAIÃO",
+          "orderCode": "REP-106651",
+          "createdAt": 1784118107474,
+          "source": "MANUAL"
+        },
+        {
+          "priceId": "797|1783974958802",
+          "unitPrice": 1.343,
+          "customerName": "IMPERIO ATACADO E VAREJO",
+          "orderCode": "64685",
+          "createdAt": 1783974958802,
+          "source": "PDF"
+        },
+        {
+          "priceId": "797|1783974957140",
+          "unitPrice": 1.343,
+          "customerName": "IMPERIO ATACADO E VAREJO",
+          "orderCode": "64685",
+          "createdAt": 1783974957140,
+          "source": "PDF"
+        }
+      ],
+      "logs": [
+        {
+          "logId": "1784570038068.1929",
+          "customProductName": "",
+          "nestedPartName": "",
+          "processName": "",
+          "type": "EMBALAGEM",
+          "timestamp": 1784570038067
+        },
+        {
+          "logId": "1784570038068.97",
+          "customProductName": "",
+          "nestedPartName": "",
+          "processName": "",
+          "type": "EMBALAGEM",
+          "timestamp": 1784570038067
+        }
+      ],
+      "stocks": [
+        {
+          "stockId": "797|ZINCADO|-|-|ACABADO",
+          "color": "ZINCADO",
+          "size": "-",
+          "variation": "-",
+          "stage": "ACABADO",
+          "quantity": 0,
+          "measurementUnit": ""
+        },
+        {
+          "stockId": "797|ZINCADO|||ACABADO",
+          "color": "ZINCADO",
+          "size": "",
+          "variation": "",
+          "stage": "ACABADO",
+          "quantity": 6600,
+          "measurementUnit": ""
+        }
+      ],
+      "movements": [
+        {
+          "movementId": "1785869632806ffngs",
+          "type": "SAIDA",
+          "quantity": 1000,
+          "description": "Saída por faturamento do Pedido 65764 (Cliente: 218 - J P COMERCIO DE FERRAGENS P/ MOVEIS LTDA)",
+          "timestamp": 1785869632807
+        },
+        {
+          "movementId": "1785428383001izc2n",
+          "type": "SAIDA",
+          "quantity": 400,
+          "description": "Saída por faturamento do Pedido 65411 (Cliente: RWR MOVEIS E DECORACOES)",
+          "timestamp": 1785428383001
+        },
+        {
+          "movementId": "1784773951321u1oyk",
+          "type": "SAIDA",
+          "quantity": 200,
+          "description": "Saída por faturamento do Pedido 64685 (Cliente: IMPERIO ATACADO E VAREJO)",
+          "timestamp": 1784773951321
+        },
+        {
+          "movementId": "1784570038068f77lk",
+          "type": "ENTRADA",
+          "quantity": 200,
+          "description": "Embalagem finalizada para o produto - entrada automática no estoque (Operador: Raul)",
+          "timestamp": 1784570038068
+        },
+        {
+          "movementId": "178430442851488wko",
+          "type": "SAIDA",
+          "quantity": 1000,
+          "description": "Saída por faturamento do Pedido 64877 (Cliente: 276 - LUKA BAIÃO)",
+          "timestamp": 1784304428514
+        },
+        {
+          "movementId": "1784304344754et33d",
+          "type": "SAIDA",
+          "quantity": 600,
+          "description": "Saída por faturamento do Pedido 64945 (Cliente: IMPERIO ATACADO E VAREJO)",
+          "timestamp": 1784304344754
+        }
+      ]
+    },
+    "2517": {
+      "itemId": 2517,
+      "orders": [
+        {
+          "orderId": "100204",
+          "orderCode": "62320",
+          "customProductName": "",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": null,
+          "color": "UNICA",
+          "size": "UNICA",
+          "variation": "UNICA",
+          "customerName": "F.A.M. CARVALHO ESTOFADOS LTDA",
+          "createdAt": 1779105600000
+        },
+        {
+          "orderId": "100208",
+          "orderCode": "62321",
+          "customProductName": "",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": null,
+          "color": "UNICA",
+          "size": "UNICA",
+          "variation": "UNICA",
+          "customerName": "F.A.M. CARVALHO ESTOFADOS LTDA",
+          "createdAt": 1779105600000
+        }
+      ],
+      "prices": [],
+      "logs": [],
+      "stocks": [],
+      "movements": [
+        {
+          "movementId": "1785326398504kwues",
+          "type": "SAIDA",
+          "quantity": 500,
+          "description": "Saída por faturamento do Pedido 62320 (Cliente: F.A.M. CARVALHO ESTOFADOS LTDA)",
+          "timestamp": 1785326398504
+        },
+        {
+          "movementId": "1785326295596d3gx7",
+          "type": "SAIDA",
+          "quantity": 500,
+          "description": "Saída por faturamento do Pedido 62321 (Cliente: F.A.M. CARVALHO ESTOFADOS LTDA)",
+          "timestamp": 1785326295596
+        }
+      ]
+    },
+    "3193": {
+      "itemId": 3193,
+      "orders": [
+        {
+          "orderId": "1786734643798",
+          "orderCode": "66350",
+          "customProductName": "",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 50,
+          "color": "-",
+          "size": "-",
+          "variation": "-",
+          "customerName": "SANTRIN COMERCIO LTDA",
+          "createdAt": 1786734643797
+        },
+        {
+          "orderId": "1787242090677",
+          "orderCode": "66513",
+          "customProductName": "",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 50,
+          "color": "PRETO FOSCO",
+          "size": "-",
+          "variation": "-",
+          "customerName": "SANTRIN COMERCIO LTDA",
+          "createdAt": 1786734643797
+        },
+        {
+          "orderId": "1785861050849",
+          "orderCode": "65863",
+          "customProductName": "",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 50,
+          "color": "PRETO FOSCO",
+          "size": "-",
+          "variation": "-",
+          "customerName": "914 - SANTRIN COMERCIO LTDA",
+          "createdAt": 1785861050849
+        },
+        {
+          "orderId": "1780934667475",
+          "orderCode": "63201",
+          "customProductName": "SAPATA GIRATORIA COMUM",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 38.3,
+          "color": "PRETO FOSCO",
+          "size": "-",
+          "variation": "-",
+          "customerName": "WTEK",
+          "createdAt": 1780934667475
+        },
+        {
+          "orderId": "1780934666439",
+          "orderCode": "63200",
+          "customProductName": "SAPATA GIRATORIA COMUM",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 38.3,
+          "color": "PRETO FOSCO",
+          "size": "-",
+          "variation": "-",
+          "customerName": "WTEK",
+          "createdAt": 1780934666439
+        },
+        {
+          "orderId": "1780934665607",
+          "orderCode": "63199",
+          "customProductName": "SAPATA GIRATORIA COMUM",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 38.3,
+          "color": "PRETO FOSCO",
+          "size": "-",
+          "variation": "-",
+          "customerName": "WTEK",
+          "createdAt": 1780934665607
+        }
+      ],
+      "prices": [
+        {
+          "priceId": "3193|1786734644557",
+          "unitPrice": 50,
+          "customerName": "SANTRIN COMERCIO LTDA",
+          "orderCode": "REP-643797",
+          "createdAt": 1786734644556,
+          "source": "MANUAL"
+        },
+        {
+          "priceId": "3193|1785861051554",
+          "unitPrice": 50,
+          "customerName": "SANTRIN COMERCIO LTDA",
+          "orderCode": "REP-050848",
+          "createdAt": 1785861051553,
+          "source": "MANUAL"
+        }
+      ],
+      "logs": [
+        {
+          "logId": "1784132010509.9397",
+          "customProductName": "",
+          "nestedPartName": "",
+          "processName": "Solda",
+          "type": "PRODUCAO",
+          "timestamp": 1784132010461
+        },
+        {
+          "logId": "1784132010509.9807",
+          "customProductName": "",
+          "nestedPartName": "",
+          "processName": "Solda",
+          "type": "PRODUCAO",
+          "timestamp": 1784132010461
+        }
+      ],
+      "stocks": [
+        {
+          "stockId": "3193|PRETO FOSCO|-|-|INTERMEDIARIO",
+          "color": "PRETO FOSCO",
+          "size": "-",
+          "variation": "-",
+          "stage": "INTERMEDIARIO",
+          "quantity": 64,
+          "measurementUnit": ""
+        }
+      ],
+      "movements": [
+        {
+          "movementId": "1787601590491yboqs",
+          "type": "SAIDA",
+          "quantity": 10,
+          "description": "Saída por faturamento do Pedido 66513 (Cliente: SANTRIN COMERCIO LTDA)",
+          "timestamp": 1787601590491
+        },
+        {
+          "movementId": "1786455600517svqs2",
+          "type": "SAIDA",
+          "quantity": 10,
+          "description": "Saída por faturamento total do Pedido 65863 (Cliente: 914 - SANTRIN COMERCIO LTDA)",
+          "timestamp": 1786455600517
+        },
+        {
+          "movementId": "1785326210083qeg6d",
+          "type": "SAIDA",
+          "quantity": 200,
+          "description": "Saída por faturamento do Pedido 63200 (Cliente: WTEK)",
+          "timestamp": 1785326210083
+        },
+        {
+          "movementId": "1785326198074e2f90",
+          "type": "SAIDA",
+          "quantity": 250,
+          "description": "Saída por faturamento do Pedido 63201 (Cliente: WTEK)",
+          "timestamp": 1785326198074
+        },
+        {
+          "movementId": "17846896021581af4o",
+          "type": "ENTRADA",
+          "quantity": 1,
+          "description": "Sobra de Produção Genérica - entrada no estoque intermediário (Operador: Raul)",
+          "timestamp": 1784689602158
+        },
+        {
+          "movementId": "1784132010509ajgtm",
+          "type": "ENTRADA",
+          "quantity": 2,
+          "description": "Sobra de Produção Genérica - entrada no estoque intermediário (Operador: Raul)",
+          "timestamp": 1784132010509
+        },
+        {
+          "movementId": "1784034431445vobwp",
+          "type": "SAIDA",
+          "quantity": 50,
+          "description": "Saída por faturamento do Pedido 63200 (Cliente: WTEK)",
+          "timestamp": 1784034431445
+        },
+        {
+          "movementId": "1784034416536xlmjl",
+          "type": "SAIDA",
+          "quantity": 100,
+          "description": "Saída por faturamento do Pedido 63199 (Cliente: WTEK)",
+          "timestamp": 1784034416536
+        }
+      ]
+    },
+    "3194": {
+      "itemId": 3194,
+      "orders": [
+        {
+          "orderId": "1783974961190",
+          "orderCode": "64685",
+          "customProductName": "SUPORTE ALTO",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 2.193,
+          "color": "ZINCADO",
+          "size": "-",
+          "variation": "-",
+          "customerName": "IMPERIO ATACADO E VAREJO",
+          "createdAt": 1783974961190
+        }
+      ],
+      "prices": [
+        {
+          "priceId": "3194|1783974962120",
+          "unitPrice": 2.193,
+          "customerName": "IMPERIO ATACADO E VAREJO",
+          "orderCode": "64685",
+          "createdAt": 1783974962120,
+          "source": "PDF"
+        }
+      ],
+      "logs": [],
+      "stocks": [
+        {
+          "stockId": "3194|ZINCADO|||ACABADO",
+          "color": "ZINCADO",
+          "size": "",
+          "variation": "",
+          "stage": "ACABADO",
+          "quantity": 2100,
+          "measurementUnit": ""
+        }
+      ],
+      "movements": [
+        {
+          "movementId": "17847739829501hdpv",
+          "type": "SAIDA",
+          "quantity": 100,
+          "description": "Saída por faturamento do Pedido 64685 (Cliente: IMPERIO ATACADO E VAREJO)",
+          "timestamp": 1784773982950
+        }
+      ]
+    },
+    "4599": {
+      "itemId": 4599,
+      "orders": [],
+      "prices": [],
+      "logs": [],
+      "stocks": [
+        {
+          "stockId": "4599|-|-|-|INTERMEDIARIO",
+          "color": "-",
+          "size": "-",
+          "variation": "-",
+          "stage": "INTERMEDIARIO",
+          "quantity": 81,
+          "measurementUnit": ""
+        }
+      ],
+      "movements": [
+        {
+          "movementId": "1785246703592p6l38",
+          "type": "ENTRADA",
+          "quantity": 21,
+          "description": "Entrada por Corte Laser - Nesting Cortes WL_Sparta 3/16 Lote Completo",
+          "timestamp": 1785246703592
+        },
+        {
+          "movementId": "1784124566748tw4wn",
+          "type": "ENTRADA",
+          "quantity": 30,
+          "description": "Entrada por Corte Laser - Nesting Cortes Sparta (3-16).pdf Lote Completo",
+          "timestamp": 1784124566748
+        }
+      ]
+    },
+    "1779765282317": {
+      "itemId": 1779765282317,
+      "orders": [
+        {
+          "orderId": "1782301588747",
+          "orderCode": "64011",
+          "customProductName": "",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 3.5,
+          "color": "CINZA",
+          "size": "-",
+          "variation": "-",
+          "customerName": "127 - DANIEL DE PAIVA",
+          "createdAt": 1782301588747
+        }
+      ],
+      "prices": [],
+      "logs": [],
+      "stocks": [],
+      "movements": [
+        {
+          "movementId": "1783710736381kqjoj",
+          "type": "SAIDA",
+          "quantity": 900,
+          "description": "Saída por faturamento do Pedido 64011 (Cliente: 127 - DANIEL DE PAIVA)",
+          "timestamp": 1783710736381
+        }
+      ]
+    },
+    "1779992443153": {
+      "itemId": 1779992443153,
+      "orders": [
+        {
+          "orderId": "1785961346864",
+          "orderCode": "65851",
+          "customProductName": "",
+          "originalProductCode": "",
+          "unit": "",
+          "unitPrice": 0.56,
+          "color": "",
+          "size": "",
+          "variation": "",
+          "customerName": "856 - IMPERIO ATACADO E VAREJO",
+          "createdAt": 1785961346864
+        }
+      ],
+      "prices": [],
+      "logs": [],
+      "stocks": [],
+      "movements": [
+        {
+          "movementId": "1785961357177il8io",
+          "type": "SAIDA",
+          "quantity": 400,
+          "description": "Saída por faturamento do Pedido 65851 (Cliente: 856 - IMPERIO ATACADO E VAREJO)",
+          "timestamp": 1785961357177
+        }
+      ]
+    }
+  }
+}
