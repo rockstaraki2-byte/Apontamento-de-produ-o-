@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { getApps, initializeApp } from "firebase/app";
-import { collection, getDocs, initializeFirestore } from "firebase/firestore";
+import { collection, getDocs, initializeFirestore, query, where } from "firebase/firestore";
 
 const require = createRequire(import.meta.url);
 const firebaseConfigFile = require("../../../firebase-applet-config.json") as {
@@ -43,7 +43,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const SAO_PAULO_TZ = "America/Sao_Paulo";
 
 function tenantMatches(value: any, tenantId: string): boolean {
-  return String(value?.tenantId || "imperio") === tenantId;
+  return String(value?.tenantId || "").trim() === tenantId;
 }
 
 function getAccessToken(req: any): string {
@@ -191,6 +191,13 @@ export default async function handler(req: any, res: any) {
   }
 
   const tenantId = String(req.query?.tenantId || req.headers?.["x-tenant-id"] || "imperio").trim() || "imperio";
+  if (tenantId !== "imperio") {
+    return res.status(403).json({
+      sucesso: false,
+      erro: "TENANT_NAO_AUTORIZADO",
+      mensagem: "Este relatório está restrito ao tenant imperio.",
+    });
+  }
   const limit = clampLimit(req.query?.limit);
   const includeInternal = String(req.query?.includeInternal || "false").toLowerCase() === "true";
   const dateBase = String(req.query?.date || dateKeyInTimeZone()).trim();
@@ -206,8 +213,8 @@ export default async function handler(req: any, res: any) {
 
   try {
     const [ordersSnap, itemsSnap] = await Promise.all([
-      getDocs(collection(db, "orders")),
-      getDocs(collection(db, "items")),
+      getDocs(query(collection(db, "orders"), where("tenantId", "==", tenantId))),
+      getDocs(query(collection(db, "items"), where("tenantId", "==", tenantId))),
     ]);
 
     const itemById = new Map<number, any>();
