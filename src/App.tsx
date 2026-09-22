@@ -15318,7 +15318,17 @@ export default function App() {
     return machines.some((m) => m.toLowerCase().includes(nameKeyword.toLowerCase()));
   };
 
+  const isImperioPcpOrGerencia =
+    db.activeTenantId === "imperio" &&
+    (currentUser.role === "PCP" || currentUser.role === "GERENCIA");
+
   const isScreenAllowed = (screenKey: string) => {
+    // Regras específicas do tenant Império:
+    // - PCP/Gerência não usam mais as telas de Qualidade e Cadastros PCP.
+    // - PCP/Gerência devem sempre enxergar a Injetora, mesmo se a configuração
+    //   de allowedScreens/machines/sectors ainda estiver incompleta.
+    if (isImperioPcpOrGerencia && (screenKey === "pcp" || screenKey === "qualidade")) return false;
+    if (isImperioPcpOrGerencia && screenKey === "injetora") return true;
     if (screenKey === "embalagem" && isImperioPackagingUser(db.activeTenantId, currentUser)) return true;
     if (currentUser?.id === "raul") return true;
     if (
@@ -15603,7 +15613,8 @@ export default function App() {
             )}
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "GERENCIA" ||
-              currentUser.role === "INJETORA") && (
+              currentUser.role === "INJETORA" ||
+              (db.activeTenantId === "imperio" && currentUser.role === "PCP")) && (
               <Route
                 path="/injetora"
                 element={<InjetoraScreen db={db} currentUser={currentUser} />}
@@ -15697,22 +15708,25 @@ export default function App() {
                 }
               />
             )}
-            <Route
-              path="/qualidade"
-              element={<QualidadeScreen db={db} currentUser={currentUser} />}
-            />
+            {!isImperioPcpOrGerencia && (
+              <Route
+                path="/qualidade"
+                element={<QualidadeScreen db={db} currentUser={currentUser} />}
+              />
+            )}
             <Route
               path="/relatorios-qualidade"
               element={<RelatoriosProducaoEQualidade db={db} />}
             />
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "PCP" ||
-              currentUser.role === "GERENCIA") && (
-              <Route
-                path="/pcp"
-                element={<PCPScreen db={db} currentUser={currentUser} />}
-              />
-            )}
+            {!isImperioPcpOrGerencia &&
+              (currentUser.role === "ADMIN" ||
+                currentUser.role === "PCP" ||
+                currentUser.role === "GERENCIA") && (
+                <Route
+                  path="/pcp"
+                  element={<PCPScreen db={db} currentUser={currentUser} />}
+                />
+              )}
             {(currentUser.role === "ADMIN" || currentUser.role === "PCP") && (
               <Route
                 path="/gestao-clientes"
@@ -16023,8 +16037,12 @@ export default function App() {
 
           {isScreenAllowed("injetora") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
-            currentUser.role === "INJETORA") && 
-            (currentUser.id === "raul" || hasMachine("injetora") || hasSector("injetora")) && (
+            currentUser.role === "INJETORA" ||
+            (db.activeTenantId === "imperio" && currentUser.role === "PCP")) &&
+            (currentUser.id === "raul" ||
+              isImperioPcpOrGerencia ||
+              hasMachine("injetora") ||
+              hasSector("injetora")) && (
             <NavLink
               to="/injetora"
               icon={<Scissors size={24} />}
@@ -16073,7 +16091,7 @@ export default function App() {
             />
           )}
 
-          {isScreenAllowed("pcp") && (currentUser.role === "ADMIN" ||
+          {isScreenAllowed("pcp") && !isImperioPcpOrGerencia && (currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA") && (
             <NavLink
@@ -16083,7 +16101,7 @@ export default function App() {
             />
           )}
 
-          {isScreenAllowed("qualidade") && (currentUser.role === "ADMIN" ||
+          {isScreenAllowed("qualidade") && !isImperioPcpOrGerencia && (currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "ENCARREGADO" ||
