@@ -781,6 +781,20 @@ export interface Carga {
     | "DESPACHADA"
     | "EM_TRANSITO"
     | "ENTREGUE"
+    | "FATURADA"
+    | "FATURADA_PARCIAL"
+    | "FATURADA_COMPLETA";
+  preBillingStatus?:
+    | "PLANEJADA"
+    | "ABERTA"
+    | "FECHADA"
+    | "LIBERADA"
+    | "EM_SEPARACAO"
+    | "PRONTA"
+    | "CARREGADA"
+    | "DESPACHADA"
+    | "EM_TRANSITO"
+    | "ENTREGUE"
     | "FATURADA";
   createdAt: number;
   closedAt?: number;
