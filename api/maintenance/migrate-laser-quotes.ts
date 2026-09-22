@@ -7,6 +7,8 @@ import {
   type App as FirebaseAdminApp,
 } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { getApps as getClientApps, initializeApp as initializeClientApp } from "firebase/app";
+import { collection as clientCollection, getDocs as clientGetDocs, initializeFirestore as initializeClientFirestore, query as clientQuery, where as clientWhere } from "firebase/firestore";
 
 const require = createRequire(import.meta.url);
 const firebaseConfigFile = require("../../firebase-applet-config.json") as {
@@ -64,6 +66,26 @@ function isAuthorized(req: any): boolean {
     .update(providedToken)
     .digest("hex");
   return secureEquals(providedHash, MIGRATION_TOKEN_SHA256);
+}
+
+let clientDb: any;
+
+function getClientDb() {
+  if (clientDb) return clientDb;
+  const clientApp = getClientApps().find((app) => app.name === APP_NAME) ||
+    initializeClientApp(
+      {
+        apiKey: process.env.FIREBASE_API_KEY || undefined,
+        authDomain: process.env.FIREBASE_AUTH_DOMAIN || undefined,
+        projectId: firebaseConfigFile.projectId,
+        appId: process.env.FIREBASE_APP_ID || undefined,
+      },
+      APP_NAME,
+    );
+  clientDb = firebaseConfigFile.firestoreDatabaseId
+    ? initializeClientFirestore(clientApp, {}, firebaseConfigFile.firestoreDatabaseId)
+    : initializeClientFirestore(clientApp, {});
+  return clientDb;
 }
 
 function getAdminDb(): Firestore {
@@ -224,6 +246,28 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    if (body.mode === "probe_client") {
+      const clientSnapshot = await clientGetDocs(
+        clientQuery(
+          clientCollection(getClientDb(), "laserQuotes"),
+          clientWhere("tenantId", "==", "imperio"),
+        ),
+      );
+      return res.status(200).json({
+        sucesso: true,
+        modo: "consulta_cliente_tenant_imperio",
+        totalDocumentos: clientSnapshot.size,
+        amostra: clientSnapshot.docs.slice(0, 10).map((doc) => {
+          const data = doc.data() as Record<string, any>;
+          return {
+            id: doc.id,
+            quoteCode: data.quoteCode || null,
+            tenantId: data.tenantId || null,
+          };
+        }),
+      });
+    }
+
     const db = getAdminDb();
     const [quotesSnapshot, customersSnapshot] = await Promise.all([
       db.collection("laserQuotes").get(),
