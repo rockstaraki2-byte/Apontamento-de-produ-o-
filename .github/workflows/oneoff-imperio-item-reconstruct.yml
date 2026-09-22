@@ -1,0 +1,143 @@
+name: One-off reconstruct 3 Imperio item records
+
+on:
+  push:
+    paths:
+      - ".github/workflows/oneoff-imperio-item-reconstruct.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm ci
+
+      - name: Reconstruct only records with strong Imperio history
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { initializeApp } from "firebase/app";
+          import {
+            initializeFirestore,
+            doc,
+            getDoc,
+            setDoc,
+          } from "firebase/firestore";
+
+          const config = JSON.parse(fs.readFileSync("firebase-applet-config.json", "utf8"));
+          const app = initializeApp({
+            apiKey: config.apiKey,
+            authDomain: config.authDomain,
+            projectId: config.projectId,
+            storageBucket: config.storageBucket,
+            messagingSenderId: config.messagingSenderId,
+            appId: config.appId,
+          });
+          const db = initializeFirestore(
+            app,
+            { experimentalForceLongPolling: true },
+            config.firestoreDatabaseId,
+          );
+
+          // Names are supported by multiple Imperio order records collected in
+          // diagnostics/imperio-missing-item-evidence.json. Code and catalog
+          // base price are intentionally NOT invented.
+          const candidates = [
+            { id: 797, name: "SUPORTE BAIXO" },
+            { id: 3193, name: "SAPATA GIRATORIA COMUM" },
+            { id: 3194, name: "SUPORTE ALTO" },
+          ];
+
+          const created = [];
+          const existing = [];
+          const failures = [];
+
+          for (const candidate of candidates) {
+            try {
+              const ref = doc(db, "items", String(candidate.id));
+              const before = await getDoc(ref);
+
+              if (before.exists()) {
+                existing.push({
+                  itemId: candidate.id,
+                  name: before.data()?.name || "",
+                  tenantId: before.data()?.tenantId || null,
+                });
+                continue;
+              }
+
+              await setDoc(ref, {
+                id: candidate.id,
+                tenantId: "imperio",
+                code: "",
+                name: candidate.name,
+                type: "PRODUTO",
+                notes:
+                  "Cadastro reconstruído a partir de histórico consistente de pedidos da Império. Código e preço-base não foram inferidos.",
+                recoveredAt: Date.now(),
+                recoveredReason: "missing_item_document_rebuilt_from_verified_imperio_order_history",
+              });
+
+              const after = await getDoc(ref);
+              if (
+                after.exists() &&
+                after.data()?.tenantId === "imperio" &&
+                after.data()?.name === candidate.name
+              ) {
+                created.push({
+                  itemId: candidate.id,
+                  name: candidate.name,
+                });
+              } else {
+                failures.push({
+                  itemId: candidate.id,
+                  reason: "verification_failed",
+                });
+              }
+            } catch (error) {
+              failures.push({
+                itemId: candidate.id,
+                reason: error?.message || String(error),
+                code: error?.code || null,
+              });
+            }
+          }
+
+          const result = {
+            executedAt: new Date().toISOString(),
+            tenant: "imperio",
+            created,
+            existing,
+            failures,
+            success: failures.length === 0,
+          };
+
+          fs.writeFileSync(
+            "diagnostics/imperio-item-reconstruct-result.json",
+            JSON.stringify(result, null, 2) + "\n",
+          );
+          console.log(JSON.stringify(result, null, 2));
+
+          if (failures.length) process.exitCode = 1;
+          NODE
+
+      - name: Commit reconstruction result
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
+          git add diagnostics/imperio-item-reconstruct-result.json
+          git commit -m "diagnostics: record reconstructed Imperio products" || exit 0
+          git push origin HEAD:main
