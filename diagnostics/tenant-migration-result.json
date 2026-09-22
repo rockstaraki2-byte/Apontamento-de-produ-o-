@@ -1,6 +1,6 @@
 {
   "success": false,
   "mode": "preview",
-  "error": "Unexpected token '\\', \"\\\" is not valid JSON",
+  "error": "Credencial administrativa não configurada. Defina FIREBASE_SERVICE_ACCOUNT_KEY no GitHub Actions.",
   "code": null
 }
