@@ -1,0 +1,23 @@
+{
+  "executedAt": "2026-09-22T05:13:28.285Z",
+  "tenant": "imperio",
+  "collectionStats": {
+    "prensaPendingProductions": 1,
+    "activeTasks": 0,
+    "productionSteps": 88,
+    "qualityInspections": 0,
+    "coilCuttingPlans": 86,
+    "nestTasks": 443,
+    "productionBatches": 154,
+    "cargas": 31
+  },
+  "matches": {
+    "797": [],
+    "2517": [],
+    "3193": [],
+    "3194": [],
+    "4599": [],
+    "1779765282317": [],
+    "1779992443153": []
+  }
+}
