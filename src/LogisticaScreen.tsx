@@ -1700,12 +1700,18 @@ export function LogisticaScreen({
                                 ? "bg-emerald-100 text-emerald-800 border-emerald-300"
                                 : carga.status === "EM_TRANSITO"
                                 ? "bg-blue-100 text-blue-800 border-blue-300"
-                                : carga.status === "FATURADA"
+                                : carga.status === "FATURADA" || carga.status === "FATURADA_COMPLETA"
                                 ? "bg-purple-100 text-purple-800 border-purple-300"
+                                : carga.status === "FATURADA_PARCIAL"
+                                ? "bg-orange-100 text-orange-800 border-orange-300"
                                 : "bg-amber-100 text-amber-800 border-amber-300"
                             }`}
                           >
-                            {carga.status}
+                            {carga.status === "FATURADA_PARCIAL"
+                              ? "FATURADA PARCIAL"
+                              : carga.status === "FATURADA_COMPLETA"
+                                ? "FATURADA COMPLETA"
+                                : carga.status}
                           </span>
                         </div>
 
@@ -1759,6 +1765,14 @@ export function LogisticaScreen({
 
                         <button
                           onClick={async () => {
+                            if (
+                              carga.status === "FATURADA" ||
+                              carga.status === "FATURADA_PARCIAL" ||
+                              carga.status === "FATURADA_COMPLETA"
+                            ) {
+                              alert("Cargas faturadas não podem ser excluídas por este painel.");
+                              return;
+                            }
                             if (confirm(`Deseja realmente excluir a carga "${carga.name}"?`)) {
                               await db.deleteCarga(carga.id);
                             }
@@ -1936,6 +1950,8 @@ export function LogisticaScreen({
                     <option value="EM_TRANSITO">EM TRÂNSITO</option>
                     <option value="ENTREGUE">ENTREGUE</option>
                     <option value="FATURADA">FATURADA</option>
+                    <option value="FATURADA_PARCIAL">FATURADA PARCIAL</option>
+                    <option value="FATURADA_COMPLETA">FATURADA COMPLETA</option>
                   </select>
                 </div>
                 <div>
