@@ -1,0 +1,97 @@
+name: One-off inspect packaging label mismatch
+
+on:
+  push:
+    paths:
+      - ".github/workflows/oneoff-inspect-packaging-label-mismatch.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - name: Inspect logs
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { initializeApp } from "firebase/app";
+          import { initializeFirestore, collection, getDocs, query, where } from "firebase/firestore";
+
+          const config = JSON.parse(fs.readFileSync("firebase-applet-config.json", "utf8"));
+          const app = initializeApp({
+            apiKey: config.apiKey,
+            authDomain: config.authDomain,
+            projectId: config.projectId,
+            storageBucket: config.storageBucket,
+            messagingSenderId: config.messagingSenderId,
+            appId: config.appId,
+          });
+          const db = initializeFirestore(app,{ experimentalForceLongPolling: true },config.firestoreDatabaseId);
+          const TENANT="imperio";
+
+          const [logsSnap,ordersSnap,itemsSnap] = await Promise.all([
+            getDocs(query(collection(db,"logs"),where("tenantId","==",TENANT))),
+            getDocs(query(collection(db,"orders"),where("tenantId","==",TENANT))),
+            getDocs(query(collection(db,"items"),where("tenantId","==",TENANT))),
+          ]);
+
+          const orders=new Map(ordersSnap.docs.map(d=>[String(d.id),{id:d.id,...d.data()}]));
+          const items=new Map(itemsSnap.docs.map(d=>[Number(d.data().id ?? d.id),{id:Number(d.data().id ?? d.id),...d.data()}]));
+
+          const start = new Date("2026-09-21T00:00:00-03:00").getTime();
+          const end = new Date("2026-09-22T00:00:00-03:00").getTime();
+          const rows=[];
+
+          for (const d of logsSnap.docs) {
+            const l={id:d.id,...d.data()};
+            if (String(l.type||"").toUpperCase()!=="EMBALAGEM") continue;
+            const ts=Number(l.timestamp)||0;
+            if (ts<start || ts>=end) continue;
+
+            const linkedOrder = l.orderId != null ? orders.get(String(l.orderId)) : null;
+            const itemByLog = l.itemId != null ? items.get(Number(l.itemId)) : null;
+            const itemByOrder = linkedOrder ? items.get(Number(linkedOrder.itemId)) : null;
+            const itemByOrderIdFallback = l.orderId != null ? items.get(Number(l.orderId)) : null;
+
+            rows.push({
+              logId:d.id,
+              timestamp:ts,
+              localTime:new Date(ts).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
+              operatorId:l.operatorId||"",
+              orderId:l.orderId ?? null,
+              itemId:l.itemId ?? null,
+              customProductName:l.customProductName||"",
+              nestedPartName:l.nestedPartName||"",
+              thirdPartyName:l.thirdPartyName||"",
+              quantityPacked:l.quantityPacked ?? null,
+              linkedOrder: linkedOrder ? {id:linkedOrder.id,orderCode:linkedOrder.orderCode||"",itemId:linkedOrder.itemId,customerName:linkedOrder.customerName||""}:null,
+              itemByLog:itemByLog ? {id:itemByLog.id,code:itemByLog.code||"",name:itemByLog.name||""}:null,
+              itemByOrder:itemByOrder ? {id:itemByOrder.id,code:itemByOrder.code||"",name:itemByOrder.name||""}:null,
+              itemByOrderIdFallback:itemByOrderIdFallback ? {id:itemByOrderIdFallback.id,code:itemByOrderIdFallback.code||"",name:itemByOrderIdFallback.name||""}:null,
+              packagesConfig:l.packagesConfig||null
+            });
+          }
+          rows.sort((a,b)=>b.timestamp-a.timestamp);
+          const result={count:rows.length,rows};
+          fs.mkdirSync("diagnostics",{recursive:true});
+          fs.writeFileSync("diagnostics/packaging-label-mismatch-2026-09-21.json",JSON.stringify(result,null,2)+"\n");
+          console.log(JSON.stringify(result,null,2));
+          NODE
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
+          git add diagnostics/packaging-label-mismatch-2026-09-21.json
+          git commit -m "diagnostics: inspect packaging label mismatch" || exit 0
+          git push origin HEAD:main
