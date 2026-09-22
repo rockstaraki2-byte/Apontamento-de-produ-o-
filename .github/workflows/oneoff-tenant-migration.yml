@@ -2,7 +2,7 @@ name: One-off legacy tenant migration
 on:
   push:
     paths:
-      - ".github/workflows/oneoff-tenant-migration.yml"
+      - ".github/workflows/tenant-migration-never-trigger.yml"
 
 permissions:
   contents: write
