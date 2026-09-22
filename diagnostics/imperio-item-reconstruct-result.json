@@ -1,0 +1,21 @@
+{
+  "executedAt": "2026-09-22T05:16:15.864Z",
+  "tenant": "imperio",
+  "created": [
+    {
+      "itemId": 797,
+      "name": "SUPORTE BAIXO"
+    },
+    {
+      "itemId": 3193,
+      "name": "SAPATA GIRATORIA COMUM"
+    },
+    {
+      "itemId": 3194,
+      "name": "SUPORTE ALTO"
+    }
+  ],
+  "existing": [],
+  "failures": [],
+  "success": true
+}
