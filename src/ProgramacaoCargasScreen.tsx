@@ -257,6 +257,50 @@ export function ProgramacaoCargasScreen({
     return "-";
   };
 
+  const getOrderCustomerCityState = (order: Order) => {
+    const customer = findCustomerForOrder(order, db.customers) as any;
+    const city = String(
+      customer?.city ||
+      customer?.cidade ||
+      customer?.municipio ||
+      customer?.municipality ||
+      (order as any).customerCity ||
+      (order as any).city ||
+      (order as any).cidade ||
+      "",
+    ).trim();
+    const state = String(
+      customer?.state ||
+      customer?.uf ||
+      customer?.estado ||
+      (order as any).customerState ||
+      (order as any).state ||
+      (order as any).uf ||
+      (order as any).estado ||
+      "",
+    ).trim().toUpperCase();
+
+    if (city && state) return city + " - " + state;
+    if (city) return city;
+
+    const address = String(
+      customer?.address ||
+      (order as any).customerAddress ||
+      (order as any).deliveryAddress ||
+      (order as any).address ||
+      "",
+    ).trim();
+    const cityStateMatch = address.match(
+      /(?:^|,)\s*([^,]+?)\s*[-–/]\s*([A-Za-z]{2})\s*$/,
+    );
+
+    if (cityStateMatch?.[1]) {
+      return cityStateMatch[1].trim() + " - " + cityStateMatch[2].toUpperCase();
+    }
+
+    return "-";
+  };
+
   const customerRouteIds = (order: Order) => {
     const customer = findCustomerForOrder(order, db.customers);
     if (!customer) return [] as string[];
@@ -838,12 +882,15 @@ export function ProgramacaoCargasScreen({
 
       const invoiced = Math.max(0, Number(order?.invoicedQuantity || 0));
       const ordered = Math.max(0, Number(order?.totalQuantity || 0));
+      const pending = Math.max(0, ordered - invoiced);
       const baseColumns = [
         order?.customerName || "Pedido não encontrado",
+        order ? getOrderCustomerCityState(order) : "-",
         loteLabel,
         order?.orderCode || String(id),
         order?.customProductName || item?.name || "Item",
-        `${invoiced} / ${ordered}`,
+        `${ordered} / ${invoiced}`,
+        String(pending),
         String(packedForLoad(carga, id)),
       ];
 
@@ -869,19 +916,23 @@ export function ProgramacaoCargasScreen({
         includeRevenue
           ? [
               "Cliente",
+              "Cidade/Estado",
               "Lote",
               "Pedido",
               "Produto",
-              "Qtd. faturado / pedido",
+              "Qtd. pedido / faturado",
+              "Pendente",
               "Qtd. embalado",
               "Valor total",
             ]
           : [
               "Cliente",
+              "Cidade/Estado",
               "Lote",
               "Pedido",
               "Produto",
-              "Qtd. faturado / pedido",
+              "Qtd. pedido / faturado",
+              "Pendente",
               "Qtd. embalado",
             ],
       ],
@@ -891,13 +942,15 @@ export function ProgramacaoCargasScreen({
       headStyles: { fillColor: [15, 23, 42] },
       columnStyles: includeRevenue
         ? {
-            4: { halign: "right" },
             5: { halign: "right" },
             6: { halign: "right", fontStyle: "bold" },
+            7: { halign: "right" },
+            8: { halign: "right", fontStyle: "bold" },
           }
         : {
-            4: { halign: "right" },
             5: { halign: "right" },
+            6: { halign: "right", fontStyle: "bold" },
+            7: { halign: "right" },
           },
     });
 
