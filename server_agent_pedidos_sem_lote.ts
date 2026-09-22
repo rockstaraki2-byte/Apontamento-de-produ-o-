@@ -117,7 +117,9 @@ export async function runAgentPedidosSemLote(ai: GoogleGenAI) {
   let batchesSnap;
   try {
     console.log(`[Agent-Pipeline] Fetching collection "${colBatches}" from Project: "${projectId}", Database: "${databaseId}"`);
-    batchesSnap = await getDocs(collection(db, colBatches));
+    batchesSnap = await getDocs(
+      query(collection(db, colBatches), where("tenantId", "==", "imperio")),
+    );
     console.log(`[Agent-Pipeline] Successful fetch of "${colBatches}". Loaded ${batchesSnap.size} documents.`);
   } catch (err: any) {
     console.error(`[Agent-Pipeline] Error reading collection "${colBatches}":`, err);
@@ -137,7 +139,9 @@ export async function runAgentPedidosSemLote(ai: GoogleGenAI) {
   let ordersSnap;
   try {
     console.log(`[Agent-Pipeline] Fetching collection "${colOrders}" from Project: "${projectId}", Database: "${databaseId}"`);
-    ordersSnap = await getDocs(query(collection(db, colOrders), where("isActive", "==", true)));
+    ordersSnap = await getDocs(
+      query(collection(db, colOrders), where("tenantId", "==", "imperio")),
+    );
     console.log(`[Agent-Pipeline] Successful fetch of "${colOrders}". Loaded ${ordersSnap.size} active documents.`);
   } catch (err: any) {
     console.error(`[Agent-Pipeline] Error reading collection "${colOrders}":`, err);
@@ -168,7 +172,8 @@ export async function runAgentPedidosSemLote(ai: GoogleGenAI) {
         summary: "Todos os pedidos ativos já estão associados a um lote de produção.",
         totalPedidosSemLote: 0,
         severity: "low",
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        tenantId: "imperio",
       }, { merge: true });
     } catch (writeErr: any) {
       console.error("[Agent-Pipeline] Erro ao salvar relatório vazio:", writeErr);
@@ -195,7 +200,9 @@ export async function runAgentPedidosSemLote(ai: GoogleGenAI) {
   let itemsSnap;
   try {
     console.log(`[Agent-Pipeline] Fetching collection "${colItems}" from Project: "${projectId}", Database: "${databaseId}"`);
-    itemsSnap = await getDocs(collection(db, colItems));
+    itemsSnap = await getDocs(
+      query(collection(db, colItems), where("tenantId", "==", "imperio")),
+    );
     console.log(`[Agent-Pipeline] Successful fetch of "${colItems}". Loaded ${itemsSnap.size} documents.`);
   } catch (err: any) {
     console.error(`[Agent-Pipeline] Error reading collection "${colItems}":`, err);
@@ -370,7 +377,8 @@ Sua tarefa:
     await setDoc(doc(db, "agentReports", "monitor-pedidos-sem-lote"), {
       agentId: "monitor-pedidos-sem-lote",
       ...aiResult,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      tenantId: "imperio",
     }, { merge: true });
 
     const hasCritical = aiResult.pedidosPriorizados?.some((p: any) => p.urgencia === "critica");
@@ -387,7 +395,8 @@ Sua tarefa:
         severity: aiResult.severity,
         actionUrl: "/fila-producao",
         read: false,
-        createdAt: notifId
+        createdAt: notifId,
+        tenantId: "imperio",
       }, { merge: true });
     }
   } catch (saveErr: any) {
