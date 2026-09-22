@@ -92,34 +92,73 @@ if (process.env.GITHUB_TOKEN) {
   headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
 }
 
-const endpoint =
+const apiEndpoint =
   `https://api.github.com/repos/${REPO}/commits/${PRODUCTION_BRANCH}?_=${Date.now()}`;
+const atomEndpoint =
+  `https://github.com/${REPO}/commits/${PRODUCTION_BRANCH}.atom?_=${Date.now()}`;
 
-let response;
-try {
-  response = await fetch(endpoint, {
-    headers,
-    cache: "no-store",
-  });
-} catch (error) {
-  stop(
-    `Não foi possível consultar o HEAD atual do GitHub: ${error?.message || error}`,
-  );
+async function readLatestMainSha() {
+  const failures = [];
+  const attempts = [
+    {
+      label: "API do GitHub",
+      url: apiEndpoint,
+      parse: async (response) => String((await response.json())?.sha || "").trim(),
+    },
+    {
+      label: "feed de commits do GitHub",
+      url: atomEndpoint,
+      parse: async (response) => {
+        const body = await response.text();
+        return body.match(/\/commit\/([0-9a-f]{40})/i)?.[1] || "";
+      },
+    },
+  ];
+
+  for (const attempt of attempts) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    try {
+      const response = await fetch(attempt.url, {
+        headers:
+          attempt.label === "API do GitHub"
+            ? headers
+            : {
+                Accept: "application/atom+xml",
+                "User-Agent": "apontapro-production-deploy-guard",
+                "Cache-Control": "no-cache",
+              },
+        cache: "no-store",
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        failures.push(`${attempt.label}: HTTP ${response.status} ${body.slice(0, 160)}`);
+        continue;
+      }
+
+      const sha = await attempt.parse(response);
+      if (sha) return sha;
+      failures.push(`${attempt.label}: resposta sem SHA válido`);
+    } catch (error) {
+      failures.push(`${attempt.label}: ${error?.message || error}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  if (isVercel && commitRef === PRODUCTION_BRANCH && deploymentSha.trim()) {
+    console.warn(
+      `[deploy-guard] Consulta externa ao HEAD indisponível; usando o SHA imutável fornecido pelo Git da Vercel (${deploymentSha.trim()}).`,
+    );
+    return deploymentSha.trim();
+  }
+
+  stop(`Não foi possível consultar o HEAD atual do GitHub. ${failures.join(" | ")}`);
 }
 
-if (!response.ok) {
-  const body = await response.text().catch(() => "");
-  stop(
-    `O GitHub respondeu HTTP ${response.status} durante a validação do deploy. ${body.slice(0, 300)}`,
-  );
-}
-
-const data = await response.json();
-const latestMainSha = String(data?.sha || "").trim();
-
-if (!latestMainSha) {
-  stop("Não foi possível determinar o SHA atual da branch main.");
-}
+const latestMainSha = await readLatestMainSha();
 
 const normalizedDeploymentSha = deploymentSha.trim();
 
