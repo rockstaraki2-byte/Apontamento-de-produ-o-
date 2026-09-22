@@ -92,7 +92,18 @@ export async function getDocs(queryOrCol: any) {
 }
 
 export async function setDoc(docRef: any, data: any, options?: any) {
-  return await clientSetDoc(docRef, data, options || {});
+  const collectionName = docRef?.parent?.id;
+  const tenantScoped =
+    collectionName &&
+    collectionName !== "tenants" &&
+    collectionName !== "users";
+
+  const safeData =
+    tenantScoped && !data?.tenantId
+      ? { tenantId: "imperio", ...data }
+      : data;
+
+  return await clientSetDoc(docRef, safeData, options || {});
 }
 
 export function query(collectionRef: any, ...constraints: any[]) {
