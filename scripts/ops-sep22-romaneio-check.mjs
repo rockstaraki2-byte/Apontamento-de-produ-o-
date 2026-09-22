@@ -37,5 +37,9 @@ const customers=customersSnap.docs.map(d=>({docId:d.id,...d.data()}))
 const similarDecimal=ordersSnap.docs.map(d=>({docId:d.id,...d.data()}))
  .filter(r=>String(r.tenantId||"imperio")==="imperio"&&Number(r.itemId)===166)
  .slice(-20);
-console.log("OPS_RESULT="+JSON.stringify({orders:grouped,products,customers,similarDecimal}));
+const targetOrderIds=new Set(rows.filter(r=>["67219","65025","67597","67752","66728","67713","67751"].includes(r.orderCode)).map(r=>Number(r.id)));
+const billingLogs=logsSnap.docs.map(d=>({docId:d.id,...d.data()})).filter(l=>targetOrderIds.has(Number(l.orderId))&&String(l.type||"")==="FATURAMENTO").map(l=>({docId:l.docId,orderId:l.orderId,quantityInvoiced:l.quantityInvoiced,timestamp:l.timestamp,importOrigin:l.importOrigin||"",billingDocumentKey:l.billingDocumentKey||"",invoiceNumber:l.invoiceNumber||""}));
+const billingKeys=keysSnap.docs.map(d=>({docId:d.id,...d.data()})).filter(k=>["67219","65025","67597","67752","66728","67713","67751"].includes(String(k.orderCode||""))).map(k=>({docId:k.docId,orderCode:k.orderCode,itemId:k.itemId,quantityInvoiced:k.quantityInvoiced,documentKey:k.documentKey,sourceKey:k.sourceKey,processedAt:k.processedAt,auditId:k.auditId}));
+const audits=auditsSnap.docs.map(d=>({docId:d.id,...d.data()})).filter(a=>Array.isArray(a.applied)&&a.applied.some(x=>["67219","65025","67597","67752","66728","67713","67751"].includes(String(x.orderCode||"")))).map(a=>({docId:a.docId,documentKey:a.documentKey,origem:a.origem,timestamp:a.timestamp,applied:a.applied}));
+console.log("OPS_RESULT="+JSON.stringify({orders:grouped,products,customers,similarDecimal,billingLogs,billingKeys,audits}));
 process.exit(0);
