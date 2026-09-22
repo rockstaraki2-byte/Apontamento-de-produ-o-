@@ -1,6 +1,5 @@
 import { processOrderImport } from "./_lib/orderImportCore.js";
 import { FirestoreOrderImportRepository } from "./_lib/orderImportFirestore.js";
-import { getServerDb, doc, writeBatch } from "../server_firebase.js";
 
 const tenantId = "imperio";
 
@@ -92,28 +91,6 @@ const orders: any[] = [
   }
 ];
 
-async function repairExactPdfCents(orderCode: string, orderIds: number[]) {
-  if (orderCode !== "67755" || orderIds.length !== 1) return null;
-
-  const db = getServerDb();
-  const batch = writeBatch(db);
-  const orderRef = doc(db, "orders", String(orderIds[0]));
-  batch.update(orderRef, {
-    grossTotalScaled: 14424000,
-    discountAmount: 129.82,
-    discountAmountScaled: 1298200,
-    netTotalScaled: 13125800,
-  });
-  await batch.commit();
-
-  return {
-    orderId: orderIds[0],
-    grossTotal: 1442.40,
-    discountAmount: 129.82,
-    netTotal: 1312.58,
-  };
-}
-
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
     return res.status(405).json({ sucesso: false, erro: "METHOD_NOT_ALLOWED" });
@@ -145,19 +122,11 @@ export default async function handler(req: any, res: any) {
     }
 
     const imported = await processOrderImport(repo, payload as any, ctx, false);
-    const ir = imported.resultados?.[0];
-    let exactRepair = null;
-
-    if (ir?.status === "CRIADO" && Array.isArray(ir?.pedidoIds)) {
-      exactRepair = await repairExactPdfCents(order.codigoPedido, ir.pedidoIds.map(Number).filter(Number.isFinite));
-    }
-
     results.push({
       codigoPedido: order.codigoPedido,
       fase: "IMPORTACAO",
       validation: vr,
-      imported: ir,
-      exactRepair,
+      imported: imported.resultados?.[0],
     });
   }
 
