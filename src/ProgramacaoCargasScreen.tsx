@@ -35,8 +35,18 @@ import { PdfPreviewModal } from "./PdfPreviewModal";
 const DAY_NAMES = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const SHIFT_LABEL: Record<string, string> = { MANHA: "Manhã", TARDE: "Tarde" };
 const MONTH_ABBR = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-const FINAL_STATUSES = new Set(["DESPACHADA", "ENTREGUE", "FATURADA"]);
-const EDITABLE_STATUSES = new Set(["PLANEJADA", "ABERTA"]);
+const FINAL_STATUSES = new Set(["DESPACHADA", "ENTREGUE", "FATURADA", "FATURADA_COMPLETA"]);
+const EDITABLE_STATUSES = new Set(["PLANEJADA", "ABERTA", "FECHADA", "LIBERADA", "EM_SEPARACAO"]);
+const PREVIOUS_STATUS: Partial<Record<Carga["status"], Carga["status"]>> = {
+  FECHADA: "ABERTA",
+  LIBERADA: "FECHADA",
+  EM_SEPARACAO: "LIBERADA",
+  PRONTA: "EM_SEPARACAO",
+  CARREGADA: "PRONTA",
+  DESPACHADA: "CARREGADA",
+  EM_TRANSITO: "DESPACHADA",
+  ENTREGUE: "EM_TRANSITO",
+};
 
 const STATUS_LABEL: Record<string, string> = {
   PLANEJADA: "Planejada",
@@ -50,6 +60,8 @@ const STATUS_LABEL: Record<string, string> = {
   EM_TRANSITO: "Em trânsito",
   ENTREGUE: "Entregue",
   FATURADA: "Faturada",
+  FATURADA_PARCIAL: "Faturada parcial",
+  FATURADA_COMPLETA: "Faturada completa",
 };
 
 const STATUS_CLASS: Record<string, string> = {
@@ -64,6 +76,8 @@ const STATUS_CLASS: Record<string, string> = {
   EM_TRANSITO: "bg-cyan-50 text-cyan-800 border-cyan-200",
   ENTREGUE: "bg-emerald-100 text-emerald-900 border-emerald-300",
   FATURADA: "bg-purple-50 text-purple-800 border-purple-200",
+  FATURADA_PARCIAL: "bg-orange-50 text-orange-800 border-orange-200",
+  FATURADA_COMPLETA: "bg-purple-100 text-purple-900 border-purple-300",
 };
 
 function dateKey(date: Date) {
@@ -533,7 +547,7 @@ export function ProgramacaoCargasScreen({
 
   const openEditLoad = (carga: Carga) => {
     if (!EDITABLE_STATUSES.has(carga.status)) {
-      alert("Reabra a carga antes de editar rota, data ou informações do planejamento.");
+      alert("Esta carga pode ser editada enquanto não estiver faturada.");
       return;
     }
 
@@ -548,7 +562,7 @@ export function ProgramacaoCargasScreen({
 
   const deleteLoad = async (carga: Carga) => {
     if (!EDITABLE_STATUSES.has(carga.status)) {
-      alert("Somente cargas planejadas ou abertas podem ser excluídas. Reabra a carga primeiro, se necessário.");
+      alert("Esta carga pode ser excluída enquanto não estiver faturada.");
       return;
     }
 
@@ -567,7 +581,7 @@ export function ProgramacaoCargasScreen({
 
   const includeOrdersInLoad = (carga: Carga) => {
     if (!EDITABLE_STATUSES.has(carga.status)) {
-      alert("Reabra a carga antes de incluir novos pedidos.");
+      alert("Esta carga não está disponível para inclusão de novos pedidos.");
       return;
     }
 
@@ -720,7 +734,7 @@ export function ProgramacaoCargasScreen({
 
   const removeAllocation = async (carga: Carga, orderId: number) => {
     if (!EDITABLE_STATUSES.has(carga.status)) {
-      alert("Somente cargas abertas podem ter itens removidos.");
+      alert("Esta carga não está disponível para remover itens.");
       return;
     }
     if (!confirm("Remover este item da carga?")) return;
@@ -749,11 +763,16 @@ export function ProgramacaoCargasScreen({
   };
 
   const changeStatus = async (carga: Carga, status: Carga["status"]) => {
+    const rollbackRequested = PREVIOUS_STATUS[carga.status] === status;
     let reason: string | undefined;
-    if (status === "ABERTA" && carga.status === "FECHADA") {
-      reason = prompt("Informe o motivo da reabertura da carga:") || "";
+
+    if (rollbackRequested) {
+      reason =
+        prompt(
+          `Informe o motivo para voltar a carga de ${STATUS_LABEL[carga.status] || carga.status} para ${STATUS_LABEL[status] || status}:`,
+        ) || "";
       if (!reason.trim()) {
-        alert("O motivo é obrigatório para reabrir uma carga fechada.");
+        alert("O motivo é obrigatório para voltar uma etapa da carga.");
         return;
       }
     }
@@ -1276,6 +1295,7 @@ export function ProgramacaoCargasScreen({
                 {EDITABLE_STATUSES.has(selectedCarga.status) && <><button onClick={() => openEditLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-blue-300 bg-blue-50 text-blue-800 text-xs font-bold flex items-center gap-1"><Pencil size={13} /> Editar carga</button><button onClick={() => includeOrdersInLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-bold flex items-center gap-1"><Plus size={13} /> Incluir pedidos</button><button onClick={() => deleteLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-rose-300 bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1"><Trash2 size={13} /> Excluir carga</button></>}
                 {(selectedCarga.status === "PLANEJADA" || selectedCarga.status === "ABERTA") && <button onClick={() => changeStatus(selectedCarga, "FECHADA")} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold">Fechar carga</button>}
                 {selectedCarga.status === "FECHADA" && <><button onClick={() => changeStatus(selectedCarga, "ABERTA")} className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 text-xs font-bold">Reabrir</button><button onClick={() => changeStatus(selectedCarga, "LIBERADA")} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold">Liberar</button></>}
+                {selectedCarga.status !== "FECHADA" && PREVIOUS_STATUS[selectedCarga.status] && <button onClick={() => changeStatus(selectedCarga, PREVIOUS_STATUS[selectedCarga.status] as Carga["status"])} className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 text-xs font-bold">Voltar para {STATUS_LABEL[PREVIOUS_STATUS[selectedCarga.status] || ""] || "etapa anterior"}</button>}
                 {selectedCarga.status === "LIBERADA" && <button onClick={() => changeStatus(selectedCarga, "EM_SEPARACAO")} className="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-bold">Iniciar separação</button>}
                 {selectedCarga.status === "EM_SEPARACAO" && loadMetrics(selectedCarga).percent >= 100 && <button onClick={() => changeStatus(selectedCarga, "PRONTA")} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold">Marcar pronta</button>}
                 {selectedCarga.status === "PRONTA" && <button onClick={() => changeStatus(selectedCarga, "CARREGADA")} className="px-3 py-1.5 rounded-lg bg-teal-600 text-white text-xs font-bold">Marcar carregada</button>}
