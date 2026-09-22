@@ -1,0 +1,85 @@
+{
+  "executedAt": "2026-09-22T18:24:17.543Z",
+  "repair67755": {
+    "sucesso": true,
+    "orderId": 7332252763915173,
+    "grossTotalScaled": 14424000,
+    "discountAmount": 129.82,
+    "discountAmountScaled": 1298200,
+    "netTotalScaled": 13125800
+  },
+  "order67774": {
+    "fase": "IMPORTACAO",
+    "validation": {
+      "codigoPedido": "67774",
+      "status": "VALIDO",
+      "quantidadeItens": 2,
+      "avisos": [
+        "Representante Kesse Representante foi associado pelo cadastro padrão do sistema."
+      ],
+      "erros": [],
+      "clienteAssociado": {
+        "id": 8,
+        "nome": "LE ESTOFADOS LTDA"
+      },
+      "representanteAssociado": {
+        "id": "representante_kesse",
+        "nome": "Kesse Representante"
+      },
+      "formaPagamento": "Boleto Bancário",
+      "prazos": [
+        30,
+        45
+      ],
+      "fiscalType": "COM_NF",
+      "dataLimite": "2026-09-25",
+      "possuiRET": false,
+      "totais": {
+        "grossTotalScaled": 37700000,
+        "discountAmountScaled": 0,
+        "netTotalScaled": 37700000
+      }
+    },
+    "imported": {
+      "codigoPedido": "67774",
+      "status": "CRIADO",
+      "pedidoId": 7332255594144584,
+      "pedidoIds": [
+        7332255594144584,
+        7332255594144585
+      ],
+      "quantidadeItens": 2,
+      "avisos": [
+        "Representante Kesse Representante foi associado pelo cadastro padrão do sistema."
+      ],
+      "erros": [],
+      "clienteAssociado": {
+        "id": 8,
+        "nome": "LE ESTOFADOS LTDA"
+      },
+      "representanteAssociado": {
+        "id": "representante_kesse",
+        "nome": "Kesse Representante"
+      },
+      "formaPagamento": "Boleto Bancário",
+      "prazos": [
+        30,
+        45
+      ],
+      "fiscalType": "COM_NF",
+      "dataLimite": "2026-09-25",
+      "possuiRET": false,
+      "totais": {
+        "grossTotalScaled": 37700000,
+        "discountAmountScaled": 0,
+        "netTotalScaled": 37700000
+      }
+    }
+  },
+  "order67756": {
+    "cpf": "05438356696",
+    "quantidadeCorrespondencias": 0,
+    "correspondencias": [],
+    "requerCadastroCliente1866": true
+  }
+}
