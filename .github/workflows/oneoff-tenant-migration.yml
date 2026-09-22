@@ -10,6 +10,7 @@ permissions:
 jobs:
   migrate:
     runs-on: ubuntu-latest
+    environment: Preview
     env:
       MIGRATION_MODE: preview
       FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
