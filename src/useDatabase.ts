@@ -248,6 +248,11 @@ const INITIAL_USERS: User[] = [
   { id: "banho_quimico", name: "Banho Químico", role: "BANHO_QUIMICO", tenantId: "imperio" },
 ];
 
+const BILLING_LOAD_STATUSES = new Set<Carga["status"]>([
+  "FATURADA_PARCIAL",
+  "FATURADA_COMPLETA",
+]);
+
 export function useDatabase(currentUser?: User | null) {
   const isDemoMode = isDemoModeEnabled();
 
@@ -2215,6 +2220,140 @@ export function useDatabase(currentUser?: User | null) {
   const filteredProductionAgendas = useMemo(() => productionAgendas.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [productionAgendas, matchesTenant]);
   const filteredCoilCuttingPlans = useMemo(() => coilCuttingPlans.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [coilCuttingPlans, matchesTenant]);
   const filteredCargas = useMemo(() => cargas.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [cargas, matchesTenant]);
+
+  useEffect(() => {
+    if (isDemoMode || !currentUser || activeTenantId === "global") return;
+
+    const loads = filteredCargas;
+    if (loads.length === 0) return;
+
+    const loadsHaveOrders = loads.some((carga) => (carga.orderIds || []).length > 0);
+    if (loadsHaveOrders && filteredOrders.length === 0) return;
+
+    const ordersById = new Map(filteredOrders.map((order) => [order.id, order]));
+    const loadsByOrder = new Map<number, Carga[]>();
+
+    loads.forEach((carga) => {
+      (carga.orderIds || []).forEach((orderId) => {
+        const related = loadsByOrder.get(orderId) || [];
+        if (!related.some((item) => item.id === carga.id)) related.push(carga);
+        loadsByOrder.set(orderId, related);
+      });
+    });
+
+    const billingByLoad = new Map<string, { allocated: number; invoiced: number }>();
+    const loadDate = (carga: Carga) => carga.scheduledDate || carga.departureDate || "";
+    const shiftRank = (shift?: Carga["shift"]) =>
+      shift === "MANHA" ? 0 : shift === "TARDE" ? 1 : 2;
+
+    loadsByOrder.forEach((relatedLoads, orderId) => {
+      const order = ordersById.get(orderId);
+      let remainingInvoiced = Math.max(0, Number(order?.invoicedQuantity || 0));
+
+      [...relatedLoads]
+        .sort(
+          (a, b) =>
+            loadDate(a).localeCompare(loadDate(b)) ||
+            shiftRank(a.shift) - shiftRank(b.shift) ||
+            a.createdAt - b.createdAt,
+        )
+        .forEach((carga) => {
+          const allocated = Math.max(0, Number(carga.orderQuantities?.[orderId] || 0));
+          const invoiced = Math.min(allocated, remainingInvoiced);
+          remainingInvoiced = Math.max(0, remainingInvoiced - allocated);
+          const previous = billingByLoad.get(carga.id) || { allocated: 0, invoiced: 0 };
+          billingByLoad.set(carga.id, {
+            allocated: previous.allocated + allocated,
+            invoiced: previous.invoiced + invoiced,
+          });
+        });
+    });
+
+    let cancelled = false;
+    const syncBillingStatuses = async () => {
+      for (const carga of loads) {
+        if (cancelled) return;
+
+        const metrics = billingByLoad.get(carga.id) || { allocated: 0, invoiced: 0 };
+        const isBillingStatus = BILLING_LOAD_STATUSES.has(carga.status);
+        if (metrics.allocated <= 0 && !isBillingStatus) continue;
+
+        let desiredStatus: Carga["status"] | null = null;
+        if (metrics.allocated > 0) {
+          desiredStatus =
+            metrics.invoiced >= metrics.allocated
+              ? "FATURADA_COMPLETA"
+              : metrics.invoiced > 0
+                ? "FATURADA_PARCIAL"
+                : null;
+        }
+
+        let nextStatus: Carga["status"] = carga.status;
+        let nextPreBillingStatus = carga.preBillingStatus;
+
+        if (desiredStatus) {
+          if (!isBillingStatus) {
+            nextPreBillingStatus =
+              carga.preBillingStatus ||
+              (carga.status === "FATURADA" ? "DESPACHADA" : carga.status);
+          }
+          nextStatus = desiredStatus;
+        } else if (isBillingStatus) {
+          nextStatus = carga.preBillingStatus || "ABERTA";
+          nextPreBillingStatus = undefined;
+        }
+
+        const statusChanged = nextStatus !== carga.status;
+        const preBillingChanged = nextPreBillingStatus !== carga.preBillingStatus;
+        if (!statusChanged && !preBillingChanged) continue;
+
+        const updated: Carga = {
+          ...carga,
+          status: nextStatus,
+        };
+
+        if (statusChanged) {
+          const statusLabel =
+            nextStatus === "FATURADA_COMPLETA"
+              ? "FATURADA COMPLETA"
+              : nextStatus === "FATURADA_PARCIAL"
+                ? "FATURADA PARCIAL"
+                : nextStatus;
+          updated.auditTrail = [
+            ...(carga.auditTrail || []),
+            {
+              timestamp: Date.now(),
+              userId: "system",
+              userName: "Sistema",
+              action: `Status atualizado automaticamente para ${statusLabel}`,
+              reason: "Quantidade faturada acumulada dos pedidos vinculados à carga",
+            },
+          ];
+        }
+
+        if (desiredStatus) {
+          updated.preBillingStatus = nextPreBillingStatus;
+        } else {
+          delete updated.preBillingStatus;
+        }
+
+        await setDoc(doc(db, "cargas", carga.id), cleanUndefined(updated), { merge: true });
+        if (!cancelled) {
+          setCargas((previous) =>
+            previous.map((item) => (item.id === carga.id ? updated : item)),
+          );
+        }
+      }
+    };
+
+    void syncBillingStatuses().catch((error) => {
+      console.warn("Não foi possível sincronizar os status de faturamento das cargas.", error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenantId, currentUser, filteredCargas, filteredOrders, isDemoMode]);
   const filteredExpeditionRoutes = useMemo(() => expeditionRoutes.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [expeditionRoutes, matchesTenant]);
   const filteredExtraHours = useMemo(() => extraHours.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [extraHours, matchesTenant]);
   const filteredPriceHistories = useMemo(() => priceHistories.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [priceHistories, matchesTenant]);
