@@ -85,7 +85,11 @@ async function cleanupInvalidFcmTokens(tokensToRemove: string[]) {
     const batch = writeBatch(db);
     let count = 0;
     for (const token of tokensToRemove) {
-      const snap = await getDocs(query(collection(db, "users"), where("fcmToken", "==", token)));
+      const snap = await getDocs(query(
+        collection(db, "users"),
+        where("tenantId", "==", "imperio"),
+        where("fcmToken", "==", token),
+      ));
       snap.forEach((doc: any) => {
         batch.update(doc.ref, { fcmToken: null });
         count++;
@@ -158,8 +162,12 @@ function startDeadlineCron() {
 async function checkDeadlines() {
   try {
     const db = getServerDb();
-    const ordersSnap = await getDocs(collection(db, "orders"));
-    const usersSnap = await getDocs(collection(db, "users"));
+    const ordersSnap = await getDocs(
+      query(collection(db, "orders"), where("tenantId", "==", "imperio")),
+    );
+    const usersSnap = await getDocs(
+      query(collection(db, "users"), where("tenantId", "==", "imperio")),
+    );
 
     const targetRoles = ["ADMIN", "PCP"];
     const targetTokens: string[] = [];
@@ -836,7 +844,9 @@ async function startServer() {
       // Carregar produtos (items) para bater nome/código e obter o itemId
       const allDbItems: any[] = [];
       try {
-        const itemsSnap = await getDocs(collection(db, "items"));
+        const itemsSnap = await getDocs(
+          query(collection(db, "items"), where("tenantId", "==", "imperio")),
+        );
         itemsSnap.forEach((doc) => {
           allDbItems.push({ id: Number(doc.id) || doc.id, ...doc.data() });
         });
@@ -908,6 +918,7 @@ async function startServer() {
 
           const orderDocument = {
             id: numericId,
+            tenantId: "imperio",
             orderCode: orderCode,
             customerName: customerName,
             representativeName: representativeName,
