@@ -1,0 +1,41 @@
+name: One-off legacy tenant migration
+on:
+  push:
+    paths:
+      - ".github/workflows/oneoff-tenant-migration.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    env:
+      MIGRATION_MODE: preview
+      FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run migration preview
+        shell: bash
+        run: |
+          mkdir -p diagnostics
+          set +e
+          node tools/tenant-migration.mjs > diagnostics/tenant-migration-result.json 2>&1
+          status=$?
+          sed -n '1,240p' diagnostics/tenant-migration-result.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add diagnostics/tenant-migration-result.json
+          git commit -m "diagnostics: record legacy tenant migration preview" || true
+          git push origin HEAD:main || true
+          exit $status
