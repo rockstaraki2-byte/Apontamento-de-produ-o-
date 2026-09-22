@@ -859,7 +859,17 @@ export function useDatabase(currentUser?: User | null) {
     const unsubItems = onSnapshot(
       scopedCollection("items"),
       (snap) => {
-        const list = snap.docs.map((d) => d.data() as Item);
+        const list = snap.docs
+          .map((d) => {
+            const data = d.data() as Item;
+            const rawId = (data as any).id ?? d.id;
+            const numericId = Number(rawId);
+            return {
+              ...data,
+              id: Number.isFinite(numericId) ? numericId : (data as any).id,
+            } as Item;
+          })
+          .filter((item) => Number.isFinite(Number(item.id)));
         setItems(list);
         saveCache(`items:${activeTenantId}`, list);
       },

@@ -734,18 +734,13 @@ export function HistoricoProducaoScreen({
       const id = Date.now() + randomSeed;
 
       let finalProductName = manualCustomProduct;
-      let orderId = undefined;
+      let selectedItemId: number | undefined = undefined;
 
       if (manualItemId) {
-        const item = db.items.find((i) => i.id === Number(manualItemId));
+        const item = db.items.find((i) => Number(i.id) === Number(manualItemId));
         if (item) {
           finalProductName = item.name;
-          const relatedOrder = db.orders.find(
-            (o) => o.itemId === item.id && o.status !== "FATURADO",
-          );
-          if (relatedOrder) {
-            orderId = relatedOrder.id;
-          }
+          selectedItemId = Number(item.id);
         }
       }
 
@@ -763,8 +758,10 @@ export function HistoricoProducaoScreen({
         customProductName: finalProductName,
       };
 
-      if (orderId) {
-        newLog.orderId = orderId;
+      // Manual/avulso entries stay independent from sales orders.
+      // They can be linked explicitly later if that is actually intended.
+      if (selectedItemId) {
+        newLog.itemId = selectedItemId;
       }
 
       if (manualType === "EMBALAGEM") {
@@ -825,15 +822,7 @@ export function HistoricoProducaoScreen({
         };
 
         if (r.matchedItem) {
-          const relatedOrder = db.orders.find(
-            (o) =>
-              o.itemId === r.matchedItem!.id &&
-              o.status !== "FATURADO" &&
-              o.status !== "EMBALADO",
-          );
-          if (relatedOrder) {
-            baseLog.orderId = relatedOrder.id;
-          }
+          baseLog.itemId = Number(r.matchedItem.id);
           baseLog.customProductName = r.matchedItem.name;
         } else {
           baseLog.customProductName = r.itemName;

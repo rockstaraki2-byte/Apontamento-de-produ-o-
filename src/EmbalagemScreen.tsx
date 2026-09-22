@@ -457,11 +457,18 @@ export function EmbalagemScreen({
     const endTime = Date.now();
     const durationMillis = endTime - activePack.startTime;
 
-    if (activePack.itemId === 0) {
+    const isManualPack =
+      activePack.itemId === 0 ||
+      (!!activePack.customProductName &&
+        activePack.taskId === 0 &&
+        !!activePack.thirdPartyName);
+
+    if (isManualPack) {
       db.addLogs([
         {
           id: Date.now(),
-          operatorId: currentUser.id,
+          operatorId: activePack.operatorId || currentUser.id,
+          ...(activePack.itemId > 0 ? { itemId: activePack.itemId } : {}),
           quantityPacked: qtyToAllocate,
           type: "EMBALAGEM",
           timestamp: endTime,

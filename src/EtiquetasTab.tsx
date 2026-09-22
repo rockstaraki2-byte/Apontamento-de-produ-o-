@@ -94,7 +94,19 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
   const isImperio = db.activeTenantId === "imperio";
   const [visibleLogCount, setVisibleLogCount] = useState(100);
   const ordersById = useMemo(() => new Map(db.orders.map((order) => [String(order.id), order])), [db.orders]);
-  const itemsById = useMemo(() => new Map(db.items.map((item) => [item.id, item])), [db.items]);
+  const itemsById = useMemo(() => {
+    const map = new Map<number, Item>();
+    db.items.forEach((item) => {
+      const itemId = Number(item.id);
+      if (Number.isFinite(itemId)) map.set(itemId, item);
+    });
+    return map;
+  }, [db.items]);
+  const findItemById = (value: unknown) => {
+    if (value === null || value === undefined || value === "") return undefined;
+    const itemId = Number(value);
+    return Number.isFinite(itemId) ? itemsById.get(itemId) : undefined;
+  };
   const customersByName = useMemo(() => {
     const result = new Map<string, (typeof db.customers)[0]>();
     if (isImperio) (db.customers || []).forEach((customer) => {
@@ -471,10 +483,14 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
       // Match search term (Product name, Code, Order Code, Customer, Operator)
       if (effectiveSearch.trim()) {
         const s = effectiveSearch.toLowerCase();
-        const itemObj = log.orderId ? (isImperio ? ordersById.get(String(log.orderId)) : db.orders.find((o) => o.id === log.orderId)) : null;
-        const realItem = isImperio ? itemsById.get(itemObj?.itemId ?? log.itemId ?? log.orderId) : (itemObj ? db.items.find((i) => i.id === itemObj.itemId) : db.items.find((i) => i.id === log.orderId));
+        const itemObj = log.orderId ? (isImperio ? ordersById.get(String(log.orderId)) : db.orders.find((o) => String(o.id) === String(log.orderId))) : null;
+        const explicitItemId = itemObj?.itemId ?? log.itemId;
+        let realItem = findItemById(explicitItemId);
+        if (!realItem && !itemObj && log.orderId !== null && log.orderId !== undefined) {
+          realItem = findItemById(log.orderId);
+        }
         
-        const itemName = realItem?.name?.toLowerCase() || log.customProductName?.toLowerCase() || "";
+        const itemName = log.customProductName?.toLowerCase() || realItem?.name?.toLowerCase() || "";
         const itemCode = realItem?.code?.toLowerCase() || "";
         const orderCode = itemObj?.orderCode?.toLowerCase() || "";
         const customerName = itemObj?.customerName?.toLowerCase() || "";
@@ -519,9 +535,13 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
   // Resolve standard descriptive details for a log
   const getLogDetails = (log: ProductionLog) => {
     let linkedOrder = log.orderId ? (isImperio ? ordersById.get(String(log.orderId)) : db.orders.find((o) => String(o.id) === String(log.orderId))) : null;
-    let item = isImperio ? (itemsById.get(linkedOrder?.itemId ?? log.itemId) || itemsById.get(log.orderId)) : linkedOrder
-      ? db.items.find((i) => i.id === linkedOrder.itemId) 
-      : db.items.find((i) => i.id === log.itemId || i.id === log.orderId); // fallback
+    let item = findItemById(linkedOrder?.itemId ?? log.itemId);
+
+    // A few old logs used orderId as an item id. Keep that compatibility only
+    // when no real order was found and the id actually exists.
+    if (!item && !linkedOrder && log.orderId !== null && log.orderId !== undefined) {
+      item = findItemById(log.orderId);
+    }
 
     let orderCode = linkedOrder?.orderCode || "S/P";
     let customer = linkedOrder?.customerName || log.thirdPartyName || "-";
@@ -568,12 +588,25 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
       isFaturadoParcial = !isFaturado && assignedOrders.some(o => o.status === "FATURADO" || o.status === "FATURADO_PARCIAL" || (o.invoicedQuantity || 0) > 0);
     }
 
-    const name = item?.name || log.nestedPartName || log.customProductName || "Item Avulso/Manual";
-    const code = item?.code || "S/C";
+    const customName = String(log.customProductName || "").trim();
+    const catalogName = String(item?.name || "").trim();
+    const customDiffersFromCatalog =
+      !!customName &&
+      (!catalogName ||
+        customName.localeCompare(catalogName, "pt-BR", { sensitivity: "base" }) !== 0);
+    const preferManualIdentity =
+      log.type !== "CORTE_LASER" &&
+      customDiffersFromCatalog &&
+      (log.itemId === null || log.itemId === undefined);
+
+    const name = preferManualIdentity
+      ? customName
+      : item?.name || log.nestedPartName || customName || "Item Avulso/Manual";
+    const code = preferManualIdentity ? "S/C" : item?.code || "S/C";
     const quantity = log.quantityPacked || log.quantityProcessed || log.quantityPainted || log.quantityCut || 0;
     const color = linkedOrder?.color || log.paintedColor || "-";
     const variation = linkedOrder?.variation || "-";
-    const imageUrl = item?.imageUrl || null;
+    const imageUrl = preferManualIdentity ? null : item?.imageUrl || null;
 
     let sectorLabel = "PRODUÇÃO";
     if (log.type === "EMBALAGEM" || log.operatorId === "embalagem") sectorLabel = "EMBALAGEM";
