@@ -715,7 +715,8 @@ export function UploadNestScreen({
     setManualNestParts((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    try {
     if (isAdding) {
       const tasksToSave: any[] = [];
 
@@ -746,7 +747,7 @@ export function UploadNestScreen({
         return;
       }
 
-      db.addNestTasks(tasksToSave);
+      await db.addNestTasks(tasksToSave);
       alert(
         `${tasksToSave.length} peça(s) adicionadas ao nesting manual com sucesso!`,
       );
@@ -765,9 +766,16 @@ export function UploadNestScreen({
         isActive: Number(formCutQty) < Number(formTotalQty),
         thumbnailBase64: selectedPieceImage || undefined,
       };
-      db.updateNestTasks([updated]);
+      await db.updateNestTasks([updated]);
     }
     closeForm();
+    } catch (error: any) {
+      console.error("[Nests] Erro ao salvar nesting:", error);
+      alert(
+        "Não foi possível salvar o nesting. Nenhum sucesso foi confirmado. " +
+          (error?.message || String(error)),
+      );
+    }
   };
 
   const closeForm = () => {
@@ -796,6 +804,7 @@ export function UploadNestScreen({
     }
     return (
       currentUser.role === "PROJETISTA" ||
+      currentUser.id === "projetista_marcos" ||
       currentUser.role === "CORTE_LASER" ||
       currentUser.role === "GERENCIA" ||
       currentUser.role === "ADMIN"

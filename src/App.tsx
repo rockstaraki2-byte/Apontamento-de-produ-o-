@@ -15322,6 +15322,12 @@ export default function App() {
     db.activeTenantId === "imperio" &&
     (currentUser.role === "PCP" || currentUser.role === "GERENCIA");
 
+  const isImperioMarcosProjetista =
+    db.activeTenantId === "imperio" &&
+    (currentUser.id === "projetista_marcos" ||
+      currentUser.role === "PROJETISTA" ||
+      currentUser.name.toLowerCase().includes("marcos"));
+
   const isScreenAllowed = (screenKey: string) => {
     // Regras específicas do tenant Império:
     // - PCP/Gerência não usam mais as telas de Qualidade e Cadastros PCP.
@@ -15329,6 +15335,7 @@ export default function App() {
     //   de allowedScreens/machines/sectors ainda estiver incompleta.
     if (isImperioPcpOrGerencia && (screenKey === "pcp" || screenKey === "qualidade")) return false;
     if (isImperioPcpOrGerencia && screenKey === "injetora") return true;
+    if (isImperioMarcosProjetista && screenKey === "nests") return true;
     if (screenKey === "embalagem" && isImperioPackagingUser(db.activeTenantId, currentUser)) return true;
     if (currentUser?.id === "raul") return true;
     if (
@@ -15947,10 +15954,14 @@ export default function App() {
 
           {isScreenAllowed("nests") && (currentUser.role === "ADMIN" ||
             currentUser.role === "PROJETISTA" ||
+            currentUser.id === "projetista_marcos" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
-            currentUser.role === "CORTE_LASER") && 
-            (currentUser.id === "raul" || hasSector("laser") || hasSector("corte")) && (
+            currentUser.role === "CORTE_LASER") &&
+            (currentUser.id === "raul" ||
+              isImperioMarcosProjetista ||
+              hasSector("laser") ||
+              hasSector("corte")) && (
             <NavLink to="/nests" icon={<Scissors size={24} />} label="Nests" />
           )}
 

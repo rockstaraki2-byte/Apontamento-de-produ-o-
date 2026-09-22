@@ -820,6 +820,12 @@ export function useDatabase(currentUser?: User | null) {
               mergedUser.name = "Prensa Rafael";
               if (!mergedUser.password) mergedUser.password = "1111";
             }
+            if (initU.id === "projetista_marcos") {
+              mergedUser.role = "PROJETISTA";
+              mergedUser.name = "Marcos (Projetista)";
+              mergedUser.tenantId = "imperio";
+              if (!mergedUser.password) mergedUser.password = "1111";
+            }
             return mergedUser;
           });
           list.forEach((dbUser) => {
@@ -1417,6 +1423,7 @@ export function useDatabase(currentUser?: User | null) {
         status: "PLANEJAMENTO",
         isActive: true,
         ...t,
+        tenantId: activeTenantId,
         id,
         createdAt: t.createdAt || now,
       };
