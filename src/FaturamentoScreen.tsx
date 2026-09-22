@@ -1885,16 +1885,22 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                           {/* Status wrapper */}
                           <span
                             className={`text-[9.5px] font-black px-2 py-0.5 rounded leading-none shrink-0 uppercase border ${
-                              car.status === "FATURADA"
+                              car.status === "FATURADA" || car.status === "FATURADA_COMPLETA"
                                 ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-                                : car.status === "ENTREGUE"
-                                  ? "bg-teal-100 text-teal-800 border-teal-200"
-                                  : car.status === "EM_TRANSITO"
-                                    ? "bg-amber-100 text-amber-800 border-amber-200"
-                                    : "bg-indigo-100 text-indigo-800 border-indigo-250"
+                                : car.status === "FATURADA_PARCIAL"
+                                  ? "bg-orange-100 text-orange-800 border-orange-200"
+                                  : car.status === "ENTREGUE"
+                                    ? "bg-teal-100 text-teal-800 border-teal-200"
+                                    : car.status === "EM_TRANSITO"
+                                      ? "bg-amber-100 text-amber-800 border-amber-200"
+                                      : "bg-indigo-100 text-indigo-800 border-indigo-250"
                             }`}
                           >
-                            {car.status}
+                            {car.status === "FATURADA_PARCIAL"
+                              ? "FATURADA PARCIAL"
+                              : car.status === "FATURADA_COMPLETA"
+                                ? "FATURADA COMPLETA"
+                                : car.status}
                           </span>
                         </div>
 
@@ -2070,7 +2076,7 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                               </button>
                             )}
 
-                            {car.status !== "FATURADA" && (
+                            {car.status !== "FATURADA" && car.status !== "FATURADA_PARCIAL" && car.status !== "FATURADA_COMPLETA" && (
                               <button
                                 onClick={() =>
                                   handleDeleteCarga(car.id, car.name)
