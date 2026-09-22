@@ -1222,6 +1222,9 @@ export function useDatabase(currentUser?: User | null) {
       unsubPerformanceQuestions();
       unsubPerformanceReviews();
       unsubAttendances();
+      unsubLaserQuotes();
+      unsubSheetStocks();
+      unsubSheetStockMovements();
       unsubPrensaPending();
     };
   }, [currentUser, isDemoMode, activeTenantId]);
