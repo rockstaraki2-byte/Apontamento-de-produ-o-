@@ -37,4 +37,5 @@ const customers=customersSnap.docs.map(d=>({docId:d.id,...d.data()}))
 const similarDecimal=ordersSnap.docs.map(d=>({docId:d.id,...d.data()}))
  .filter(r=>String(r.tenantId||"imperio")==="imperio"&&Number(r.itemId)===166)
  .slice(-20);
-console.log("OPS_RESULT="+JSON.stringify({orders:grouped,products,customers,similarDecimal}));\nprocess.exit(0);
+console.log("OPS_RESULT="+JSON.stringify({orders:grouped,products,customers,similarDecimal}));
+process.exit(0);
