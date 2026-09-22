@@ -47,6 +47,7 @@ import {
   where,
   onSnapshot,
   setDoc as firestoreSetDoc,
+  deleteField,
   doc,
   deleteDoc as firestoreDeleteDoc,
   writeBatch,
@@ -2337,7 +2338,9 @@ export function useDatabase(currentUser?: User | null) {
           delete updated.preBillingStatus;
         }
 
-        await setDoc(doc(db, "cargas", carga.id), cleanUndefined(updated), { merge: true });
+        const firestoreUpdated: any = cleanUndefined(updated);
+        if (!desiredStatus) firestoreUpdated.preBillingStatus = deleteField();
+        await setDoc(doc(db, "cargas", carga.id), firestoreUpdated, { merge: true });
         if (!cancelled) {
           setCargas((previous) =>
             previous.map((item) => (item.id === carga.id ? updated : item)),
