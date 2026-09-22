@@ -1,0 +1,172 @@
+name: One-off restore legacy Imperio items
+
+on:
+  push:
+    paths:
+      - ".github/workflows/oneoff-imperio-item-restore.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore tenantId on legacy Imperio items
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { initializeApp } from "firebase/app";
+          import {
+            initializeFirestore,
+            collection,
+            doc,
+            getDoc,
+            getDocs,
+            query,
+            setDoc,
+            where,
+          } from "firebase/firestore";
+
+          const config = JSON.parse(fs.readFileSync("firebase-applet-config.json", "utf8"));
+          const diagnostic = JSON.parse(
+            fs.readFileSync("diagnostics/imperio-item-integrity.json", "utf8"),
+          );
+
+          const app = initializeApp({
+            apiKey: config.apiKey,
+            authDomain: config.authDomain,
+            projectId: config.projectId,
+            storageBucket: config.storageBucket,
+            messagingSenderId: config.messagingSenderId,
+            appId: config.appId,
+          });
+
+          const db = initializeFirestore(
+            app,
+            { experimentalForceLongPolling: true },
+            config.firestoreDatabaseId,
+          );
+
+          const TENANT = "imperio";
+          const restored = [];
+          const alreadyCorrect = [];
+          const missingNow = [];
+          const conflicts = [];
+          const failures = [];
+
+          for (const row of diagnostic.legacyUnscoped || []) {
+            const itemId = Number(row.itemId);
+            if (!Number.isFinite(itemId)) continue;
+
+            try {
+              const ref = doc(db, "items", String(itemId));
+              const snap = await getDoc(ref);
+
+              if (!snap.exists()) {
+                missingNow.push(itemId);
+                continue;
+              }
+
+              const data = snap.data() || {};
+              const tenantId = String(data.tenantId || data.companyId || "").trim();
+
+              if (tenantId === TENANT) {
+                alreadyCorrect.push(itemId);
+                continue;
+              }
+
+              if (tenantId) {
+                conflicts.push({ itemId, tenantId });
+                continue;
+              }
+
+              await setDoc(
+                ref,
+                {
+                  tenantId: TENANT,
+                  recoveredAt: Date.now(),
+                  recoveredReason: "legacy_item_hidden_after_tenant_scope_migration",
+                },
+                { merge: true },
+              );
+
+              const verify = await getDoc(ref);
+              const verifyTenant = String(
+                verify.exists() ? (verify.data()?.tenantId || "") : "",
+              ).trim();
+
+              if (verifyTenant === TENANT) {
+                restored.push(itemId);
+              } else {
+                failures.push({
+                  itemId,
+                  reason: "tenantId verification failed",
+                  value: verifyTenant || null,
+                });
+              }
+            } catch (error) {
+              failures.push({
+                itemId,
+                reason: error?.message || String(error),
+                code: error?.code || null,
+              });
+            }
+          }
+
+          const visibleSnap = await getDocs(
+            query(collection(db, "items"), where("tenantId", "==", TENANT)),
+          );
+
+          const result = {
+            executedAt: new Date().toISOString(),
+            tenant: TENANT,
+            requestedLegacyCount: (diagnostic.legacyUnscoped || []).length,
+            restoredCount: restored.length,
+            alreadyCorrectCount: alreadyCorrect.length,
+            missingNowCount: missingNow.length,
+            conflictCount: conflicts.length,
+            failureCount: failures.length,
+            visibleItemsAfterRestore: visibleSnap.size,
+            restored,
+            alreadyCorrect,
+            missingNow,
+            conflicts,
+            failures,
+            success: conflicts.length === 0 && failures.length === 0,
+          };
+
+          fs.writeFileSync(
+            "diagnostics/imperio-item-restore-result.json",
+            JSON.stringify(result, null, 2) + "\n",
+          );
+
+          console.log(JSON.stringify(result, null, 2));
+
+          if (conflicts.length || failures.length) {
+            process.exitCode = 1;
+          }
+          NODE
+
+      - name: Commit restore result
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add diagnostics/imperio-item-restore-result.json
+          git commit -m "diagnostics: record Imperio item restore result" || exit 0
+          git push origin HEAD:main
