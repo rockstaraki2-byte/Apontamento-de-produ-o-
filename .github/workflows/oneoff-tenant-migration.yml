@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: Preview
     env:
-      MIGRATION_MODE: preview
+      MIGRATION_MODE: execute
       FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
     steps:
       - name: Checkout main
@@ -26,7 +26,7 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-      - name: Run migration preview
+      - name: Run migration and verification
         shell: bash
         run: |
           mkdir -p diagnostics
@@ -37,6 +37,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add diagnostics/tenant-migration-result.json
-          git commit -m "diagnostics: record legacy tenant migration preview" || true
+          git commit -m "diagnostics: record legacy tenant migration result" || true
           git push origin HEAD:main || true
           exit $status
