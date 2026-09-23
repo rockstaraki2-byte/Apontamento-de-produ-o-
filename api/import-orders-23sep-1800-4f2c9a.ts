@@ -385,6 +385,81 @@ const orders: any[] = [
   }
 ];
 
+const officialTotals: Record<string, Array<[number, number, number]>> = {
+  "67807": [[720.00, 108.00, 612.00]],
+  "67808": [[3996.00, 599.40, 3396.60]],
+  "67809": [[525.00, 0.00, 525.00]],
+  "67810": [[1350.00, 0.00, 1350.00]],
+  "67811": [[2070.25, 186.32, 1883.93]],
+  "67812": [[540.00, 0.00, 540.00], [1480.00, 0.00, 1480.00]],
+  "67813": [[690.00, 0.00, 690.00], [3080.00, 0.00, 3080.00]],
+  "67814": [[228.48, 8.48, 220.00]],
+  "67817": [[86.80, 0.00, 86.80]],
+  "67821": [[2780.00, 0.00, 2780.00]],
+  "67825": [[400.00, 0.00, 400.00]],
+  "67826": [
+    [80.40, 4.02, 76.38],
+    [10200.00, 510.00, 9690.00],
+    [104.00, 5.20, 98.80],
+    [129.45, 6.48, 122.97],
+    [181.26, 9.06, 172.20],
+    [66.12, 3.31, 62.81],
+    [1115.30, 55.76, 1059.54],
+    [807.60, 40.38, 767.22],
+    [450.90, 22.54, 428.36],
+    [176.16, 8.81, 167.35],
+    [2046.02, 102.31, 1943.71],
+    [75.03, 3.75, 71.28],
+    [58.40, 2.92, 55.48],
+    [2441.50, 122.08, 2319.42]
+  ]
+};
+
+function moneyScale(value: number): number {
+  return Math.round(value * 10000);
+}
+
+function applyOfficialTotals(prepared: any): any {
+  const rows = officialTotals[String(prepared.codigoPedido)] || [];
+  if (rows.length !== prepared.lines.length) return prepared;
+
+  const lines = prepared.lines.map((line: any, index: number) => {
+    const [gross, discount, net] = rows[index];
+    return {
+      ...line,
+      grossTotal: gross,
+      grossTotalScaled: moneyScale(gross),
+      discountAmount: discount,
+      discountAmountScaled: moneyScale(discount),
+      netTotal: net,
+      netTotalScaled: moneyScale(net),
+    };
+  });
+
+  return {
+    ...prepared,
+    lines,
+    totals: {
+      grossTotalScaled: moneyScale(rows.reduce((sum, row) => sum + row[0], 0)),
+      discountAmountScaled: moneyScale(rows.reduce((sum, row) => sum + row[1], 0)),
+      netTotalScaled: moneyScale(rows.reduce((sum, row) => sum + row[2], 0)),
+    },
+  };
+}
+
+function officialTotalsForResult(item: any): any {
+  const rows = officialTotals[String(item.codigoPedido)] || [];
+  if (rows.length === 0) return item;
+  return {
+    ...item,
+    totais: {
+      grossTotalScaled: moneyScale(rows.reduce((sum, row) => sum + row[0], 0)),
+      discountAmountScaled: moneyScale(rows.reduce((sum, row) => sum + row[1], 0)),
+      netTotalScaled: moneyScale(rows.reduce((sum, row) => sum + row[2], 0)),
+    },
+  };
+}
+
 let catalogCache: any = null;
 const baseRepository = new FirestoreOrderImportRepository();
 
@@ -415,7 +490,8 @@ const repository: any = {
         internalRepresentative?.name || "Pedidos LOJA imperio";
     }
 
-    return baseRepository.createOrderAtomically({ ...input, prepared });
+    const normalizedPrepared = applyOfficialTotals(prepared);
+    return baseRepository.createOrderAtomically({ ...input, prepared: normalizedPrepared });
   },
   writeAudit(input: any) {
     return baseRepository.writeAudit(input);
@@ -442,16 +518,17 @@ export default async function handler(req: any, res: any) {
   );
 
   const resultados = result.resultados.map((item: any) => {
+    const withTotals = officialTotalsForResult(item);
     if (["67807", "67808"].includes(item.codigoPedido)) {
       return {
-        ...item,
+        ...withTotals,
         representanteAssociado: {
           id: "representante_pedidos_loja_imperio",
           nome: "Pedidos LOJA imperio",
         },
       };
     }
-    return item;
+    return withTotals;
   });
 
   return res.status(result.resumo.comErro > 0 ? 207 : 200).json({
