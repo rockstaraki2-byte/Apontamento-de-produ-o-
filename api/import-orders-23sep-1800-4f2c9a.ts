@@ -198,7 +198,7 @@ const orders: any[] = [
       {
         codigoOriginal: "5549",
         codigoProduto: "5549",
-        descricao: "CHAPA 1/2\\" - 50MM X 91,5MM - TORNODELTA GERENCIAL",
+        descricao: "CHAPA 1/2\" - 50MM X 91,5MM - TORNODELTA GERENCIAL",
         familia: "GERENCIAL",
         quantidade: 4,
         precoUnitario: 21.70,
@@ -267,7 +267,7 @@ const orders: any[] = [
       {
         codigoOriginal: "1653",
         codigoProduto: "1653",
-        descricao: "TAMPO 300 MM CHAPA 1/8 COM FURO 1\\\"",
+        descricao: "TAMPO 300 MM CHAPA 1/8 COM FURO 1\"",
         familia: "INDEFINIDA",
         quantidade: 400,
         precoUnitario: 25.50,
@@ -276,7 +276,7 @@ const orders: any[] = [
       {
         codigoOriginal: "2255",
         codigoProduto: "2255",
-        descricao: "TAMPO 340 MM X 340 MM CHAPA 14 COM FURO 2 FUROS 1\\\" C. ARRED. MESA ALFA",
+        descricao: "TAMPO 340 MM X 340 MM CHAPA 14 COM FURO 2 FUROS 1\" C. ARRED. MESA ALFA",
         familia: "INDEFINIDA",
         quantidade: 5,
         precoUnitario: 20.80,
@@ -375,7 +375,7 @@ const orders: any[] = [
       {
         codigoOriginal: "5158",
         codigoProduto: "5158",
-        descricao: "CHAPA 1/8\\" - SUBTAMPO DE 300 MM C/ 09 FUROS",
+        descricao: "CHAPA 1/8\" - SUBTAMPO DE 300 MM C/ 09 FUROS",
         familia: "INDEFINIDA",
         quantidade: 100,
         precoUnitario: 24.415,
