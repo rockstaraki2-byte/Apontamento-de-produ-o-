@@ -15440,8 +15440,14 @@ export default function App() {
     // - PCP/Gerência não usam mais as telas de Qualidade e Cadastros PCP.
     // - PCP/Gerência devem sempre enxergar a Injetora, mesmo se a configuração
     //   de allowedScreens/machines/sectors ainda estiver incompleta.
-    if (isImperioPcpOrGerencia && (screenKey === "pcp" || screenKey === "qualidade")) return false;
+    if (
+      isImperioPcpOrGerencia &&
+      (screenKey === "pcp" ||
+        screenKey === "qualidade" ||
+        screenKey === "relatorios-qualidade")
+    ) return false;
     if (isImperioPcpOrGerencia && screenKey === "injetora") return true;
+    if (currentUser.id === "gerencia.imperio" && screenKey === "itens") return true;
     if (isImperioMarcosProjetista && screenKey === "nests") return true;
     if (screenKey === "embalagem" && isImperioPackagingUser(db.activeTenantId, currentUser)) return true;
     if (currentUser?.id === "raul") return true;
@@ -15830,7 +15836,13 @@ export default function App() {
             )}
             <Route
               path="/relatorios-qualidade"
-              element={<RelatoriosProducaoEQualidade db={db} />}
+              element={
+                isScreenAllowed("relatorios-qualidade") ? (
+                  <RelatoriosProducaoEQualidade db={db} />
+                ) : (
+                  <Navigate to="/" replace />
+                )
+              }
             />
             {!isImperioPcpOrGerencia &&
               (currentUser.role === "ADMIN" ||
@@ -15977,6 +15989,7 @@ export default function App() {
 
           {isScreenAllowed("itens") && (currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
+            currentUser.role === "GERENCIA" ||
             currentUser.id === "dinei" ||
             currentUser.name.toLowerCase().includes("dinei")) && (
             <NavLink to="/itens" icon={<List size={24} />} label="Itens" />
