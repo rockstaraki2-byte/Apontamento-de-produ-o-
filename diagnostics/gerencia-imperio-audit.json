@@ -1,0 +1,104 @@
+{
+  "executedAt": "2026-09-23T18:26:41.973Z",
+  "users": {
+    "gerencia": {
+      "exists": true,
+      "data": {
+        "name": "Gerência",
+        "role": "ADMIN",
+        "id": "gerencia.imperio",
+        "sectorIds": [],
+        "tenantId": "imperio",
+        "password": "230213",
+        "machines": []
+      }
+    },
+    "gerencia.imperio": {
+      "exists": true,
+      "data": {
+        "password": "230213",
+        "machines": [],
+        "tenantId": "imperio",
+        "id": "gerencia.imperio",
+        "role": "GERENCIA",
+        "name": "Gerência",
+        "sectorIds": [],
+        "permissions": {
+          "canEditOrders": true,
+          "canDeleteBatches": true,
+          "canReproveQuality": false,
+          "canDeleteLogs": true,
+          "canDeleteOrders": true,
+          "canApproveQuality": false,
+          "canEditLogs": true,
+          "canManageSettings": true,
+          "canBulkDelete": true
+        }
+      }
+    }
+  },
+  "tenant": {
+    "id": "imperio",
+    "name": "Império Jomarci",
+    "allowedScreens": [
+      "inicio",
+      "admin",
+      "relatorios",
+      "historico",
+      "pcp",
+      "pedidos",
+      "lotes",
+      "cargas",
+      "cargas-tv",
+      "gestao-clientes",
+      "itens",
+      "orcamentos",
+      "nests",
+      "representante",
+      "producao",
+      "qualidade",
+      "relatorios-qualidade",
+      "cortelaser",
+      "pintura",
+      "prensa-eduardo",
+      "torno-cnc-willian",
+      "torno-cnc-henrique",
+      "prensa-rafael",
+      "injetora",
+      "banho-quimico",
+      "embalagem",
+      "montagem-retratil",
+      "estoque",
+      "estoque-chapas",
+      "estoque-laser",
+      "financeiro"
+    ],
+    "machines": [],
+    "systemName": "Acessórios para móveis"
+  },
+  "counts": {
+    "items": 2182,
+    "orders": 4573,
+    "logs": 11708,
+    "attributes": 8,
+    "activePacks": 28,
+    "nestTasks": 737,
+    "notifications": 6537,
+    "stocks": 844,
+    "stock_movements": 6441,
+    "employees": 40,
+    "customers": 989,
+    "sectors": 29,
+    "productFlows": 14,
+    "productionBatches": 226,
+    "productionAgendas": 120,
+    "coilCuttingPlans": 113,
+    "cargas": 30,
+    "expeditionRoutes": 11,
+    "productionSchedules": 1,
+    "systemSettings": 2,
+    "laserQuotes": 83,
+    "sheetStocks": 6,
+    "prensaPendingProductions": 1
+  }
+}
