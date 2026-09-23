@@ -6,41 +6,30 @@ const cfg=JSON.parse(fs.readFileSync("firebase-applet-config.json","utf8"));
 const app=initializeApp({
  apiKey:cfg.apiKey,authDomain:cfg.authDomain,projectId:cfg.projectId,
  storageBucket:cfg.storageBucket,messagingSenderId:cfg.messagingSenderId,appId:cfg.appId
-},"ops-sep23-18h-check");
+},"ops-sep23-18h-schema");
 const db=initializeFirestore(app,{experimentalForceLongPolling:true},cfg.firestoreDatabaseId);
 
-const wantedOrders=new Set(["67105","67814","67817"]);
-const wantedCodes=new Set(["5123","5124","5548","5549"]);
-const wantedCustomers=new Set(["793","1867","173"]);
-
-const [ordersSnap,itemsSnap,customersSnap,logsSnap,keysSnap]=await Promise.all([
- getDocs(collection(db,"orders")),
+const [itemsSnap,customersSnap,ordersSnap]=await Promise.all([
  getDocs(collection(db,"items")),
  getDocs(collection(db,"customers")),
- getDocs(collection(db,"logs")),
- getDocs(collection(db,"billingImportKeys"))
+ getDocs(collection(db,"orders"))
 ]);
+
 const items=itemsSnap.docs.map(d=>({docId:d.id,...d.data()}));
-const itemMap=new Map(items.map(x=>[String(x.id??x.docId),x]));
-const rows=ordersSnap.docs.map(d=>({docId:d.id,...d.data()}))
- .filter(r=>String(r.tenantId||"imperio")==="imperio"&&wantedOrders.has(String(r.orderCode||"")))
- .map(r=>{const item=itemMap.get(String(r.itemId))||{}; return {
-  docId:r.docId,id:r.id,orderCode:String(r.orderCode||""),customerId:r.customerId,customerName:r.customerName||"",
-  itemId:r.itemId,itemCode:String(item.code||r.itemId||""),itemName:item.name||r.customProductName||"",
-  originalProductCode:r.originalProductCode||"",color:r.color||"",variation:r.variation||"",size:r.size||"",
-  totalQuantity:Number(r.totalQuantity||0),invoicedQuantity:Number(r.invoicedQuantity||0),
-  status:r.status||"",isActive:r.isActive!==false,unitPrice:Number(r.unitPrice||0),
-  paymentCondition:r.paymentCondition||"",paymentTerms:r.paymentTerms||"",fiscalType:r.fiscalType||"",
-  representativeName:r.representativeName||"",itemNotes:r.itemNotes||"",notes:r.notes||""
- }});
-const grouped={}; for(const code of wantedOrders) grouped[code]=rows.filter(r=>r.orderCode===code);
-const products=items.filter(x=>wantedCodes.has(String(x.code||x.id||x.docId)))
- .map(x=>({docId:x.docId,id:x.id,code:x.code,name:x.name,tenantId:x.tenantId,components:x.components||[]}));
+const products=items.filter(x=>{
+ const code=String(x.code||x.id||x.docId);
+ const name=String(x.name||"").toUpperCase();
+ return ["5546","5547","5548","5549","5550","5537"].includes(code) ||
+        name.includes("CHURRASQUEIRA") || name.includes("TORNODELTA") || name.includes("TORNO DELTA");
+}).map(x=>({docId:x.docId,...x}));
+
 const customers=customersSnap.docs.map(d=>({docId:d.id,...d.data()}))
- .filter(c=>wantedCustomers.has(String(c.id??c.docId)))
- .map(c=>({docId:c.docId,id:c.id,name:c.name,address:c.address||"",city:c.city||"",state:c.state||""}));
-const ids=new Set(rows.map(r=>Number(r.id)));
-const logs=logsSnap.docs.map(d=>({docId:d.id,...d.data()})).filter(l=>ids.has(Number(l.orderId))&&String(l.type||"")==="FATURAMENTO");
-const keys=keysSnap.docs.map(d=>({docId:d.id,...d.data()})).filter(k=>wantedOrders.has(String(k.orderCode||"")));
-console.log("OPS_CHECK="+JSON.stringify({orders:grouped,products,customers,logs,keys}));
+ .filter(c=>["173","1866","1867","1868"].includes(String(c.id??c.docId)) || String(c.name||"").toUpperCase().includes("ROSEMARY"))
+ .map(c=>({docId:c.docId,...c}));
+
+const recentOrders=ordersSnap.docs.map(d=>({docId:d.id,...d.data()}))
+ .filter(r=>String(r.tenantId||"imperio")==="imperio" && [173,1866,1867,1868].includes(Number(r.customerId)))
+ .slice(-30);
+
+console.log("OPS_SCHEMA="+JSON.stringify({products,customers,recentOrders}));
 process.exit(0);
