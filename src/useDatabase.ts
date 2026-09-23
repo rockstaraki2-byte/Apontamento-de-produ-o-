@@ -113,7 +113,7 @@ function isRetiredTenantUser(user: Partial<User> & { companyId?: string }) {
 
 const INITIAL_USERS: User[] = [
   { id: "raul", name: "Raul", role: "ADMIN", password: "230213", tenantId: "global" },
-  { id: "gerencia", name: "Gerência", role: "ADMIN", password: "1111", tenantId: "imperio" },
+  { id: "gerencia.imperio", name: "Gerência", role: "GERENCIA", password: "230213", tenantId: "imperio" },
   { id: "romario", name: "Romario", role: "LEITURA", tenantId: "imperio" },
   { id: "alessandra", name: "Alessandra", role: "LEITURA", tenantId: "imperio" },
   { id: "pcp", name: "PCP", role: "PCP", password: "1111", tenantId: "imperio" },
@@ -318,7 +318,17 @@ export function useDatabase(currentUser?: User | null) {
       try {
         const parsed = JSON.parse(saved);
         const sanitizedParsed = Array.isArray(parsed)
-          ? parsed.filter((p: User) => !isRetiredTenantUser(p))
+          ? parsed
+              .filter((p: User) => !isRetiredTenantUser(p))
+              .map((p: User) =>
+                p.id === "gerencia" && (p.tenantId || "imperio") === "imperio"
+                  ? { ...p, id: "gerencia.imperio", role: "GERENCIA" as const, tenantId: "imperio" }
+                  : p,
+              )
+              .filter(
+                (p: User, index: number, arr: User[]) =>
+                  arr.findIndex((candidate) => candidate.id === p.id) === index,
+              )
           : [];
         // Garante que novos campos nos INITIAL_USERS sejam mesclados caso não existam no salvo
         const merged = INITIAL_USERS.map((initU) => {
@@ -803,10 +813,19 @@ export function useDatabase(currentUser?: User | null) {
       (snap) => {
         const list = snap.docs
           .map((d) => ({
-            id: d.id,
             ...(d.data() as User),
+            id: d.id,
           }))
-          .filter((user) => !isRetiredTenantUser(user));
+          .map((user) =>
+            user.id === "gerencia" && (user.tenantId || "imperio") === "imperio"
+              ? { ...user, id: "gerencia.imperio", role: "GERENCIA" as const, tenantId: "imperio" }
+              : user,
+          )
+          .filter((user) => !isRetiredTenantUser(user))
+          .filter(
+            (user, index, arr) =>
+              arr.findIndex((candidate) => candidate.id === user.id) === index,
+          );
         setUsers((prev) => {
           const merged = INITIAL_USERS.map((initU) => {
             const dbUser = list.find((u) => u.id === initU.id);
@@ -831,6 +850,12 @@ export function useDatabase(currentUser?: User | null) {
               mergedUser.name = "Marcos (Projetista)";
               mergedUser.tenantId = "imperio";
               if (!mergedUser.password) mergedUser.password = "1111";
+            }
+            if (initU.id === "gerencia.imperio") {
+              mergedUser.role = "GERENCIA";
+              mergedUser.name = "Gerência";
+              mergedUser.tenantId = "imperio";
+              if (!mergedUser.password) mergedUser.password = "230213";
             }
             return mergedUser;
           });
