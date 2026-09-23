@@ -201,7 +201,7 @@ function RouteErrorBoundary({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   return (
-    <ScreenErrorBoundary key={location.pathname} screenName="AplicaÃ§Ã£o">
+    <ScreenErrorBoundary key={location.pathname} screenName="Aplicação">
       {children}
     </ScreenErrorBoundary>
   );
@@ -212,7 +212,7 @@ function ScreenLoadingFallback() {
     <div className="flex-1 min-h-[240px] flex items-center justify-center bg-slate-50 text-slate-600">
       <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
         <span className="h-5 w-5 rounded-full border-2 border-slate-200 border-t-indigo-600 animate-spin" />
-        <span className="text-xs font-bold uppercase tracking-wide">Carregando telaâ¦</span>
+        <span className="text-xs font-bold uppercase tracking-wide">Carregando tela…</span>
       </div>
     </div>
   );
@@ -337,12 +337,12 @@ function Welcome({
   useEffect(() => {
     // Force existing orders assignment rule
     const clientsForAndre = [
-      "mÃ³veis bom pastor",
+      "móveis bom pastor",
       "moveis bom pastor",
       "bom pastor",
       "Moveis B P LTDA",
       "lara moveis",
-      "lara mÃ³veis",
+      "lara móveis",
       "artano",
       "grupo sier",
       "sier",
@@ -360,7 +360,7 @@ function Welcome({
         ) {
           const andreRep = db.users.find(
             (u) =>
-              u.name.toLowerCase().includes("andrÃ©") ||
+              u.name.toLowerCase().includes("andré") ||
               u.name.toLowerCase().includes("andre"),
           );
           if (andreRep) {
@@ -520,7 +520,7 @@ function Welcome({
           setSelectedOrder(orderWithCustomer);
         } else {
           setInfoModalData({
-            title: "NotificaÃ§Ã£o Informativa",
+            title: "Notificação Informativa",
             body: (
               <div className="space-y-4 text-left">
                 <p className="text-gray-750 font-medium text-sm border-l-4 border-blue-500 pl-3 py-1 bg-gray-50 rounded">
@@ -530,7 +530,7 @@ function Welcome({
                   Registrada em: {new Date(n.createdAt).toLocaleString()}
                 </div>
                 <p className="text-xs text-gray-500 italic mt-2">
-                  Dica: Marque como lida na listagem se este aviso jÃ¡ tiver sido
+                  Dica: Marque como lida na listagem se este aviso já tiver sido
                   processado.
                 </p>
               </div>
@@ -592,7 +592,7 @@ function Welcome({
         Bem-vindo, {currentUser.name}!
       </h2>
       <p className="text-gray-500 mt-2 mb-4">
-        Escolha uma opÃ§Ã£o no menu inferior.
+        Escolha uma opção no menu inferior.
       </p>
 
       <div className="mt-8 mx-auto w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-2 pb-8">
@@ -614,7 +614,7 @@ function Welcome({
               <div className="flex items-center justify-between font-bold mb-2 shrink-0">
                 <div className="flex items-center gap-2 text-blue-700">
                   <Bell size={20} />
-                  <span>NotificaÃ§Ãµes ({unreadNotifications.length})</span>
+                  <span>Notificações ({unreadNotifications.length})</span>
                 </div>
                 <button
                   onClick={() => unreadNotifications.forEach(n => db.markNotificationRead(n.id))}
@@ -624,7 +624,7 @@ function Welcome({
                 </button>
               </div>
               <p className="text-xs text-blue-600 mb-3 shrink-0">
-                Dica: Clique em uma notificaÃ§Ã£o para ver os detalhes completos
+                Dica: Clique em uma notificação para ver os detalhes completos
                 do pedido associado.
               </p>
               <ul className="text-sm text-blue-900 flex flex-col gap-2 overflow-y-auto scrollbar-thin pr-1 max-h-[285px] flex-1">
@@ -673,7 +673,7 @@ function Welcome({
                 >
                   <div className="flex justify-between items-center">
                     <span className="font-bold text-gray-800 text-sm">
-                      CÃ³d: {a.orderCode}
+                      Cód: {a.orderCode}
                     </span>
                     <span className="text-[10px] text-red-700 font-bold bg-red-100 px-2 py-0.5 rounded-full border border-red-200/50">
                       {new Date(a.deliveryDate).toLocaleDateString()}
@@ -693,7 +693,7 @@ function Welcome({
           <div className="text-left w-full h-full flex flex-col bg-orange-50 border border-orange-200 rounded-xl p-5 shadow-sm transition-all duration-300 hover:scale-[1.02] hover:shadow-lg">
             <div className="flex items-center gap-2 text-orange-700 font-bold mb-2 shrink-0">
               <AlertCircle size={20} />
-              <span>Sem Iniciar hÃ¡ &gt; 48h ({delayedOrders.length})</span>
+              <span>Sem Iniciar há &gt; 48h ({delayedOrders.length})</span>
             </div>
             <p className="text-xs text-orange-600 mb-3 shrink-0">
               Clique em um lote parado abaixo para ver seu progresso de logs.
@@ -707,7 +707,7 @@ function Welcome({
                 >
                   <div className="flex justify-between items-center">
                     <span className="font-bold text-gray-800 text-sm">
-                      CÃ³d: {a.orderCode}
+                      Cód: {a.orderCode}
                     </span>
                     <span className="text-[10px] text-orange-700 font-bold bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200/50">
                       {new Date(a.createdAt).toLocaleDateString()}
@@ -737,7 +737,7 @@ function Welcome({
                 <span className="bg-indigo-100 text-indigo-700 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-semibold">
                   <List size={16} />
                 </span>
-                Fila de ProduÃ§Ã£o
+                Fila de Produção
               </h3>
               <p className="text-xs text-slate-500 mt-1">
                 Pedidos em acompanhamento PCP.
@@ -745,7 +745,7 @@ function Welcome({
             </div>
           </div>
           <p className="text-sm font-medium text-slate-600 mb-2">
-            Acompanhe pedidos abertos sem lote gerado, verifique urgÃªncias
+            Acompanhe pedidos abertos sem lote gerado, verifique urgências
             sinalizadas e agrupamentos recomendados.
           </p>
         </div>
@@ -767,7 +767,7 @@ function Welcome({
                 onClick={() => setSelectedOrder(null)}
                 className="text-gray-400 hover:text-white transition duration-150 text-xl font-bold px-2 py-1 rounded cursor-pointer"
               >
-                â
+                ✕
               </button>
             </div>
 
@@ -776,7 +776,7 @@ function Welcome({
               {/* Box 1: General Info */}
               <div className="bg-slate-50 p-4 rounded-lg border border-gray-200">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                  InformaÃ§Ãµes Gerais
+                  Informações Gerais
                 </h4>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                   <div>
@@ -828,29 +828,29 @@ function Welcome({
                   </div>
                   <div className="flex flex-col gap-1">
                     <span className="text-xs text-gray-500 block">
-                      EspecificaÃ§Ãµes:
+                      Especificações:
                     </span>
                     <div className="flex flex-wrap gap-1">
                       {selectedOrder.isUrgent && (
                         <span className="bg-red-100 text-red-800 border-red-200 border text-[9px] font-bold px-1.5 py-0.5 rounded">
-                          â ï¸ URGENTE
+                          ⚠️ URGENTE
                         </span>
                       )}
                       {selectedOrder.isProgramacao && (
                         <span className="bg-indigo-100 text-indigo-800 border-indigo-200 border text-[9px] font-bold px-1.5 py-0.5 rounded">
-                          ð PROGRAMAÃÃO
+                          📈 PROGRAMAÇÃO
                         </span>
                       )}
                       {selectedOrder.isThirdPartyLaser && (
                         <span className="bg-indigo-100 text-indigo-800 border-indigo-200 border text-[9px] font-bold px-1.5 py-0.5 rounded">
-                          âï¸ TERCEIRO LASER
+                          ⚙️ TERCEIRO LASER
                         </span>
                       )}
                       {!selectedOrder.isUrgent &&
                         !selectedOrder.isProgramacao &&
                         !selectedOrder.isThirdPartyLaser && (
                           <span className="bg-gray-100 text-gray-650 border-gray-200 border text-[9px] font-medium px-1.5 py-0.5 rounded">
-                            PadrÃ£o
+                            Padrão
                           </span>
                         )}
                     </div>
@@ -886,7 +886,7 @@ function Welcome({
                     </div>
                     <div>
                       <span className="text-[10px] text-gray-450 block">
-                        VariaÃ§Ã£o:
+                        Variação:
                       </span>
                       <span>{selectedOrder.variation || "-"}</span>
                     </div>
@@ -897,14 +897,14 @@ function Welcome({
               {/* Box 3: Production Progress Slices */}
               <div className="border border-gray-200 p-4 rounded-lg bg-white space-y-3">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                  Acompanhamento de ProduÃ§Ã£o
+                  Acompanhamento de Produção
                 </h4>
                 <div className="space-y-2.5">
                   {/* Total pieces header */}
                   <div className="flex justify-between text-xs font-bold text-gray-700">
                     <span>Meta Total do Lote:</span>
                     <span className="text-indigo-700">
-                      {selectedOrder.totalQuantity} PeÃ§as
+                      {selectedOrder.totalQuantity} Peças
                     </span>
                   </div>
 
@@ -916,7 +916,7 @@ function Welcome({
                       color: "bg-indigo-600",
                     },
                     {
-                      label: "2. ProduÃ§Ã£o/Solda",
+                      label: "2. Produção/Solda",
                       qtyInStage: selectedOrder.producedQuantity || 0,
                       color: "bg-blue-600",
                     },
@@ -951,7 +951,7 @@ function Welcome({
                           </span>
                           <span className="text-gray-500 font-medium">
                             {phase.qtyInStage} / {selectedOrder.totalQuantity}{" "}
-                            pÃ§s ({Math.round(pct)}%)
+                            pçs ({Math.round(pct)}%)
                           </span>
                         </div>
                         <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
@@ -971,12 +971,12 @@ function Welcome({
                 <div className="flex items-center gap-1.5">
                   <History size={16} className="text-gray-400" />
                   <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                    HistÃ³rico de OperaÃ§Ãµes (Rastreabilidade)
+                    Histórico de Operações (Rastreabilidade)
                   </h4>
                 </div>
                 {selectedOrderLogs.length === 0 ? (
                   <p className="text-xs text-gray-500 italic text-center py-2">
-                    Nenhum registro de produÃ§Ã£o inserido no banco histÃ³rico
+                    Nenhum registro de produção inserido no banco histórico
                     ainda.
                   </p>
                 ) : (
@@ -987,15 +987,15 @@ function Welcome({
                         log.operatorId;
                       let actionText = "";
                       if (log.type === "CORTE_LASER")
-                        actionText = `Cortou ${log.quantityCut || 0} pÃ§s`;
+                        actionText = `Cortou ${log.quantityCut || 0} pçs`;
                       if (log.type === "PRODUCAO")
-                        actionText = `Processou ${log.quantityProcessed || 0} pÃ§s`;
+                        actionText = `Processou ${log.quantityProcessed || 0} pçs`;
                       if (log.type === "PINTURA")
-                        actionText = `Pintou ${log.quantityPainted || 0} pÃ§s`;
+                        actionText = `Pintou ${log.quantityPainted || 0} pçs`;
                       if (log.type === "EMBALAGEM")
-                        actionText = `Embalou ${log.quantityPacked || 0} pÃ§s`;
+                        actionText = `Embalou ${log.quantityPacked || 0} pçs`;
                       if (log.type === "FATURAMENTO")
-                        actionText = `Faturou/Entregou ${log.quantityInvoiced || 0} pÃ§s`;
+                        actionText = `Faturou/Entregou ${log.quantityInvoiced || 0} pçs`;
 
                       return (
                         <div
@@ -1009,7 +1009,7 @@ function Welcome({
                             </span>
                           </div>
                           <div className="text-gray-600 font-medium">
-                            {actionText} â¢ Operador:{" "}
+                            {actionText} • Operador:{" "}
                             <span className="font-semibold">{opName}</span>
                           </div>
                           {log.durationMillis > 0 && (
@@ -1064,7 +1064,7 @@ function Welcome({
                 onClick={() => setInfoModalData(null)}
                 className="text-gray-400 hover:text-white transition duration-150 text-xl font-bold px-1 rounded cursor-pointer"
               >
-                â
+                ✕
               </button>
             </div>
             <div className="p-5">{infoModalData.body}</div>
@@ -1140,10 +1140,10 @@ function LoginScreen({
       tenants?.find((t) => t && t.id === selectedLoginTenantId) ||
       tenants?.find((t) => t && t.id === "imperio") || {
         id: "imperio",
-        name: "ImpÃ©rio Jomarci",
+        name: "Império Jomarci",
         logoUrl: "/icon.png",
         primaryColor: "#FB9214",
-        systemName: "Apontador de ProduÃ§Ã£o",
+        systemName: "Apontador de Produção",
       }
     );
   }, [usernameInput, tenants, selectedLoginTenantId]);
@@ -1176,7 +1176,7 @@ function LoginScreen({
     const rawTyped = (usernameInput || "").trim();
     const typed = normalizeStr(rawTyped);
     if (!typed) {
-      alert("Por favor, digite o usuÃ¡rio.");
+      alert("Por favor, digite o usuário.");
       return;
     }
 
@@ -1285,7 +1285,7 @@ function LoginScreen({
           user = scopedMatch;
         } else {
           alert(
-            `O usuÃ¡rio "${rawTyped}" existe em mais de uma empresa. Por favor, digite o seu login com o sufixo da empresa no formato: ${rawTyped}.empresa`
+            `O usuário "${rawTyped}" existe em mais de uma empresa. Por favor, digite o seu login com o sufixo da empresa no formato: ${rawTyped}.empresa`
           );
           return;
         }
@@ -1324,7 +1324,7 @@ function LoginScreen({
       }
       onLogin({ ...user });
     } else {
-      alert("UsuÃ¡rio Incorreto");
+      alert("Usuário Incorreto");
     }
   };
 
@@ -1345,7 +1345,7 @@ function LoginScreen({
 
         <input
           type="text"
-          placeholder="UsuÃ¡rio (Ex: gerencia.imp)"
+          placeholder="Usuário (Ex: gerencia.imp)"
           value={usernameInput}
           onChange={(e) => setUsernameInput(e.target.value)}
           className="border border-slate-300 p-3 w-full rounded-lg mb-4 text-center text-lg focus:outline-none focus:ring-2 focus:ring-[#FB9214]/30 focus:border-[#FB9214] bg-white text-slate-900 placeholder-slate-400"
@@ -1366,14 +1366,14 @@ function LoginScreen({
           disabled={!usersLoaded}
           className="w-full bg-[#032D51] hover:bg-[#08243F] text-white font-bold p-3 rounded-lg transition text-lg mt-2 tracking-wide disabled:cursor-wait disabled:opacity-70 shadow-md shadow-[#032D51]/15"
         >
-          {usersLoaded ? "Entrar no ApontaPRO" : "Carregando acessosâ¦"}
+          {usersLoaded ? "Entrar no ApontaPRO" : "Carregando acessos…"}
         </button>
       </div>
 
       {!isStandalone && (
         <div className="mt-6 w-full max-w-sm bg-white border border-slate-200 p-5 rounded-xl shadow-xl flex flex-col gap-3">
           <div className="flex items-center gap-2 border-b border-slate-200 pb-2" style={{ color: "#FB9214" }}>
-            <span className="text-lg">ð²</span>
+            <span className="text-lg">📲</span>
             <h3 className="text-xs uppercase tracking-wider font-extrabold text-slate-700">
               Instalar Aplicativo (Tela Cheia)
             </h3>
@@ -1381,26 +1381,26 @@ function LoginScreen({
 
           <p className="text-[11px] text-slate-500 leading-relaxed">
             Instale o ApontaPRO para funcionar em{" "}
-            <strong>tela inteira sem as barras do navegador</strong> e com o Ã­cone direto no seu celular ou computador.
+            <strong>tela inteira sem as barras do navegador</strong> e com o ícone direto no seu celular ou computador.
           </p>
 
           {isInIframe ? (
             <div className="bg-amber-950/40 p-3 rounded-lg border border-amber-900/40 text-[10px] text-slate-700 flex flex-col gap-1.5 leading-snug">
               <span className="font-bold uppercase tracking-wide block text-amber-400">
-                â ï¸ Executando dentro do Editor
+                ⚠️ Executando dentro do Editor
               </span>
               <p>
-                Por seguranÃ§a, o navegador <strong>bloqueia a instalaÃ§Ã£o de aplicativos (PWA)</strong> quando o sistema Ã© visualizado dentro do painel de testes do editor (iframe).
+                Por segurança, o navegador <strong>bloqueia a instalação de aplicativos (PWA)</strong> quando o sistema é visualizado dentro do painel de testes do editor (iframe).
               </p>
               <p>
-                Para instalar o sistema como App no seu celular ou computador, por favor, clique no botÃ£o abaixo para abrir em uma aba cheia:
+                Para instalar o sistema como App no seu celular ou computador, por favor, clique no botão abaixo para abrir em uma aba cheia:
               </p>
               <button
                 onClick={() => window.open(window.location.href, "_blank")}
                 className="w-full flex items-center justify-center gap-1.5 hover:opacity-95 text-black text-xs font-bold py-2 px-3 rounded transition-all cursor-pointer mt-1"
                 style={{ backgroundColor: "#FB9214" }}
               >
-                Abrir em Nova Aba â
+                Abrir em Nova Aba ↗
               </button>
             </div>
           ) : deferredPrompt ? (
@@ -1409,22 +1409,22 @@ function LoginScreen({
               className="w-full flex items-center justify-center gap-2 hover:bg-opacity-90 text-black text-xs font-bold py-2.5 px-3 rounded-lg transition-all cursor-pointer shadow-md"
               style={{ backgroundColor: "#FB9214" }}
             >
-              <span>ð¥</span> Instalar Aplicativo
+              <span>📥</span> Instalar Aplicativo
             </button>
           ) : isIOS ? (
             <div className="bg-zinc-950 p-3 rounded-lg border border-zinc-800/40 text-[10px] text-slate-500 flex flex-col gap-1.5 leading-snug">
               <span className="font-bold uppercase tracking-wide block" style={{ color: "#FB9214" }}>
-                InstruÃ§Ãµes para iPhone:
+                Instruções para iPhone:
               </span>
               <p>
-                1. Toque no botÃ£o de <strong>Compartilhar</strong> (Ã­cone{" "}
-                <span className="text-slate-700">ð¤</span> na barra inferior do
+                1. Toque no botão de <strong>Compartilhar</strong> (ícone{" "}
+                <span className="text-slate-700">📤</span> na barra inferior do
                 Safari).
               </p>
               <p>
                 2. Role a lista e toque em{" "}
-                <strong>"Adicionar Ã  Tela de InÃ­cio"</strong> (Ã­cone{" "}
-                <span className="text-slate-700">â</span>).
+                <strong>"Adicionar à Tela de Início"</strong> (ícone{" "}
+                <span className="text-slate-700">➕</span>).
               </p>
               <p>
                 3. Toque em "Adicionar" no canto superior direito para confirmar.
@@ -1436,13 +1436,13 @@ function LoginScreen({
                 Como Instalar no Celular:
               </span>
               <p>
-                1. Clique no menu de <strong className="text-slate-700">trÃªs pontinhos</strong> no canto superior do navegador (ou toque no Ã­cone de instalar na barra de endereÃ§o).
+                1. Clique no menu de <strong className="text-slate-700">três pontinhos</strong> no canto superior do navegador (ou toque no ícone de instalar na barra de endereço).
               </p>
               <p>
-                2. Selecione <strong className="text-slate-700">"Instalar aplicativo"</strong> ou <strong className="text-slate-700">"Adicionar Ã  tela inicial"</strong>.
+                2. Selecione <strong className="text-slate-700">"Instalar aplicativo"</strong> ou <strong className="text-slate-700">"Adicionar à tela inicial"</strong>.
               </p>
               <p className="text-[9px] block mt-1" style={{ color: "#FB9214" }}>
-                â O Ã­cone "ApontaPRO" serÃ¡ adicionado Ã  tela do seu dispositivo!
+                ✓ O ícone "ApontaPRO" será adicionado à tela do seu dispositivo!
               </p>
             </div>
           )}
@@ -1483,7 +1483,7 @@ function ItemEditorContainer({ modal, onClose, children }: {
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Editar item" className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto overscroll-contain">
         <div className="sticky top-0 z-10 bg-white border-b px-4 py-3 flex justify-between items-center">
           <h2 className="font-bold text-slate-800">Editar item</h2>
-          <button type="button" aria-label="Fechar ediÃ§Ã£o" onClick={onClose} className="p-2 rounded hover:bg-slate-100"><X size={20} /></button>
+          <button type="button" aria-label="Fechar edição" onClick={onClose} className="p-2 rounded hover:bg-slate-100"><X size={20} /></button>
         </div>
         {children}
       </div>
@@ -1512,7 +1512,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [imageUploadProgress, setImageUploadProgress] = useState(0);
   const [fullSizeImage, setFullSizeImage] = useState<string | null>(null);
 
-  // Attribute Management State (Cores, VariaÃ§Ãµes, Tamanhos)
+  // Attribute Management State (Cores, Variações, Tamanhos)
   const [attrValue, setAttrValue] = useState("");
   const [attrCode, setAttrCode] = useState("");
   const [attrImageUrl, setAttrImageUrl] = useState("");
@@ -1588,7 +1588,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
 
   const handleCadastrarAttr = async (type: "COLOR" | "VARIATION" | "SIZE") => {
     if (!attrValue.trim()) {
-      alert("â ï¸ Por favor, digite o nome/descriÃ§Ã£o para o cadastro.");
+      alert("⚠️ Por favor, digite o nome/descrição para o cadastro.");
       return;
     }
 
@@ -1626,7 +1626,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
   };
 
   const handleDeleteAttr = async (id: number) => {
-    if (confirm("Tem certeza que deseja excluir esta opÃ§Ã£o?")) {
+    if (confirm("Tem certeza que deseja excluir esta opção?")) {
       await db.deleteAttribute(id);
     }
   };
@@ -1702,21 +1702,21 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     let idxPoints = 3;
 
     if (
-      firstRowCols.includes("CÃDIGO") ||
+      firstRowCols.includes("CÓDIGO") ||
       firstRowCols.includes("COD") ||
-      firstRowCols.includes("CÃD. ITEM") ||
+      firstRowCols.includes("CÓD. ITEM") ||
       firstRowCols.includes("PRODUTO") ||
       firstRowCols.includes("ITEM") ||
-      firstRowCols.includes("PEÃA")
+      firstRowCols.includes("PEÇA")
     ) {
       startIdx = 1;
       const getCol = (names: string[]) =>
         firstRowCols.findIndex((c) => names.some((n) => c.includes(n)));
 
-      idxCode = getCol(["CÃDIGO", "CÃD", "COD"]);
-      idxName = getCol(["PRODUTO", "ITEM", "NOME", "PEÃA"]);
-      idxPrice = getCol(["PREÃO", "PRECO", "VALOR"]);
-      idxPoints = getCol(["PONTOS", "PONTUAÃÃO", "PONTUACAO"]);
+      idxCode = getCol(["CÓDIGO", "CÓD", "COD"]);
+      idxName = getCol(["PRODUTO", "ITEM", "NOME", "PEÇA"]);
+      idxPrice = getCol(["PREÇO", "PRECO", "VALOR"]);
+      idxPoints = getCol(["PONTOS", "PONTUAÇÃO", "PONTUACAO"]);
     }
 
     const updatedItems = [];
@@ -1745,7 +1745,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
       const price = !isNaN(basePriceParsed) ? basePriceParsed : undefined;
 
       if (rPriceStr && (isNaN(basePriceParsed) || basePriceParsed < 0)) {
-        const errorMsg = `Planilha Linha ${i + 1}: PreÃ§o base invÃ¡lido ou malformado ("${rPriceStr}") para o cÃ³digo "${rCode || rName}"`;
+        const errorMsg = `Planilha Linha ${i + 1}: Preço base inválido ou malformado ("${rPriceStr}") para o código "${rCode || rName}"`;
         console.warn(errorMsg);
         validationWarnings.push(errorMsg);
       }
@@ -1754,7 +1754,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
       const points = !isNaN(pointsParsed) ? pointsParsed : undefined;
 
       if (rPointsStr && (isNaN(pointsParsed) || pointsParsed < 0)) {
-        const errorMsg = `Planilha Linha ${i + 1}: Pontos de produÃ§Ã£o invÃ¡lidos ("${rPointsStr}") para o cÃ³digo "${rCode || rName}"`;
+        const errorMsg = `Planilha Linha ${i + 1}: Pontos de produção inválidos ("${rPointsStr}") para o código "${rCode || rName}"`;
         console.warn(errorMsg);
         validationWarnings.push(errorMsg);
       }
@@ -1809,11 +1809,11 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
 
     const warningText =
       validationWarnings.length > 0
-        ? `\n\nâ ï¸ Alertas de importaÃ§Ã£o:\n${validationWarnings.slice(0, 5).join("\n")}${validationWarnings.length > 5 ? `\n...e mais ${validationWarnings.length - 5} alertas` : ""}`
+        ? `\n\n⚠️ Alertas de importação:\n${validationWarnings.slice(0, 5).join("\n")}${validationWarnings.length > 5 ? `\n...e mais ${validationWarnings.length - 5} alertas` : ""}`
         : "";
 
     setExcelImportResult(
-      `ConcluÃ­do! ${addedCount} novos, ${updatedCount} atualizados.${warningText}`,
+      `Concluído! ${addedCount} novos, ${updatedCount} atualizados.${warningText}`,
     );
     setExcelData("");
     setTimeout(() => {
@@ -1947,7 +1947,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     }
 
     setBatchImageResult(
-      `ConcluÃ­do! ${successCount} imagens associadas com sucesso. ${notFoundCount} nÃ£o encontraram produtos.`,
+      `Concluído! ${successCount} imagens associadas com sucesso. ${notFoundCount} não encontraram produtos.`,
     );
     setIsUploadingBatch(false);
 
@@ -1960,12 +1960,12 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
 
   const handleCadastrar = () => {
     if (!code) {
-      alert("â ï¸ Erro de formulÃ¡rio: O campo 'CÃ³digo' Ã© obrigatÃ³rio.");
+      alert("⚠️ Erro de formulário: O campo 'Código' é obrigatório.");
       console.warn("Item save prevented: missing 'code' field.");
       return;
     }
     if (!name) {
-      alert("â ï¸ Erro de formulÃ¡rio: O campo 'Nome' Ã© obrigatÃ³rio.");
+      alert("⚠️ Erro de formulário: O campo 'Nome' é obrigatório.");
       console.warn("Item save prevented: missing 'name' field.");
       return;
     }
@@ -1975,7 +1975,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
       const parsedPrice = Number(basePrice);
       if (isNaN(parsedPrice) || parsedPrice < 0) {
         alert(
-          `â ï¸ PreÃ§o base invÃ¡lido: "${basePrice}" nÃ£o Ã© um preÃ§o vÃ¡lido. O valor deve ser um nÃºmero positivo ou ficar em branco.`,
+          `⚠️ Preço base inválido: "${basePrice}" não é um preço válido. O valor deve ser um número positivo ou ficar em branco.`,
         );
         console.warn(`Item save prevented: invalid basePrice "${basePrice}".`);
         return;
@@ -1987,7 +1987,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
       const parsedPoints = Number(productionPoints);
       if (isNaN(parsedPoints) || parsedPoints < 0) {
         alert(
-          `â ï¸ Pontos de produÃ§Ã£o invÃ¡lidos: "${productionPoints}" nÃ£o Ã© vÃ¡lido. O valor deve ser maior ou igual a zero ou ficar em branco.`,
+          `⚠️ Pontos de produção inválidos: "${productionPoints}" não é válido. O valor deve ser maior ou igual a zero ou ficar em branco.`,
         );
         console.warn(
           `Item save prevented: invalid productionPoints "${productionPoints}".`,
@@ -2178,7 +2178,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
               onClick={() => setIsExcelModalOpen(true)}
               className="bg-[#107c41] hover:bg-[#185c37] text-white text-xs font-bold py-1 px-3 rounded shadow transition w-fit"
             >
-              Importar do Excel (com preÃ§os)
+              Importar do Excel (com preços)
             </button>
             <button
               onClick={() => setIsBatchImageModalOpen(true)}
@@ -2190,7 +2190,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
               onClick={() => setIsCatalogModalOpen(true)}
               className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-1 px-3 rounded shadow transition w-fit flex items-center gap-1"
             >
-              <FileText size={14} /> Importar CatÃ¡logo PDF
+              <FileText size={14} /> Importar Catálogo PDF
             </button>
           </div>
         </div>
@@ -2216,7 +2216,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           onClick={() => { setActiveTab("PECAS"); setEditingId(null); setAttrEditingId(null); }}
           className={`flex-1 min-w-[90px] py-1.5 px-3 text-xs sm:text-sm font-bold rounded-md transition ${activeTab === "PECAS" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
         >
-          PeÃ§as
+          Peças
         </button>
         <button
           onClick={() => { setActiveTab("EPIS"); setEditingId(null); setAttrEditingId(null); }}
@@ -2228,19 +2228,19 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           onClick={() => { setActiveTab("CORES"); setEditingId(null); setAttrEditingId(null); }}
           className={`flex-1 min-w-[100px] py-1.5 px-3 text-xs sm:text-sm font-bold rounded-md transition ${activeTab === "CORES" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
         >
-          ð¨ Cores
+          🎨 Cores
         </button>
         <button
           onClick={() => { setActiveTab("VARIACOES"); setEditingId(null); setAttrEditingId(null); }}
           className={`flex-1 min-w-[100px] py-1.5 px-3 text-xs sm:text-sm font-bold rounded-md transition ${activeTab === "VARIACOES" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
         >
-          ð VariaÃ§Ãµes
+          🔀 Variações
         </button>
         <button
           onClick={() => { setActiveTab("TAMANHOS"); setEditingId(null); setAttrEditingId(null); }}
           className={`flex-1 min-w-[100px] py-1.5 px-3 text-xs sm:text-sm font-bold rounded-md transition ${activeTab === "TAMANHOS" ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
         >
-          ð Tamanhos
+          📐 Tamanhos
         </button>
       </div>
 
@@ -2250,9 +2250,9 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-gray-800">
-                ImportaÃ§Ã£o de{" "}
+                Importação de{" "}
                 {activeTab === "PECAS"
-                  ? "PeÃ§as"
+                  ? "Peças"
                   : activeTab === "EPIS"
                     ? "EPIs"
                     : "Produtos"}{" "}
@@ -2270,7 +2270,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
               Cole os dados diretamente do Excel. Colunas esperadas:
               <br />
               <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-xs text-blue-800">
-                CÃ³digo | Nome | PreÃ§o (opcional) | PontuaÃ§Ã£o (opcional)
+                Código | Nome | Preço (opcional) | Pontuação (opcional)
               </span>
             </p>
 
@@ -2317,7 +2317,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                 disabled={!excelData.trim() || !!excelImportResult}
                 className="bg-[#107c41] hover:bg-[#185c37] text-white font-bold py-2 px-6 rounded shadow transition disabled:opacity-50"
               >
-                Confirmar ImportaÃ§Ã£o
+                Confirmar Importação
               </button>
             </div>
           </div>
@@ -2339,7 +2339,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-gray-800">
-                ImportaÃ§Ã£o em Lote de Imagens
+                Importação em Lote de Imagens
               </h3>
               <button
                 onClick={() => setIsBatchImageModalOpen(false)}
@@ -2350,12 +2350,12 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
             </div>
 
             <p className="text-sm text-gray-600 mb-4">
-              Selecione as imagens correspondentes aos produtos. O sistema usarÃ¡
+              Selecione as imagens correspondentes aos produtos. O sistema usará
               o nome do arquivo (ex:{" "}
               <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-xs">
                 SAP-GIR-01.jpg
               </span>
-              ) para buscar o cÃ³digo ou nome do produto automaticamente.
+              ) para buscar o código ou nome do produto automaticamente.
             </p>
 
             <div className="flex-1 overflow-auto p-4 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center bg-gray-50 mb-4">
@@ -2424,12 +2424,12 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
               <h3 className="font-bold text-gray-800 text-sm mb-3 flex items-center gap-2">
                 <span>
                   {attrEditingId
-                    ? `Editando ${activeTab === "CORES" ? "Cor" : activeTab === "VARIACOES" ? "VariaÃ§Ã£o" : "Tamanho"}`
-                    : `Cadastrar Novo(a) ${activeTab === "CORES" ? "Cor" : activeTab === "VARIACOES" ? "VariaÃ§Ã£o" : "Tamanho"}`}
+                    ? `Editando ${activeTab === "CORES" ? "Cor" : activeTab === "VARIACOES" ? "Variação" : "Tamanho"}`
+                    : `Cadastrar Novo(a) ${activeTab === "CORES" ? "Cor" : activeTab === "VARIACOES" ? "Variação" : "Tamanho"}`}
                 </span>
                 {attrEditingId && (
                   <span className="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded-full font-extrabold animate-pulse">
-                    Modo EdiÃ§Ã£o
+                    Modo Edição
                   </span>
                 )}
               </h3>
@@ -2437,7 +2437,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Nome / DescriÃ§Ã£o <span className="text-red-500">*</span>
+                    Nome / Descrição <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -2455,7 +2455,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
-                    CÃ³digo / AbreviaÃ§Ã£o (Opcional)
+                    Código / Abreviação (Opcional)
                   </label>
                   <input
                     type="text"
@@ -2470,7 +2470,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
               {activeTab === "CORES" && (
                 <div className="mb-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
                   <label className="block text-xs font-bold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                    <span className="bg-purple-100 text-purple-700 p-1 rounded text-xs">ð·</span>
+                    <span className="bg-purple-100 text-purple-700 p-1 rounded text-xs">📷</span>
                     Imagem da Cor
                   </label>
                   <div className="flex items-center gap-4">
@@ -2548,7 +2548,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                 >
                   {attrEditingId
                     ? "Atualizar"
-                    : `Salvar ${activeTab === "CORES" ? "Cor" : activeTab === "VARIACOES" ? "VariaÃ§Ã£o" : "Tamanho"}`}
+                    : `Salvar ${activeTab === "CORES" ? "Cor" : activeTab === "VARIACOES" ? "Variação" : "Tamanho"}`}
                 </button>
               </div>
             </div>
@@ -2560,7 +2560,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                   {activeTab === "CORES"
                     ? "Cores Cadastradas"
                     : activeTab === "VARIACOES"
-                    ? "VariaÃ§Ãµes Cadastradas"
+                    ? "Variações Cadastradas"
                     : "Tamanhos Cadastrados"}
                 </h4>
                 <span className="text-xs text-gray-500 font-semibold">
@@ -2601,7 +2601,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                             <span>{attr.value}</span>
                             {attr.code && (
                               <span className="text-xs font-mono bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100">
-                                CÃ³d: {attr.code}
+                                Cód: {attr.code}
                               </span>
                             )}
                           </div>
@@ -2647,11 +2647,11 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                 <span>
                   {editingId
                     ? `Editando Item: ${code || ""}`
-                    : `Cadastrar Novo(a) ${activeTab === "PECAS" ? "PeÃ§a" : activeTab === "EPIS" ? "EPI" : "Produto"}`}
+                    : `Cadastrar Novo(a) ${activeTab === "PECAS" ? "Peça" : activeTab === "EPIS" ? "EPI" : "Produto"}`}
                 </span>
                 {editingId && (
                   <span className="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded-full font-extrabold animate-pulse">
-                    Modo EdiÃ§Ã£o
+                    Modo Edição
                   </span>
                 )}
               </span>
@@ -2673,7 +2673,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
               <input
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="CÃ³digo"
+                placeholder="Código"
                 className="border border-gray-300 p-2 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               <input
@@ -2716,7 +2716,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                       setProductionPoints("");
                     }
                   }}
-                  placeholder="PreÃ§o (Opcional)"
+                  placeholder="Preço (Opcional)"
                   className="border border-gray-300 p-2 pl-9 rounded w-full text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -2733,7 +2733,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                       e.target.value ? parseFloat(e.target.value) : "",
                     )
                   }
-                  placeholder="PontuaÃ§Ã£o (Opcional)"
+                  placeholder="Pontuação (Opcional)"
                   className="border border-gray-300 p-2 pl-10 rounded w-full text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -2758,11 +2758,11 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
 
             <div className="mt-2 bg-gray-50 p-3 rounded border border-gray-100 flex flex-col gap-2">
               <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                <span className="bg-indigo-100 text-indigo-700 p-1 rounded">â±ï¸</span>
-                Tempo PadrÃ£o de ProduÃ§Ã£o (em minutos)
+                <span className="bg-indigo-100 text-indigo-700 p-1 rounded">⏱️</span>
+                Tempo Padrão de Produção (em minutos)
               </label>
               <p className="text-[10px] text-gray-500 mb-1">
-                Defina o tempo estimado para concluir 1 unidade deste item em cada setor. Usado para previsÃ£o de ritmo de fila e cÃ¡lculo do Custo Produtivo.
+                Defina o tempo estimado para concluir 1 unidade deste item em cada setor. Usado para previsão de ritmo de fila e cálculo do Custo Produtivo.
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {(db.sectors || []).map((sector) => (
@@ -2804,8 +2804,8 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                 return (
                   <div className="mt-2 bg-slate-900 text-white p-3 rounded-xl flex flex-col gap-2 text-xs">
                     <div className="flex items-center justify-between font-bold text-amber-400">
-                      <span>ð CÃ¡lculo do Custo Produtivo Estimado</span>
-                      <span className="text-[10px] text-slate-400 font-normal">FÃ³rmula: Insumos + Î£(Tempo Setor Ã Custo/h)</span>
+                      <span>📊 Cálculo do Custo Produtivo Estimado</span>
+                      <span className="text-[10px] text-slate-400 font-normal">Fórmula: Insumos + Σ(Tempo Setor × Custo/h)</span>
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center bg-slate-800/80 p-2 rounded-lg">
@@ -2814,7 +2814,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                         <span className="font-bold text-rose-300">R$ {rawCost.toFixed(2)}</span>
                       </div>
                       <div>
-                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Custo MÃ¡quinas/Setores</span>
+                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Custo Máquinas/Setores</span>
                         <span className="font-bold text-blue-300">R$ {sectorOpsCost.toFixed(2)}</span>
                       </div>
                       <div>
@@ -2822,7 +2822,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                         <span className="font-black text-amber-300">R$ {totalEstimatedCostUnit.toFixed(2)}</span>
                       </div>
                       <div>
-                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Margem Bruta (PreÃ§o R$ {price.toFixed(2)})</span>
+                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Margem Bruta (Preço R$ {price.toFixed(2)})</span>
                         <span className={`font-black ${Number(marginPct) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                           {marginPct}% {price > 0 ? `(R$ ${marginAmount.toFixed(2)})` : ""}
                         </span>
@@ -2858,11 +2858,11 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
             {/* Fluxos do Produto */}
             <div className="mt-2 bg-indigo-50/60 p-3 rounded border border-indigo-100 flex flex-col gap-2">
               <label className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
-                <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded text-[10px]">ð</span>
-                Fluxos de ProduÃ§Ã£o VÃ­nculo ao Produto
+                <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded text-[10px]">🔀</span>
+                Fluxos de Produção Vínculo ao Produto
               </label>
               <p className="text-[10px] text-indigo-700">
-                Selecione os fluxos compatÃ­veis para este produto. Ele apenas serÃ¡ liberado em setores habilitados para estes fluxos.
+                Selecione os fluxos compatíveis para este produto. Ele apenas será liberado em setores habilitados para estes fluxos.
               </p>
               <div className="flex flex-wrap gap-2">
                 {(db.flows && db.flows.length > 0 ? db.flows : [
@@ -2887,7 +2887,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                           : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
                       }`}
                     >
-                      {isSelected && <span>â</span>}
+                      {isSelected && <span>✓</span>}
                       {f.nome} ({f.codigo})
                     </button>
                   );
@@ -2932,7 +2932,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                 onClick={handleCadastrar}
                 className="flex-1 bg-blue-600 text-white font-bold p-2 rounded hover:bg-blue-700 transition shadow-sm text-sm"
               >
-                {editingId ? "Salvar AlteraÃ§Ãµes" : "Adicionar Item"}
+                {editingId ? "Salvar Alterações" : "Adicionar Item"}
               </button>
               {editingId && (
                 <button
@@ -3021,9 +3021,9 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                     <button
                       onClick={() => openBom(it)}
                       className="text-purple-600 hover:text-purple-800 p-1 text-xs font-bold border border-purple-200 rounded px-2"
-                      title="ComposiÃ§Ã£o (BOM)"
+                      title="Composição (BOM)"
                     >
-                      ComposiÃ§Ã£o
+                      Composição
                     </button>
                   )}
                   <button
@@ -3054,7 +3054,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-gray-800">
-                ComposiÃ§Ã£o: {currentBomProduct.name}
+                Composição: {currentBomProduct.name}
               </h3>
               <button
                 onClick={() => setIsBomModalOpen(false)}
@@ -3066,12 +3066,12 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
 
             <div className="mb-4">
               <h4 className="font-semibold text-gray-700 text-sm mb-2">
-                Adicionar PeÃ§a:
+                Adicionar Peça:
               </h4>
               <div className="flex gap-2 mb-2">
                 <input
                   type="text"
-                  placeholder="Pesquisar peÃ§a..."
+                  placeholder="Pesquisar peça..."
                   value={componentSearch}
                   onChange={(e) => setComponentSearch(e.target.value)}
                   className="border w-full p-2 text-sm rounded"
@@ -3088,7 +3088,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                   }
                   className="border p-2 rounded flex-1 text-sm bg-white"
                 >
-                  <option value="">Selecione uma peÃ§a</option>
+                  <option value="">Selecione uma peça</option>
                   {searchedPecas.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.code} - {p.name}
@@ -3117,12 +3117,12 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
 
             <div className="flex-1 overflow-y-auto">
               <h4 className="font-semibold text-gray-700 text-sm mb-2 border-b pb-1">
-                PeÃ§as Inclusas:
+                Peças Inclusas:
               </h4>
               {!currentBomProduct.components ||
               currentBomProduct.components.length === 0 ? (
                 <p className="text-sm text-gray-400 italic">
-                  Nenhuma peÃ§a cadastrada para este produto.
+                  Nenhuma peça cadastrada para este produto.
                 </p>
               ) : (
                 currentBomProduct.components.map((comp, idx) => {
@@ -3136,7 +3136,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                         <span className="font-bold">{comp.quantity}x</span>{" "}
                         {cItem
                           ? `${cItem.code} - ${cItem.name}`
-                          : "PeÃ§a ExcluÃ­da"}
+                          : "Peça Excluída"}
                       </div>
                       <button
                         onClick={() => handleRemoveComponent(idx)}
@@ -3325,7 +3325,7 @@ function PedidosScreen({
 
   const handleSelectRangeForPrint = () => {
     if (!orderRangeStart.trim() && !orderRangeEnd.trim()) {
-      alert("Por favor, informe o nÃºmero do pedido inicial e/ou final para marcar a faixa.");
+      alert("Por favor, informe o número do pedido inicial e/ou final para marcar a faixa.");
       return;
     }
 
@@ -3359,13 +3359,13 @@ function PedidosScreen({
     });
 
     if (matchingCodes.length === 0) {
-      alert("Nenhum pedido encontrado no intervalo de cÃ³digos informado.");
+      alert("Nenhum pedido encontrado no intervalo de códigos informado.");
       return;
     }
 
     const merged = Array.from(new Set([...selectedOrderCodesForPrint, ...matchingCodes]));
     setSelectedOrderCodesForPrint(merged);
-    alert(`ð¯ ${matchingCodes.length} pedido(s) da faixa foram marcados para impressÃ£o!`);
+    alert(`🎯 ${matchingCodes.length} pedido(s) da faixa foram marcados para impressão!`);
   };
 
   const getDeliveryStatus = React.useCallback((o: any) => {
@@ -4101,7 +4101,7 @@ function PedidosScreen({
     const labelMap: Record<string, string> = {
       PENDENTE: "Pendentes",
       TEM_ESTOQUE: "Tem Estoque",
-      EM_PRODUCAO: "Em ProduÃ§Ã£o",
+      EM_PRODUCAO: "Em Produção",
       PRODUZIDO: "Produzidos",
       EM_CORTE: "Em Corte",
       CORTADO: "Cortados",
@@ -4265,12 +4265,12 @@ function PedidosScreen({
             data = {
               success: false,
               error:
-                "Limite de tempo excedido (Timeout na Vercel/Servidor) ou rota do backend nÃ£o encontrada. O PDF enviado Ã© pesado ou o servidor levou mais tempo do que o limite da plataforma para processar. Por favor, divida o PDF em partes menores ou utilize a AdiÃ§Ã£o Manual/Planilha.",
+                "Limite de tempo excedido (Timeout na Vercel/Servidor) ou rota do backend não encontrada. O PDF enviado é pesado ou o servidor levou mais tempo do que o limite da plataforma para processar. Por favor, divida o PDF em partes menores ou utilize a Adição Manual/Planilha.",
             };
           } else {
             data = {
               success: false,
-              error: "Resposta em formato invÃ¡lido recebida do servidor (nÃ£o Ã© um JSON vÃ¡lido).",
+              error: "Resposta em formato inválido recebida do servidor (não é um JSON válido).",
             };
           }
         }
@@ -4353,7 +4353,7 @@ function PedidosScreen({
 
   const handleExtractPdf = async () => {
     if (pdfFiles.length === 0) return;
-    setPdfImportResult("Extraindo dados com InteligÃªncia Artificial...");
+    setPdfImportResult("Extraindo dados com Inteligência Artificial...");
     setPdfImportProgress(5);
 
     // Simulate progress during extraction to give outstanding visual feedback
@@ -4399,17 +4399,17 @@ function PedidosScreen({
             data = {
               success: false,
               error:
-                "Limite de tempo excedido (Timeout na Vercel/Servidor) ou rota de API nÃ£o conectada. O arquivo PDF enviado Ã© muito grande, pesado ou o servidor levou muito tempo para processar os dados por IA. Por favor, tente enviar um PDF menor (menos pÃ¡ginas) ou utilize a AdiÃ§Ã£o Manual/Planilha para cadastrar sem bloqueio.",
+                "Limite de tempo excedido (Timeout na Vercel/Servidor) ou rota de API não conectada. O arquivo PDF enviado é muito grande, pesado ou o servidor levou muito tempo para processar os dados por IA. Por favor, tente enviar um PDF menor (menos páginas) ou utilize a Adição Manual/Planilha para cadastrar sem bloqueio.",
             };
           } else {
             data = {
               success: false,
-              error: "Resposta em formato invÃ¡lido recebida do servidor (nÃ£o Ã© um JSON vÃ¡lido).",
+              error: "Resposta em formato inválido recebida do servidor (não é um JSON válido).",
             };
           }
         }
       } catch (jsonErr) {
-        console.warn("Aviso ao decodificar resposta de extraÃ§Ã£o de pedidos:", jsonErr);
+        console.warn("Aviso ao decodificar resposta de extração de pedidos:", jsonErr);
         data = {
           success: false,
           error: "Erro ao processar a resposta do servidor.",
@@ -4527,14 +4527,14 @@ function PedidosScreen({
         let finalRepresentativeName = order.representativeName || "";
         let finalRepresentativeId = "";
 
-        // NEW RULE: Force representative to "AndrÃ©" for specific clients
+        // NEW RULE: Force representative to "André" for specific clients
         const clientsForAndre = [
-          "mÃ³veis bom pastor",
+          "móveis bom pastor",
           "moveis bom pastor",
           "bom pastor",
           "Moveis B P LTDA",
           "lara moveis",
-          "lara mÃ³veis",
+          "lara móveis",
           "artano",
           "grupo sier",
           "sier",
@@ -4553,7 +4553,7 @@ function PedidosScreen({
           matchedRep =
             db.users.find(
               (u) =>
-                u.name.toLowerCase().includes("andrÃ©") ||
+                u.name.toLowerCase().includes("andré") ||
                 u.name.toLowerCase().includes("andre"),
             ) || matchedRep;
         }
@@ -4589,25 +4589,25 @@ function PedidosScreen({
         if (orderExists) {
           statusValidation = "BLOQUEADO";
           validationMessage =
-            "BLOQUEADO: Este pedido jÃ¡ existe no sistema. A importaÃ§Ã£o automÃ¡tica foi bloqueada para evitar duplicidade. Novos itens sÃ³ podem ser adicionados manualmente.";
+            "BLOQUEADO: Este pedido já existe no sistema. A importação automática foi bloqueada para evitar duplicidade. Novos itens só podem ser adicionados manualmente.";
         } else if (!statusOriginalPdf) {
           statusValidation = "REVISAO";
           validationMessage =
-            "Status ausente ou nÃ£o identificado no PDF. Requer revisÃ£o manual.";
+            "Status ausente ou não identificado no PDF. Requer revisão manual.";
         } else if (
           statusOriginalPdf.includes("DOCUMENTO FATURADO") &&
           !statusOriginalPdf.includes("PARCIAL")
         ) {
           statusValidation = "APTO";
           validationMessage =
-            "Pedido faturado no PDF. SerÃ¡ importado com status FATURADO e farÃ¡ consumo de estoque.";
+            "Pedido faturado no PDF. Será importado com status FATURADO e fará consumo de estoque.";
         } else if (
           statusOriginalPdf.includes("DOCUMENTO FATURADO PARCIAL") ||
           statusOriginalPdf.includes("PARCIAL")
         ) {
           statusValidation = "ALERTA";
           validationMessage =
-            "ALERTA: Faturado parcial. SerÃ¡ importado como pendente, verifique se os itens realmente devem ir para produÃ§Ã£o.";
+            "ALERTA: Faturado parcial. Será importado como pendente, verifique se os itens realmente devem ir para produção.";
         } else if (
           statusOriginalPdf.includes("PROCESSADO") ||
           statusOriginalPdf.includes("PEDIDO DE VENDA") ||
@@ -4617,19 +4617,19 @@ function PedidosScreen({
           statusOriginalPdf.includes("A FATURAR") ||
           statusOriginalPdf.includes("EM_PRODUCAO") ||
           statusOriginalPdf.includes("EM PRODUCAO") ||
-          statusOriginalPdf.includes("ORÃAMENTO APRESENTADO") ||
+          statusOriginalPdf.includes("ORÇAMENTO APRESENTADO") ||
           statusOriginalPdf === "AGUARDANDO_APROVACAO"
         ) {
           statusValidation = "APTO";
-          validationMessage = "Pedido liberado para importaÃ§Ã£o.";
+          validationMessage = "Pedido liberado para importação.";
         } else {
           statusValidation = "REVISAO";
           validationMessage =
-            "Status nÃ£o reconhecido. Requer revisÃ£o manual antes de faturar/produzir.";
+            "Status não reconhecido. Requer revisão manual antes de faturar/produzir.";
         }
 
         // Determine system status mapping following strict user rules:
-        // "Se o status for âDOCUMENTO FATURADOâ, o pedido nÃ£o deve seguir como pendente ou para produÃ§Ã£o." -> map to AGUARDANDO_APROVACAO
+        // "Se o status for “DOCUMENTO FATURADO”, o pedido não deve seguir como pendente ou para produção." -> map to AGUARDANDO_APROVACAO
         let finalSystemStatus:
           | "AGUARDANDO_APROVACAO"
           | "PENDENTE"
@@ -4664,7 +4664,7 @@ function PedidosScreen({
 
             if (COLOR_MAP[possibleColorCode]) {
               c = COLOR_MAP[possibleColorCode];
-              // Remapeia o cÃ³digo base removendo o sufixo numÃ©rico da cor
+              // Remapeia o código base removendo o sufixo numérico da cor
               processedCode = parts.slice(0, -1).join(".");
             }
           }
@@ -4699,7 +4699,7 @@ function PedidosScreen({
       setPdfImportProgress(100);
       setPdfExtractedOrders(matchedOrders);
       setPdfImportResult(
-        "Dados extraÃ­dos. Por favor, revise as informaÃ§Ãµes abaixo antes de confirmar.",
+        "Dados extraídos. Por favor, revise as informações abaixo antes de confirmar.",
       );
 
       // Clear the progress state shortly after completion
@@ -4723,14 +4723,14 @@ function PedidosScreen({
             if (parsePositiveUnitPrice(item?.unitPrice) !== null) return [];
             const itemLabel =
               item?.itemCode || item?.itemName || `item ${itemIndex + 1}`;
-            return [`Pedido ${order?.orderCode || orderIndex + 1} â ${itemLabel}`];
+            return [`Pedido ${order?.orderCode || orderIndex + 1} — ${itemLabel}`];
           },
         ),
     );
     if (invalidPriceItems.length > 0) {
       setPdfImportProgress(0);
       setPdfImportResult(
-        `ImportaÃ§Ã£o bloqueada: o preÃ§o unitÃ¡rio precisa ser lido do documento e ser maior que zero. Corrija: ${invalidPriceItems.join(", ")}.`,
+        `Importação bloqueada: o preço unitário precisa ser lido do documento e ser maior que zero. Corrija: ${invalidPriceItems.join(", ")}.`,
       );
       return;
     }
@@ -4746,7 +4746,7 @@ function PedidosScreen({
       );
       if (alreadyExists) {
         console.warn(
-          `[IMPORT BLOCK LOG] ImportaÃ§Ã£o automÃ¡tica do pedido ${orderCode} bloqueada: pedido jÃ¡ existente no sistema.`,
+          `[IMPORT BLOCK LOG] Importação automática do pedido ${orderCode} bloqueada: pedido já existente no sistema.`,
         );
         continue;
       }
@@ -4802,7 +4802,7 @@ function PedidosScreen({
         const unitPriceNum = parsePositiveUnitPrice(item.unitPrice);
         if (unitPriceNum === null) {
           throw new Error(
-            `PreÃ§o unitÃ¡rio ausente ou invÃ¡lido no pedido ${orderCode}.`,
+            `Preço unitário ausente ou inválido no pedido ${orderCode}.`,
           );
         }
         const quantity = Number(item.quantity) || 1;
@@ -4856,7 +4856,7 @@ function PedidosScreen({
               variation: "-",
               quantity: quantity,
               type: "SAIDA",
-              description: `DeduÃ§Ã£o de estoque por importaÃ§Ã£o direta de pedido FATURADO via PDF (${orderCode})`,
+              description: `Dedução de estoque por importação direta de pedido FATURADO via PDF (${orderCode})`,
             });
           }
         }
@@ -4879,7 +4879,7 @@ function PedidosScreen({
     }
 
     setPdfImportResult(
-      `ImportaÃ§Ã£o concluÃ­da! ${addedCount} itens de pedidos criados.`,
+      `Importação concluída! ${addedCount} itens de pedidos criados.`,
     );
     setTimeout(() => {
       setIsPdfModalOpen(false);
@@ -4908,10 +4908,10 @@ function PedidosScreen({
       firstRowCols.some(
         (c) =>
           c.includes("PEDIDO") ||
-          c.includes("CÃDIGO") ||
+          c.includes("CÓDIGO") ||
           c.includes("CODIGO") ||
           c.includes("NUMERO") ||
-          c.includes("NÂº") ||
+          c.includes("Nº") ||
           c.includes("O.V"),
       ) &&
       firstRowCols.some(
@@ -4919,7 +4919,7 @@ function PedidosScreen({
           c.includes("ITEM") ||
           c.includes("PRODUTO") ||
           c.includes("PECA") ||
-          c.includes("PEÃA") ||
+          c.includes("PEÇA") ||
           c.includes("DESCRI"),
       );
 
@@ -4954,7 +4954,7 @@ function PedidosScreen({
               (n) =>
                 c.includes(n.toUpperCase()) &&
                 !c.includes("COD. CLIENTE") &&
-                !c.includes("CÃD. CLIENTE"),
+                !c.includes("CÓD. CLIENTE"),
             ),
           );
         }
@@ -4963,16 +4963,16 @@ function PedidosScreen({
 
       idxCode = getColIndex([
         "PEDIDO",
-        "NÂº PEDIDO",
-        "CÃD. O.V.",
-        "CÃDIGO",
+        "Nº PEDIDO",
+        "CÓD. O.V.",
+        "CÓDIGO",
         "NUMERO",
-        "NÃMERO",
-        "NÂº O.V.",
+        "NÚMERO",
+        "Nº O.V.",
         "O.V.",
       ]);
       idxCustomer = getColIndex([
-        "RAZÃO SOCIAL",
+        "RAZÃO SOCIAL",
         "CLIENTE FANTASIA",
         "CLIENTE",
         "NOME DO CLIENTE",
@@ -4981,9 +4981,9 @@ function PedidosScreen({
       idxRep = getColIndex(["CONSULTOR", "VENDEDOR", "REPRESENTANTE"], true); // Do not fallback to Cidade
 
       const codItemIdx = getColIndex([
-        "CÃD. ITEM",
+        "CÓD. ITEM",
         "COD ITEM",
-        "CÃDIGO DO PRODUTO",
+        "CÓDIGO DO PRODUTO",
       ]);
       idxProductStr =
         codItemIdx >= 0
@@ -4991,15 +4991,15 @@ function PedidosScreen({
           : getColIndex([
               "ITEM",
               "PRODUTO",
-              "DESCRIÃÃO",
+              "DESCRIÇÃO",
               "DESCRI",
-              "PEÃA",
+              "PEÇA",
               "NOME",
             ]);
 
       idxColor = getColIndex(["COR"], true);
       idxSize = getColIndex(["TAMANHO"], true);
-      idxVariation = getColIndex(["VARIAÃÃO", "VARIACAO"], true);
+      idxVariation = getColIndex(["VARIAÇÃO", "VARIACAO"], true);
       idxQty = getColIndex(["QUANTIDADE", "QTD"], true);
 
       // Date can be 'Data para Entrega'
@@ -5113,7 +5113,7 @@ function PedidosScreen({
       // Prevention safety rule: if order code exists in database, block/skip automatic import
       if (rCode && preExistingCodes.has(rCode.trim().toUpperCase())) {
         console.warn(
-          `[IMPORT BLOCK LOG] ImportaÃ§Ã£o automÃ¡tica do pedido ${rCode} bloqueada: pedido jÃ¡ existente no sistema.`,
+          `[IMPORT BLOCK LOG] Importação automática do pedido ${rCode} bloqueada: pedido já existente no sistema.`,
         );
         continue;
       }
@@ -5310,16 +5310,16 @@ function PedidosScreen({
     if (anyBlocked) {
       if (addedCount === 0) {
         setExcelImportResult(
-          `Este pedido jÃ¡ existe no sistema. A importaÃ§Ã£o automÃ¡tica foi bloqueada para evitar duplicidade. Novos itens sÃ³ podem ser adicionados manualmente. (Pedidos bloqueados: ${blockedCodes.join(", ")})`,
+          `Este pedido já existe no sistema. A importação automática foi bloqueada para evitar duplicidade. Novos itens só podem ser adicionados manualmente. (Pedidos bloqueados: ${blockedCodes.join(", ")})`,
         );
       } else {
         setExcelImportResult(
-          `ImportaÃ§Ã£o concluÃ­da parcialmente! ${addedCount} novos itens adicionados de novos pedidos. Pedidos jÃ¡ existentes [${blockedCodes.join(", ")}] foram bloqueados para evitar duplicidade. Novos itens neles sÃ³ podem ser adicionados manualmente.`,
+          `Importação concluída parcialmente! ${addedCount} novos itens adicionados de novos pedidos. Pedidos já existentes [${blockedCodes.join(", ")}] foram bloqueados para evitar duplicidade. Novos itens neles só podem ser adicionados manualmente.`,
         );
       }
     } else {
       setExcelImportResult(
-        `ConcluÃ­do! ${addedCount} novos adicionados, ${updatedCount} atualizados.`,
+        `Concluído! ${addedCount} novos adicionados, ${updatedCount} atualizados.`,
       );
     }
     setExcelData("");
@@ -5393,7 +5393,7 @@ function PedidosScreen({
         type: "FATURAMENTO",
         timestamp: Date.now(),
         durationMillis: 0,
-        customProductName: `AprovaÃ§Ã£o de Pedido (Status: ${newStatus})`,
+        customProductName: `Aprovação de Pedido (Status: ${newStatus})`,
       },
     ]);
 
@@ -5416,7 +5416,7 @@ function PedidosScreen({
     const qty = parseInt(invoiceInput, 10);
 
     if (isNaN(qty) || qty <= 0 || qty > limit) {
-      alert("Quantidade invÃ¡lida. Deve ser maior que 0 e no mÃ¡ximo " + limit);
+      alert("Quantidade inválida. Deve ser maior que 0 e no máximo " + limit);
       return;
     }
 
@@ -5440,9 +5440,9 @@ function PedidosScreen({
         const primaryResOrder = alternateReservedOrders[0];
         const confirmResult = window.confirm(
           `ALERTA POPUP - PRODUTO RESERVADO PARA OUTRO PEDIDO:\n\n` +
-            `O produto que vocÃª estÃ¡ faturando contÃ©m unidades de estoque RESERVADAS para:\n` +
-            `â¢ Pedido: ${primaryResOrder.orderCode}\n` +
-            `â¢ Cliente: ${primaryResOrder.customerName}\n\n` +
+            `O produto que você está faturando contém unidades de estoque RESERVADAS para:\n` +
+            `• Pedido: ${primaryResOrder.orderCode}\n` +
+            `• Cliente: ${primaryResOrder.customerName}\n\n` +
             `Deseja CONTINUAR assim mesmo e desfazer a reserva do outro pedido ou clique em Cancelar para interromper?`,
         );
 
@@ -5524,7 +5524,7 @@ function PedidosScreen({
       variation: o.variation,
       quantity: qty,
       type: "SAIDA",
-      description: `SaÃ­da por faturamento do Pedido ${o.orderCode} (Cliente: ${o.customerName})`,
+      description: `Saída por faturamento do Pedido ${o.orderCode} (Cliente: ${o.customerName})`,
     });
 
     db.addLogs([
@@ -5559,7 +5559,7 @@ function PedidosScreen({
       productDescription: productDescr,
       quantity: qty,
       phone: rep?.phone || "",
-      representativeName: rep?.name || o.representativeName || "nÃ£o definido",
+      representativeName: rep?.name || o.representativeName || "não definido",
       customerEmail: customer?.email || "",
       representativeEmail: rep?.email || "",
       totalValue: qty * (o.unitPrice || 0),
@@ -5581,12 +5581,12 @@ function PedidosScreen({
     });
 
     if (itemsWithQtyToInvoice.length === 0) {
-      alert("Todos os itens deste pedido jÃ¡ estÃ£o com faturamento completo.");
+      alert("Todos os itens deste pedido já estão com faturamento completo.");
       return;
     }
 
     const confirmResult = window.confirm(
-      `Tem certeza que deseja faturar todo o pedido ${orderCode} de uma Ãºnica vez?`,
+      `Tem certeza que deseja faturar todo o pedido ${orderCode} de uma única vez?`,
     );
     if (!confirmResult) return;
 
@@ -5630,7 +5630,7 @@ function PedidosScreen({
         variation: o.variation,
         quantity: qtyToInvoice,
         type: "SAIDA",
-        description: `SaÃ­da por faturamento total do Pedido ${o.orderCode} (Cliente: ${o.customerName})`,
+        description: `Saída por faturamento total do Pedido ${o.orderCode} (Cliente: ${o.customerName})`,
       });
 
       newLogs.push({
@@ -5706,7 +5706,7 @@ function PedidosScreen({
       quantity: totalQty,
       phone: rep?.phone || "",
       representativeName:
-        rep?.name || firstItem.representativeName || "nÃ£o definido",
+        rep?.name || firstItem.representativeName || "não definido",
       customerEmail: customer?.email || "",
       representativeEmail: rep?.email || "",
       totalValue: totalVal,
@@ -5775,7 +5775,7 @@ function PedidosScreen({
         variation: o.variation,
         quantity: qty,
         type: "SAIDA",
-        description: `SaÃ­da por faturamento em LOTE do Pedido ${o.orderCode} (Cliente: ${o.customerName})`,
+        description: `Saída por faturamento em LOTE do Pedido ${o.orderCode} (Cliente: ${o.customerName})`,
       });
 
       addedLogs.push({
@@ -5798,7 +5798,7 @@ function PedidosScreen({
       db.addLogs(addedLogs);
       setSelectedBatchInvoiceIds([]);
       alert(
-        `Faturamento em lote concluÃ­do com sucesso para ${updatedOrders.length} pedido(s)!`,
+        `Faturamento em lote concluído com sucesso para ${updatedOrders.length} pedido(s)!`,
       );
     }
   };
@@ -5807,7 +5807,7 @@ function PedidosScreen({
     if (!itemId || !totalQuantity) return;
     const parsedUnitPrice = parsePositiveUnitPrice(unitPrice);
     if (parsedUnitPrice === null) {
-      alert("Informe o preÃ§o unitÃ¡rio do item. O preÃ§o deve ser maior que zero.");
+      alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
       return;
     }
     setLineItems([
@@ -5857,7 +5857,7 @@ function PedidosScreen({
     if (editingCartIndex === null || !itemId || !totalQuantity) return;
     const parsedUnitPrice = parsePositiveUnitPrice(unitPrice);
     if (parsedUnitPrice === null) {
-      alert("Informe o preÃ§o unitÃ¡rio do item. O preÃ§o deve ser maior que zero.");
+      alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
       return;
     }
     const updated = [...lineItems];
@@ -5973,7 +5973,7 @@ function PedidosScreen({
 
   const handleOpenOrderGroupEditModal = (orderCode: string) => {
     if (!canUseOrderEditor) {
-      alert("Acesso negado: a ediÃ§Ã£o completa de pedidos estÃ¡ disponÃ­vel apenas para PCP e GerÃªncia da ImpÃ©rio.");
+      alert("Acesso negado: a edição completa de pedidos está disponível apenas para PCP e Gerência da Império.");
       return;
     }
     const group = db.orders.filter((o) => o.orderCode === orderCode);
@@ -6020,7 +6020,7 @@ function PedidosScreen({
     if (!editingGroupItemId || !editingGroupTotalQuantity) return;
     const parsedUnitPrice = parsePositiveUnitPrice(editingGroupUnitPrice);
     if (parsedUnitPrice === null) {
-      alert("Informe o preÃ§o unitÃ¡rio do item. O preÃ§o deve ser maior que zero.");
+      alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
       return;
     }
     setEditingGroupLineItems((prev) => [
@@ -6070,7 +6070,7 @@ function PedidosScreen({
     if (editingGroupCartIndex === null || !editingGroupItemId || !editingGroupTotalQuantity) return;
     const parsedUnitPrice = parsePositiveUnitPrice(editingGroupUnitPrice);
     if (parsedUnitPrice === null) {
-      alert("Informe o preÃ§o unitÃ¡rio do item. O preÃ§o deve ser maior que zero.");
+      alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
       return;
     }
     const updated = [...editingGroupLineItems];
@@ -6149,7 +6149,7 @@ function PedidosScreen({
       )
     ) {
       alert(
-        "O pedido possui item sem preÃ§o unitÃ¡rio vÃ¡lido. Informe os preÃ§os do documento antes de salvar.",
+        "O pedido possui item sem preço unitário válido. Informe os preços do documento antes de salvar.",
       );
       return;
     }
@@ -6242,7 +6242,7 @@ function PedidosScreen({
         type: "PRODUCAO",
         timestamp: Date.now(),
         durationMillis: 0,
-        processName: `Pedido #${editingOrderGroupCode} editado por ${currentUser.name}.${newCode !== editingOrderGroupCode ? ` CÃ³digo alterado para #${newCode}.` : ""}`,
+        processName: `Pedido #${editingOrderGroupCode} editado por ${currentUser.name}.${newCode !== editingOrderGroupCode ? ` Código alterado para #${newCode}.` : ""}`,
       },
     ]);
 
@@ -6351,7 +6351,7 @@ function PedidosScreen({
           timestamp: Date.now(),
           userId: currentUser.id,
           userName: currentUser.name,
-          action: `Pedido ${orderCode} vinculado no lanÃ§amento (${createdItems.reduce((sum, item) => sum + item.qty, 0)} un em ${createdItems.length} item(ns))`,
+          action: `Pedido ${orderCode} vinculado no lançamento (${createdItems.reduce((sum, item) => sum + item.qty, 0)} un em ${createdItems.length} item(ns))`,
         },
       ],
     });
@@ -6369,7 +6369,7 @@ function PedidosScreen({
         return;
       const parsedUnitPrice = parsePositiveUnitPrice(unitPrice);
       if (parsedUnitPrice === null) {
-        alert("Informe o preÃ§o unitÃ¡rio do item. O preÃ§o deve ser maior que zero.");
+        alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
         return;
       }
       const existing = db.orders.find((o) => o.id === editingId);
@@ -6416,7 +6416,7 @@ function PedidosScreen({
 
         if (!wasLate && isLate && !isFinished) {
           sendServerPush(
-            "AtenÃ§Ã£o: Pedido Atrasado",
+            "Atenção: Pedido Atrasado",
             `O prazo do pedido ${orderCode} foi alterado ou venceu e encontra-se em atraso!`,
             ["ADMIN", "PCP", "PRODUCAO"],
           );
@@ -6447,7 +6447,7 @@ function PedidosScreen({
 
       const invalidItems = itemsToProcess.filter(it => !it.itemId || !it.totalQuantity || it.totalQuantity <= 0);
       if (invalidItems.length > 0) {
-        alert("Existem itens invÃ¡lidos na lista (sem produto ou com quantidade zerada).");
+        alert("Existem itens inválidos na lista (sem produto ou com quantidade zerada).");
         return;
       }
 
@@ -6456,7 +6456,7 @@ function PedidosScreen({
       );
       if (invalidPriceItems.length > 0) {
         alert(
-          "Existem itens sem preÃ§o unitÃ¡rio vÃ¡lido. Informe o preÃ§o do documento antes de salvar.",
+          "Existem itens sem preço unitário válido. Informe o preço do documento antes de salvar.",
         );
         return;
       }
@@ -6698,7 +6698,7 @@ function PedidosScreen({
 
     if (ordersToDelete.length === 0) return;
 
-    const confirmMsg = `â ï¸ ATENÃÃO: Tem certeza que deseja excluir em massa os ${selectedOrderCodesForPrint.length} pedido(s) selecionados (${ordersToDelete.length} itens no total)? Esta aÃ§Ã£o nÃ£o pode ser desfeita.`;
+    const confirmMsg = `⚠️ ATENÇÃO: Tem certeza que deseja excluir em massa os ${selectedOrderCodesForPrint.length} pedido(s) selecionados (${ordersToDelete.length} itens no total)? Esta ação não pode ser desfeita.`;
 
     if (confirm(confirmMsg)) {
       try {
@@ -6709,7 +6709,7 @@ function PedidosScreen({
           setSelectedOrderCode(null);
         }
         setSelectedOrderCodesForPrint([]);
-        alert(`â ${ordersToDelete.length} item(ns) de ${selectedOrderCodesForPrint.length} pedido(s) excluÃ­dos com sucesso!`);
+        alert(`✅ ${ordersToDelete.length} item(ns) de ${selectedOrderCodesForPrint.length} pedido(s) excluídos com sucesso!`);
       } catch (err: any) {
         alert("Erro ao excluir pedidos em massa: " + err.message);
       }
@@ -6861,7 +6861,7 @@ function PedidosScreen({
     // Header
     doc.setFontSize(18);
     doc.setTextColor(30, 41, 59); // slate-800
-    doc.text("RelatÃ³rio de Pedidos Agrupados", 14, 20);
+    doc.text("Relatório de Pedidos Agrupados", 14, 20);
 
     // Filter metadata
     doc.setFontSize(9);
@@ -6870,7 +6870,7 @@ function PedidosScreen({
     const filterInfo: string[] = [];
     if (debouncedSearchTerm) filterInfo.push(`Pesquisa: "${debouncedSearchTerm}"`);
     if (deliveryDateStart || deliveryDateEnd) {
-      const startFmt = deliveryDateStart ? deliveryDateStart.split("-").reverse().join("/") : "inÃ­cio";
+      const startFmt = deliveryDateStart ? deliveryDateStart.split("-").reverse().join("/") : "início";
       const endFmt = deliveryDateEnd ? deliveryDateEnd.split("-").reverse().join("/") : "fim";
       filterInfo.push(`Entrega: ${startFmt} a ${endFmt}`);
     }
@@ -6880,7 +6880,7 @@ function PedidosScreen({
 
     const tableColumn = [
       "Pedido",
-      "EmissÃ£o",
+      "Emissão",
       "Entrega Prev.",
       "Cliente",
       "Produto(s)",
@@ -6940,7 +6940,7 @@ function PedidosScreen({
     // Header
     doc.setFontSize(18);
     doc.setTextColor(30, 41, 59); // slate-800
-    doc.text("RelatÃ³rio de Pedidos", 14, 20);
+    doc.text("Relatório de Pedidos", 14, 20);
 
     // Filter metadata
     doc.setFontSize(9);
@@ -6949,7 +6949,7 @@ function PedidosScreen({
     const filterInfo: string[] = [];
     if (debouncedSearchTerm) filterInfo.push(`Pesquisa: "${debouncedSearchTerm}"`);
     if (deliveryDateStart || deliveryDateEnd) {
-      const startFmt = deliveryDateStart ? deliveryDateStart.split("-").reverse().join("/") : "inÃ­cio";
+      const startFmt = deliveryDateStart ? deliveryDateStart.split("-").reverse().join("/") : "início";
       const endFmt = deliveryDateEnd ? deliveryDateEnd.split("-").reverse().join("/") : "fim";
       filterInfo.push(`Entrega: ${startFmt} a ${endFmt}`);
     }
@@ -7021,7 +7021,7 @@ function PedidosScreen({
                     }}
                   >
                     <h3 className={`font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1 ${editingId ? 'text-lg' : 'text-xs sm:text-sm'}`}>
-                      ð{" "}
+                      📑{" "}
                       {editingId ? "Editando Pedido" : "Novo Pedido / Importar"}
                     </h3>
                     {!editingId && (
@@ -7077,7 +7077,7 @@ function PedidosScreen({
                         }}
                         className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-2.5 rounded shadow-xs transition text-[10px] md:text-xs flex items-center gap-1 leading-none"
                       >
-                        ð§¹ Limpar Duplicados
+                        🧹 Limpar Duplicados
                       </button>
                     </div>
                   )}
@@ -7096,7 +7096,7 @@ function PedidosScreen({
                             Importar Faturamento via IA
                           </h2>
                           <p className="text-xs text-slate-500 font-medium mt-0.5">
-                            ExtraÃ§Ã£o automÃ¡tica de itens e pedidos faturados.
+                            Extração automática de itens e pedidos faturados.
                           </p>
                         </div>
                       </div>
@@ -7119,7 +7119,7 @@ function PedidosScreen({
                               Arraste um PDF ou selecione
                             </h3>
                             <p className="text-sm text-slate-500 mb-6 max-w-sm">
-                              Suporta PDFs mÃºltiplos (notas fiscais ou espelhos
+                              Suporta PDFs múltiplos (notas fiscais ou espelhos
                               de faturamento)
                             </p>
 
@@ -7167,7 +7167,7 @@ function PedidosScreen({
                             onClick={() => setBillingFiles([])}
                             className="text-xs text-red-500 font-bold hover:underline mb-8 mt-2"
                           >
-                            Limpar SeleÃ§Ã£o
+                            Limpar Seleção
                           </button>
 
                           {billingProgress === 0 && (
@@ -7260,7 +7260,7 @@ function PedidosScreen({
                     id="import-orders-pdf-modal"
                     className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[92vh] sm:h-[88vh] flex flex-col overflow-hidden border border-slate-100"
                   >
-                    {/* CabeÃ§alho Fixo */}
+                    {/* Cabeçalho Fixo */}
                     <div className="flex justify-between items-center px-5 py-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
                       <div className="flex items-center gap-3">
                         <div className="bg-red-50 p-2 rounded-lg text-red-600">
@@ -7271,8 +7271,8 @@ function PedidosScreen({
                             Importar Pedidos via PDF
                           </h3>
                           <p className="text-xs text-slate-500 font-medium">
-                            Extraia e revise mÃºltiplos pedidos do PDF usando
-                            InteligÃªncia Artificial
+                            Extraia e revise múltiplos pedidos do PDF usando
+                            Inteligência Artificial
                           </p>
                         </div>
                       </div>
@@ -7292,7 +7292,7 @@ function PedidosScreen({
                       </button>
                     </div>
 
-                    {/* Ãrea Interna de ConteÃºdo (RolÃ¡vel) */}
+                    {/* Área Interna de Conteúdo (Rolável) */}
                     <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50/50 space-y-6">
                       {!pdfExtractedOrders.length ? (
                         /* Tela de Upload Inicial */
@@ -7318,9 +7318,9 @@ function PedidosScreen({
                             Selecione o documento de Pedidos
                           </h4>
                           <p className="text-xs sm:text-sm text-slate-500 text-center max-w-md mb-6 leading-relaxed">
-                            FaÃ§a upload do arquivo PDF contendo um ou mais
-                            pedidos de venda. Nossa IA farÃ¡ a leitura, extrairÃ¡
-                            todos os dados de cabeÃ§alho, itens e efetuarÃ¡ o
+                            Faça upload do arquivo PDF contendo um ou mais
+                            pedidos de venda. Nossa IA fará a leitura, extrairá
+                            todos os dados de cabeçalho, itens e efetuará o
                             cruzamento inteligente com o cadastro.
                           </p>
 
@@ -7349,7 +7349,7 @@ function PedidosScreen({
                                 onClick={() => setPdfFiles([])}
                                 className="text-xs text-red-500 font-bold hover:underline self-end"
                               >
-                                Limpar SeleÃ§Ã£o
+                                Limpar Seleção
                               </button>
                             </div>
                           ) : (
@@ -7393,7 +7393,7 @@ function PedidosScreen({
                             )}
                         </div>
                       ) : (
-                        /* Tela de PrÃ©-VisualizaÃ§Ã£o / ConferÃªncia dos dados extraÃ­dos */
+                        /* Tela de Pré-Visualização / Conferência dos dados extraídos */
                         <div className="space-y-6">
                           {/* 1. RESUMO GERAL NO TOPO */}
                           <div
@@ -7402,7 +7402,7 @@ function PedidosScreen({
                           >
                             <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
                               <Activity size={14} className="text-indigo-500" />
-                              VisÃ£o Geral de Status e ValidaÃ§Ã£o dos Pedidos
+                              Visão Geral de Status e Validação dos Pedidos
                             </h4>
 
                             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -7469,13 +7469,13 @@ function PedidosScreen({
                                   }
                                 </span>
                                 <span className="text-[10px] text-rose-600 mt-0.5 font-bold flex items-center gap-0.5">
-                                  <AlertCircle size={11} /> JÃ¡ Faturados
+                                  <AlertCircle size={11} /> Já Faturados
                                 </span>
                               </div>
 
                               <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 flex flex-col">
                                 <span className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider">
-                                  RevisÃ£o Pendente
+                                  Revisão Pendente
                                 </span>
                                 <span className="text-xl font-black text-indigo-800 mt-1 block">
                                   {
@@ -7495,16 +7495,16 @@ function PedidosScreen({
                                 <AlertTriangle size={15} />
                               </span>
                               <p>
-                                <strong>AtenÃ§Ã£o:</strong> Revise cada pedido no
-                                acordeÃ£o abaixo. Pedidos com sinalizador de
-                                representante ausente ou cliente nÃ£o cadastrado
-                                serÃ£o importados, porÃ©m devem ser ajustados ou
-                                serÃ£o criados em modo temporÃ¡rio.
+                                <strong>Atenção:</strong> Revise cada pedido no
+                                acordeão abaixo. Pedidos com sinalizador de
+                                representante ausente ou cliente não cadastrado
+                                serão importados, porém devem ser ajustados ou
+                                serão criados em modo temporário.
                               </p>
                             </div>
                           </div>
 
-                          {/* 2. PEDIDO EM ACCORDION / CARD EXPANSÃVEL */}
+                          {/* 2. PEDIDO EM ACCORDION / CARD EXPANSÍVEL */}
                           <div className="space-y-3">
                             <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest pl-1">
                               Lista de Pedidos ({pdfExtractedOrders.length})
@@ -7532,7 +7532,7 @@ function PedidosScreen({
                                       : "border-slate-200 hover:border-slate-300"
                                   }`}
                                 >
-                                  {/* CabeÃ§alho do Card (AcordeÃ£o) */}
+                                  {/* Cabeçalho do Card (Acordeão) */}
                                   <div
                                     onClick={() =>
                                       setExpandedOrderIdx(
@@ -7554,7 +7554,7 @@ function PedidosScreen({
                                           <span className="font-extrabold text-slate-900 text-sm">
                                             Pedido:{" "}
                                             {order.orderCode ||
-                                              `OrÃ§amento #${idx + 1}`}
+                                              `Orçamento #${idx + 1}`}
                                           </span>
 
                                           {/* Status do Pedido no PDF - Com super destaque conforme solicitado */}
@@ -7571,7 +7571,7 @@ function PedidosScreen({
                                                     ? "bg-emerald-100 text-emerald-900 border-emerald-300"
                                                     : "bg-indigo-100 text-indigo-900 border-indigo-300"
                                             }`}
-                                            title="Status extraÃ­do do PDF"
+                                            title="Status extraído do PDF"
                                           >
                                             <span
                                               className={`w-2 h-2 rounded-full ${
@@ -7592,7 +7592,7 @@ function PedidosScreen({
                                               "STATUS AUSENTE"}
                                           </span>
 
-                                          {/* Alertas RÃ¡pidos de ValidaÃ§Ã£o */}
+                                          {/* Alertas Rápidos de Validação */}
                                           <div className="flex items-center gap-1">
                                             {/* Badge de Cliente */}
                                             {order.wasCustomerMatched ? (
@@ -7605,7 +7605,7 @@ function PedidosScreen({
                                             ) : (
                                               <span
                                                 className="bg-red-50 text-red-700 border border-red-100 text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5 animate-pulse"
-                                                title="Cliente NÃO cadastrado"
+                                                title="Cliente NÃO cadastrado"
                                               >
                                                 <AlertTriangle size={9} /> Novo
                                                 Cliente
@@ -7623,7 +7623,7 @@ function PedidosScreen({
                                             ) : (
                                               <span
                                                 className="bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5"
-                                                title="Representante nÃ£o encontrado"
+                                                title="Representante não encontrado"
                                               >
                                                 <AlertTriangle size={9} /> Sem
                                                 Rep.
@@ -7663,18 +7663,18 @@ function PedidosScreen({
                                           >
                                             {order.statusValidation ===
                                             "BLOQUEADO"
-                                              ? "ð "
+                                              ? "🛑 "
                                               : order.statusValidation ===
                                                   "ALERTA"
-                                                ? "â ï¸ "
-                                                : "â "}
+                                                ? "⚠️ "
+                                                : "✅ "}
                                             {order.validationMessage}
                                           </span>
                                         </div>
                                       </div>
                                     </div>
 
-                                    {/* Direita: Datas e Resumo financeiro rÃ¡pido */}
+                                    {/* Direita: Datas e Resumo financeiro rápido */}
                                     <div className="flex items-center gap-4 shrink-0 mt-2 sm:mt-0 text-right">
                                       <div className="hidden md:flex flex-col text-right">
                                         <span className="text-[10px] text-slate-400 font-bold uppercase">
@@ -7715,33 +7715,33 @@ function PedidosScreen({
                                       {order.status === "FATURADO" && (
                                         <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-4 rounded-xl flex items-start gap-3.5 shadow-xs animate-in fade-in duration-250">
                                           <div className="text-xl shrink-0">
-                                            â¨
+                                            ✨
                                           </div>
                                           <div className="space-y-1">
                                             <h4 className="font-black text-sm uppercase tracking-wide text-emerald-950 flex items-center gap-2">
-                                              Pedido Faturado e ConcluÃ­do
+                                              Pedido Faturado e Concluído
                                             </h4>
                                             <p className="text-xs text-emerald-800 leading-relaxed font-semibold">
                                               Este pedido encontra-se
                                               oficialmente faturado e
                                               consolidado no sistema.
-                                              AtribuiÃ§Ãµes de peÃ§as cortadas de
+                                              Atribuições de peças cortadas de
                                               laser feitas agora abatem
-                                              imediatamente do saldo fÃ­sico
+                                              imediatamente do saldo físico
                                               atual em estoque.
                                             </p>
                                           </div>
                                         </div>
                                       )}
 
-                                      {/* Barra Superior para Ativar/Desativar EdiÃ§Ã£o */}
+                                      {/* Barra Superior para Ativar/Desativar Edição */}
                                       <div className="flex justify-between items-center bg-indigo-50/50 p-2.5 rounded-lg border border-indigo-100/50">
                                         <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5 align-middle">
                                           <Settings
                                             size={14}
                                             className="text-indigo-600"
                                           />{" "}
-                                          RevisÃ£o e Ajuste de InformaÃ§Ãµes
+                                          Revisão e Ajuste de Informações
                                         </span>
                                         <div className="flex items-center gap-2">
                                           <button
@@ -7763,7 +7763,7 @@ function PedidosScreen({
                                             {isEditing ? (
                                               <>
                                                 <Check size={14} /> Concluir
-                                                EdiÃ§Ã£o
+                                                Edição
                                               </>
                                             ) : (
                                               <>
@@ -7778,7 +7778,7 @@ function PedidosScreen({
                                               e.stopPropagation();
                                               if (
                                                 confirm(
-                                                  `Excluir o pedido ${order.orderCode || ""} (${order.customerName || "Cliente"}) da lista de importaÃ§Ã£o?`,
+                                                  `Excluir o pedido ${order.orderCode || ""} (${order.customerName || "Cliente"}) da lista de importação?`,
                                                 )
                                               ) {
                                                 setPdfExtractedOrders((prev) =>
@@ -7798,9 +7798,9 @@ function PedidosScreen({
                                           </button>
                                         </div>
                                       </div>
-                                      {/* Quadros de validaÃ§Ã£o (Visual Alert Boxes) */}
+                                      {/* Quadros de validação (Visual Alert Boxes) */}
                                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-                                        {/* ValidaÃ§Ã£o de Cliente */}
+                                        {/* Validação de Cliente */}
                                         <div
                                           className={`p-3 rounded-lg border text-xs bg-white ${
                                             order.wasCustomerMatched
@@ -7819,26 +7819,26 @@ function PedidosScreen({
                                               </span>
                                             )}
                                             <span className="text-slate-850 uppercase tracking-wider text-[10px]">
-                                              VerificaÃ§Ã£o do Cliente
+                                              Verificação do Cliente
                                             </span>
                                           </div>
                                           <div className="space-y-1 bg-white p-2.5 rounded-lg border border-slate-100">
                                             <p className="flex justify-between">
                                               <span className="text-slate-400 font-medium">
-                                                ExtraÃ­do no PDF:
+                                                Extraído no PDF:
                                               </span>
                                               <span className="font-bold text-slate-700">
                                                 {order.originalCustomerName ||
-                                                  "NÃ£o Informado"}
+                                                  "Não Informado"}
                                               </span>
                                             </p>
                                             <p className="flex justify-between">
                                               <span className="text-slate-400 font-medium">
-                                                CÃ³digo ExtraÃ­do:
+                                                Código Extraído:
                                               </span>
                                               <span className="font-mono font-bold text-slate-705">
                                                 {order.customerCode ||
-                                                  "NÃ£o Informado"}
+                                                  "Não Informado"}
                                               </span>
                                             </p>
                                             <p className="flex justify-between border-t border-dashed border-slate-200 pt-1 mt-1 text-xs">
@@ -7856,15 +7856,15 @@ function PedidosScreen({
                                           </div>
                                           {!order.wasCustomerMatched && (
                                             <p className="text-[10px] text-red-500 mt-1.5 italic font-medium">
-                                              â ï¸ O pedido serÃ¡ importado com a
-                                              razÃ£o social extraÃ­da brutamente
-                                              do PDF. Ã recomendÃ¡vel cadastrÃ¡-lo
-                                              previamente no mÃ³dulo de clientes.
+                                              ⚠️ O pedido será importado com a
+                                              razão social extraída brutamente
+                                              do PDF. É recomendável cadastrá-lo
+                                              previamente no módulo de clientes.
                                             </p>
                                           )}
                                         </div>
 
-                                        {/* ValidaÃ§Ã£o de Representante */}
+                                        {/* Validação de Representante */}
                                         <div
                                           className={`p-3 rounded-lg border text-xs bg-white ${
                                             order.wasRepMatched
@@ -7883,7 +7883,7 @@ function PedidosScreen({
                                               </span>
                                             )}
                                             <span className="text-slate-850 uppercase tracking-wider text-[10px]">
-                                              VÃ­nculo do Consultor/Representante
+                                              Vínculo do Consultor/Representante
                                             </span>
                                           </div>
                                           <div className="space-y-1 bg-white p-2.5 rounded-lg border border-slate-100">
@@ -7898,7 +7898,7 @@ function PedidosScreen({
                                             </p>
                                             <p className="flex justify-between border-t border-dashed border-slate-200 pt-1 mt-1">
                                               <span className="text-slate-400 font-medium">
-                                                UsuÃ¡rio Vinculado:
+                                                Usuário Vinculado:
                                               </span>
                                               <span
                                                 className={`font-black ${order.wasRepMatched ? "text-emerald-700" : "text-amber-600"}`}
@@ -7911,16 +7911,16 @@ function PedidosScreen({
                                           </div>
                                           {!order.wasRepMatched && (
                                             <p className="text-[10px] text-amber-600 mt-1.5 italic font-medium">
-                                              â ï¸ Sem representante vinculado
-                                              automaticamente. Ele nÃ£o poderÃ¡
+                                              ⚠️ Sem representante vinculado
+                                              automaticamente. Ele não poderá
                                               ver o pedido em seu painel
-                                              individual atÃ© ser corrigido no
+                                              individual até ser corrigido no
                                               PCP.
                                             </p>
                                           )}
                                         </div>
 
-                                        {/* ValidaÃ§Ã£o de Status do Pedido vindo do PDF */}
+                                        {/* Validação de Status do Pedido vindo do PDF */}
                                         <div
                                           className={`p-3 rounded-lg border text-xs bg-white ${
                                             order.statusValidation ===
@@ -7957,7 +7957,7 @@ function PedidosScreen({
                                               </span>
                                             )}
                                             <span className="text-slate-850 uppercase tracking-wider text-[10px]">
-                                              ValidaÃ§Ã£o do Status comercial
+                                              Validação do Status comercial
                                             </span>
                                           </div>
                                           <div className="space-y-1 bg-white p-2.5 rounded-lg border border-slate-100">
@@ -7967,7 +7967,7 @@ function PedidosScreen({
                                               </span>
                                               <span className="font-extrabold text-slate-700 uppercase font-mono">
                                                 {order.statusOriginalPdf ||
-                                                  "NÃ£o Informado"}
+                                                  "Não Informado"}
                                               </span>
                                             </p>
                                             <p className="flex justify-between border-t border-dashed border-slate-200 pt-1 mt-1 text-[11px]">
@@ -7993,11 +7993,11 @@ function PedidosScreen({
                                                   ? "BLOQUEADO"
                                                   : order.statusValidation ===
                                                       "ALERTA"
-                                                    ? "ALERTA DE REVISÃO"
+                                                    ? "ALERTA DE REVISÃO"
                                                     : order.statusValidation ===
                                                         "APTO"
                                                       ? "LIBERADO"
-                                                      : "REVISÃO MANUAL"}
+                                                      : "REVISÃO MANUAL"}
                                               </span>
                                             </p>
                                             <p className="flex justify-between text-xs pt-1">
@@ -8091,16 +8091,16 @@ function PedidosScreen({
                                         </div>
                                       </div>
 
-                                      {/* Dados de CabeÃ§alho AvanÃ§ados */}
+                                      {/* Dados de Cabeçalho Avançados */}
                                       <div className="bg-white border border-slate-150 p-4 rounded-xl shadow-xs">
                                         <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
-                                          InformaÃ§Ãµes do Pedido
+                                          Informações do Pedido
                                         </h5>
 
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                                           <div>
                                             <span className="block text-[10px] text-slate-450 font-extrabold uppercase mb-0.5">
-                                              NÃºmero Pedido
+                                              Número Pedido
                                             </span>
                                             <span className="text-slate-800 font-extrabold text-sm">
                                               {isEditing ? (
@@ -8123,7 +8123,7 @@ function PedidosScreen({
                                           </div>
                                           <div>
                                             <span className="block text-[10px] text-slate-450 font-extrabold uppercase mb-0.5">
-                                              SituaÃ§Ã£o / Forma Pgto
+                                              Situação / Forma Pgto
                                             </span>
                                             <span className="text-slate-800 font-semibold">
                                               {isEditing ? (
@@ -8173,7 +8173,7 @@ function PedidosScreen({
                                           </div>
                                           <div>
                                             <span className="block text-[10px] text-slate-455 font-extrabold uppercase mb-0.5">
-                                              Data EmissÃ£o
+                                              Data Emissão
                                             </span>
                                             <span className="text-slate-800 font-mono font-bold">
                                               {order.emissionDate ||
@@ -8228,7 +8228,7 @@ function PedidosScreen({
                                               </div>
                                               <div>
                                                 <span className="block text-[10px] text-slate-450 font-extrabold uppercase mb-0.5 text-emerald-700">
-                                                  Total LÃ­quido
+                                                  Total Líquido
                                                 </span>
                                                 <span className="text-emerald-700 font-extrabold font-mono text-sm">
                                                   R${" "}
@@ -8252,7 +8252,7 @@ function PedidosScreen({
                                             </span>
                                             <span className="text-slate-850 font-extrabold font-mono">
                                               {order.items?.length || 0} itens
-                                              extraÃ­dos
+                                              extraídos
                                             </span>
                                           </div>
 
@@ -8274,7 +8274,7 @@ function PedidosScreen({
                                                   className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
                                                 />
                                                 <span className="text-xs font-bold text-slate-700">
-                                                  ProgramaÃ§Ã£o
+                                                  Programação
                                                 </span>
                                               </label>
                                               <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-white transition bg-white/50 border border-transparent hover:border-slate-200">
@@ -8321,7 +8321,7 @@ function PedidosScreen({
                                             <div className="col-span-2 md:col-span-4 mt-2 flex flex-wrap gap-2">
                                               {order.isProgramacao && (
                                                 <span className="px-2 py-0.5 text-[10px] font-black uppercase text-indigo-700 bg-indigo-50 border border-indigo-200 rounded">
-                                                  ProgramaÃ§Ã£o
+                                                  Programação
                                                 </span>
                                               )}
                                               {order.isUrgent && (
@@ -8340,7 +8340,7 @@ function PedidosScreen({
                                           {(order.notes || isEditing) && (
                                             <div className="col-span-2 md:col-span-4 bg-slate-50 p-2.5 rounded-lg border border-slate-150 text-xs italic mt-2 text-slate-600">
                                               <strong>
-                                                ObservaÃ§Ãµes do Pedido:
+                                                Observações do Pedido:
                                               </strong>{" "}
                                               {isEditing ? (
                                                 <textarea
@@ -8375,16 +8375,16 @@ function PedidosScreen({
                                           </span>
                                         </div>
 
-                                        {/* ExibiÃ§Ã£o Desktop (Tabela) */}
+                                        {/* Exibição Desktop (Tabela) */}
                                         <div className="hidden md:block overflow-x-auto">
                                           <table className="w-full text-left text-xs bg-white">
                                             <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[9px] tracking-wider border-b border-slate-150">
                                               <tr>
                                                 <th className="p-3 font-bold">
-                                                  CÃDIGO / SKU
+                                                  CÓDIGO / SKU
                                                 </th>
                                                 <th className="p-3 font-bold">
-                                                  DESCRIÃÃO DO ITEM
+                                                  DESCRIÇÃO DO ITEM
                                                 </th>
                                                 <th className="p-3 font-bold text-center">
                                                   COR/TAM
@@ -8438,7 +8438,7 @@ function PedidosScreen({
                                                       ) : (
                                                         item.itemCode || (
                                                           <span className="text-slate-400 italic font-normal">
-                                                            S/ cÃ³digo
+                                                            S/ código
                                                           </span>
                                                         )
                                                       )}
@@ -8461,7 +8461,7 @@ function PedidosScreen({
                                                             }
                                                             className="bg-white border border-slate-300 text-slate-800 text-xs font-bold p-1 rounded w-full focus:ring-1 focus:ring-indigo-500"
                                                           />
-                                                          {/* SugestÃ£o de Itens */}
+                                                          {/* Sugestão de Itens */}
                                                           {item.itemName && (() => {
                                                             const query = (item.itemName || "").toLowerCase().trim();
                                                             const minLen = 3;
@@ -8495,7 +8495,7 @@ function PedidosScreen({
                                                             return matches.length > 0 ? (
                                                               <div className="absolute left-0 right-0 top-full z-50 mt-1 flex flex-col gap-0.5 border border-slate-200 rounded p-1 bg-white shadow-lg w-full min-w-[250px] max-h-32 overflow-y-auto">
                                                                 <span className="text-[9px] font-bold text-indigo-700 px-1 pt-0.5 uppercase tracking-wider block bg-indigo-50 leading-tight border-b">
-                                                                  SugestÃµes baseadas no nome:
+                                                                  Sugestões baseadas no nome:
                                                                 </span>
                                                                 {matches.map((it) => (
                                                                   <button
@@ -8667,7 +8667,7 @@ function PedidosScreen({
                                           </table>
                                         </div>
 
-                                        {/* ExibiÃ§Ã£o Mobile (Lista Empilhada por Item) */}
+                                        {/* Exibição Mobile (Lista Empilhada por Item) */}
                                         <div className="block md:hidden divide-y divide-slate-150">
                                           {order.items.map(
                                             (item: any, i2: number) => (
@@ -8680,7 +8680,7 @@ function PedidosScreen({
                                                     <span className="text-[10px] font-mono font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
                                                       SKU:{" "}
                                                       {item.itemCode ||
-                                                        "S/ cÃ³digo"}
+                                                        "S/ código"}
                                                     </span>
                                                     <h6 className="font-semibold text-slate-800 text-xs mt-1 leading-normal">
                                                       {item.itemName}
@@ -8820,10 +8820,10 @@ function PedidosScreen({
                                         </div>
                                       </div>
 
-                                      {/* RodapÃ© Interno do AcordeÃ£o */}
+                                      {/* Rodapé Interno do Acordeão */}
                                       <div className="flex justify-between items-center text-[10px] text-slate-400 bg-slate-100 p-2.5 rounded-lg border border-slate-150">
                                         <span>
-                                          ExtraÃ§Ã£o Auditada via InteligÃªncia
+                                          Extração Auditada via Inteligência
                                           Artificial do Sistema
                                         </span>
                                         {hasFinanceAccess &&
@@ -8851,7 +8851,7 @@ function PedidosScreen({
                       )}
                     </div>
 
-                    {/* RodapÃ© Fixo de AÃ§Ã£o */}
+                    {/* Rodapé Fixo de Ação */}
                     <div className="px-5 py-4 border-t border-slate-150 bg-white shrink-0 shadow-[0_-4px_12px_rgba(0,0,0,0.02)]">
                       {pdfExtractedOrders.length > 0 ? (
                         <div
@@ -8883,7 +8883,7 @@ function PedidosScreen({
                               onClick={handleConfirmPdfImport}
                               className="flex-1 sm:flex-none bg-green-600 hover:bg-green-700 text-white font-extrabold px-6 py-2 rounded-lg shadow-md hover:shadow transition text-xs uppercase tracking-wider flex items-center justify-center gap-2"
                             >
-                              <CheckCircle2 size={14} /> Confirmar ImportaÃ§Ã£o
+                              <CheckCircle2 size={14} /> Confirmar Importação
                             </button>
                           </div>
                         </div>
@@ -8917,7 +8917,7 @@ function PedidosScreen({
                   <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="text-lg font-bold text-gray-800">
-                        ImportaÃ§Ã£o de Pedidos via Excel
+                        Importação de Pedidos via Excel
                       </h3>
                       <button
                         onClick={() => setIsExcelModalOpen(false)}
@@ -8932,13 +8932,13 @@ function PedidosScreen({
                       esperadas:
                       <br />
                       <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-xs text-blue-800">
-                        CÃ³digo do Pedido | Cliente | Representante | Produto |
-                        Cor | Tamanho | VariaÃ§Ã£o | Quantidade | Data Entrega
+                        Código do Pedido | Cliente | Representante | Produto |
+                        Cor | Tamanho | Variação | Quantidade | Data Entrega
                       </span>
                     </p>
                     <div className="mb-4">
                       <span className="text-xs text-gray-500">
-                        * MÃ­nimo exigido: Pedido, Cliente, Representante,
+                        * Mínimo exigido: Pedido, Cliente, Representante,
                         Produto. (A Quantidade assume 1 se vazia)
                       </span>
                     </div>
@@ -8997,9 +8997,9 @@ function PedidosScreen({
                   <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col border border-slate-100 animate-fade-in">
                     <div className="flex justify-between items-center mb-4 shrink-0 border-b border-slate-100 pb-3">
                       <div className="flex items-center gap-2 text-indigo-700">
-                        <span className="text-xl">ð§¹</span>
+                        <span className="text-xl">🧹</span>
                         <h3 className="text-lg font-extrabold tracking-tight text-slate-800">
-                          DiagnÃ³stico e HigienizaÃ§Ã£o de Duplicidades
+                          Diagnóstico e Higienização de Duplicidades
                         </h3>
                       </div>
                       <button
@@ -9017,7 +9017,7 @@ function PedidosScreen({
                       {cleanupResult ? (
                         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-5 flex flex-col gap-2 shadow-sm">
                           <h4 className="font-bold text-base flex items-center gap-2">
-                            â Limpeza Estrutural ConcluÃ­da!
+                            ✅ Limpeza Estrutural Concluída!
                           </h4>
                           <p className="text-sm leading-relaxed">
                             {cleanupResult}
@@ -9027,23 +9027,23 @@ function PedidosScreen({
                         <>
                           <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 leading-relaxed text-slate-700">
                             <strong className="text-slate-900 font-bold text-xs uppercase block mb-1">
-                              ð Regra de DeduplicaÃ§Ã£o Adotada:
+                              📝 Regra de Deduplicação Adotada:
                             </strong>
                             <span className="text-xs">
                               Mapeamos itens repetidos que compartilham o mesmo{" "}
-                              <strong>CÃ³digo do Pedido</strong>,{" "}
-                              <strong>ID do Produto (CatÃ¡logo)</strong>,{" "}
+                              <strong>Código do Pedido</strong>,{" "}
+                              <strong>ID do Produto (Catálogo)</strong>,{" "}
                               <strong>Cor</strong>, <strong>Tamanho</strong>,{" "}
-                              <strong>VariaÃ§Ã£o</strong> e{" "}
+                              <strong>Variação</strong> e{" "}
                               <strong>Quantidade</strong>. Para preservar a
-                              consistÃªncia, mantemos intacto o registro com o{" "}
+                              consistência, mantemos intacto o registro com o{" "}
                               <strong>
-                                maior progresso na linha de produÃ§Ã£o
+                                maior progresso na linha de produção
                               </strong>{" "}
                               (quantidade cortada, pintada, embalada ou
-                              faturada) ou de criaÃ§Ã£o mais antiga, removendo
+                              faturada) ou de criação mais antiga, removendo
                               apenas os registros duplicados excedentes. Itens
-                              distintos dentro de um mesmo pedido nunca sÃ£o
+                              distintos dentro de um mesmo pedido nunca são
                               tocados.
                             </span>
                           </div>
@@ -9053,9 +9053,9 @@ function PedidosScreen({
                             if (diag.totalDuplicatesCount === 0) {
                               return (
                                 <div className="text-center py-8 flex flex-col items-center justify-center gap-2">
-                                  <span className="text-4xl">ð</span>
+                                  <span className="text-4xl">🌟</span>
                                   <h4 className="font-bold text-slate-800 text-base">
-                                    Sua base de dados estÃ¡ 100% limpa!
+                                    Sua base de dados está 100% limpa!
                                   </h4>
                                   <p className="text-xs text-slate-500 max-w-sm">
                                     Nenhum item duplicado ou redundante foi
@@ -9069,7 +9069,7 @@ function PedidosScreen({
                               <div className="space-y-3">
                                 <div className="p-3 bg-amber-50 border border-amber-200 text-amber-805 rounded-lg flex flex-col gap-0.5 shadow-3xs">
                                   <span className="text-xs font-bold uppercase tracking-wider text-amber-800">
-                                    â ï¸ DIAGNÃSTICO ENCONTRADO
+                                    ⚠️ DIAGNÓSTICO ENCONTRADO
                                   </span>
                                   <p className="text-sm font-semibold text-amber-900">
                                     Foram identificados{" "}
@@ -9077,7 +9077,7 @@ function PedidosScreen({
                                       {diag.totalDuplicatesCount} itens
                                       duplicados
                                     </strong>{" "}
-                                    redundantes distribuÃ­dos por um total de{" "}
+                                    redundantes distribuídos por um total de{" "}
                                     <strong>
                                       {diag.affectedOrdersCount} pedidos
                                     </strong>{" "}
@@ -9088,7 +9088,7 @@ function PedidosScreen({
                                 <div className="border border-slate-100 rounded-lg overflow-hidden shrink-0">
                                   <div className="bg-slate-104 px-3 py-2 text-[10px] font-bold text-slate-600 uppercase grid grid-cols-12 gap-1.5 border-b border-slate-100 bg-slate-100">
                                     <span className="col-span-3">
-                                      CÃ³d. Pedido
+                                      Cód. Pedido
                                     </span>
                                     <span className="col-span-4">Produto</span>
                                     <span className="col-span-3">Cor/Tam</span>
@@ -9159,7 +9159,7 @@ function PedidosScreen({
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                     <div className="flex flex-col gap-0.5">
                       <label className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">
-                        CÃ³digo do Pedido
+                        Código do Pedido
                       </label>
                       <input
                         value={orderCode}
@@ -9255,7 +9255,7 @@ function PedidosScreen({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 border-t border-slate-200 mt-1">
                     <div className="flex flex-col gap-1">
                       <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">
-                        Regra de Pagamento / HistÃ³rico
+                        Regra de Pagamento / Histórico
                       </span>
                       <div className="flex gap-2">
                         <button
@@ -9279,11 +9279,11 @@ function PedidosScreen({
                           }`}
                           title={
                             lastOrderForClient
-                              ? `Ãltimo pedido: ${lastOrderForClient.paymentCondition}`
+                              ? `Último pedido: ${lastOrderForClient.paymentCondition}`
                               : "Nenhum pedido anterior localizado"
                           }
                         >
-                          Repetir Ãltimo Pedido
+                          Repetir Último Pedido
                         </button>
                       </div>
                     </div>
@@ -9306,7 +9306,7 @@ function PedidosScreen({
 
                       <div className="flex flex-col gap-1 flex-1">
                         <label className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">
-                          CondiÃ§Ã£o / Forma
+                          Condição / Forma
                         </label>
                         <div className="flex items-center gap-2">
                           <select
@@ -9319,9 +9319,9 @@ function PedidosScreen({
                             }}
                             className="border border-slate-300 text-[10px] p-1.5 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                           >
-                            <option value="boleto">Boleto BancÃ¡rio</option>
+                            <option value="boleto">Boleto Bancário</option>
                             <option value="pix">PIX</option>
-                            <option value="deposito">DepÃ³sito em Conta</option>
+                            <option value="deposito">Depósito em Conta</option>
                             <option value="carteira">Carteira</option>
                             <option value="outro">-- Outra Forma --</option>
                           </select>
@@ -9332,7 +9332,7 @@ function PedidosScreen({
                               onChange={(e) =>
                                 setCustomPaymentCondition(e.target.value)
                               }
-                              placeholder="Especifique a opÃ§Ã£o"
+                              placeholder="Especifique a opção"
                               className="border border-slate-300 text-[10px] p-1.5 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             />
                           )}
@@ -9361,7 +9361,7 @@ function PedidosScreen({
                       </label>
                       <input
                         type="text"
-                        placeholder="Digitar cÃ³digo ou nome..."
+                        placeholder="Digitar código ou nome..."
                         className="border border-slate-300 text-xs px-2.5 py-1.5 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full bg-white text-slate-850 placeholder-slate-400 font-medium"
                         value={orderItemSearch}
                         onChange={(e) => {
@@ -9388,8 +9388,8 @@ function PedidosScreen({
                             <span className="text-[9px] font-bold text-indigo-700 px-2 pt-0.5 uppercase tracking-wider block bg-indigo-50 py-1 border-b">
                               {orderItemSearch.trim().length === 0 &&
                               clientMostBoughtItems.length > 0
-                                ? "â­ Itens mais comprados por este cliente:"
-                                : "CatÃ¡logo de itens:"}
+                                ? "⭐ Itens mais comprados por este cliente:"
+                                : "Catálogo de itens:"}
                             </span>
                             {suggestedOrderItems.length === 0 ? (
                               <span className="text-[10px] text-gray-500 px-2 py-1">
@@ -9413,7 +9413,7 @@ function PedidosScreen({
                                     {clientBoughtStatsMap[it.id] !==
                                       undefined && (
                                       <span className="text-[7.5px] sm:text-[8px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1 rounded-sm shrink-0">
-                                        â­ {clientBoughtStatsMap[it.id]} un.
+                                        ⭐ {clientBoughtStatsMap[it.id]} un.
                                       </span>
                                     )}
                                   </span>
@@ -9429,7 +9429,7 @@ function PedidosScreen({
                       {itemId && (
                         <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded p-1.5 mt-1">
                           <span className="text-[10px] text-emerald-800 font-bold truncate max-w-[80%]">
-                            â Selecionado:{" "}
+                            ✓ Selecionado:{" "}
                             {db.items.find((i) => i.id === itemId)?.name}
                           </span>
                           <button
@@ -9448,7 +9448,7 @@ function PedidosScreen({
 
                     <div className="flex flex-col gap-0.5 md:col-span-2">
                       <label className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">
-                        Atributos (Cor / Tamanho / VariaÃ§Ã£o)
+                        Atributos (Cor / Tamanho / Variação)
                       </label>
                       <div className="grid grid-cols-3 gap-2">
                         <select
@@ -9476,7 +9476,7 @@ function PedidosScreen({
                         <input
                           value={variation}
                           onChange={(e) => setVariation(e.target.value)}
-                          placeholder="VariaÃ§Ã£o"
+                          placeholder="Variação"
                           className="border border-slate-300 text-xs px-2.5 py-1.5 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full bg-white text-slate-800 placeholder-slate-450 font-medium"
                         />
                       </div>
@@ -9495,7 +9495,7 @@ function PedidosScreen({
                         onChange={(e) =>
                           setTotalQuantity(Number(e.target.value))
                         }
-                        placeholder="Qtd de PeÃ§as"
+                        placeholder="Qtd de Peças"
                         className="border border-slate-300 text-xs px-2.5 py-1.5 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full bg-white text-slate-800 placeholder-slate-400 font-medium"
                       />
                     </div>
@@ -9503,7 +9503,7 @@ function PedidosScreen({
                     <div className="flex flex-col gap-0.5 relative">
                       <div className="flex items-center justify-between">
                         <label className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">
-                          PreÃ§o UnitÃ¡rio (R$)
+                          Preço Unitário (R$)
                         </label>
                         {selectedItemObj &&
                           (selectedItemObj.basePrice ||
@@ -9516,9 +9516,9 @@ function PedidosScreen({
                                   ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
                                   : "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
                               }`}
-                              title="Alternar histÃ³rico e preÃ§os de tabela"
+                              title="Alternar histórico e preços de tabela"
                             >
-                              <span>ð HistÃ³rico</span>
+                              <span>📊 Histórico</span>
                             </button>
                           )}
                       </div>
@@ -9546,14 +9546,14 @@ function PedidosScreen({
                           <div className="absolute top-full left-0 mt-1 bg-white border border-indigo-200 shadow-xl p-2 rounded-lg text-[11px] text-slate-800 z-30 w-56 flex flex-col gap-1.5">
                             <div className="flex items-center justify-between pb-1 border-b border-indigo-100">
                               <span className="font-extrabold text-indigo-950 text-[10px] uppercase tracking-wider flex items-center gap-1">
-                                ð HistÃ³rico de PreÃ§os
+                                📊 Histórico de Preços
                               </span>
                               <button
                                 type="button"
                                 onClick={() => setShowPriceHistory(false)}
                                 className="text-slate-400 hover:text-slate-600 font-bold px-1 rounded text-xs cursor-pointer"
                               >
-                                â
+                                ✕
                               </button>
                             </div>
 
@@ -9567,9 +9567,9 @@ function PedidosScreen({
                                     setShowPriceHistory(false);
                                   }}
                                   className="font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded text-[10px] transition cursor-pointer"
-                                  title="Clique para aplicar o preÃ§o de tabela"
+                                  title="Clique para aplicar o preço de tabela"
                                 >
-                                  R$ {selectedItemObj.basePrice.toFixed(2)} âµ
+                                  R$ {selectedItemObj.basePrice.toFixed(2)} ↵
                                 </button>
                               </div>
                             )}
@@ -9577,7 +9577,7 @@ function PedidosScreen({
                             {lastPrices.length > 0 && (
                               <div className="flex flex-col gap-1">
                                 <span className="font-extrabold text-slate-700 text-[10px] uppercase tracking-wider">
-                                  Ãltimos PreÃ§os:
+                                  Últimos Preços:
                                 </span>
                                 <div className="flex flex-col gap-1">
                                   {lastPrices.map((p, idx) => (
@@ -9586,7 +9586,7 @@ function PedidosScreen({
                                       className="flex items-center justify-between bg-indigo-50/50 p-1.5 rounded border border-indigo-100"
                                     >
                                       <span className="text-slate-500 font-medium text-[10px]">
-                                        {idx === 0 ? "Ãltimo pedido:" : "PenÃºltimo:"}
+                                        {idx === 0 ? "Último pedido:" : "Penúltimo:"}
                                       </span>
                                       <button
                                         type="button"
@@ -9595,9 +9595,9 @@ function PedidosScreen({
                                           setShowPriceHistory(false);
                                         }}
                                         className="font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px] transition cursor-pointer"
-                                        title="Clique para aplicar este preÃ§o"
+                                        title="Clique para aplicar este preço"
                                       >
-                                        R$ {p.toFixed(2)} âµ
+                                        R$ {p.toFixed(2)} ↵
                                       </button>
                                     </div>
                                   ))}
@@ -9613,7 +9613,7 @@ function PedidosScreen({
                         <span>Desconto (%)</span>
                         {matchedCustomerForOrder?.defaultDiscountPercent ? (
                           <span className="text-[9px] text-emerald-700 font-extrabold bg-emerald-50 px-1 rounded border border-emerald-200">
-                            PadrÃ£o
+                            Padrão
                           </span>
                         ) : null}
                       </label>
@@ -9654,7 +9654,7 @@ function PedidosScreen({
                       <div className="flex flex-col gap-0.5 justify-end">
                         <div className="text-xs font-semibold text-emerald-800 bg-emerald-50 p-2 border border-emerald-150 rounded flex justify-between items-center h-[34px]">
                           <span className="text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wide text-emerald-700 truncate pr-1">
-                            ð¦ Estoque:
+                            📦 Estoque:
                           </span>
                           <span className="font-bold font-mono">
                             {db.stocks.find(
@@ -9674,31 +9674,31 @@ function PedidosScreen({
                     <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 flex flex-col gap-2" data-feature="IMPERIO_ORDER_LOAD_PLANNER_AUTHORIZED_UI">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
-                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-blue-700">ð ProgramaÃ§Ã£o de carga</span>
+                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-blue-700">🚚 Programação de carga</span>
                           <p className="text-[10px] text-slate-600 mt-0.5">Cliente: <strong>{expeditionCustomer.tradeName || expeditionCustomer.name}</strong></p>
                         </div>
-                        <button type="button" onClick={() => window.open("/cargas", "_blank")} className="px-2.5 py-1.5 rounded-lg bg-white border border-blue-200 text-blue-700 text-[10px] font-extrabold hover:bg-blue-100">Abrir programaÃ§Ã£o</button>
+                        <button type="button" onClick={() => window.open("/cargas", "_blank")} className="px-2.5 py-1.5 rounded-lg bg-white border border-blue-200 text-blue-700 text-[10px] font-extrabold hover:bg-blue-100">Abrir programação</button>
                       </div>
                       {expeditionRoutesForCustomer.length === 0 ? (
-                        <div className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">Cliente ainda nÃ£o estÃ¡ vinculado a uma rota de carga. O pedido poderÃ¡ ser vinculado depois em ProgramaÃ§Ã£o de Cargas.</div>
+                        <div className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">Cliente ainda não está vinculado a uma rota de carga. O pedido poderá ser vinculado depois em Programação de Cargas.</div>
                       ) : (
                         <>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[10px]">
-                            <div className="bg-white border border-blue-100 rounded-lg px-2.5 py-2 text-slate-600">Ãltima carga: <strong className="text-slate-800">{expeditionLastLoad ? `${expeditionLastLoad.routeName || expeditionLastLoad.name} â¢ ${expeditionLastLoad.scheduledDate || expeditionLastLoad.departureDate || "-"}` : "Nenhuma carga anterior"}</strong></div>
-                            <div className="bg-white border border-blue-100 rounded-lg px-2.5 py-2 text-slate-600">PrÃ³xima aberta: <strong className="text-blue-700">{expeditionSuggestedLoad ? `${expeditionSuggestedLoad.routeName || expeditionSuggestedLoad.name} â¢ ${expeditionSuggestedLoad.scheduledDate || expeditionSuggestedLoad.departureDate || "-"}` : "Nenhuma carga programada"}</strong></div>
+                            <div className="bg-white border border-blue-100 rounded-lg px-2.5 py-2 text-slate-600">Última carga: <strong className="text-slate-800">{expeditionLastLoad ? `${expeditionLastLoad.routeName || expeditionLastLoad.name} • ${expeditionLastLoad.scheduledDate || expeditionLastLoad.departureDate || "-"}` : "Nenhuma carga anterior"}</strong></div>
+                            <div className="bg-white border border-blue-100 rounded-lg px-2.5 py-2 text-slate-600">Próxima aberta: <strong className="text-blue-700">{expeditionSuggestedLoad ? `${expeditionSuggestedLoad.routeName || expeditionSuggestedLoad.name} • ${expeditionSuggestedLoad.scheduledDate || expeditionSuggestedLoad.departureDate || "-"}` : "Nenhuma carga programada"}</strong></div>
                           </div>
                           <div className="flex flex-col sm:flex-row gap-2">
                             <select value={selectedExpeditionCargaId} onChange={(e) => setSelectedExpeditionCargaId(e.target.value)} className="flex-1 h-8 rounded-lg border border-blue-200 bg-white px-2 text-[10px] font-semibold text-slate-700">
-                              <option value="">NÃ£o vincular agora / escolher depois</option>
+                              <option value="">Não vincular agora / escolher depois</option>
                               {expeditionLoadsForCustomer.filter((c: any) => c.status === "ABERTA" || c.status === "PLANEJADA").map((c: any) => (
-                                <option key={c.id} value={c.id}>{c.scheduledDate || c.departureDate || "Sem data"} â¢ {c.routeName || c.name}</option>
+                                <option key={c.id} value={c.id}>{c.scheduledDate || c.departureDate || "Sem data"} • {c.routeName || c.name}</option>
                               ))}
                             </select>
                             {expeditionSuggestedLoad && (
-                              <button type="button" onClick={() => setSelectedExpeditionCargaId(expeditionSuggestedLoad.id)} className="h-8 px-3 rounded-lg bg-blue-600 text-white text-[10px] font-extrabold hover:bg-blue-700">Usar prÃ³xima carga</button>
+                              <button type="button" onClick={() => setSelectedExpeditionCargaId(expeditionSuggestedLoad.id)} className="h-8 px-3 rounded-lg bg-blue-600 text-white text-[10px] font-extrabold hover:bg-blue-700">Usar próxima carga</button>
                             )}
                           </div>
-                          {selectedExpeditionCargaId && <p className="text-[9px] text-blue-800 font-bold">â Todos os itens adicionados neste lanÃ§amento serÃ£o vinculados Ã  carga selecionada com suas respectivas quantidades.</p>}
+                          {selectedExpeditionCargaId && <p className="text-[9px] text-blue-800 font-bold">✓ Todos os itens adicionados neste lançamento serão vinculados à carga selecionada com suas respectivas quantidades.</p>}
                         </>
                       )}
                     </div>
@@ -9754,7 +9754,7 @@ function PedidosScreen({
                         htmlFor="isUrgent"
                         className="text-xs text-red-700 font-bold cursor-pointer select-none"
                       >
-                        Pedido Urgente â ï¸
+                        Pedido Urgente ⚠️
                       </label>
                     </div>
 
@@ -9770,7 +9770,7 @@ function PedidosScreen({
                         htmlFor="isProgramacao"
                         className="text-xs text-indigo-700 font-bold cursor-pointer flex items-center gap-0.5 select-none"
                       >
-                        ð Ã ProgramaÃ§Ã£o
+                        📈 É Programação
                       </label>
                     </div>
                   </div>
@@ -9863,7 +9863,7 @@ function PedidosScreen({
                             onClick={handleSaveCartItem}
                             className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded shadow-xs transition text-xs leading-none"
                           >
-                            â Salvar Item do Carrinho
+                            ✓ Salvar Item do Carrinho
                           </button>
                           <button
                             type="button"
@@ -9894,7 +9894,7 @@ function PedidosScreen({
                                 : "bg-indigo-600 hover:bg-indigo-700"
                             } font-bold text-white py-2 rounded shadow-xs transition text-xs leading-none`}
                           >
-                            {editingId ? "Salvar AlteraÃ§Ãµes" : "Gerar Pedido"}
+                            {editingId ? "Salvar Alterações" : "Gerar Pedido"}
                           </button>
                         </>
                       )}
@@ -9924,7 +9924,7 @@ function PedidosScreen({
                       }}
                       className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded shadow-xs transition text-xs leading-none mt-1 shrink-0"
                     >
-                      Cancelar EdiÃ§Ã£o
+                      Cancelar Edição
                     </button>
                   )}
                 </div>
@@ -9936,33 +9936,33 @@ function PedidosScreen({
           <div className="w-full flex-1 mt-4 mb-2">
             <div className="flex justify-between items-center mb-2">
               <h3 className="font-extrabold text-xs sm:text-sm text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                â¡ Fluxo de Pedidos
+                ⚡ Fluxo de Pedidos
               </h3>
               <button
                 onClick={handleExportPDF}
                 className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow-2xs transition cursor-pointer flex items-center gap-1"
               >
-                ð Exportar PDF
+                📄 Exportar PDF
               </button>
             </div>
 
-            {/* BLOCO EXCLUSIVO: PEDIDOS PARA APROVAÃÃO */}
+            {/* BLOCO EXCLUSIVO: PEDIDOS PARA APROVAÇÃO */}
             <div className="bg-amber-50/90 border border-amber-200/80 rounded-xl p-3 sm:p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-800 font-black text-base shrink-0">
-                  â³
+                  ⏳
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-extrabold text-xs sm:text-sm text-amber-950">
-                      Pedidos Aguardando AprovaÃ§Ã£o
+                      Pedidos Aguardando Aprovação
                     </span>
                     <span className="bg-amber-500 text-white font-black text-[10px] sm:text-xs px-2 py-0.5 rounded-full shadow-2xs">
                       {db.orders.filter((o) => o.status === "AGUARDANDO_APROVACAO").length}
                     </span>
                   </div>
                   <p className="text-[11px] text-amber-800/80 font-medium mt-0.5">
-                    Pedidos em anÃ¡lise/liberaÃ§Ã£o comercial antes da entrada na produÃ§Ã£o.
+                    Pedidos em análise/liberação comercial antes da entrada na produção.
                   </p>
                 </div>
               </div>
@@ -9988,8 +9988,8 @@ function PedidosScreen({
               >
                 {selectedStatuses.includes("AGUARDANDO_APROVACAO") &&
                 selectedStatuses.length === 1
-                  ? "â Filtrando AprovaÃ§Ã£o (Mostrar Todos)"
-                  : "Filtrar Pedidos p/ AprovaÃ§Ã£o â"}
+                  ? "✓ Filtrando Aprovação (Mostrar Todos)"
+                  : "Filtrar Pedidos p/ Aprovação →"}
               </button>
             </div>
           </div>
@@ -10010,7 +10010,7 @@ function PedidosScreen({
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Pesquisar por CÃ³digo, Cliente ou Produto..."
+                  placeholder="Pesquisar por Código, Cliente ou Produto..."
                   className="w-full border border-slate-200 text-[11px] font-semibold rounded-lg p-1.5 pl-3 pr-7 bg-white text-slate-700 placeholder-slate-400 focus:outline-indigo-500 shadow-xs"
                 />
                 {searchTerm && (
@@ -10035,7 +10035,7 @@ function PedidosScreen({
                   />
                 </div>
                 <div className="flex items-center bg-white border border-slate-200 shadow-xs rounded-lg px-2 overflow-hidden h-[30px]">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase mr-1">AtÃ©</span>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase mr-1">Até</span>
                   <input
                     type="date"
                     value={deliveryDateEnd}
@@ -10177,7 +10177,7 @@ function PedidosScreen({
                               }}
                               className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-505 w-3.5 h-3.5 cursor-pointer"
                             />
-                            <span>Risco de Atraso (AtÃ© 2 dias)</span>
+                            <span>Risco de Atraso (Até 2 dias)</span>
                           </label>
 
                           <label className="flex items-center gap-2 text-[11px] font-medium text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded-sm">
@@ -10246,13 +10246,13 @@ function PedidosScreen({
                         </div>
                       </div>
 
-                      {/* Section 2: VÃ­nculo */}
+                      {/* Section 2: Vínculo */}
                       {(currentUser.role === "GERENCIA" ||
                         currentUser.role === "ADMIN" ||
                         currentUser.role === "PCP") && (
                         <div className="flex flex-col gap-1 border-t border-slate-100 pt-2">
                           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
-                            VÃ­nculo de Lote
+                            Vínculo de Lote
                           </label>
                           <select
                             value={filterBatchState.toString()}
@@ -10297,15 +10297,15 @@ function PedidosScreen({
                             className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-505 w-3.5 h-3.5 cursor-pointer"
                           />
                           <span className="flex items-center gap-1">
-                            ð¸ Apenas NÃ£o Faturados
+                            💸 Apenas Não Faturados
                           </span>
                         </label>
                       </div>
 
-                      {/* Section 4: ImpressÃ£o */}
+                      {/* Section 4: Impressão */}
                       <div className="flex flex-col gap-1 border-t border-slate-100 pt-2">
                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
-                          Status de ImpressÃ£o
+                          Status de Impressão
                         </label>
                         <select
                           value={printedFilter}
@@ -10321,8 +10321,8 @@ function PedidosScreen({
                           }`}
                         >
                           <option value="TODOS">Todos os Pedidos</option>
-                          <option value="NAO_IMPRESSOS">â³ NÃ£o Impressos</option>
-                          <option value="IMPRESSOS">ð¨ï¸ JÃ¡ Impressos</option>
+                          <option value="NAO_IMPRESSOS">⏳ Não Impressos</option>
+                          <option value="IMPRESSOS">🖨️ Já Impressos</option>
                         </select>
                       </div>
                     </div>
@@ -10345,7 +10345,7 @@ function PedidosScreen({
           <div className="mb-2.5 bg-white p-2 sm:p-2.5 rounded-xl border border-slate-200 shadow-2xs shrink-0">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                ð·ï¸ Filtro por Status dos Itens:
+                🏷️ Filtro por Status dos Itens:
               </span>
               {selectedStatuses.length > 0 && (
                 <button
@@ -10413,12 +10413,12 @@ function PedidosScreen({
 
               {printedFilter !== "TODOS" && (
                 <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-full shadow-2xs">
-                  {printedFilter === "NAO_IMPRESSOS" ? "â³ NÃ£o Impressos" : "ð¨ï¸ JÃ¡ Impressos"}
+                  {printedFilter === "NAO_IMPRESSOS" ? "⏳ Não Impressos" : "🖨️ Já Impressos"}
                   <button
                     type="button"
                     onClick={() => setPrintedFilter("TODOS")}
                     className="hover:text-red-500 font-extrabold text-[12px] leading-none ml-1 transition cursor-pointer"
-                    title="Remover filtro de impressÃ£o"
+                    title="Remover filtro de impressão"
                   >
                     &times;
                   </button>
@@ -10427,7 +10427,7 @@ function PedidosScreen({
 
               {filterDeadlines.length < 6 && (
                 <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-150/60 px-2 py-0.5 rounded-full shadow-2xs">
-                  â° Prazos ({filterDeadlines.length}/6)
+                  ⏰ Prazos ({filterDeadlines.length}/6)
                   <button
                     type="button"
                     onClick={() =>
@@ -10450,7 +10450,7 @@ function PedidosScreen({
 
               {filterBatchState !== "TODOS" && (
                 <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-amber-50 text-amber-850 border border-amber-200 px-2 py-0.5 rounded-full shadow-2xs">
-                  ð ï¸ Filtro de Lote
+                  🛠️ Filtro de Lote
                   <button
                     type="button"
                     onClick={() => setFilterBatchState("TODOS")}
@@ -10464,12 +10464,12 @@ function PedidosScreen({
 
               {filterNotInvoicedOnly && (
                 <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-emerald-50 text-emerald-850 border border-emerald-200 px-2 py-0.5 rounded-full shadow-2xs">
-                  ð¸ NÃ£o Faturados
+                  💸 Não Faturados
                   <button
                     type="button"
                     onClick={() => setFilterNotInvoicedOnly(false)}
                     className="hover:text-red-500 font-extrabold text-[12px] leading-none ml-1 transition cursor-pointer"
-                    title="Remover filtro nÃ£o faturados"
+                    title="Remover filtro não faturados"
                   >
                     &times;
                   </button>
@@ -10478,7 +10478,7 @@ function PedidosScreen({
 
               {(deliveryDateStart || deliveryDateEnd) && (
                 <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-blue-50 text-blue-850 border border-blue-200 px-2 py-0.5 rounded-full shadow-2xs">
-                  ðï¸ {(() => {
+                  🗓️ {(() => {
                     let label = "";
                     if (deliveryDateStart) {
                       const d1 = deliveryDateStart.split("-");
@@ -10507,7 +10507,7 @@ function PedidosScreen({
 
               {(orderRangeStart.trim() || orderRangeEnd.trim()) && (
                 <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-full shadow-2xs">
-                  ð¯ Faixa: {orderRangeStart || "InÃ­cio"} atÃ© {orderRangeEnd || "Fim"}
+                  🎯 Faixa: {orderRangeStart || "Início"} até {orderRangeEnd || "Fim"}
                   {filterByRangeActive && <span className="font-bold text-amber-700">(Filtrando)</span>}
                   <button
                     type="button"
@@ -10555,7 +10555,7 @@ function PedidosScreen({
           <div className="mb-2.5 bg-slate-100/80 p-2.5 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-2.5 shrink-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1">
-                ð¯ SeleÃ§Ã£o / Faixa de Pedidos:
+                🎯 Seleção / Faixa de Pedidos:
               </span>
               <div className="flex items-center gap-1">
                 <input
@@ -10565,7 +10565,7 @@ function PedidosScreen({
                   onChange={(e) => setOrderRangeStart(e.target.value)}
                   className="w-28 sm:w-32 text-xs bg-white border border-slate-300 rounded-lg px-2 py-1 font-mono font-bold text-slate-800 placeholder:font-normal placeholder:text-slate-400 focus:outline-indigo-500 shadow-2xs"
                 />
-                <span className="text-slate-400 font-bold text-xs">atÃ©</span>
+                <span className="text-slate-400 font-bold text-xs">até</span>
                 <input
                   type="text"
                   placeholder="Ped. Final (ex: 150)"
@@ -10579,9 +10579,9 @@ function PedidosScreen({
                 type="button"
                 onClick={handleSelectRangeForPrint}
                 className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-[11px] rounded-lg transition active:scale-95 shadow-2xs cursor-pointer flex items-center gap-1"
-                title="Marcar todos os pedidos neste intervalo para a lista de impressÃ£o"
+                title="Marcar todos os pedidos neste intervalo para a lista de impressão"
               >
-                ð¯ Marcar Faixa p/ ImpressÃ£o
+                🎯 Marcar Faixa p/ Impressão
               </button>
 
               <button
@@ -10594,7 +10594,7 @@ function PedidosScreen({
                 }`}
                 title="Filtrar ou exibir todos os pedidos na tela com base no intervalo"
               >
-                ð {filterByRangeActive ? "Filtrando Lista p/ Faixa (Ativo)" : "Filtrar Lista na Tela"}
+                🔍 {filterByRangeActive ? "Filtrando Lista p/ Faixa (Ativo)" : "Filtrar Lista na Tela"}
               </button>
 
               {(orderRangeStart || orderRangeEnd || filterByRangeActive) && (
@@ -10630,8 +10630,8 @@ function PedidosScreen({
               >
                 {selectedOrderCodesForPrint.length === groupedOrders.length &&
                 groupedOrders.length > 0
-                  ? "Desmarcar Todos VisÃ­veis"
-                  : `Marcar Todos VisÃ­veis (${groupedOrders.length})`}
+                  ? "Desmarcar Todos Visíveis"
+                  : `Marcar Todos Visíveis (${groupedOrders.length})`}
               </button>
 
               {selectedOrderCodesForPrint.length > 0 && (
@@ -10760,7 +10760,7 @@ function PedidosScreen({
                                   ? "bg-amber-500 text-white border-amber-600 shadow-xs"
                                   : "bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-300"
                               }`}
-                              title="Marcar/Desmarcar para ImpressÃ£o em Lote"
+                              title="Marcar/Desmarcar para Impressão em Lote"
                             >
                               <input
                                 type="checkbox"
@@ -10781,13 +10781,13 @@ function PedidosScreen({
                                   ? "bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200"
                                   : "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200"
                               }`}
-                              title="Clique para alternar o status de impressÃ£o do pedido"
+                              title="Clique para alternar o status de impressão do pedido"
                             >
-                              {isPrinted ? `ð¨ï¸ Impresso ${printCount > 0 ? printCount : 1}x` : "â³ NÃ£o Impresso"}
+                              {isPrinted ? `🖨️ Impresso ${printCount > 0 ? printCount : 1}x` : "⏳ Não Impresso"}
                             </button>
                           </div>
                           <span className="text-[9px] sm:text-[10px] text-slate-700 font-semibold mt-0.5 truncate max-w-[210px]" title={firstOrder.customerName}>
-                            Cliente: {clientDisplayName} <span className="ml-1 text-[8px] font-mono leading-none bg-slate-100 text-slate-500 font-extrabold px-1 rounded border border-slate-200 block sm:inline-block w-max mt-0.5 sm:mt-0">CÃ³d: {clientCode}</span>
+                            Cliente: {clientDisplayName} <span className="ml-1 text-[8px] font-mono leading-none bg-slate-100 text-slate-500 font-extrabold px-1 rounded border border-slate-200 block sm:inline-block w-max mt-0.5 sm:mt-0">Cód: {clientCode}</span>
                           </span>
                           <span className="text-[9px] sm:text-[10px] text-indigo-600 font-bold mt-1.5 bg-indigo-50/50 px-1.5 py-0.5 rounded w-max inline-block">
                             {orders.length}{" "}
@@ -10851,7 +10851,7 @@ function PedidosScreen({
                                     const dateFormatted = `${day}/${monthStr.charAt(0).toUpperCase() + monthStr.slice(1)}`;
                                     return (
                                       <span className="px-1.5 py-0.5 text-[8px] sm:text-[9px] font-extrabold bg-slate-100 text-slate-700 border border-slate-200 rounded uppercase tracking-wider flex items-center gap-0.5 shrink-0 shadow-3xs">
-                                        ðï¸ {dateFormatted}
+                                        🗓️ {dateFormatted}
                                       </span>
                                     );
                                   }
@@ -10873,7 +10873,7 @@ function PedidosScreen({
                                     className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition flex items-center gap-1 cursor-pointer"
                                     title="Aprovar Pedido"
                                   >
-                                    â Aprovar
+                                    ✓ Aprovar
                                   </button>
                                   <button
                                     type="button"
@@ -10884,7 +10884,7 @@ function PedidosScreen({
                                     className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition flex items-center gap-1 cursor-pointer"
                                     title="Reprovar Pedido"
                                   >
-                                    â Reprovar
+                                    ✕ Reprovar
                                   </button>
                                 </>
                               )}
@@ -10916,7 +10916,7 @@ function PedidosScreen({
                                     handleOpenOrderGroupEditModal(code);
                                   }}
                                   className="p-1 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] rounded-lg border border-indigo-200 transition flex items-center gap-1 cursor-pointer"
-                                  title="Editar dados do pedido (nÃºmero, cliente, data, status)"
+                                  title="Editar dados do pedido (número, cliente, data, status)"
                                 >
                                   <Edit3 size={11} /> Editar
                                 </button>
@@ -10953,7 +10953,7 @@ function PedidosScreen({
                     onClick={() => setOrdersLimit((prev) => prev + 20)}
                     className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl border border-indigo-200 transition cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-95"
                   >
-                    ð Carregar mais 20 pedidos
+                    🔄 Carregar mais 20 pedidos
                   </button>
                   <button
                     type="button"
@@ -10982,7 +10982,7 @@ function PedidosScreen({
             <div className="flex items-center gap-2.5">
               <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
               <span className="font-extrabold text-xs text-slate-100 font-mono">
-                ð¯ {selectedOrderCodesForPrint.length} pedido(s) selecionado(s)
+                🎯 {selectedOrderCodesForPrint.length} pedido(s) selecionado(s)
               </span>
             </div>
 
@@ -11081,7 +11081,7 @@ function PedidosScreen({
                   return (
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[10px] sm:text-xs text-slate-700 font-bold font-sans">
-                        Cliente: {clientDisplayName} <span className="ml-1 text-[9px] font-mono leading-none bg-indigo-100 text-indigo-700 font-black px-1.5 py-0.5 rounded border border-indigo-200">CÃ³d: {clientCode}</span>
+                        Cliente: {clientDisplayName} <span className="ml-1 text-[9px] font-mono leading-none bg-indigo-100 text-indigo-700 font-black px-1.5 py-0.5 rounded border border-indigo-200">Cód: {clientCode}</span>
                       </span>
                       <button
                         type="button"
@@ -11091,9 +11091,9 @@ function PedidosScreen({
                             ? "bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200"
                             : "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200"
                         }`}
-                        title="Clique para alternar o status de impressÃ£o do pedido"
+                        title="Clique para alternar o status de impressão do pedido"
                       >
-                        {modalIsPrinted ? `ð¨ï¸ Impresso ${modalPrintCount > 0 ? modalPrintCount : 1}x` : "â³ NÃ£o Impresso"}
+                        {modalIsPrinted ? `🖨️ Impresso ${modalPrintCount > 0 ? modalPrintCount : 1}x` : "⏳ Não Impresso"}
                       </button>
                     </div>
                   );
@@ -11119,7 +11119,7 @@ function PedidosScreen({
                                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl shadow-xs hover:shadow-sm transition-all flex items-center gap-1 leading-none cursor-pointer"
                                 title="Aprovar Pedido"
                               >
-                                â Aprovar Pedido
+                                ✓ Aprovar Pedido
                               </button>
                               <button
                                 type="button"
@@ -11127,7 +11127,7 @@ function PedidosScreen({
                                 className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl shadow-xs hover:shadow-sm transition-all flex items-center gap-1 leading-none cursor-pointer"
                                 title="Reprovar Pedido"
                               >
-                                â Reprovar
+                                ✕ Reprovar
                               </button>
                             </>
                           )}
@@ -11136,7 +11136,7 @@ function PedidosScreen({
                               type="button"
                               onClick={() => handleOpenOrderGroupEditModal(selectedOrderCode)}
                               className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl shadow-xs hover:shadow-sm transition-all flex items-center gap-1 leading-none cursor-pointer"
-                              title="Editar Pedido (NÃºmero de Acompanhamento, Cliente, Data, Status)"
+                              title="Editar Pedido (Número de Acompanhamento, Cliente, Data, Status)"
                             >
                               <Edit3 size={13} /> Editar Pedido
                             </button>
@@ -11183,7 +11183,7 @@ function PedidosScreen({
                           }
                           className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-emerald-550 shadow-xs hover:shadow-sm transition-all flex items-center gap-1 leading-none cursor-pointer"
                         >
-                          ð° Faturar Pedido Inteiro
+                          💰 Faturar Pedido Inteiro
                         </motion.button>
                       );
                     }
@@ -11255,7 +11255,7 @@ function PedidosScreen({
                             />
                           ) : (
                             <div className="w-10 h-10 rounded-lg bg-indigo-50 border border-indigo-100/60 flex items-center justify-center shrink-0 text-xs">
-                              ð¦
+                              📦
                             </div>
                           )}
                           <div className="min-w-0 animate-in fade-in duration-300">
@@ -11329,7 +11329,7 @@ function PedidosScreen({
                             className="border border-slate-250 rounded-lg text-[10px] sm:text-[11px] font-semibold py-1 px-1.5 text-slate-700 bg-white focus:outline-indigo-500 cursor-pointer disabled:opacity-50 disabled:bg-slate-100 transition shadow-xs"
                           >
                             <option value="PENDENTE">Pendente</option>
-                            <option value="EM_PRODUCAO">Em ProduÃ§Ã£o</option>
+                            <option value="EM_PRODUCAO">Em Produção</option>
                             <option value="PRODUZIDO">Produzido</option>
                             <option value="EM_CORTE">Em Corte</option>
                             <option value="CORTADO">Cortado</option>
@@ -11442,7 +11442,7 @@ function PedidosScreen({
                         );
                       })()}
 
-                      {/* Timeline / Cronograma Estimado de ProduÃ§Ã£o */}
+                      {/* Timeline / Cronograma Estimado de Produção */}
                       {(() => {
                         const itemAgendas = (db.productionAgendas || [])
                           .filter((a) => a.orderId === o.id)
@@ -11457,7 +11457,7 @@ function PedidosScreen({
                         return (
                           <div className="w-full mt-1 pt-2 border-t border-slate-100">
                             <h4 className="text-[8px] sm:text-[9px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1">
-                              <span>â±ï¸</span> Cronograma de ProduÃ§Ã£o Estimado
+                              <span>⏱️</span> Cronograma de Produção Estimado
                             </h4>
                             <div className="flex items-center flex-wrap gap-1.5">
                               {itemAgendas.map((agenda, idx) => {
@@ -11485,7 +11485,7 @@ function PedidosScreen({
                                     </div>
                                     {idx < itemAgendas.length - 1 && (
                                       <span className="text-slate-300 text-[9px] font-bold">
-                                        â
+                                        →
                                       </span>
                                     )}
                                   </div>
@@ -11539,7 +11539,7 @@ function PedidosScreen({
                   )}
                   {selectedOrder.isProgramacao && (
                     <span className="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-2 py-0.5 rounded">
-                      ð PROGRAMAÃÃO
+                      📈 PROGRAMAÇÃO
                     </span>
                   )}
                 </h2>
@@ -11588,7 +11588,7 @@ function PedidosScreen({
             <div className="p-5 flex-1 overflow-y-auto bg-gray-50">
               <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 mb-6 flex flex-col gap-3">
                 <h3 className="font-semibold text-gray-800 border-b pb-2">
-                  InformaÃ§Ãµes Adicionais
+                  Informações Adicionais
                 </h3>
                 <div className="grid grid-cols-2 gap-4 text-sm mt-1">
                   <div className="flex flex-col">
@@ -11605,7 +11605,7 @@ function PedidosScreen({
                       Quantidade Total
                     </span>
                     <span className="text-blue-700 font-bold">
-                      {selectedOrder.totalQuantity} pÃ§s
+                      {selectedOrder.totalQuantity} pçs
                     </span>
                   </div>
                   <div className="flex flex-col">
@@ -11684,7 +11684,7 @@ function PedidosScreen({
                             actionQty = log.quantityInvoiced || log.quantityProcessed || 0;
                             break;
                           case "BANHO_QUIMICO":
-                            actionLabel = "Banho QuÃ­mico";
+                            actionLabel = "Banho Químico";
                             actionColor = "bg-cyan-50 text-cyan-800 border border-cyan-200";
                             actionQty = log.quantityProcessed || 0;
                             break;
@@ -11751,7 +11751,7 @@ function PedidosScreen({
                       })}
                       <div className="flex gap-4 text-sm items-start mt-2 border-t pt-3">
                         <div className="px-2 py-1 w-28 text-center rounded text-[10px] font-bold uppercase shrink-0 bg-purple-100 text-purple-800">
-                          InclusÃ£o
+                          Inclusão
                         </div>
                         <div className="flex-1 min-w-0 text-gray-700">
                           <span className="font-bold text-gray-900">
@@ -11784,13 +11784,13 @@ function PedidosScreen({
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
             <div className="bg-emerald-600 p-4 shrink-0 flex justify-between items-center">
               <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                {showInvoiceConfirmStep ? "â ï¸ Confirmar Faturamento Definitivo" : "ð° Faturar Pedido"}
+                {showInvoiceConfirmStep ? "⚠️ Confirmar Faturamento Definitivo" : "💰 Faturar Pedido"}
               </h3>
               <button 
                 onClick={() => { setInvoiceModalData(null); setShowInvoiceConfirmStep(false); }}
                 className="text-white/80 hover:text-white font-bold text-sm"
               >
-                â
+                ✕
               </button>
             </div>
 
@@ -11798,7 +11798,7 @@ function PedidosScreen({
               <>
                 <div className="p-5 flex flex-col gap-4">
                   <p className="text-sm text-gray-700">
-                    O faturamento irÃ¡ deduzir peÃ§as do seu{" "}
+                    O faturamento irá deduzir peças do seu{" "}
                     <strong className="text-gray-900 bg-gray-100 px-1 rounded">
                       estoque de itens acabados
                     </strong>
@@ -11815,7 +11815,7 @@ function PedidosScreen({
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-xs text-gray-600 font-bold uppercase">
-                      Quantidade a Faturar (MÃ¡ximo: {invoiceModalData.limit})
+                      Quantidade a Faturar (Máximo: {invoiceModalData.limit})
                     </label>
                     <input
                       type="number"
@@ -11838,14 +11838,14 @@ function PedidosScreen({
                     onClick={() => {
                       const qty = parseInt(invoiceInput, 10);
                       if (isNaN(qty) || qty <= 0 || qty > invoiceModalData.limit) {
-                        alert("Quantidade invÃ¡lida. Deve ser maior que 0 e no mÃ¡ximo " + invoiceModalData.limit);
+                        alert("Quantidade inválida. Deve ser maior que 0 e no máximo " + invoiceModalData.limit);
                         return;
                       }
                       setShowInvoiceConfirmStep(true);
                     }}
                     className="flex-1 sm:flex-none px-6 py-2.5 font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-md transition"
                   >
-                    Faturar â
+                    Faturar →
                   </button>
                 </div>
               </>
@@ -11855,16 +11855,16 @@ function PedidosScreen({
                   {/* Total Selected Pieces Banner */}
                   <div className="bg-emerald-50 border-2 border-emerald-500/40 p-4 rounded-xl text-center shadow-xs">
                     <span className="text-xs text-emerald-800 font-bold uppercase tracking-wider block mb-1">
-                      Total de PeÃ§as Selecionadas
+                      Total de Peças Selecionadas
                     </span>
                     <span className="text-3xl font-black text-emerald-900 block tracking-tight">
-                      {parseInt(invoiceInput, 10) || 0} PEÃA(S)
+                      {parseInt(invoiceInput, 10) || 0} PEÇA(S)
                     </span>
                   </div>
 
                   <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-lg flex flex-col gap-1 text-xs text-slate-700">
                     <div className="flex justify-between border-b pb-1">
-                      <span className="font-semibold text-slate-500">CÃ³digo do Pedido:</span>
+                      <span className="font-semibold text-slate-500">Código do Pedido:</span>
                       <strong className="text-slate-900 font-bold">{invoiceModalData.order.orderCode}</strong>
                     </div>
                     <div className="flex justify-between border-b py-1">
@@ -11878,7 +11878,7 @@ function PedidosScreen({
                   </div>
 
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs leading-relaxed font-medium">
-                    â ï¸ <strong>AtenÃ§Ã£o:</strong> Confirme para processar o faturamento definitivo de <strong>{parseInt(invoiceInput, 10) || 0} peÃ§as</strong>. Esta aÃ§Ã£o atualizarÃ¡ o status do pedido e darÃ¡ baixa automÃ¡tica no estoque.
+                    ⚠️ <strong>Atenção:</strong> Confirme para processar o faturamento definitivo de <strong>{parseInt(invoiceInput, 10) || 0} peças</strong>. Esta ação atualizará o status do pedido e dará baixa automática no estoque.
                   </div>
                 </div>
 
@@ -11887,7 +11887,7 @@ function PedidosScreen({
                     onClick={() => setShowInvoiceConfirmStep(false)}
                     className="px-4 py-2 font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition text-xs"
                   >
-                    â Voltar
+                    ← Voltar
                   </button>
                   <button
                     onClick={() => {
@@ -11896,7 +11896,7 @@ function PedidosScreen({
                     }}
                     className="px-5 py-2.5 font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-lg transition text-xs flex items-center gap-1.5"
                   >
-                    â Confirmar Definitivo
+                    ✅ Confirmar Definitivo
                   </button>
                 </div>
               </>
@@ -11971,17 +11971,17 @@ function PedidosScreen({
           return `${day}/${month}/${year}`;
         })();
 
-        // FormataÃ§Ã£o final da mensagem
-        const messageText = `*FATURAMENTO DE PEDIDO* ð
+        // Formatação final da mensagem
+        const messageText = `*FATURAMENTO DE PEDIDO* 🚀
 
-*NÂº Pedido:* ${faturamentoWhatsAppShareData.orderCode}
+*Nº Pedido:* ${faturamentoWhatsAppShareData.orderCode}
 *Cliente:* ${faturamentoWhatsAppShareData.customerName}
 *Data Faturamento:* ${dateStr}
 
 *Itens Enviados:*
-â¢ ${faturamentoWhatsAppShareData.productDescription} - Qtd: *${faturamentoWhatsAppShareData.quantity}*
+• ${faturamentoWhatsAppShareData.productDescription} - Qtd: *${faturamentoWhatsAppShareData.quantity}*
 
-_Mensagem do Sistema ImpÃ©rio Jomarci_`;
+_Mensagem do Sistema Império Jomarci_`;
 
         return (
           <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-xs text-left">
@@ -12000,7 +12000,7 @@ _Mensagem do Sistema ImpÃ©rio Jomarci_`;
 
               <div className="p-5 flex flex-col gap-4 text-gray-800 overflow-y-auto max-h-[70vh]">
                 <p className="text-xs text-gray-500 font-medium">
-                  Selecione as opÃ§Ãµes abaixo para comunicar o faturamento do
+                  Selecione as opções abaixo para comunicar o faturamento do
                   pedido{" "}
                   <strong>#{faturamentoWhatsAppShareData.orderCode}</strong> do
                   cliente{" "}
@@ -12011,13 +12011,13 @@ _Mensagem do Sistema ImpÃ©rio Jomarci_`;
                 <div className="border border-slate-100 rounded-lg p-3 bg-slate-50 flex flex-col gap-2.5">
                   <div className="flex items-center gap-1.5 border-b border-slate-200/50 pb-1.5">
                     <span className="text-xs font-black text-slate-800 uppercase tracking-tight flex items-center gap-1">
-                      ð§ NotificaÃ§Ã£o por E-mail
+                      📧 Notificação por E-mail
                     </span>
                   </div>
 
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-500 uppercase">
-                      E-mails (Cliente / Representante - Separar por vÃ­rgula)
+                      E-mails (Cliente / Representante - Separar por vírgula)
                     </label>
                     <input
                       type="email"
@@ -12029,8 +12029,8 @@ _Mensagem do Sistema ImpÃ©rio Jomarci_`;
                   </div>
 
                   <div className="text-[9px] text-gray-400 font-medium leading-tight">
-                    O e-mail serÃ¡ enviado de{" "}
-                    <strong>gerencia.imperiojomarci@gmail.com</strong> com cÃ³pia
+                    O e-mail será enviado de{" "}
+                    <strong>gerencia.imperiojomarci@gmail.com</strong> com cópia
                     para <strong>imperiojomarci@gmail.com</strong>.
                   </div>
 
@@ -12062,7 +12062,7 @@ _Mensagem do Sistema ImpÃ©rio Jomarci_`;
                 <div className="border border-slate-100 rounded-lg p-3 bg-slate-50 flex flex-col gap-2.5">
                   <div className="flex items-center gap-1.5 border-b border-slate-200/50 pb-1.5">
                     <span className="text-xs font-black text-slate-800 uppercase tracking-tight flex items-center gap-1">
-                      ð¬ Compartilhar pelo WhatsApp
+                      💬 Compartilhar pelo WhatsApp
                     </span>
                   </div>
 
@@ -12089,7 +12089,7 @@ _Mensagem do Sistema ImpÃ©rio Jomarci_`;
                     />
                     {!faturamentoWhatsAppShareData.phone && (
                       <span className="text-[9px] text-amber-600 font-extrabold">
-                        â ï¸ Insira o nÃºmero do celular acima para enviar.
+                        ⚠️ Insira o número do celular acima para enviar.
                       </span>
                     )}
                   </div>
@@ -12119,7 +12119,7 @@ _Mensagem do Sistema ImpÃ©rio Jomarci_`;
                   onClick={() => {
                     navigator.clipboard.writeText(messageText);
                     alert(
-                      "Mensagem copiada com sucesso para a Ã¡rea de transferÃªncia!",
+                      "Mensagem copiada com sucesso para a área de transferência!",
                     );
                   }}
                   className="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded text-xs font-bold transition cursor-pointer"
@@ -12351,7 +12351,7 @@ function InvoiceSuggestionsTab({
 
       if (isProg) {
         tier = 1;
-        tierName = "Pedido ProgramaÃ§Ã£o";
+        tierName = "Pedido Programação";
       } else if (isLate) {
         tier = 2;
         tierName = "Atrasado";
@@ -12436,26 +12436,26 @@ function InvoiceSuggestionsTab({
     <div className="flex-1 overflow-y-auto w-full flex flex-col gap-4">
       <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
         <h3 className="font-extrabold text-indigo-950 text-base flex items-center gap-2">
-          ð SugestÃ£o de Faturamento Induzido
+          📊 Sugestão de Faturamento Induzido
         </h3>
         <p className="text-[11px] text-slate-500 mt-1">
-          Lista dinÃ¢mica priorizada para apoiar a decisÃ£o de faturamento humana,
-          cruzando prazos, programaÃ§Ãµes e o estoque livre atual.
+          Lista dinâmica priorizada para apoiar a decisão de faturamento humana,
+          cruzando prazos, programações e o estoque livre atual.
         </p>
 
         {/* Quick stats grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
           <div className="bg-indigo-50/50 border border-indigo-100 p-3 rounded-lg flex flex-col">
-            <span className="text-xl">ð</span>
+            <span className="text-xl">📈</span>
             <span className="text-[10px] text-indigo-750 font-bold uppercase tracking-wider mt-1">
-              ProgramaÃ§Ã£o
+              Programação
             </span>
             <span className="text-xl font-black text-indigo-950 mt-0.5">
               {progCount} un.
             </span>
           </div>
           <div className="bg-red-50/50 border border-red-100 p-3 rounded-lg flex flex-col">
-            <span className="text-xl">â ï¸</span>
+            <span className="text-xl">⚠️</span>
             <span className="text-[10px] text-red-750 font-bold uppercase tracking-wider mt-1">
               Atrasados
             </span>
@@ -12464,7 +12464,7 @@ function InvoiceSuggestionsTab({
             </span>
           </div>
           <div className="bg-emerald-50/50 border border-emerald-100 p-3 rounded-lg flex flex-col">
-            <span className="text-xl">â¨</span>
+            <span className="text-xl">✨</span>
             <span className="text-[10px] text-emerald-750 font-bold uppercase tracking-wider mt-1">
               100% Cobertos
             </span>
@@ -12473,7 +12473,7 @@ function InvoiceSuggestionsTab({
             </span>
           </div>
           <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg flex flex-col">
-            <span className="text-xl">ð¦</span>
+            <span className="text-xl">📦</span>
             <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">
               Total Fila
             </span>
@@ -12488,7 +12488,7 @@ function InvoiceSuggestionsTab({
         <div className="flex flex-col md:flex-row gap-3 bg-white p-3 rounded-lg border border-slate-100">
           <input
             type="text"
-            placeholder="Buscar por cÃ³digo, cliente ou produto..."
+            placeholder="Buscar por código, cliente ou produto..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="flex-1 border p-2 rounded text-xs focus:ring-blue-500 bg-white"
@@ -12499,17 +12499,17 @@ function InvoiceSuggestionsTab({
             className="border p-2 rounded text-xs bg-white text-gray-700 cursor-pointer focus:ring-blue-500"
           >
             <option value="ALL">Todas as prioridades</option>
-            <option value="PROG">ð Apenas ProgramaÃ§Ã£o</option>
-            <option value="LATE">â ï¸ Atrasados comuns</option>
-            <option value="100">â¨ Estoque 100% Coberto</option>
-            <option value="70">ð  Estoque Parcial (&gt;= 70%)</option>
-            <option value="LOW">â Sem estoque mÃ­nimo (&lt; 70%)</option>
+            <option value="PROG">📈 Apenas Programação</option>
+            <option value="LATE">⚠️ Atrasados comuns</option>
+            <option value="100">✨ Estoque 100% Coberto</option>
+            <option value="70">🏠 Estoque Parcial (&gt;= 70%)</option>
+            <option value="LOW">❌ Sem estoque mínimo (&lt; 70%)</option>
           </select>
         </div>
 
         {filteredSuggestions.length === 0 ? (
           <p className="text-center text-sm text-gray-400 py-10 bg-white rounded-lg border border-dashed border-slate-200">
-            Nenhuma sugestÃ£o encontrada para os filtros selecionados.
+            Nenhuma sugestão encontrada para os filtros selecionados.
           </p>
         ) : (
           <div className="grid gap-3">
@@ -12519,28 +12519,28 @@ function InvoiceSuggestionsTab({
 
               let badgeBg = "bg-slate-100 text-slate-800 border-slate-200";
               let badgeLabel = s.tierName;
-              let badgeIcon = "ð¦";
+              let badgeIcon = "📦";
 
               if (s.isProg) {
                 badgeBg = "bg-indigo-100 text-indigo-800 border-indigo-200";
-                badgeLabel = "ð PROGRAMAÃÃO";
-                badgeIcon = "ð";
+                badgeLabel = "📈 PROGRAMAÇÃO";
+                badgeIcon = "📈";
               } else if (s.isLate) {
                 badgeBg = "bg-red-50/90 text-red-800 border-red-200";
-                badgeLabel = "â ï¸ ATRASADO";
-                badgeIcon = "â ï¸";
+                badgeLabel = "⚠️ ATRASADO";
+                badgeIcon = "⚠️";
               } else if (s.coveragePercent >= 100) {
                 badgeBg = "bg-emerald-100 text-emerald-800 border-emerald-200";
-                badgeLabel = "â¨ ESTOQUE 100%";
-                badgeIcon = "â¨";
+                badgeLabel = "✨ ESTOQUE 100%";
+                badgeIcon = "✨";
               } else if (s.coveragePercent >= 70) {
                 badgeBg = "bg-amber-100 text-amber-850 border-yellow-200";
-                badgeLabel = `ð  PARCIAL (${Math.round(s.coveragePercent)}%)`;
-                badgeIcon = "ð ";
+                badgeLabel = `🏠 PARCIAL (${Math.round(s.coveragePercent)}%)`;
+                badgeIcon = "🏠";
               } else {
                 badgeBg = "bg-gray-100 text-gray-500 border-gray-200";
-                badgeLabel = `â±ï¸ INSUFICIENTE (${Math.round(s.coveragePercent)}%)`;
-                badgeIcon = "â±ï¸";
+                badgeLabel = `⏱️ INSUFICIENTE (${Math.round(s.coveragePercent)}%)`;
+                badgeIcon = "⏱️";
               }
 
               return (
@@ -12662,7 +12662,7 @@ function InvoiceSuggestionsTab({
                         }}
                         className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2.5 py-1 rounded transition shadow-xs flex items-center gap-1"
                       >
-                        ð° Faturar
+                        💰 Faturar
                       </button>
                     </div>
                   </div>
@@ -12734,7 +12734,7 @@ function AdminScreen({
     const qty = parseInt(invoiceInput, 10);
 
     if (isNaN(qty) || qty <= 0 || qty > limit) {
-      alert("Quantidade invÃ¡lida. Deve ser maior que 0 e no mÃ¡ximo " + limit);
+      alert("Quantidade inválida. Deve ser maior que 0 e no máximo " + limit);
       return;
     }
 
@@ -12757,9 +12757,9 @@ function AdminScreen({
         const primaryResOrder = alternateReservedOrders[0];
         const confirmResult = window.confirm(
           `ALERTA POPUP - PRODUTO RESERVADO PARA OUTRO PEDIDO:\n\n` +
-            `O produto que vocÃª estÃ¡ faturando contÃ©m unidades de estoque RESERVADAS para:\n` +
-            `â¢ Pedido: ${primaryResOrder.orderCode}\n` +
-            `â¢ Cliente: ${primaryResOrder.customerName}\n\n` +
+            `O produto que você está faturando contém unidades de estoque RESERVADAS para:\n` +
+            `• Pedido: ${primaryResOrder.orderCode}\n` +
+            `• Cliente: ${primaryResOrder.customerName}\n\n` +
             `Deseja CONTINUAR assim mesmo e desfazer a reserva do outro pedido ou clique em Cancelar para interromper?`,
         );
 
@@ -12841,7 +12841,7 @@ function AdminScreen({
       variation: o.variation,
       quantity: qty,
       type: "SAIDA",
-      description: `SaÃ­da por faturamento do Pedido ${o.orderCode} (Cliente: ${o.customerName})`,
+      description: `Saída por faturamento do Pedido ${o.orderCode} (Cliente: ${o.customerName})`,
     });
 
     db.addLogs([
@@ -12876,7 +12876,7 @@ function AdminScreen({
       productDescription: productDescr,
       quantity: qty,
       phone: rep?.phone || "",
-      representativeName: rep?.name || o.representativeName || "nÃ£o definido",
+      representativeName: rep?.name || o.representativeName || "não definido",
     });
   };
 
@@ -12895,7 +12895,7 @@ function AdminScreen({
   const handleFinalizeActivePackByManager = (pack: any) => {
     const qty = parseInt(finalizeQuantity, 10);
     if (isNaN(qty) || qty < 0) {
-      alert("Por favor, digite uma quantidade vÃ¡lida (deve ser 0 ou maior).");
+      alert("Por favor, digite uma quantidade válida (deve ser 0 ou maior).");
       return;
     }
 
@@ -13081,7 +13081,7 @@ function AdminScreen({
         variation: pack.variation,
         quantity: targetQty,
         type: "ENTRADA",
-        description: `Embalagem finalizada via GerÃªncia - entrada automÃ¡tica no estoque (Operador: ${pack.operatorId} | Finalizado por: ${currentUser.name})`,
+        description: `Embalagem finalizada via Gerência - entrada automática no estoque (Operador: ${pack.operatorId} | Finalizado por: ${currentUser.name})`,
       });
     } else if (pack.type === "PRODUCAO" && targetQty > 0) {
       if (qtyToAllocate > 0) {
@@ -13114,7 +13114,7 @@ function AdminScreen({
           variation: pack.variation,
           quantity: qtyToAllocate,
           type: "ENTRADA",
-          description: `Sobra de ProduÃ§Ã£o finalizada via GerÃªncia - entrada no estoque intermediÃ¡rio (Operador: ${pack.operatorId} | Finalizado por: ${currentUser.name})`,
+          description: `Sobra de Produção finalizada via Gerência - entrada no estoque intermediário (Operador: ${pack.operatorId} | Finalizado por: ${currentUser.name})`,
         });
       }
     }
@@ -13159,7 +13159,7 @@ function AdminScreen({
 
     const itemDb = db.items.find((i) => i.id === pack.itemId);
     db.addNotification?.({
-      message: `Apontamento finalizado por GerÃªncia (${pack.type.replace("_", " ")}): ${targetQty} de ${itemDb?.name || "Item"} (${pack.color || "-"} | ${pack.size || "-"}) do Operador ${pack.operatorId}`,
+      message: `Apontamento finalizado por Gerência (${pack.type.replace("_", " ")}): ${targetQty} de ${itemDb?.name || "Item"} (${pack.color || "-"} | ${pack.size || "-"}) do Operador ${pack.operatorId}`,
       read: false,
     });
 
@@ -13182,7 +13182,7 @@ function AdminScreen({
 
   useEffect(() => {
     if (activeTab === "PAINEL") {
-      // Pequeno timeout de 150ms garante que o layout do navegador esteja pintado e com dimensÃµes calculadas antes de montar o Recharts
+      // Pequeno timeout de 150ms garante que o layout do navegador esteja pintado e com dimensões calculadas antes de montar o Recharts
       const timer = setTimeout(() => {
         setChartsReady(true);
       }, 150);
@@ -13282,14 +13282,14 @@ function AdminScreen({
       .length;
   }, [db.orders, todayStart]);
 
-  let comparisonMsg = "Sem base de comparaÃ§Ã£o (ontem: 0 peÃ§as).";
+  let comparisonMsg = "Sem base de comparação (ontem: 0 peças).";
   let comparisonColor = "text-gray-500";
   if (yesterdayStats.pph > 0) {
     if (todayStats.pph > yesterdayStats.pph) {
-      comparisonMsg = `Produtividade ${((todayStats.pph / yesterdayStats.pph - 1) * 100).toFixed(1)}% melhor que ontem! ð`;
+      comparisonMsg = `Produtividade ${((todayStats.pph / yesterdayStats.pph - 1) * 100).toFixed(1)}% melhor que ontem! 🚀`;
       comparisonColor = "text-green-600";
     } else if (todayStats.pph < yesterdayStats.pph) {
-      comparisonMsg = `Produtividade ${((1 - todayStats.pph / yesterdayStats.pph) * 100).toFixed(1)}% menor que ontem. ð`;
+      comparisonMsg = `Produtividade ${((1 - todayStats.pph / yesterdayStats.pph) * 100).toFixed(1)}% menor que ontem. 📉`;
       comparisonColor = "text-red-500";
     } else {
       comparisonMsg = "Produtividade igual a de ontem.";
@@ -13361,7 +13361,7 @@ function AdminScreen({
       stats[s.id] = { sectorName: s.name, estimatedSec: 0, actualTimeSec: 0, stdTimeProducedSec: 0 };
     });
 
-    // 1. Calculate estimated remaining time (Carga HorÃ¡ria Estimada) based on pending items
+    // 1. Calculate estimated remaining time (Carga Horária Estimada) based on pending items
     const activeBatches = db.productionBatches.filter(b => b.status !== "CONCLUIDO");
     activeBatches.forEach(b => {
       if (!stats[b.sectorId]) return;
@@ -13381,7 +13381,7 @@ function AdminScreen({
         const sectorConfig = db.sectors.find(s => s.id === b.sectorId);
         let completed = 0;
         if (sectorConfig?.name === "Corte Laser") completed = o.cutQuantity || 0;
-        else if (sectorConfig?.name === "ProduÃ§Ã£o") completed = o.producedQuantity || 0;
+        else if (sectorConfig?.name === "Produção") completed = o.producedQuantity || 0;
         else if (sectorConfig?.name === "Pintura") completed = o.paintedQuantity || 0;
         else if (sectorConfig?.name === "Embalagem") completed = o.packedQuantity || 0;
         
@@ -13390,7 +13390,7 @@ function AdminScreen({
       });
     });
 
-    // 2. Pace / PrevisÃ£o (Compare Actual Time vs Standard Time value produced)
+    // 2. Pace / Previsão (Compare Actual Time vs Standard Time value produced)
     const now = Date.now();
     // Add current active tasks time
     db.activePacks.forEach(pack => {
@@ -13461,7 +13461,7 @@ function AdminScreen({
       );
       return {
         name: sector ? sector.name : name,
-        "MÃ©dia DiÃ¡ria": Math.round(total / daysElapsed),
+        "Média Diária": Math.round(total / daysElapsed),
         Capacidade: sector?.dailyCapacity || 1000,
       };
     };
@@ -13511,7 +13511,7 @@ function AdminScreen({
   return (
     <ScreenLayout id="admin-screen-layout">
       <ScreenHeader
-        title={currentUser.role === "PCP" ? "Painel PCP" : "AdministraÃ§Ã£o"}
+        title={currentUser.role === "PCP" ? "Painel PCP" : "Administração"}
         icon={<BarChart2 className="text-blue-600" size={20} />}
       />
 
@@ -13538,7 +13538,7 @@ function AdminScreen({
               className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "GESTAO_PESSOAS" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
               onClick={() => setActiveTab("GESTAO_PESSOAS")}
             >
-              ð¥ GestÃ£o de Pessoas
+              👥 Gestão de Pessoas
             </button>
           )}
           {(currentUser.role === "ADMIN" ||
@@ -13550,7 +13550,7 @@ function AdminScreen({
               className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "EVOLUCAO_EMBALAGEM" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
               onClick={() => setActiveTab("EVOLUCAO_EMBALAGEM")}
             >
-              ð¦ EvoluÃ§Ã£o Embalagem
+              📦 Evolução Embalagem
             </button>
           )}
 
@@ -13559,7 +13559,7 @@ function AdminScreen({
               className={`px-3 py-1.5 text-xs font-bold rounded-md transition whitespace-nowrap cursor-pointer ${activeTab === "ETIQUETAS" ? "bg-blue-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
               onClick={() => setActiveTab("ETIQUETAS")}
             >
-              ð·ï¸ Etiquetas
+              🏷️ Etiquetas
             </button>
           )}
 
@@ -13604,7 +13604,7 @@ function AdminScreen({
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-center">
                   <div className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">
-                    PeÃ§as Produzidas Hoje
+                    Peças Produzidas Hoje
                   </div>
                   <div className="text-2xl font-black text-blue-600">
                     {todayProducedQuantity}
@@ -13618,11 +13618,11 @@ function AdminScreen({
                     {pendingOrdersDeliverToday} pendentes
                   </div>
                 </div>
-                {/* Meta DiÃ¡ria Card */}
+                {/* Meta Diária Card */}
                 <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
                     <div className="text-gray-500 text-[10px] font-extrabold uppercase tracking-wider">
-                      Progresso Meta DiÃ¡ria
+                      Progresso Meta Diária
                     </div>
                     {isEditingGoal ? (
                       <div className="flex items-center gap-1">
@@ -13654,7 +13654,7 @@ function AdminScreen({
                           className="bg-emerald-500 text-white p-0.5 rounded text-xs hover:bg-emerald-600 cursor-pointer"
                           title="Salvar"
                         >
-                          â
+                          ✓
                         </button>
                         <button
                           onClick={() => {
@@ -13664,7 +13664,7 @@ function AdminScreen({
                           className="bg-gray-400 text-white p-0.5 rounded text-xs hover:bg-gray-500 cursor-pointer"
                           title="Cancelar"
                         >
-                          â
+                          ✕
                         </button>
                       </div>
                     ) : (
@@ -13676,7 +13676,7 @@ function AdminScreen({
                         className="text-[10px] text-indigo-600 hover:text-indigo-800 font-extrabold flex items-center gap-0.5 bg-indigo-50 px-1.5 py-0.5 rounded cursor-pointer"
                         title="Ajustar Meta"
                       >
-                        âï¸ Meta: {dailyProductionGoal}
+                        ✏️ Meta: {dailyProductionGoal}
                       </button>
                     )}
                   </div>
@@ -13701,19 +13701,19 @@ function AdminScreen({
 
                   <span className="text-[9px] text-gray-500 font-medium mt-1 truncate block">
                     {todayProducedQuantity >= dailyProductionGoal ? (
-                      <span className="text-emerald-600 font-bold">ð Meta diÃ¡ria atingida! ParabÃ©ns!</span>
+                      <span className="text-emerald-600 font-bold">🎉 Meta diária atingida! Parabéns!</span>
                     ) : (
-                      <span>Falta(m) {dailyProductionGoal - todayProducedQuantity} peÃ§as para concluir a meta.</span>
+                      <span>Falta(m) {dailyProductionGoal - todayProducedQuantity} peças para concluir a meta.</span>
                     )}
                   </span>
                 </div>
               </div>
 
-              {/* Novo Widget: Carga HorÃ¡ria e PrevisÃ£o de ConclusÃ£o */}
+              {/* Novo Widget: Carga Horária e Previsão de Conclusão */}
               {cargaHorariaStats.length > 0 && (
                 <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4">
                   <h3 className="text-gray-800 font-extrabold text-sm mb-3 border-b pb-2 flex items-center gap-2">
-                    â±ï¸ Estimativa de Carga e Ritmo de ProduÃ§Ã£o (Setores Ativos)
+                    ⏱️ Estimativa de Carga e Ritmo de Produção (Setores Ativos)
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {cargaHorariaStats.map(stat => {
@@ -13724,7 +13724,7 @@ function AdminScreen({
                         return `${h}h ${m}m`;
                       };
                       
-                      // ritmo = Tempo Produzido Equivalente PadrÃ£o / Tempo Real Gasto
+                      // ritmo = Tempo Produzido Equivalente Padrão / Tempo Real Gasto
                       // Ex: Trabalhou 1 hora, mas produziu o equivalente a 1h30 (ritmo > 1) = Adiantado
                       // Trabalhou 1 hora, mas produziu o equivalente a 30m (ritmo < 1) = Atrasado
                       let pacePct = 0;
@@ -13738,14 +13738,14 @@ function AdminScreen({
                           
                           <div className="flex flex-col gap-2 mt-2">
                             <div className="bg-white p-2 border border-slate-100 rounded shadow-sm">
-                              <span className="text-[10px] text-slate-500 font-semibold block uppercase">Carga Fila (PadrÃ£o)</span>
+                              <span className="text-[10px] text-slate-500 font-semibold block uppercase">Carga Fila (Padrão)</span>
                               <span className="text-sm font-black text-slate-700">{formatSecs(stat.estimatedSec)}</span>
                             </div>
 
                             {stat.actualTimeSec > 0 && (
                               <div className={`p-2 border rounded shadow-sm ${pacePct >= 100 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
                                 <span className="text-[10px] font-semibold block uppercase" style={{ color: pacePct >= 100 ? '#059669' : '#dc2626' }}>
-                                  Ritmo Atual (Real x PadrÃ£o)
+                                  Ritmo Atual (Real x Padrão)
                                 </span>
                                 <div className="flex items-center justify-between">
                                   <span className="text-xs font-bold" style={{ color: pacePct >= 100 ? '#065f46' : '#991b1b' }}>
@@ -13804,7 +13804,7 @@ function AdminScreen({
                     >
                       <option value="ALL">Todos os Setores (Geral)</option>
                       <option value="CORTE_LASER">Corte a Laser</option>
-                      <option value="PRODUCAO">ProduÃ§Ã£o</option>
+                      <option value="PRODUCAO">Produção</option>
                       <option value="PINTURA">Pintura</option>
                       <option value="EMBALAGEM">Embalagem</option>
                     </select>
@@ -13818,7 +13818,7 @@ function AdminScreen({
                 </h3>
                 <div className="flex justify-around text-center">
                   <div>
-                    <p className="text-sm text-gray-500">PeÃ§as Processadas</p>
+                    <p className="text-sm text-gray-500">Peças Processadas</p>
                     <p className="text-2xl font-bold text-blue-600">
                       {Number.isNaN(todayStats.totalPacked)
                         ? 0
@@ -13835,7 +13835,7 @@ function AdminScreen({
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">PÃ§s / Hora</p>
+                    <p className="text-sm text-gray-500">Pçs / Hora</p>
                     <p className="text-2xl font-bold text-green-600">
                       {Number.isNaN(todayStats.pph) ? 0 : todayStats.pph}
                     </p>
@@ -13849,11 +13849,11 @@ function AdminScreen({
 
                 <hr className="border-gray-100" />
                 <h3 className="font-semibold text-gray-700">
-                  EficiÃªncia Operacional (MÃ©dia DiÃ¡ria vs Capacidade)
+                  Eficiência Operacional (Média Diária vs Capacidade)
                 </h3>
                 <div className="w-full h-64 mt-2 bg-gray-50/30 rounded-lg flex items-center justify-center border border-gray-100 relative min-h-[16rem]">
                   {chartsReady ? (
-                    <React.Suspense fallback={<span className="text-xs text-gray-400 font-medium">Carregando grÃ¡fico...</span>}>
+                    <React.Suspense fallback={<span className="text-xs text-gray-400 font-medium">Carregando gráfico...</span>}>
                       <ResponsiveContainer
                         width="100%"
                         height={240}
@@ -13878,7 +13878,7 @@ function AdminScreen({
                           />
                           <Legend iconType="circle" wrapperStyle={{ fontSize: "12px" }} />
                           <Bar dataKey="Capacidade" fill="#E5E7EB" radius={[4, 4, 0, 0]} />
-                          <Bar dataKey="MÃ©dia DiÃ¡ria" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="Média Diária" fill="#3B82F6" radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
                     </React.Suspense>
@@ -13886,7 +13886,7 @@ function AdminScreen({
                     <div className="flex flex-col items-center gap-2">
                       <div className="w-6 h-6 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin"></div>
                       <span className="text-xs text-gray-400 font-medium">
-                        Carregando dados de eficiÃªncia...
+                        Carregando dados de eficiência...
                       </span>
                     </div>
                   )}
@@ -13894,14 +13894,14 @@ function AdminScreen({
 
                 <hr className="border-gray-100 mt-4" />
                 <h3 className="font-semibold text-gray-700">
-                  OcupaÃ§Ã£o dos Setores vs Capacidade DiÃ¡ria (Lotes Pendentes)
+                  Ocupação dos Setores vs Capacidade Diária (Lotes Pendentes)
                 </h3>
                 <div className="text-xs text-red-600 font-medium bg-red-50 px-2 py-1 rounded border border-red-100 mb-2 mt-1">
-                  ð¨ Vermelho indica acima de 100% de capacidade diÃ¡ria
+                  🚨 Vermelho indica acima de 100% de capacidade diária
                 </div>
                 <div className="w-full h-64 mt-2 mb-6 bg-gray-50/30 rounded-lg flex items-center justify-center border border-gray-100 relative min-h-[16rem]">
                   {chartsReady ? (
-                    <React.Suspense fallback={<span className="text-xs text-gray-400 font-medium">Carregando grÃ¡fico...</span>}>
+                    <React.Suspense fallback={<span className="text-xs text-gray-400 font-medium">Carregando gráfico...</span>}>
                       <ResponsiveContainer
                         width="100%"
                         height={240}
@@ -13925,7 +13925,7 @@ function AdminScreen({
                             }}
                           />
                           <Legend iconType="circle" wrapperStyle={{ fontSize: "12px" }} />
-                          <Bar name="Capacidade DiÃ¡ria" dataKey="capacity" fill="#D1D5DB" radius={[4, 4, 0, 0]} />
+                          <Bar name="Capacidade Diária" dataKey="capacity" fill="#D1D5DB" radius={[4, 4, 0, 0]} />
                           <Bar name="Carga Agrupada" dataKey="quantity" radius={[4, 4, 0, 0]}>
                             {sectorOccupancyData.map((entry: any, index: number) => (
                               <Cell key={`cell-${index}`} fill={entry.isOverloaded ? "#EF4444" : "#6366F1"} />
@@ -13938,7 +13938,7 @@ function AdminScreen({
                     <div className="flex flex-col items-center gap-2">
                       <div className="w-6 h-6 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin"></div>
                       <span className="text-xs text-gray-400 font-medium">
-                        Carregando ocupaÃ§Ã£o por setor...
+                        Carregando ocupação por setor...
                       </span>
                     </div>
                   )}
@@ -13947,7 +13947,7 @@ function AdminScreen({
 
               <div className="bg-white p-4 rounded-lg shadow-sm border mt-1">
                 <h3 className="font-semibold text-gray-700 mb-4">
-                  PeÃ§as Produzidas Hoje (por Setor)
+                  Peças Produzidas Hoje (por Setor)
                 </h3>
                 <div className="flex flex-col gap-3">
                   {[
@@ -13957,7 +13957,7 @@ function AdminScreen({
                       color: "bg-teal-500",
                     },
                     {
-                      label: "ProduÃ§Ã£o",
+                      label: "Produção",
                       value: statsTodaySector.prod,
                       color: "bg-blue-500",
                     },
@@ -13987,7 +13987,7 @@ function AdminScreen({
                       >
                         <div className="flex justify-between font-medium text-gray-700">
                           <span>{s.label}</span>
-                          <span>{s.value} pÃ§s</span>
+                          <span>{s.value} pçs</span>
                         </div>
                         <div className="w-full bg-gray-100 rounded-full h-2">
                           <div
@@ -14005,7 +14005,7 @@ function AdminScreen({
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                   <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col items-center justify-center">
                     <span className="text-sm font-semibold text-gray-500 mb-1 text-center">
-                      Em ProduÃ§Ã£o
+                      Em Produção
                     </span>
                     <span className="text-3xl font-bold text-blue-600">
                       {
@@ -14044,14 +14044,14 @@ function AdminScreen({
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-2 border-b border-gray-100">
                   <h3 className="font-extrabold text-gray-800 text-sm uppercase tracking-wider">
-                    ð Progresso dos Pedidos ({filteredGroupedOrders.length})
+                    📋 Progresso dos Pedidos ({filteredGroupedOrders.length})
                   </h3>
                   
                   <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
                     {/* Search Input */}
                     <input
                       type="text"
-                      placeholder="Buscar por CÃ³digo ou Cliente..."
+                      placeholder="Buscar por Código ou Cliente..."
                       value={panelOrdersSearch}
                       onChange={(e) => {
                         setPanelOrdersSearch(e.target.value);
@@ -14121,7 +14121,7 @@ function AdminScreen({
                                   #{go.code}
                                 </span>
                                 <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full">
-                                  {go.packed} / {go.total} pÃ§s
+                                  {go.packed} / {go.total} pçs
                                 </span>
                               </div>
                               <p className="text-[10px] text-gray-500 font-bold truncate uppercase tracking-tight mb-3">
@@ -14156,7 +14156,7 @@ function AdminScreen({
                           onClick={() => setPanelOrdersLimit((prev) => prev + 12)}
                           className="bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs px-5 py-2 rounded-xl shadow-3xs cursor-pointer transition flex items-center gap-1"
                         >
-                          ð Mostrar Mais Pedidos (Exibindo {Math.min(panelOrdersLimit, filteredGroupedOrders.length)} de {filteredGroupedOrders.length})
+                          🔄 Mostrar Mais Pedidos (Exibindo {Math.min(panelOrdersLimit, filteredGroupedOrders.length)} de {filteredGroupedOrders.length})
                         </button>
                       </div>
                     )}
@@ -14236,14 +14236,14 @@ function AdminScreen({
                     <strong>Produto:</strong> {pack.partName || item?.name}
                   </p>
                   <p className="text-sm text-gray-700">
-                    <strong>SKU/VariaÃ§Ã£o:</strong> {pack.color || "-"} |{" "}
+                    <strong>SKU/Variação:</strong> {pack.color || "-"} |{" "}
                     {pack.size || "-"} | {pack.variation || "-"}
                   </p>
                   <p className="text-sm text-gray-700">
                     <strong>Operador Atual:</strong> {pack.operatorId}
                   </p>
                   <p className="text-sm text-gray-700 mt-2">
-                    <strong>Tempo de OperaÃ§Ã£o:</strong>{" "}
+                    <strong>Tempo de Operação:</strong>{" "}
                     <span className="font-bold text-indigo-700">
                       {formatDuration(pack.startTime)}
                     </span>
@@ -14254,12 +14254,12 @@ function AdminScreen({
                   currentUser.role === "ADMIN") && (
                   <div className="border-t border-slate-200 pt-4 mt-2 flex flex-col gap-3 text-left">
                     <h4 className="font-bold text-gray-800 text-sm flex items-center gap-1.5 text-blue-700">
-                      <span>ð§ Ãrea do Gestor: Finalizar Apontamento</span>
+                      <span>🔧 Área do Gestor: Finalizar Apontamento</span>
                     </h4>
                     <p className="text-xs text-slate-500 leading-relaxed">
-                      Como gestor, vocÃª pode encerrar este apontamento iniciado
-                      por qualquer usuÃ¡rio, registrando a quantidade
-                      correspondente e atualizando as ordens de serviÃ§o
+                      Como gestor, você pode encerrar este apontamento iniciado
+                      por qualquer usuário, registrando a quantidade
+                      correspondente e atualizando as ordens de serviço
                       correspondentes automaticamente.
                     </p>
                     <div className="flex flex-col gap-1.5">
@@ -14318,7 +14318,7 @@ function AdminScreen({
                   )}
                   {selectedOrder.isProgramacao && (
                     <span className="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-2 py-0.5 rounded">
-                      ð PROGRAMAÃÃO
+                      📈 PROGRAMAÇÃO
                     </span>
                   )}
                 </h2>
@@ -14339,7 +14339,7 @@ function AdminScreen({
             <div className="p-5 flex-1 overflow-y-auto bg-gray-50">
               <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 mb-6 flex flex-col gap-3">
                 <h3 className="font-semibold text-gray-800 border-b pb-2">
-                  InformaÃ§Ãµes Adicionais
+                  Informações Adicionais
                 </h3>
                 <div className="grid grid-cols-2 gap-4 text-sm mt-1">
                   <div className="flex flex-col">
@@ -14356,7 +14356,7 @@ function AdminScreen({
                       Quantidade Total
                     </span>
                     <span className="text-blue-700 font-bold">
-                      {selectedOrder.totalQuantity} pÃ§s
+                      {selectedOrder.totalQuantity} pçs
                     </span>
                   </div>
                   <div className="flex flex-col">
@@ -14435,7 +14435,7 @@ function AdminScreen({
                             actionQty = log.quantityInvoiced || log.quantityProcessed || 0;
                             break;
                           case "BANHO_QUIMICO":
-                            actionLabel = "Banho QuÃ­mico";
+                            actionLabel = "Banho Químico";
                             actionColor = "bg-cyan-50 text-cyan-800 border border-cyan-200";
                             actionQty = log.quantityProcessed || 0;
                             break;
@@ -14507,13 +14507,13 @@ function AdminScreen({
           >
             <div className="bg-emerald-600 p-4 shrink-0 flex justify-between items-center">
               <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                {showInvoiceConfirmStep ? "â ï¸ Confirmar Faturamento Definitivo" : "ð° Faturar Pedido"}
+                {showInvoiceConfirmStep ? "⚠️ Confirmar Faturamento Definitivo" : "💰 Faturar Pedido"}
               </h3>
               <button 
                 onClick={() => { setInvoiceModalData(null); setShowInvoiceConfirmStep(false); }}
                 className="text-white/80 hover:text-white font-bold text-sm"
               >
-                â
+                ✕
               </button>
             </div>
 
@@ -14521,7 +14521,7 @@ function AdminScreen({
               <>
                 <div className="p-5 flex flex-col gap-4">
                   <p className="text-sm text-gray-700">
-                    O faturamento irÃ¡ deduzir peÃ§as do seu{" "}
+                    O faturamento irá deduzir peças do seu{" "}
                     <strong className="text-gray-900 bg-gray-100 px-1 rounded">
                       estoque de itens acabados
                     </strong>
@@ -14538,7 +14538,7 @@ function AdminScreen({
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-xs text-gray-600 font-bold uppercase">
-                      Quantidade a Faturar (MÃ¡ximo: {invoiceModalData.limit})
+                      Quantidade a Faturar (Máximo: {invoiceModalData.limit})
                     </label>
                     <input
                       type="number"
@@ -14561,14 +14561,14 @@ function AdminScreen({
                     onClick={() => {
                       const qty = parseInt(invoiceInput, 10);
                       if (isNaN(qty) || qty <= 0 || qty > invoiceModalData.limit) {
-                        alert("Quantidade invÃ¡lida. Deve ser maior que 0 e no mÃ¡ximo " + invoiceModalData.limit);
+                        alert("Quantidade inválida. Deve ser maior que 0 e no máximo " + invoiceModalData.limit);
                         return;
                       }
                       setShowInvoiceConfirmStep(true);
                     }}
                     className="flex-1 sm:flex-none px-6 py-2.5 font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-md transition"
                   >
-                    Faturar â
+                    Faturar →
                   </button>
                 </div>
               </>
@@ -14578,16 +14578,16 @@ function AdminScreen({
                   {/* Total Selected Pieces Banner */}
                   <div className="bg-emerald-50 border-2 border-emerald-500/40 p-4 rounded-xl text-center shadow-xs">
                     <span className="text-xs text-emerald-800 font-bold uppercase tracking-wider block mb-1">
-                      Total de PeÃ§as Selecionadas
+                      Total de Peças Selecionadas
                     </span>
                     <span className="text-3xl font-black text-emerald-900 block tracking-tight">
-                      {parseInt(invoiceInput, 10) || 0} PEÃA(S)
+                      {parseInt(invoiceInput, 10) || 0} PEÇA(S)
                     </span>
                   </div>
 
                   <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-lg flex flex-col gap-1 text-xs text-slate-700">
                     <div className="flex justify-between border-b pb-1">
-                      <span className="font-semibold text-slate-500">CÃ³digo do Pedido:</span>
+                      <span className="font-semibold text-slate-500">Código do Pedido:</span>
                       <strong className="text-slate-900 font-bold">{invoiceModalData.order.orderCode}</strong>
                     </div>
                     <div className="flex justify-between border-b py-1">
@@ -14601,7 +14601,7 @@ function AdminScreen({
                   </div>
 
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs leading-relaxed font-medium">
-                    â ï¸ <strong>AtenÃ§Ã£o:</strong> Confirme para processar o faturamento definitivo de <strong>{parseInt(invoiceInput, 10) || 0} peÃ§as</strong>. Esta aÃ§Ã£o atualizarÃ¡ o status do pedido e darÃ¡ baixa automÃ¡tica no estoque.
+                    ⚠️ <strong>Atenção:</strong> Confirme para processar o faturamento definitivo de <strong>{parseInt(invoiceInput, 10) || 0} peças</strong>. Esta ação atualizará o status do pedido e dará baixa automática no estoque.
                   </div>
                 </div>
 
@@ -14610,7 +14610,7 @@ function AdminScreen({
                     onClick={() => setShowInvoiceConfirmStep(false)}
                     className="px-4 py-2 font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition text-xs"
                   >
-                    â Voltar
+                    ← Voltar
                   </button>
                   <button
                     onClick={() => {
@@ -14619,7 +14619,7 @@ function AdminScreen({
                     }}
                     className="px-5 py-2.5 font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-lg transition text-xs flex items-center gap-1.5"
                   >
-                    â Confirmar Definitivo
+                    ✅ Confirmar Definitivo
                   </button>
                 </div>
               </>
@@ -14652,17 +14652,17 @@ function AdminScreen({
             return `${day}/${month}/${year}`;
           })();
 
-          // FormataÃ§Ã£o final da mensagem
-          const messageText = `*FATURAMENTO DE PEDIDO* ð
+          // Formatação final da mensagem
+          const messageText = `*FATURAMENTO DE PEDIDO* 🚀
 
-*NÂº Pedido:* ${adminWhatsAppShareData.orderCode}
+*Nº Pedido:* ${adminWhatsAppShareData.orderCode}
 *Cliente:* ${adminWhatsAppShareData.customerName}
 *Data Faturamento:* ${dateStr}
 
 *Itens Enviados:*
-â¢ ${adminWhatsAppShareData.productDescription} - Qtd: *${adminWhatsAppShareData.quantity}*
+• ${adminWhatsAppShareData.productDescription} - Qtd: *${adminWhatsAppShareData.quantity}*
 
-_Mensagem do Sistema ImpÃ©rio Jomarci_`;
+_Mensagem do Sistema Império Jomarci_`;
 
           return (
             <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-xs text-left">
@@ -14681,7 +14681,7 @@ _Mensagem do Sistema ImpÃ©rio Jomarci_`;
                     faturado com sucesso! Deseja notificar o representante{" "}
                     <strong>
                       {adminWhatsAppShareData.representativeName ||
-                        "nÃ£o definido"}
+                        "não definido"}
                     </strong>
                     ?
                   </p>
@@ -14689,7 +14689,7 @@ _Mensagem do Sistema ImpÃ©rio Jomarci_`;
                   {/* Campo Celular do Representante */}
                   <div className="flex flex-col gap-1">
                     <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                      Telefone do DestinatÃ¡rio (PaÃ­s + DDD + NÃºmero)
+                      Telefone do Destinatário (País + DDD + Número)
                     </label>
                     <input
                       type="text"
@@ -14709,7 +14709,7 @@ _Mensagem do Sistema ImpÃ©rio Jomarci_`;
                     />
                     {!adminWhatsAppShareData.phone && (
                       <span className="text-[11px] text-amber-600 font-bold">
-                        â ï¸ Telefone nÃ£o cadastrado. Insira acima para
+                        ⚠️ Telefone não cadastrado. Insira acima para
                         compartilhar!
                       </span>
                     )}
@@ -14739,7 +14739,7 @@ _Mensagem do Sistema ImpÃ©rio Jomarci_`;
                     onClick={() => {
                       navigator.clipboard.writeText(messageText);
                       alert(
-                        "Mensagem copiada com sucesso para a Ã¡rea de transferÃªncia!",
+                        "Mensagem copiada com sucesso para a área de transferência!",
                       );
                     }}
                     className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded text-xs font-bold transition cursor-pointer"
@@ -14990,7 +14990,7 @@ export default function App() {
               variation: updated.variation,
               quantity: qtyToDeduct,
               type: "SAIDA",
-              description: `DeduÃ§Ã£o de estoque por transiÃ§Ã£o para FATURADO (Pedido ${updated.orderCode})`,
+              description: `Dedução de estoque por transição para FATURADO (Pedido ${updated.orderCode})`,
             });
           }
         }
@@ -15180,7 +15180,7 @@ export default function App() {
       osc1.stop(ctx.currentTime + 0.4);
       osc2.stop(ctx.currentTime + 0.4);
     } catch (e) {
-      console.warn("Erro ao reproduzir som de notificaÃ§Ã£o:", e);
+      console.warn("Erro ao reproduzir som de notificação:", e);
     }
   };
 
@@ -15327,8 +15327,8 @@ export default function App() {
                 "Seu Setor";
 
           const toastId = `${batch.id}-${Date.now()}`;
-          const title = `ð¦ Novo Lote AtribuÃ­do ao seu Setor!`;
-          const message = `O lote "${batch.name}" foi planejado e atribuÃ­do para o setor "${sectorName}".`;
+          const title = `📦 Novo Lote Atribuído ao seu Setor!`;
+          const message = `O lote "${batch.name}" foi planejado e atribuído para o setor "${sectorName}".`;
 
           setToasts((prev) => [
             ...prev,
@@ -15379,20 +15379,20 @@ export default function App() {
         currentUser.id === "prensa_eduardo" ||
         roleLower === "prensa_eduardo"
       ) {
-        // Compacta a estaÃ§Ã£o da Prensa Eduardo para exibir mais itens por tela.
+        // Compacta a estação da Prensa Eduardo para exibir mais itens por tela.
         document.documentElement.style.fontSize = "15px";
       } else if (isMarcosOrEmbalagem) {
-        // Aumenta ligeiramente para Marcos/Embalagem (nÃ£o tÃ£o grande)
+        // Aumenta ligeiramente para Marcos/Embalagem (não tão grande)
         document.documentElement.style.fontSize = "16.5px";
       } else {
-        // Aumenta para os demais usuÃ¡rios (e.g. GerÃªncia)
+        // Aumenta para os demais usuários (e.g. Gerência)
         document.documentElement.style.fontSize = "17.5px";
       }
     } else {
-      document.documentElement.style.fontSize = ""; // PadrÃ£o
+      document.documentElement.style.fontSize = ""; // Padrão
     }
     return () => {
-      document.documentElement.style.fontSize = ""; // PadrÃ£o
+      document.documentElement.style.fontSize = ""; // Padrão
     };
   }, [currentUser]);
 
@@ -15436,9 +15436,9 @@ export default function App() {
       currentUser.name.toLowerCase().includes("marcos"));
 
   const isScreenAllowed = (screenKey: string) => {
-    // Regras especÃ­ficas do tenant ImpÃ©rio:
-    // - PCP/GerÃªncia nÃ£o usam mais as telas de Qualidade e Cadastros PCP.
-    // - PCP/GerÃªncia devem sempre enxergar a Injetora, mesmo se a configuraÃ§Ã£o
+    // Regras específicas do tenant Império:
+    // - PCP/Gerência não usam mais as telas de Qualidade e Cadastros PCP.
+    // - PCP/Gerência devem sempre enxergar a Injetora, mesmo se a configuração
     //   de allowedScreens/machines/sectors ainda estiver incompleta.
     if (isImperioPcpOrGerencia && (screenKey === "pcp" || screenKey === "qualidade")) return false;
     if (isImperioPcpOrGerencia && screenKey === "injetora") return true;
@@ -15476,7 +15476,7 @@ export default function App() {
             >
               <div className="flex items-center gap-1.5 justify-between">
                 <span className="font-extrabold text-[11px] text-[#FB9214] flex items-center gap-1">
-                  <span>ð</span> {toast.title}
+                  <span>🔔</span> {toast.title}
                 </span>
                 <button
                   onClick={() =>
@@ -15484,7 +15484,7 @@ export default function App() {
                   }
                   className="text-slate-400 hover:text-white text-xs font-bold leading-none shrink-0"
                 >
-                  â
+                  ✕
                 </button>
               </div>
               <p className="text-[11px] text-slate-300">{toast.message}</p>
@@ -15494,20 +15494,20 @@ export default function App() {
 
         {isDemoMode && (
           <div className="bg-amber-100 text-amber-900 border-b border-amber-200 text-[11px] font-extrabold text-center py-1.5 px-3 tracking-wide">
-            MODO DEMONSTRAÃÃO â¢ dados fictÃ­cios â¢ nenhuma alteraÃ§Ã£o Ã© enviada ao banco real
+            MODO DEMONSTRAÇÃO • dados fictícios • nenhuma alteração é enviada ao banco real
           </div>
         )}
 
         {isOffline && (
           <div className="bg-amber-500 text-white text-xs font-bold text-center py-1 flex items-center justify-center gap-2">
             <span className="w-2 h-2 bg-red-600 rounded-full animate-pulse"></span>
-            Modo Offline (As alteraÃ§Ãµes serÃ£o sincronizadas quando reconectar)
+            Modo Offline (As alterações serão sincronizadas quando reconectar)
           </div>
         )}
 
         {db.permissionError && (
           <div className="bg-red-600 text-white text-xs font-bold text-center py-2 px-4 flex items-center justify-center gap-2 animate-bounce">
-            <span>â ï¸ ALERTA DO FIRESTORE: {db.permissionError}</span>
+            <span>⚠️ ALERTA DO FIRESTORE: {db.permissionError}</span>
             <button
               onClick={() => db.triggerSyncQueue(true)}
               className="bg-white text-red-700 hover:bg-red-100 px-2 py-0.5 rounded text-[10px] font-extrabold shadow-sm transition ml-2 cursor-pointer"
@@ -15536,7 +15536,7 @@ export default function App() {
           <div className="flex items-center gap-2 sm:gap-3 text-sm sm:text-base text-slate-200">
             <button
               onClick={toggleFullscreen}
-              title={isFullscreen ? "Sair da Tela Cheia (Esc)" : "Entrar em Tela Cheia (Modo FÃ¡brica)"}
+              title={isFullscreen ? "Sair da Tela Cheia (Esc)" : "Entrar em Tela Cheia (Modo Fábrica)"}
               className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/10 text-white rounded-lg hover:bg-white/15 transition cursor-pointer text-xs font-semibold shadow-sm border border-white/15 active:scale-95"
             >
               {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
@@ -15549,7 +15549,7 @@ export default function App() {
                 onClick={() => setShowPWAModal(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FB9214] text-[#032D51] rounded-lg hover:bg-[#E98710] transition cursor-pointer text-xs font-extrabold shadow-sm"
               >
-                <span>ð²</span>
+                <span>📲</span>
                 <span className="hidden md:inline">Instalar ApontaPRO</span>
               </button>
             )}
@@ -15859,7 +15859,7 @@ export default function App() {
               <Route
                 path="/lotes"
                 element={
-                  <ScreenErrorBoundary screenName="Lotes de GerÃªncia">
+                  <ScreenErrorBoundary screenName="Lotes de Gerência">
                     <LotesScreen db={db} currentUser={currentUser} />
                   </ScreenErrorBoundary>
                 }
@@ -15901,7 +15901,7 @@ export default function App() {
             {/* Collapse / Expand Toggle Button */}
             <button
               onClick={toggleBottomNav}
-              title={isBottomNavCollapsed ? "Expandir Menu de NavegaÃ§Ã£o" : "Recolher Menu (Modo Compacto)"}
+              title={isBottomNavCollapsed ? "Expandir Menu de Navegação" : "Recolher Menu (Modo Compacto)"}
               className={`flex flex-col items-center justify-center border rounded-lg transition-all shrink-0 cursor-pointer ${
                 isBottomNavCollapsed
                   ? "p-1 min-w-[34px] h-[34px] bg-orange-50 border-orange-200 text-[#C96F00] hover:bg-orange-100"
@@ -15921,7 +15921,7 @@ export default function App() {
             <NavLink
               to="/superadmin"
               icon={<ShieldAlert size={24} className="text-red-650" />}
-              label="PermissÃµes"
+              label="Permissões"
             />
           )}
           {isScreenAllowed("inicio") && (currentUser.role === "ADMIN" ||
@@ -15931,7 +15931,7 @@ export default function App() {
             currentUser.id === "dinei" ||
             currentUser.id === "romario" ||
             currentUser.id === "alessandra") && (
-            <NavLink to="/" icon={<Home size={24} />} label="InÃ­cio" />
+            <NavLink to="/" icon={<Home size={24} />} label="Início" />
           )}
 
           {isScreenAllowed("financeiro") && (currentUser.role === "ADMIN" ||
@@ -15963,7 +15963,7 @@ export default function App() {
             <NavLink
               to="/relatorios"
               icon={<ClipboardList size={24} />}
-              label="RelatÃ³rios"
+              label="Relatórios"
             />
           )}
 
@@ -16040,7 +16040,7 @@ export default function App() {
                 <NavLink
                   to="/estoque-laser"
                   icon={<Layers size={24} />}
-                  label="Estoque PÃ§ Cortadas"
+                  label="Estoque Pç Cortadas"
                 />
               )}
             </>
@@ -16055,7 +16055,7 @@ export default function App() {
             <NavLink
               to="/orcamentos"
               icon={<FileText size={24} />}
-              label="OrÃ§amentos Laser"
+              label="Orçamentos Laser"
             />
           )}
 
@@ -16081,7 +16081,7 @@ export default function App() {
             <NavLink
               to="/producao"
               icon={<Activity size={24} />}
-              label="ProduÃ§Ã£o"
+              label="Produção"
             />
           )}
 
@@ -16197,7 +16197,7 @@ export default function App() {
             <NavLink
               to="/montagem-retratil"
               icon={<Hammer size={24} />}
-              label="Montagem RetrÃ¡til"
+              label="Montagem Retrátil"
             />
           )}
 
@@ -16263,7 +16263,7 @@ export default function App() {
             <NavLink
               to="/historico"
               icon={<History size={24} />}
-              label="HistÃ³rico"
+              label="Histórico"
             />
           )}
         </nav>
@@ -16385,7 +16385,7 @@ export default function App() {
                       <span className="text-[10px] text-emerald-400 font-mono block">
                         {orderCodesToPrintList.length === 1
                           ? `Pedido #${orderCodesToPrintList[0]}`
-                          : `ImpressÃ£o em Lote: ${orderCodesToPrintList.length} pedido(s)`}
+                          : `Impressão em Lote: ${orderCodesToPrintList.length} pedido(s)`}
                       </span>
                     </div>
                   </div>
@@ -16402,7 +16402,7 @@ export default function App() {
                             : "text-slate-400 hover:text-white hover:bg-slate-800"
                         }`}
                       >
-                        ð Meia Folha
+                        📄 Meia Folha
                       </button>
                       <button
                         type="button"
@@ -16413,7 +16413,7 @@ export default function App() {
                             : "text-slate-400 hover:text-white hover:bg-slate-800"
                         }`}
                       >
-                        ð Folha Inteira
+                        📑 Folha Inteira
                       </button>
                     </div>
 
@@ -16422,7 +16422,7 @@ export default function App() {
                       onClick={() => setOrderToPrint(null)}
                       className="text-gray-400 hover:text-white transition duration-150 text-base font-bold px-1.5 focus:outline-none cursor-pointer"
                     >
-                      â
+                      ✕
                     </button>
                   </div>
                 </div>
@@ -16457,7 +16457,7 @@ export default function App() {
                       const rawNameStr = custObj?.tradeName?.trim() || custObj?.name?.trim() || firstOrd.customerName?.trim() || "";
                       const leadingCodeMatch = rawNameStr.match(/^\s*[\[\(]?\s*(\d+)/);
                       const finalCode = custCode || (leadingCodeMatch ? leadingCodeMatch[1] : "");
-                      const cleanNameStr = rawNameStr.replace(/^\s*[\[\(]?\s*\d+\s*[\]\)]?\s*[-ââ]?\s*/, "").trim();
+                      const cleanNameStr = rawNameStr.replace(/^\s*[\[\(]?\s*\d+\s*[\]\)]?\s*[-–—]?\s*/, "").trim();
 
                       const customerDisplayName = finalCode
                         ? `${finalCode} - ${cleanNameStr || rawNameStr}`
@@ -16476,7 +16476,7 @@ export default function App() {
                           .filter(Boolean)
                           .join(" - ") ||
                         custObj?.defaultPaymentTerms ||
-                        "Ã vista / PadrÃ£o";
+                        "À vista / Padrão";
 
                       const linkedBatches = db.productionBatches.filter((b) =>
                         (b.orderIds || []).some(
@@ -16493,7 +16493,7 @@ export default function App() {
                           ? linkedBatches
                               .map((b) => b.name || b.code || `Lote #${b.id}`)
                               .join(", ")
-                          : "NÃ£o vinculado";
+                          : "Não vinculado";
 
                       const orderDiscountPercent =
                         firstOrd.discountPercent !== undefined
@@ -16559,7 +16559,7 @@ export default function App() {
                                     isFull ? "text-[9px]" : "text-[7.5px]"
                                   } text-gray-500 font-extrabold uppercase tracking-wider block mt-0.5`}
                                 >
-                                  {db.activeTenant?.systemName || db.systemSettings?.[0]?.systemName || "AcessÃ³rios para MÃ³veis"}
+                                  {db.activeTenant?.systemName || db.systemSettings?.[0]?.systemName || "Acessórios para Móveis"}
                                 </span>
                               </div>
                             </div>
@@ -16580,7 +16580,7 @@ export default function App() {
                             <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-200">
                               <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
                                 <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  NÂº do Pedido
+                                  Nº do Pedido
                                 </span>
                                 <span className={`${isFull ? "text-base sm:text-lg" : "text-sm sm:text-base"} font-black text-black font-mono block mt-0.5`}>
                                   #{codeToPrint}
@@ -16600,7 +16600,7 @@ export default function App() {
 
                               <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
                                 <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  PrevisÃ£o de Entrega
+                                  Previsão de Entrega
                                 </span>
                                 <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-rose-600 block mt-0.5 font-mono`}>
                                   {firstOrd.deliveryDate
@@ -16623,7 +16623,7 @@ export default function App() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
                               <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
                                 <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Cliente / RazÃ£o Social
+                                  Cliente / Razão Social
                                 </span>
                                 <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-slate-900 block mt-0.5 truncate`}>
                                   {customerDisplayName}
@@ -16635,7 +16635,7 @@ export default function App() {
                                   Cidade / UF / Bairro do Cliente
                                 </span>
                                 <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-800 block mt-0.5 truncate`}>
-                                  ð {locationFullLabel}
+                                  📍 {locationFullLabel}
                                 </span>
                               </div>
                             </div>
@@ -16644,10 +16644,10 @@ export default function App() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
                               <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
                                 <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  CondiÃ§Ã£o de Pagamento
+                                  Condição de Pagamento
                                 </span>
                                 <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-indigo-900 block mt-0.5 truncate`}>
-                                  ð³ {paymentStr}
+                                  💳 {paymentStr}
                                 </span>
                               </div>
 
@@ -16669,19 +16669,19 @@ export default function App() {
                                 </span>
                                 <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-emerald-800 block mt-0.5 truncate`}>
                                   {orderDiscountPercent && orderDiscountPercent > 0
-                                    ? `ð·ï¸ ${orderDiscountPercent}% (-${discountAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`
+                                    ? `🏷️ ${orderDiscountPercent}% (-${discountAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`
                                     : "Sem Desconto (0%)"}
                                 </span>
                               </div>
 
                               <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
                                 <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Regime TributÃ¡rio (RET)
+                                  Regime Tributário (RET)
                                 </span>
                                 <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-800 block mt-0.5 truncate`}>
                                   {orderHasRET
-                                    ? "ðï¸ SIM (Regime Especial de TributaÃ§Ã£o)"
-                                    : "NÃO (Regime Comum)"}
+                                    ? "🏛️ SIM (Regime Especial de Tributação)"
+                                    : "NÃO (Regime Comum)"}
                                 </span>
                               </div>
                             </div>
@@ -16711,7 +16711,7 @@ export default function App() {
                                     Foto
                                   </th>
                                   <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"}`}>
-                                    CÃ³digo / Produto
+                                    Código / Produto
                                   </th>
                                   <th className={`${isFull ? "py-2 px-2" : "py-1 px-1"}`}>Cor</th>
                                   <th className={`${isFull ? "py-2 px-2" : "py-1 px-1"}`}>Tam</th>
@@ -16720,7 +16720,7 @@ export default function App() {
                                     Qtd
                                   </th>
                                   <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"} text-right`}>
-                                    PreÃ§o Unit.
+                                    Preço Unit.
                                   </th>
                                   <th className={`${isFull ? "py-2 px-2" : "py-1 px-1.5"} text-right`}>
                                     Subtotal
@@ -16772,7 +16772,7 @@ export default function App() {
                                             className={`${isFull ? "w-10 h-10" : "w-7 h-7"} object-contain rounded border border-slate-200 bg-white mx-auto`}
                                           />
                                         ) : (
-                                          <span className="text-[8px] text-slate-400">â</span>
+                                          <span className="text-[8px] text-slate-400">—</span>
                                         )}
                                       </td>
                                       <td
@@ -16811,7 +16811,7 @@ export default function App() {
                                           isFull ? "py-2 px-2" : "py-1 px-1"
                                         } text-center font-extrabold text-slate-900 font-mono`}
                                       >
-                                        {ordInGroup.totalQuantity || 0} pÃ§
+                                        {ordInGroup.totalQuantity || 0} pç
                                       </td>
                                       <td
                                         className={`${
@@ -16845,7 +16845,7 @@ export default function App() {
                                         Subtotal Bruto:
                                       </td>
                                       <td className="py-1 px-1 text-center font-mono text-slate-200">
-                                        {totalQtyOrder} pÃ§s
+                                        {totalQtyOrder} pçs
                                       </td>
                                       <td colSpan={2} className="py-1 px-2 text-right font-mono text-slate-200">
                                         {subtotalBeforeDiscount.toLocaleString("pt-BR", {
@@ -16871,7 +16871,7 @@ export default function App() {
                                         Total Final com Desconto:
                                       </td>
                                       <td className="py-2 px-1 text-center font-mono text-emerald-400 font-black">
-                                        {totalQtyOrder} pÃ§s
+                                        {totalQtyOrder} pçs
                                       </td>
                                       <td colSpan={2} className="py-2 px-2 text-right font-mono text-emerald-400 font-black text-xs sm:text-sm">
                                         {totalValOrder.toLocaleString("pt-BR", {
@@ -16894,7 +16894,7 @@ export default function App() {
                                       Total do Pedido:
                                     </td>
                                     <td className="py-2 px-1 text-center font-mono text-emerald-400 font-black">
-                                      {totalQtyOrder} pÃ§s
+                                      {totalQtyOrder} pçs
                                     </td>
                                     <td
                                       colSpan={2}
@@ -16933,7 +16933,7 @@ export default function App() {
 
                         <div className="serrated-cut-line my-1 py-1 flex items-center justify-center border-b-2 border-dashed border-slate-400 text-slate-700 font-mono text-[10px] sm:text-xs font-black uppercase tracking-widest relative">
                           <span className="bg-white px-3 py-0.5 border border-dashed border-slate-400 rounded-full text-slate-700 font-extrabold flex items-center gap-1.5 shadow-2xs">
-                            â - - - - - - - LINHA SERRILHADA DE CORTE (MEIA FOLHA) - - - - - - - â
+                            ✂ - - - - - - - LINHA SERRILHADA DE CORTE (MEIA FOLHA) - - - - - - - ✂
                           </span>
                         </div>
 
@@ -16954,8 +16954,8 @@ export default function App() {
                 <div className="bg-gray-50 p-3 sm:p-4 border-t flex items-center justify-between non-printable shrink-0 gap-2">
                   <span className="text-[10px] text-gray-500 font-medium hidden sm:inline">
                     {printSheetSize === "half"
-                      ? "ð Layout Otimizado em Meia Folha (2 por folha A4 em lote)"
-                      : "ð Layout em Folha Inteira A4 (1 por folha com detalhes expandidos)"}
+                      ? "📄 Layout Otimizado em Meia Folha (2 por folha A4 em lote)"
+                      : "📑 Layout em Folha Inteira A4 (1 por folha com detalhes expandidos)"}
                   </span>
                   <div className="flex items-center gap-2 ml-auto">
                     <button
@@ -16983,7 +16983,7 @@ export default function App() {
                             ord?.customerName?.trim() ||
                             "";
                           const cleanClientName = rawClientName
-                            .replace(/^\s*[\[\(]?\s*\d+\s*[\]\)]?\s*[-ââ]?\s*/, "")
+                            .replace(/^\s*[\[\(]?\s*\d+\s*[\]\)]?\s*[-–—]?\s*/, "")
                             .trim();
 
                           if (orderCodesToPrintList.length === 1) {
@@ -17043,7 +17043,7 @@ export default function App() {
             </button>
 
             <div className="flex items-center gap-2 border-b border-slate-200 pb-3 mb-4" style={{ color: "#FB9214" }}>
-              <span className="text-2xl">ð²</span>
+              <span className="text-2xl">📲</span>
               <h3 className="text-sm uppercase tracking-wider font-extrabold text-zinc-100">
                 Instalar ApontaPRO
               </h3>
@@ -17051,16 +17051,16 @@ export default function App() {
 
             <p className="text-xs text-slate-500 leading-relaxed mb-4">
               Instale o ApontaPRO para rodar em{" "}
-              <strong>tela cheia sem as barras do navegador</strong> e ter acesso rÃ¡pido pelo Ã­cone no seu dispositivo.
+              <strong>tela cheia sem as barras do navegador</strong> e ter acesso rápido pelo ícone no seu dispositivo.
             </p>
 
             {isInIframe ? (
               <div className="bg-amber-950/40 p-4 rounded-xl border border-amber-900/40 text-xs text-slate-700 flex flex-col gap-2.5 leading-snug">
                 <span className="font-extrabold uppercase tracking-wider text-[10px] text-amber-400 block">
-                  â ï¸ Executando no Editor de Testes
+                  ⚠️ Executando no Editor de Testes
                 </span>
                 <p>
-                  Por seguranÃ§a, navegadores bloqueiam a instalaÃ§Ã£o de PWAs quando exibidos dentro de um iframe.
+                  Por segurança, navegadores bloqueiam a instalação de PWAs quando exibidos dentro de um iframe.
                 </p>
                 <p>
                   Para instalar, por favor abra o sistema em uma nova aba fora do editor de testes:
@@ -17070,13 +17070,13 @@ export default function App() {
                   className="w-full flex items-center justify-center gap-1.5 hover:opacity-90 text-black text-xs font-bold py-2.5 px-4 rounded-lg transition-all cursor-pointer mt-1"
                   style={{ backgroundColor: "#FB9214" }}
                 >
-                  Abrir em Nova Aba â
+                  Abrir em Nova Aba ↗
                 </button>
               </div>
             ) : deferredPrompt ? (
               <div className="flex flex-col gap-3">
                 <p className="text-xs text-slate-700 font-medium">
-                  Clique no botÃ£o abaixo para iniciar a instalaÃ§Ã£o nativa do aplicativo:
+                  Clique no botão abaixo para iniciar a instalação nativa do aplicativo:
                 </p>
                 <button
                   onClick={async () => {
@@ -17086,22 +17086,22 @@ export default function App() {
                   className="w-full flex items-center justify-center gap-2 hover:opacity-90 text-black text-xs font-bold py-2.5 px-4 rounded-lg transition-all cursor-pointer shadow-md shadow-emerald-950/30 animate-bounce"
                   style={{ backgroundColor: "#FB9214" }}
                 >
-                  <span>ð¥</span> Instalar Aplicativo
+                  <span>📥</span> Instalar Aplicativo
                 </button>
               </div>
             ) : isIOS ? (
               <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800/40 text-xs text-slate-500 flex flex-col gap-2 leading-relaxed">
                 <span className="font-bold uppercase tracking-wide block text-slate-700" style={{ color: "#FB9214" }}>
-                  InstruÃ§Ãµes para iPhone / iPad:
+                  Instruções para iPhone / iPad:
                 </span>
                 <p>
-                  1. Toque no botÃ£o de <strong>Compartilhar</strong> (Ã­cone{" "}
-                  <span className="text-slate-700">ð¤</span> na barra inferior do Safari).
+                  1. Toque no botão de <strong>Compartilhar</strong> (ícone{" "}
+                  <span className="text-slate-700">📤</span> na barra inferior do Safari).
                 </p>
                 <p>
                   2. Role para baixo e selecione{" "}
-                  <strong>"Adicionar Ã  Tela de InÃ­cio"</strong> (Ã­cone{" "}
-                  <span className="text-slate-700">â</span>).
+                  <strong>"Adicionar à Tela de Início"</strong> (ícone{" "}
+                  <span className="text-slate-700">➕</span>).
                 </p>
                 <p>
                   3. Clique em <strong>"Adicionar"</strong> no canto superior direito para confirmar.
@@ -17113,13 +17113,13 @@ export default function App() {
                   Como Instalar Manualmente:
                 </span>
                 <p>
-                  1. Clique no menu de <strong className="text-slate-700">trÃªs pontinhos</strong> no canto superior do seu navegador.
+                  1. Clique no menu de <strong className="text-slate-700">três pontinhos</strong> no canto superior do seu navegador.
                 </p>
                 <p>
-                  2. Toque em <strong className="text-slate-700">"Instalar aplicativo"</strong> ou <strong className="text-slate-700">"Adicionar Ã  tela inicial"</strong>.
+                  2. Toque em <strong className="text-slate-700">"Instalar aplicativo"</strong> ou <strong className="text-slate-700">"Adicionar à tela inicial"</strong>.
                 </p>
                 <p className="text-[10px] block mt-1" style={{ color: "#FB9214" }}>
-                  â Um Ã­cone direto serÃ¡ criado para acesso instantÃ¢neo em tela cheia!
+                  ✓ Um ícone direto será criado para acesso instantâneo em tela cheia!
                 </p>
               </div>
             )}
