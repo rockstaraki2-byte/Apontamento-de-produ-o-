@@ -3921,7 +3921,7 @@ function PedidosScreen({
     if (billingRule === "ultimo_pedido" && lastOrderForClient) {
       const cond = lastOrderForClient.paymentCondition || "";
       if (
-        ["PIX", "BOLETO", "DEPÃSITO", "CARTEIRA"].includes(cond.toUpperCase())
+        ["PIX", "BOLETO", "DEPÓSITO", "CARTEIRA"].includes(cond.toUpperCase())
       ) {
         const typeMap: Record<
           string,
@@ -3929,7 +3929,7 @@ function PedidosScreen({
         > = {
           PIX: "pix",
           BOLETO: "boleto",
-          DEPÃSITO: "deposito",
+          DEPÓSITO: "deposito",
           CARTEIRA: "carteira",
         };
         setPaymentType(typeMap[cond.toUpperCase()]);
@@ -6585,14 +6585,14 @@ function PedidosScreen({
 
     // Payment stuff
     const cdt = o.paymentCondition || "";
-    if (["PIX", "BOLETO", "DEPÃSITO", "CARTEIRA"].includes(cdt.toUpperCase())) {
+    if (["PIX", "BOLETO", "DEPÓSITO", "CARTEIRA"].includes(cdt.toUpperCase())) {
       const typeMap: Record<
         string,
         "pix" | "boleto" | "deposito" | "carteira"
       > = {
         PIX: "pix",
         BOLETO: "boleto",
-        DEPÃSITO: "deposito",
+        DEPÓSITO: "deposito",
         CARTEIRA: "carteira",
       };
       setPaymentType(typeMap[cdt.toUpperCase()]);
@@ -6634,14 +6634,14 @@ function PedidosScreen({
 
     // Payment stuff
     const cdt = o.paymentCondition || "";
-    if (["PIX", "BOLETO", "DEPÃSITO", "CARTEIRA"].includes(cdt.toUpperCase())) {
+    if (["PIX", "BOLETO", "DEPÓSITO", "CARTEIRA"].includes(cdt.toUpperCase())) {
       const typeMap: Record<
         string,
         "pix" | "boleto" | "deposito" | "carteira"
       > = {
         PIX: "pix",
         BOLETO: "boleto",
-        DEPÃSITO: "deposito",
+        DEPÓSITO: "deposito",
         CARTEIRA: "carteira",
       };
       setPaymentType(typeMap[cdt.toUpperCase()]);
@@ -8947,12 +8947,45 @@ function PedidosScreen({
                       value={excelData}
                       onChange={(e) => setExcelData(e.target.value)}
                       placeholder="Cole aqui as linhas do Excel..."
-                      className="flex-1 w-full border border-gray-300 rounded p-3 min-h-[200px] text-sm overflow-auto focus:outline-[#107c41] foÛ~4o+^²¢¶×              <button
+                      className="flex-1 w-full border border-gray-300 rounded p-3 min-h-[200px] text-sm overflow-auto focus:outline-[#107c41] font-mono whitespace-pre"
+                    />
+
+                    {excelImportResult && (
+                      <div
+                        className={`mt-4 p-3 rounded text-sm font-semibold flex flex-col gap-2 ${excelImportResult.includes("Processando") ? "bg-blue-50 text-blue-700" : "bg-green-50 text-green-700 border border-green-200"}`}
+                      >
+                        <div className="flex justify-between items-center">
+                          <span>{excelImportResult}</span>
+                          {excelImportResult.includes("Processando") && (
+                            <span className="text-xs font-bold bg-blue-100 px-2 py-0.5 rounded text-blue-800">
+                              {excelImportProgress}%
+                            </span>
+                          )}
+                        </div>
+                        {excelImportResult.includes("Processando") && (
+                          <div className="w-full bg-blue-200 h-2.5 rounded-full overflow-hidden">
+                            <div
+                              className="bg-blue-600 h-2.5 rounded-full transition-all duration-150 ease-out"
+                              style={{ width: `${excelImportProgress}%` }}
+                            ></div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-2 mt-4 shrink-0">
+                      <button
+                        onClick={() => setIsExcelModalOpen(false)}
+                        className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded font-semibold transition"
+                      >
+                        Cancelar
+                      </button>
+                      <button
                         onClick={handleImportExcel}
                         disabled={!excelData.trim() || !!excelImportResult}
                         className="bg-[#107c41] hover:bg-[#185c37] text-white font-bold py-2 px-6 rounded shadow transition disabled:opacity-50"
                       >
-                        Confirmar ImportaÃ§Ã£o
+                        Confirmar Importação
                       </button>
                     </div>
                   </div>
