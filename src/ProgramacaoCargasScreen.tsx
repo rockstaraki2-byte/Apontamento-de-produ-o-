@@ -226,6 +226,44 @@ export function ProgramacaoCargasScreen({
 
   const itemsById = useMemo(() => new Map(db.items.map((i) => [i.id, i])), [db.items]);
   const ordersById = useMemo(() => new Map(db.orders.map((o) => [o.id, o])), [db.orders]);
+  const invoicedQuantitiesByLoad = useMemo(() => {
+    const byLoad = new Map<string, Record<number, number>>();
+    const loadsByOrder = new Map<number, Carga[]>();
+
+    (db.cargas || []).forEach((carga) => {
+      (carga.orderIds || []).forEach((orderId) => {
+        const relatedLoads = loadsByOrder.get(orderId) || [];
+        if (!relatedLoads.some((related) => related.id === carga.id)) {
+          relatedLoads.push(carga);
+        }
+        loadsByOrder.set(orderId, relatedLoads);
+      });
+    });
+
+    loadsByOrder.forEach((relatedLoads, orderId) => {
+      let remainingInvoiced = Math.max(
+        0,
+        Number(ordersById.get(orderId)?.invoicedQuantity || 0),
+      );
+
+      [...relatedLoads].sort(loadSort).forEach((carga) => {
+        const allocated = Math.max(
+          0,
+          Number(carga.orderQuantities?.[orderId] || 0),
+        );
+        const invoiced = Math.min(allocated, remainingInvoiced);
+        const perOrder = byLoad.get(carga.id) || {};
+        perOrder[orderId] = invoiced;
+        byLoad.set(carga.id, perOrder);
+        remainingInvoiced = Math.max(0, remainingInvoiced - allocated);
+      });
+    });
+
+    return byLoad;
+  }, [db.cargas, ordersById]);
+
+  const invoicedForLoad = (carga: Carga, orderId: number) =>
+    Number(invoicedQuantitiesByLoad.get(carga.id)?.[orderId] || 0);
   const batchIdsByOrder = useMemo(() => {
     const map = new Map<number, number[]>();
     (db.productionBatches || []).forEach((batch) => {
@@ -454,6 +492,7 @@ export function ProgramacaoCargasScreen({
     let required = 0;
     let packed = 0;
     let separated = 0;
+    let invoiced = 0;
     const customers = new Set<string>();
     const orderCodes = new Set<string>();
     let incompleteOrders = 0;
@@ -467,6 +506,7 @@ export function ProgramacaoCargasScreen({
       required += qty;
       packed += pack;
       separated += sep;
+      invoiced += invoicedForLoad(carga, id);
       customers.add(order.customerName);
       orderCodes.add(order.orderCode);
       if (sep < qty) incompleteOrders += 1;
@@ -477,6 +517,7 @@ export function ProgramacaoCargasScreen({
       required,
       packed,
       separated,
+      invoiced,
       percent,
       customerCount: customers.size,
       orderCount: orderCodes.size,
@@ -546,10 +587,7 @@ export function ProgramacaoCargasScreen({
   };
 
   const openEditLoad = (carga: Carga) => {
-    if (!EDITABLE_STATUSES.has(carga.status)) {
-      alert("Esta carga pode ser editada enquanto não estiver faturada.");
-      return;
-    }
+    if (!canManage) return;
 
     setEditingLoadId(carga.id);
     setLoadRouteId(carga.routeId || "");
@@ -561,17 +599,21 @@ export function ProgramacaoCargasScreen({
   };
 
   const deleteLoad = async (carga: Carga) => {
-    if (!EDITABLE_STATUSES.has(carga.status)) {
-      alert("Esta carga pode ser excluída enquanto não estiver faturada.");
-      return;
-    }
+    if (!canManage) return;
 
     const itemCount = (carga.orderIds || []).length;
-    const ok = confirm(
+    const invoiced = loadMetrics(carga).invoiced;
+    const billingWarning =
+      invoiced > 0
+        ? `\n\nEsta carga possui ${invoiced} unidade(s) faturada(s). A exclusão não estorna o faturamento dos pedidos; a quantidade faturada poderá ser atribuída às cargas restantes do mesmo pedido.`
+        : isFinalLoad(carga)
+          ? "\n\nEsta carga já foi despachada, entregue ou faturada. A exclusão remove o registro e o histórico desta carga."
+          : "";
+    const confirmation =
       itemCount > 0
         ? `Excluir a carga "${carga.routeName || carga.name}"? Os ${itemCount} item(ns) vinculados serão liberados novamente para o planejamento.`
-        : `Excluir a carga "${carga.routeName || carga.name}"?`,
-    );
+        : `Excluir a carga "${carga.routeName || carga.name}"?`;
+    const ok = confirm(confirmation + billingWarning);
     if (!ok) return;
 
     await db.deleteCarga(carga.id);
@@ -1292,7 +1334,7 @@ export function ProgramacaoCargasScreen({
             <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50"><div><div className="flex items-center gap-2 flex-wrap"><h3 className="font-black text-slate-900 text-lg">{selectedCarga.name}</h3><span className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${STATUS_CLASS[selectedCarga.status] || STATUS_CLASS.PLANEJADA}`}>{STATUS_LABEL[selectedCarga.status] || selectedCarga.status}</span></div><p className="text-xs text-slate-500">{formatDate(getLoadDate(selectedCarga))} • Área/Pallet: {selectedCarga.stagingLocation || "não definida"}</p></div><div className="flex items-center gap-2 flex-wrap justify-end"><button onClick={() => previewLoad(selectedCarga, false)} className="h-9 px-3 border border-slate-300 bg-white rounded-lg text-xs font-bold flex items-center gap-1.5" title="Abre a prévia sem salvar o arquivo"><Eye size={14} /> Visualizar Produção</button><button onClick={() => previewLoad(selectedCarga, true)} className="h-9 px-3 border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-lg text-xs font-extrabold flex items-center gap-1.5 hover:bg-emerald-100" title="Abre a prévia gerencial com faturamento previsto"><DollarSign size={14} /> Visualizar + Faturamento</button><button onClick={() => setSelectedCarga(null)} className="p-2 rounded-lg hover:bg-slate-200"><X size={18} /></button></div></div>
             <div className="p-4 overflow-y-auto flex-1 space-y-4">
               <div className="flex flex-wrap gap-2">
-                {EDITABLE_STATUSES.has(selectedCarga.status) && <><button onClick={() => openEditLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-blue-300 bg-blue-50 text-blue-800 text-xs font-bold flex items-center gap-1"><Pencil size={13} /> Editar carga</button><button onClick={() => includeOrdersInLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-bold flex items-center gap-1"><Plus size={13} /> Incluir pedidos</button><button onClick={() => deleteLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-rose-300 bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1"><Trash2 size={13} /> Excluir carga</button></>}
+                {canManage && <><button onClick={() => openEditLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-blue-300 bg-blue-50 text-blue-800 text-xs font-bold flex items-center gap-1"><Pencil size={13} /> Editar carga</button>{EDITABLE_STATUSES.has(selectedCarga.status) && <button onClick={() => includeOrdersInLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-bold flex items-center gap-1"><Plus size={13} /> Incluir pedidos</button>}<button onClick={() => deleteLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-rose-300 bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1"><Trash2 size={13} /> Excluir carga</button></>}
                 {(selectedCarga.status === "PLANEJADA" || selectedCarga.status === "ABERTA") && <button onClick={() => changeStatus(selectedCarga, "FECHADA")} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold">Fechar carga</button>}
                 {selectedCarga.status === "FECHADA" && <><button onClick={() => changeStatus(selectedCarga, "ABERTA")} className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 text-xs font-bold">Reabrir</button><button onClick={() => changeStatus(selectedCarga, "LIBERADA")} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold">Liberar</button></>}
                 {selectedCarga.status !== "FECHADA" && PREVIOUS_STATUS[selectedCarga.status] && <button onClick={() => changeStatus(selectedCarga, PREVIOUS_STATUS[selectedCarga.status] as Carga["status"])} className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 text-xs font-bold">Voltar para {STATUS_LABEL[PREVIOUS_STATUS[selectedCarga.status] || ""] || "etapa anterior"}</button>}
@@ -1304,7 +1346,7 @@ export function ProgramacaoCargasScreen({
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">{(() => { const m = loadMetrics(selectedCarga); return <><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.customerCount}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Clientes</span></div><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.orderCount}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Pedidos</span></div><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.required}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Necessário</span></div><div className="p-3 rounded-xl bg-blue-50 border border-blue-100"><strong className="block text-xl text-blue-700">{m.packed}</strong><span className="text-[9px] uppercase text-blue-600 font-bold">Embalado</span></div><div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100"><strong className="block text-xl text-emerald-700">{m.separated}</strong><span className="text-[9px] uppercase text-emerald-600 font-bold">Separado</span></div></>; })()}</div>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="p-3">Cliente</th><th className="p-3">Pedido</th><th className="p-3">Produto</th><th className="p-3 text-right">Qtd. carga</th><th className="p-3 text-right">Embalado</th><th className="p-3 text-right">Separado</th><th className="p-3"></th></tr></thead><tbody className="divide-y divide-slate-100">{(selectedCarga.orderIds || []).map((id) => { const o = ordersById.get(id); const item = o ? itemsById.get(o.itemId) : undefined; const qty = Number(selectedCarga.orderQuantities?.[id] || 0); return <tr key={id}><td className="p-3 text-xs font-bold">{o?.customerName || "-"}</td><td className="p-3 text-xs font-mono">#{o?.orderCode || id}</td><td className="p-3 text-xs">{o?.customProductName || item?.name || "Item"}</td><td className="p-3 text-xs font-bold text-right">{qty}</td><td className="p-3 text-xs text-blue-700 font-bold text-right">{packedForLoad(selectedCarga, id)}</td><td className="p-3 text-xs text-emerald-700 font-black text-right">{Math.min(qty, Number(selectedCarga.separatedQuantities?.[id] || 0))}</td><td className="p-3 text-right">{EDITABLE_STATUSES.has(selectedCarga.status) && <button onClick={() => removeAllocation(selectedCarga, id)} className="text-[10px] font-bold text-rose-600 hover:underline">Remover</button>}</td></tr>; })}</tbody></table></div>{(selectedCarga.orderIds || []).length === 0 && <div className="p-8 text-center text-sm text-slate-500">Carga ainda sem itens vinculados.</div>}</div>
+              <div className="border border-slate-200 rounded-xl overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="p-3">Cliente</th><th className="p-3">Pedido</th><th className="p-3">Produto</th><th className="p-3 text-right">Qtd. carga</th><th className="p-3 text-right">Faturado</th><th className="p-3 text-right">Embalado</th><th className="p-3 text-right">Separado</th><th className="p-3"></th></tr></thead><tbody className="divide-y divide-slate-100">{(selectedCarga.orderIds || []).map((id) => { const o = ordersById.get(id); const item = o ? itemsById.get(o.itemId) : undefined; const qty = Number(selectedCarga.orderQuantities?.[id] || 0); return <tr key={id}><td className="p-3 text-xs font-bold">{o?.customerName || "-"}</td><td className="p-3 text-xs font-mono">#{o?.orderCode || id}</td><td className="p-3 text-xs">{o?.customProductName || item?.name || "Item"}</td><td className="p-3 text-xs font-bold text-right">{qty}</td><td className="p-3 text-xs text-purple-700 font-bold text-right">{invoicedForLoad(selectedCarga, id)}</td><td className="p-3 text-xs text-blue-700 font-bold text-right">{packedForLoad(selectedCarga, id)}</td><td className="p-3 text-xs text-emerald-700 font-black text-right">{Math.min(qty, Number(selectedCarga.separatedQuantities?.[id] || 0))}</td><td className="p-3 text-right">{EDITABLE_STATUSES.has(selectedCarga.status) && <button onClick={() => removeAllocation(selectedCarga, id)} className="text-[10px] font-bold text-rose-600 hover:underline">Remover</button>}</td></tr>; })}</tbody></table></div>{(selectedCarga.orderIds || []).length === 0 && <div className="p-8 text-center text-sm text-slate-500">Carga ainda sem itens vinculados.</div>}</div>
 
               {(selectedCarga.auditTrail || []).length > 0 && <div><h4 className="text-[10px] uppercase tracking-widest font-extrabold text-slate-500 mb-2">Histórico da carga</h4><div className="space-y-1">{[...(selectedCarga.auditTrail || [])].reverse().slice(0, 10).map((a, idx) => <div key={`${a.timestamp}-${idx}`} className="text-[10px] bg-slate-50 border border-slate-100 rounded-lg p-2 flex justify-between gap-2"><span><strong>{a.userName}</strong> • {a.action}{a.reason ? ` — ${a.reason}` : ""}</span><span className="text-slate-400 whitespace-nowrap">{new Date(a.timestamp).toLocaleString("pt-BR")}</span></div>)}</div></div>}
             </div>
