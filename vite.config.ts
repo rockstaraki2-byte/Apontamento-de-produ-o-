@@ -86,7 +86,8 @@ export default defineConfig(() => {
       },
     },
     build: {
-      target: 'esnext',
+      // Use Vite 6's ESM browser baseline instead of sending minimal-transpiled esnext to Android WebViews.
+      target: 'modules',
       minify: 'esbuild',
       reportCompressedSize: true,
       chunkSizeWarningLimit: 2500,
