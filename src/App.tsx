@@ -306,7 +306,7 @@ function Welcome({
       } else if (role === "EMBALAGEM") {
         navigate("/embalagem");
       } else if (role === "CORTE_LASER") {
-        navigate("/corte-laser");
+        navigate("/cortelaser");
       } else if (role === "INJETORA") {
         navigate("/injetora");
       } else if (
@@ -323,11 +323,12 @@ function Welcome({
         );
       } else if (role === "MONTAGEM_RETRATIL") {
         navigate("/montagem-retratil");
+      } else if (role === "PINTURA") {
+        navigate("/pintura");
       } else if (
         role === "PRODUCAO" ||
         role === "SOLDA" ||
-        role === "MONTAGEM_RODRIGO" ||
-        role === "PINTURA"
+        role === "MONTAGEM_RODRIGO"
       ) {
         navigate("/producao");
       }
