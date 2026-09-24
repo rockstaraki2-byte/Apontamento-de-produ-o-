@@ -15434,6 +15434,19 @@ export default function App() {
       currentUser.id === "gerencia.imperio" ||
       currentUser.id === "gerencia");
 
+  const canManageImperioStock =
+    db.activeTenantId === "imperio" &&
+    (currentUser.role === "ADMIN" ||
+      currentUser.role === "GERENCIA" ||
+      currentUser.role === "PCP");
+
+  const canAccessGeneralStock =
+    currentUser.role === "ADMIN" ||
+    currentUser.role === "PCP" ||
+    currentUser.role === "LEITURA" ||
+    currentUser.role === "ENCARREGADO" ||
+    (db.activeTenantId === "imperio" && currentUser.role === "GERENCIA");
+
   const isImperioMarcosProjetista =
     db.activeTenantId === "imperio" &&
     (currentUser.id === "projetista_marcos" ||
@@ -15441,6 +15454,7 @@ export default function App() {
       currentUser.name.toLowerCase().includes("marcos"));
 
   const isScreenAllowed = (screenKey: string) => {
+    if (screenKey === "estoque" && canManageImperioStock) return true;
     // Regras específicas do tenant Império:
     // - PCP/Gerência não usam mais as telas de Qualidade e Cadastros PCP.
     // - PCP/Gerência devem sempre enxergar a Injetora, mesmo se a configuração
@@ -15655,10 +15669,7 @@ export default function App() {
                 />
               </>
             )}
-            {(currentUser.role === "ADMIN" ||
-              currentUser.role === "PCP" ||
-              currentUser.role === "LEITURA" ||
-              currentUser.role === "ENCARREGADO") && (
+            {canAccessGeneralStock && (
               <Route
                 path="/estoque"
                 element={<EstoqueScreen db={db} currentUser={currentUser} />}
@@ -16031,10 +16042,7 @@ export default function App() {
             />
           )}
 
-          {isScreenAllowed("estoque") && (currentUser.role === "ADMIN" ||
-            currentUser.role === "PCP" ||
-            currentUser.role === "LEITURA" ||
-            currentUser.role === "ENCARREGADO") && (
+          {isScreenAllowed("estoque") && canAccessGeneralStock && (
             <NavLink
               to="/estoque"
               icon={<Layers size={24} />}
