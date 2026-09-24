@@ -36,7 +36,7 @@ const DAY_NAMES = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", 
 const SHIFT_LABEL: Record<string, string> = { MANHA: "Manhã", TARDE: "Tarde" };
 const MONTH_ABBR = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const FINAL_STATUSES = new Set(["DESPACHADA", "ENTREGUE", "FATURADA", "FATURADA_COMPLETA"]);
-const EDITABLE_STATUSES = new Set(["PLANEJADA", "ABERTA", "FECHADA", "LIBERADA", "EM_SEPARACAO"]);
+const EDITABLE_STATUSES = new Set(["PLANEJADA", "ABERTA", "FECHADA", "LIBERADA", "EM_SEPARACAO", "FATURADA_PARCIAL"]);
 const PREVIOUS_STATUS: Partial<Record<Carga["status"], Carga["status"]>> = {
   FECHADA: "ABERTA",
   LIBERADA: "FECHADA",
@@ -779,7 +779,12 @@ export function ProgramacaoCargasScreen({
       alert("Esta carga não está disponível para remover itens.");
       return;
     }
-    if (!confirm("Remover este item da carga?")) return;
+    const invoiced = invoicedForLoad(carga, orderId);
+    const confirmation =
+      invoiced > 0
+        ? `Este item tem ${invoiced} unidade(s) que o sistema atribui como faturada(s) nesta carga. Remover o item não estorna o faturamento no pedido. Deseja continuar?`
+        : "Remover este item da carga?";
+    if (!confirm(confirmation)) return;
     const ids = (carga.orderIds || []).filter((id) => id !== orderId);
     const quantities = { ...(carga.orderQuantities || {}) } as Record<number, number>;
     const separated = { ...(carga.separatedQuantities || {}) } as Record<number, number>;
