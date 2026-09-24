@@ -1188,16 +1188,20 @@ function LoginScreen({
 
     if (lastDotIdx > 0) {
       const candidateSuffix = typed.substring(lastDotIdx + 1);
-      const matchedTenant = tenants?.find(
-        (t) =>
-          t &&
-          t.id &&
-          (normalizeStr(t.id) === candidateSuffix ||
-            normalizeStr(t.id).replace(/^empresa_/i, "") === candidateSuffix ||
-            normalizeStr(t.name) === candidateSuffix)
-      );
-      if (matchedTenant) {
-        explicitTenantId = matchedTenant.id;
+      const matchedTenantId =
+        tenants?.find(
+          (t) =>
+            t &&
+            t.id &&
+            (normalizeStr(t.id) === candidateSuffix ||
+              normalizeStr(t.id).replace(/^empresa_/i, "") === candidateSuffix ||
+              normalizeStr(t.name) === candidateSuffix)
+        )?.id ||
+        // The active Império tenant is also a safe fallback while its listener
+        // is still loading; user lookup remains scoped to this tenant.
+        (candidateSuffix === "imperio" ? "imperio" : null);
+      if (matchedTenantId) {
+        explicitTenantId = matchedTenantId;
         baseTyped = typed.substring(0, lastDotIdx);
       }
     }
