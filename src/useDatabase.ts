@@ -254,6 +254,18 @@ const BILLING_LOAD_STATUSES = new Set<Carga["status"]>([
   "FATURADA_COMPLETA",
 ]);
 
+const ROLE_SCOPED_LISTENER_COLLECTIONS: Record<string, readonly string[]> = {
+  PINTURA: ["items", "orders", "attributes", "activePacks", "stocks", "notifications", "sectors"],
+  EMBALAGEM: ["items", "orders", "attributes", "activePacks", "logs", "productionSteps", "stocks", "notifications", "sectors"],
+  TORNO_CNC_WILLIAN: ["items", "orders", "activePacks", "logs", "coilCuttingPlans", "customers", "productionBatches", "notifications", "sectors"],
+  TORNO_CNC_HENRIQUE: ["items", "orders", "activePacks", "logs", "coilCuttingPlans", "customers", "productionBatches", "notifications", "sectors"],
+  CORTE_LASER: ["items", "activePacks", "nestTasks", "sheetStocks", "stocks", "notifications", "sectors"],
+};
+
+const USERS_LOAD_FALLBACK_TIMEOUT_MS = 12000;
+const USERS_LOAD_TIMEOUT_ERROR =
+  "O carregamento dos acessos demorou mais de 12 segundos. O login local foi liberado; verifique a conexão e tente reconectar.";
+
 export function useDatabase(currentUser?: User | null) {
   const isDemoMode = isDemoModeEnabled();
 
@@ -789,6 +801,23 @@ export function useDatabase(currentUser?: User | null) {
         where("tenantId", "==", activeTenantId),
       );
 
+    const roleScopedCollections = currentUser
+      ? ROLE_SCOPED_LISTENER_COLLECTIONS[currentUser.role]
+      : undefined;
+    const listenTenantCollection = (
+      collectionName: string,
+      onNext: (snapshot: any) => void,
+      onError: (error: any) => void,
+    ) => {
+      if (
+        roleScopedCollections &&
+        !roleScopedCollections.includes(collectionName)
+      ) {
+        return () => {};
+      }
+      return onSnapshot(scopedCollection(collectionName), onNext, onError);
+    };
+
     const unsubTenants = onSnapshot(
       query(collection(db, "tenants"), where("id", "==", activeTenantId)),
       (snap) => {
@@ -818,6 +847,34 @@ export function useDatabase(currentUser?: User | null) {
       },
       (err) => handleSnapshotError("tenants", err),
     );
+
+    let usersLoadFallbackTimer: number | null = null;
+    const clearUsersLoadFallbackTimer = () => {
+      if (usersLoadFallbackTimer !== null) {
+        window.clearTimeout(usersLoadFallbackTimer);
+        usersLoadFallbackTimer = null;
+      }
+    };
+    const markUsersLoaded = () => {
+      clearUsersLoadFallbackTimer();
+      setUsersLoaded(true);
+      setPermissionError((currentError) =>
+        currentError === USERS_LOAD_TIMEOUT_ERROR ? null : currentError,
+      );
+    };
+
+    if (!currentUser && !usersLoaded) {
+      usersLoadFallbackTimer = window.setTimeout(() => {
+        usersLoadFallbackTimer = null;
+        console.warn(
+          "Firestore user access list did not respond before the login fallback timeout.",
+        );
+        setUsersLoaded(true);
+        setPermissionError((currentError) =>
+          currentError || USERS_LOAD_TIMEOUT_ERROR,
+        );
+      }, USERS_LOAD_FALLBACK_TIMEOUT_MS);
+    }
 
     const unsubUsers = onSnapshot(
       scopedCollection("users"),
@@ -884,17 +941,18 @@ export function useDatabase(currentUser?: User | null) {
           localStorage.setItem("producao_users_v2", JSON.stringify(merged));
           return merged;
         });
-        setUsersLoaded(true);
+        markUsersLoaded();
       },
       (err) => {
-        setUsersLoaded(true);
+        markUsersLoaded();
         handleSnapshotError("users", err);
       },
     );
 
     if (!currentUser) {
       return () => {
-        window.removeEventListener("online", handleOnline);
+        clearUsersLoadFallbackTimer();
+      window.removeEventListener("online", handleOnline);
         if (interval !== null) window.clearInterval(interval);
         unsubTenants();
         unsubUsers();
@@ -904,8 +962,7 @@ export function useDatabase(currentUser?: User | null) {
     updateQueueCount();
     runSync();
 
-    const unsubItems = onSnapshot(
-      scopedCollection("items"),
+    const unsubItems = listenTenantCollection("items",
       (snap) => {
         const list = snap.docs
           .map((d) => {
@@ -923,8 +980,7 @@ export function useDatabase(currentUser?: User | null) {
       },
       (err) => handleSnapshotError("items", err),
     );
-    const unsubOrders = onSnapshot(
-      scopedCollection("orders"),
+    const unsubOrders = listenTenantCollection("orders",
       (snap) => {
         const loadedOrders = snap.docs.map((d) => {
           const ord = d.data() as Order;
@@ -945,30 +1001,25 @@ export function useDatabase(currentUser?: User | null) {
       },
       (err) => handleSnapshotError("orders", err),
     );
-    const unsubLogs = onSnapshot(
-      scopedCollection("logs"),
+    const unsubLogs = listenTenantCollection("logs",
       (snap) => setLogsState(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }) as ProductionLog)),
       (err) => handleSnapshotError("logs", err),
     );
-    const unsubAttrs = onSnapshot(
-      scopedCollection("attributes"),
+    const unsubAttrs = listenTenantCollection("attributes",
       (snap) =>
         setAttributes(snap.docs.map((d) => d.data() as ProductAttribute)),
       (err) => handleSnapshotError("attributes", err),
     );
-    const unsubActivePacks = onSnapshot(
-      scopedCollection("activePacks"),
+    const unsubActivePacks = listenTenantCollection("activePacks",
       (snap) =>
         setActivePacksState(snap.docs.map((d) => d.data() as ActiveTask)),
       (err) => handleSnapshotError("activePacks", err),
     );
-    const unsubNestTasks = onSnapshot(
-      scopedCollection("nestTasks"),
+    const unsubNestTasks = listenTenantCollection("nestTasks",
       (snap) => setNestTasksState(snap.docs.map((d) => d.data() as NestTask)),
       (err) => handleSnapshotError("nestTasks", err),
     );
-    const unsubNotifications = onSnapshot(
-      scopedCollection("notifications"),
+    const unsubNotifications = listenTenantCollection("notifications",
       (snap) =>
         setNotifications(
           snap.docs
@@ -977,43 +1028,36 @@ export function useDatabase(currentUser?: User | null) {
         ),
       (err) => handleSnapshotError("notifications", err),
     );
-    const unsubStocks = onSnapshot(
-      scopedCollection("stocks"),
+    const unsubStocks = listenTenantCollection("stocks",
       (snap) => setStocks(snap.docs.map((d) => d.data() as StockEntry)),
       (err) => handleSnapshotError("stocks", err),
     );
-    const unsubMovements = onSnapshot(
-      scopedCollection("stock_movements"),
+    const unsubMovements = listenTenantCollection("stock_movements",
       (snap) =>
         setStockMovements(snap.docs.map((d) => d.data() as StockMovement)),
       (err) => handleSnapshotError("stock_movements", err),
     );
-    const unsubEmployees = onSnapshot(
-      scopedCollection("employees"),
+    const unsubEmployees = listenTenantCollection("employees",
       (snap) => setEmployees(snap.docs.map((d) => d.data() as Employee)),
       (err) => handleSnapshotError("employees", err),
     );
-    const unsubEpiDistributions = onSnapshot(
-      scopedCollection("epiDistributions"),
+    const unsubEpiDistributions = listenTenantCollection("epiDistributions",
       (snap) =>
         setEpiDistributions(snap.docs.map((d) => d.data() as EpiDistribution)),
       (err) => handleSnapshotError("epiDistributions", err),
     );
-    const unsubUniforms = onSnapshot(
-      scopedCollection("uniforms"),
+    const unsubUniforms = listenTenantCollection("uniforms",
       (snap) => setUniforms(snap.docs.map((d) => d.data() as Uniform)),
       (err) => handleSnapshotError("uniforms", err),
     );
-    const unsubUniformDistributions = onSnapshot(
-      scopedCollection("uniformDistributions"),
+    const unsubUniformDistributions = listenTenantCollection("uniformDistributions",
       (snap) =>
         setUniformDistributions(
           snap.docs.map((d) => d.data() as UniformDistribution),
         ),
       (err) => handleSnapshotError("uniformDistributions", err),
     );
-    const unsubCustomers = onSnapshot(
-      scopedCollection("customers"),
+    const unsubCustomers = listenTenantCollection("customers",
       (snap) =>
         setCustomers(
           snap.docs.map((d) => {
@@ -1026,63 +1070,52 @@ export function useDatabase(currentUser?: User | null) {
         ),
       (err) => handleSnapshotError("customers", err),
     );
-    const unsubSectors = onSnapshot(
-      scopedCollection("sectors"),
+    const unsubSectors = listenTenantCollection("sectors",
       (snap) => setSectors(snap.docs.map((d) => d.data() as Sector)),
       (err) => handleSnapshotError("sectors", err),
     );
-    const unsubProductFlows = onSnapshot(
-      scopedCollection("productFlows"),
+    const unsubProductFlows = listenTenantCollection("productFlows",
       (snap) => setProductFlows(snap.docs.map((d) => d.data() as ProductFlow)),
       (err) => handleSnapshotError("productFlows", err),
     );
-    const unsubFlows = onSnapshot(
-      scopedCollection("flows"),
+    const unsubFlows = listenTenantCollection("flows",
       (snap) => setFlows(snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").Flow))),
       (err) => handleSnapshotError("flows", err),
     );
-    const unsubRejectionReasons = onSnapshot(
-      scopedCollection("rejectionReasons"),
+    const unsubRejectionReasons = listenTenantCollection("rejectionReasons",
       (snap) => setRejectionReasons(snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").RejectionReason))),
       (err) => handleSnapshotError("rejectionReasons", err),
     );
-    const unsubProductionSteps = onSnapshot(
-      scopedCollection("productionSteps"),
+    const unsubProductionSteps = listenTenantCollection("productionSteps",
       (snap) => setProductionSteps(snap.docs.map((d) => ({ id: d.id, ...d.data() } as import("./types").ProductionStep))),
       (err) => handleSnapshotError("productionSteps", err),
     );
-    const unsubBatches = onSnapshot(
-      scopedCollection("productionBatches"),
+    const unsubBatches = listenTenantCollection("productionBatches",
       (snap) =>
         setProductionBatches(snap.docs.map((d) => d.data() as ProductionBatch)),
       (err) => handleSnapshotError("productionBatches", err),
     );
-    const unsubAgendas = onSnapshot(
-      scopedCollection("productionAgendas"),
+    const unsubAgendas = listenTenantCollection("productionAgendas",
       (snap) =>
         setProductionAgendas(
           snap.docs.map((d) => d.data() as ProductionAgenda),
         ),
       (err) => handleSnapshotError("productionAgendas", err),
     );
-    const unsubCoilPlans = onSnapshot(
-      scopedCollection("coilCuttingPlans"),
+    const unsubCoilPlans = listenTenantCollection("coilCuttingPlans",
       (snap) =>
         setCoilCuttingPlans(snap.docs.map((d) => d.data() as CoilCuttingPlan)),
       (err) => handleSnapshotError("coilCuttingPlans", err),
     );
-    const unsubCargas = onSnapshot(
-      scopedCollection("cargas"),
+    const unsubCargas = listenTenantCollection("cargas",
       (snap) => setCargas(snap.docs.map((d) => d.data() as Carga)),
       (err) => handleSnapshotError("cargas", err),
     );
-    const unsubExpeditionRoutes = onSnapshot(
-      scopedCollection("expeditionRoutes"),
+    const unsubExpeditionRoutes = listenTenantCollection("expeditionRoutes",
       (snap) => setExpeditionRoutes(snap.docs.map((d) => d.data() as ExpeditionRoute)),
       (err) => handleSnapshotError("expeditionRoutes", err),
     );
-    const unsubSchedules = onSnapshot(
-      scopedCollection("productionSchedules"),
+    const unsubSchedules = listenTenantCollection("productionSchedules",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as ProductionSchedule);
         setProductionSchedules(list);
@@ -1096,8 +1129,7 @@ export function useDatabase(currentUser?: User | null) {
       },
       (err) => handleSnapshotError("productionSchedules", err),
     );
-    const unsubExtraHours = onSnapshot(
-      scopedCollection("extraHours"),
+    const unsubExtraHours = listenTenantCollection("extraHours",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as ExtraHourEntry);
         setExtraHours(list);
@@ -1105,8 +1137,7 @@ export function useDatabase(currentUser?: User | null) {
       },
       (err) => handleSnapshotError("extraHours", err),
     );
-    const unsubSystemSettings = onSnapshot(
-      scopedCollection("systemSettings"),
+    const unsubSystemSettings = listenTenantCollection("systemSettings",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as SystemSettings);
         setSystemSettings(list);
@@ -1114,8 +1145,7 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("systemSettings", err),
     );
 
-    const unsubAgentReports = onSnapshot(
-      scopedCollection("agentReports"),
+    const unsubAgentReports = listenTenantCollection("agentReports",
       (snap) => {
         const list = snap.docs.map((d) => d.data());
         setAgentReports(list);
@@ -1123,8 +1153,7 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("agentReports", err),
     );
 
-    const unsubTornoEvents = onSnapshot(
-      scopedCollection("tornoEvents"),
+    const unsubTornoEvents = listenTenantCollection("tornoEvents",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as TornoEvent);
         setTornoEvents(list);
@@ -1132,8 +1161,7 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("tornoEvents", err),
     );
 
-    const unsubMachineStops = onSnapshot(
-      scopedCollection("machineStops"),
+    const unsubMachineStops = listenTenantCollection("machineStops",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as MachineStop);
         setMachineStops(list);
@@ -1141,8 +1169,7 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("machineStops", err),
     );
 
-    const unsubPerformanceQuestions = onSnapshot(
-      scopedCollection("performanceQuestions"),
+    const unsubPerformanceQuestions = listenTenantCollection("performanceQuestions",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as PerformanceQuestion);
         setPerformanceQuestions(list);
@@ -1150,8 +1177,7 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("performanceQuestions", err),
     );
 
-    const unsubPerformanceReviews = onSnapshot(
-      scopedCollection("performanceReviews"),
+    const unsubPerformanceReviews = listenTenantCollection("performanceReviews",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as PerformanceReview);
         setPerformanceReviews(list);
@@ -1159,8 +1185,7 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("performanceReviews", err),
     );
 
-    const unsubAttendances = onSnapshot(
-      scopedCollection("attendances"),
+    const unsubAttendances = listenTenantCollection("attendances",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as import("./types").AttendanceRecord);
         setAttendances(list);
@@ -1168,8 +1193,7 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("attendances", err),
     );
 
-    const unsubLaserQuotes = onSnapshot(
-      scopedCollection("laserQuotes"),
+    const unsubLaserQuotes = listenTenantCollection("laserQuotes",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as import("./types").LaserQuote);
         setLaserQuotes(list);
@@ -1177,8 +1201,7 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("laserQuotes", err),
     );
 
-    const unsubSheetStocks = onSnapshot(
-      scopedCollection("sheetStocks"),
+    const unsubSheetStocks = listenTenantCollection("sheetStocks",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as SheetStockEntry);
         setSheetStocks(list);
@@ -1186,8 +1209,7 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("sheetStocks", err),
     );
 
-    const unsubSheetStockMovements = onSnapshot(
-      scopedCollection("sheetStockMovements"),
+    const unsubSheetStockMovements = listenTenantCollection("sheetStockMovements",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as SheetStockMovement);
         setSheetStockMovements(list);
@@ -1195,8 +1217,7 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("sheetStockMovements", err),
     );
 
-    const unsubPrensaPending = onSnapshot(
-      scopedCollection("prensaPendingProductions"),
+    const unsubPrensaPending = listenTenantCollection("prensaPendingProductions",
       (snap) => {
         const list = snap.docs.map((d) => ({
           id: d.id,
@@ -1215,8 +1236,7 @@ export function useDatabase(currentUser?: User | null) {
         currentUser.role === "REPRESENTANTE" ||
         currentUser.role === "PCP")
     ) {
-      unsubPriceHistories = onSnapshot(
-        scopedCollection("priceHistories"),
+      unsubPriceHistories = listenTenantCollection("priceHistories",
         (snap) =>
           setPriceHistories(snap.docs.map((d) => d.data() as ItemPriceHistory)),
         (err) => handleSnapshotError("priceHistories", err),
@@ -1265,6 +1285,7 @@ export function useDatabase(currentUser?: User | null) {
 
     return () => {
       firestoreListenerUnsubsRef.current = [];
+      clearUsersLoadFallbackTimer();
       window.removeEventListener("online", handleOnline);
       if (interval !== null) window.clearInterval(interval);
       if (firestoreReadRetryTimerRef.current) {
