@@ -359,6 +359,8 @@ export function useDatabase(currentUser?: User | null) {
   const quotaExceededRef = useRef(false);
   const firestoreReadPausedRef = useRef(false);
   const firestoreReadRetryTimerRef = useRef<any>(null);
+  const firestoreListenerUnsubsRef = useRef<(() => void)[]>([]);
+  const [firestoreRestartToken, setFirestoreRestartToken] = useState(0);
   const isSyncingRef = useRef(false);
   const syncRetriesRef = useRef<{
     [id: number]: { attempts: number; nextRetryTime: number };
@@ -591,6 +593,14 @@ export function useDatabase(currentUser?: User | null) {
 
       if (!firestoreReadPausedRef.current) {
         firestoreReadPausedRef.current = true;
+        const activeUnsubs = firestoreListenerUnsubsRef.current.splice(0);
+        activeUnsubs.forEach((unsubscribe) => {
+          try {
+            unsubscribe();
+          } catch (unsubscribeError) {
+            console.error("Falha ao encerrar listener do Firestore após quota:", unsubscribeError);
+          }
+        });
         disableNetwork(db).catch((networkError) => {
           console.error("Falha ao pausar a rede do Firestore após quota:", networkError);
         });
@@ -605,6 +615,7 @@ export function useDatabase(currentUser?: User | null) {
           try {
             await enableNetwork(db);
             setPermissionError(null);
+            setFirestoreRestartToken((token) => token + 1);
           } catch (retryError) {
             console.error("Falha ao reativar a rede do Firestore após backoff:", retryError);
           }
@@ -1212,7 +1223,48 @@ export function useDatabase(currentUser?: User | null) {
       );
     }
 
+    firestoreListenerUnsubsRef.current = [
+      unsubTenants,
+      unsubUsers,
+      unsubItems,
+      unsubOrders,
+      unsubLogs,
+      unsubAttrs,
+      unsubActivePacks,
+      unsubNestTasks,
+      unsubNotifications,
+      unsubStocks,
+      unsubMovements,
+      unsubEmployees,
+      unsubEpiDistributions,
+      unsubUniforms,
+      unsubUniformDistributions,
+      unsubCustomers,
+      unsubSectors,
+      unsubProductFlows,
+      unsubBatches,
+      unsubAgendas,
+      unsubCoilPlans,
+      unsubCargas,
+      unsubExpeditionRoutes,
+      unsubSchedules,
+      unsubExtraHours,
+      unsubSystemSettings,
+      unsubAgentReports,
+      unsubPriceHistories,
+      unsubTornoEvents,
+      unsubMachineStops,
+      unsubPerformanceQuestions,
+      unsubPerformanceReviews,
+      unsubAttendances,
+      unsubLaserQuotes,
+      unsubSheetStocks,
+      unsubSheetStockMovements,
+      unsubPrensaPending,
+    ];
+
     return () => {
+      firestoreListenerUnsubsRef.current = [];
       window.removeEventListener("online", handleOnline);
       if (interval !== null) window.clearInterval(interval);
       if (firestoreReadRetryTimerRef.current) {
@@ -1258,7 +1310,7 @@ export function useDatabase(currentUser?: User | null) {
       unsubSheetStockMovements();
       unsubPrensaPending();
     };
-  }, [currentUser, isDemoMode, activeTenantId]);
+  }, [currentUser, isDemoMode, activeTenantId, firestoreRestartToken]);
 
   const updateStocks = async (updatedStocks: StockEntry[]) => {
     const changed = updatedStocks.filter((updated) => {
