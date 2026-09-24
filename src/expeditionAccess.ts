@@ -12,6 +12,7 @@ export function canManageExpedition(
   user: User | null | undefined,
 ): boolean {
   if (!user || activeTenantId !== "imperio") return false;
+  if (user.role === "ADMIN" && user.tenantId === "imperio") return true;
 
   const id = normalize(user.id);
   const name = normalize(user.name);
