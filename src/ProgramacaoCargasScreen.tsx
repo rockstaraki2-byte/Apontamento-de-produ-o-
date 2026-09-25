@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   CheckCircle2,
@@ -31,13 +31,16 @@ import { canManageExpedition } from "./expeditionAccess";
 import { findCustomerForOrder, normalizeString } from "./searchUtils";
 import { LoadSuggestionsTab } from "./LoadSuggestionsTab";
 import { PdfPreviewModal } from "./PdfPreviewModal";
-import { createLoadMetrics } from "./expeditionMetrics";
+import {
+  createLoadMetrics,
+  ORDER_ALLOCATION_ALLOWED_STATUSES,
+} from "./expeditionMetrics";
 
 const DAY_NAMES = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const SHIFT_LABEL: Record<string, string> = { MANHA: "Manhã", TARDE: "Tarde" };
 const MONTH_ABBR = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const FINAL_STATUSES = new Set(["DESPACHADA", "ENTREGUE", "FATURADA", "FATURADA_COMPLETA"]);
-const EDITABLE_STATUSES = new Set(["PLANEJADA", "ABERTA", "FECHADA", "LIBERADA", "EM_SEPARACAO", "FATURADA_PARCIAL"]);
+const EDITABLE_STATUSES = ORDER_ALLOCATION_ALLOWED_STATUSES;
 const PREVIOUS_STATUS: Partial<Record<Carga["status"], Carga["status"]>> = {
   FECHADA: "ABERTA",
   LIBERADA: "FECHADA",
@@ -185,6 +188,8 @@ export function ProgramacaoCargasScreen({
   const [orderSearch, setOrderSearch] = useState("");
   const [targetCargaId, setTargetCargaId] = useState("");
   const [selectedQuantities, setSelectedQuantities] = useState<Record<number, number>>({});
+  const [isLinkingOrders, setIsLinkingOrders] = useState(false);
+  const linkInProgressRef = useRef(false);
   const [orderDeliveryStart, setOrderDeliveryStart] = useState("");
   const [orderDeliveryEnd, setOrderDeliveryEnd] = useState("");
   const [orderCreatedStart, setOrderCreatedStart] = useState("");
@@ -641,9 +646,16 @@ export function ProgramacaoCargasScreen({
   };
 
   const attachSelectedOrders = async () => {
+    if (linkInProgressRef.current) return;
+
+    if (db.cargasSync.state !== "live") {
+      alert("A lista de cargas ainda não foi confirmada pelo servidor. Aguarde a sincronização e tente novamente.");
+      return;
+    }
+
     const carga = editableLoads.find((c) => c.id === targetCargaId);
     if (!carga) {
-      alert("Selecione uma carga aberta para vincular os itens.");
+      alert("A carga selecionada não está mais disponível para inclusão. Atualize a tela e selecione uma carga aberta.");
       return;
     }
     const entries = Object.entries(selectedQuantities)
@@ -654,38 +666,58 @@ export function ProgramacaoCargasScreen({
       return;
     }
 
-    const orderIds = [...(carga.orderIds || [])];
-    const quantities = { ...(carga.orderQuantities || {}) } as Record<number, number>;
+    const rowsById = new Map<number, (typeof pendingRows)[number]>();
+    pendingRows.forEach((row) => rowsById.set(row.order.id, row));
+    const missingRows = entries.filter((entry) => !rowsById.has(entry.id));
+    if (missingRows.length > 0) {
+      alert("Um ou mais pedidos mudaram desde que foram carregados. Atualize a tela e selecione novamente antes de vincular.");
+      return;
+    }
 
+    const requests = [] as {
+      orderId: number;
+      quantity: number;
+      availableQuantity: number;
+      targetQuantityAtSelection: number;
+    }[];
     for (const entry of entries) {
-      const row = pendingRows.find((r) => r.order.id === entry.id);
-      if (!row) continue;
+      const row = rowsById.get(entry.id)!;
+      if (!Number.isInteger(entry.qty) || entry.qty <= 0) {
+        alert(`Informe uma quantidade inteira válida para o pedido ${row.order.orderCode}.`);
+        return;
+      }
       if (entry.qty > row.unallocated) {
         alert(`A quantidade do pedido ${row.order.orderCode} excede o saldo sem carga (${row.unallocated}).`);
         return;
       }
-      if (!orderIds.includes(entry.id)) orderIds.push(entry.id);
-      quantities[entry.id] = Number(quantities[entry.id] || 0) + entry.qty;
+      requests.push({
+        orderId: entry.id,
+        quantity: entry.qty,
+        availableQuantity: row.unallocated,
+        targetQuantityAtSelection: Number(carga.orderQuantities?.[entry.id] || 0),
+      });
     }
 
-    await db.updateCarga({
-      ...carga,
-      orderIds,
-      orderQuantities: quantities,
-      auditTrail: [
-        ...(carga.auditTrail || []),
-        {
-          timestamp: Date.now(),
-          userId: currentUser.id,
-          userName: currentUser.name,
-          action: `${entries.length} item(ns) vinculado(s) à carga`,
-        },
-      ],
-    });
-
-    setSelectedQuantities({});
-    setTargetCargaId("");
-    alert("Itens vinculados à carga com sucesso.");
+    linkInProgressRef.current = true;
+    setIsLinkingOrders(true);
+    try {
+      await db.addOrdersToCarga(carga.id, requests, currentUser);
+      setSelectedQuantities({});
+      setTargetCargaId("");
+      alert("Pedidos vinculados à carga com sucesso.");
+    } catch (error) {
+      console.error("Não foi possível vincular os pedidos à carga:", error);
+      const code = String((error as any)?.code || "");
+      const message = (error as any)?.message;
+      if (code.includes("unavailable") || !navigator.onLine) {
+        alert("Não foi possível confirmar o vínculo no servidor. Verifique a conexão e tente novamente; nenhum vínculo foi confirmado.");
+      } else {
+        alert(message || "Não foi possível vincular os pedidos. Atualize a tela e tente novamente.");
+      }
+    } finally {
+      linkInProgressRef.current = false;
+      setIsLinkingOrders(false);
+    }
   };
 
   const removeAllocation = async (carga: Carga, orderId: number) => {
@@ -1147,9 +1179,18 @@ export function ProgramacaoCargasScreen({
               </div>
               <p className="text-[9px] text-slate-400 font-medium">Pedidos totalmente faturados são ocultados automaticamente. Pedidos faturados parcialmente aparecem somente pelo saldo ainda em aberto.</p>
             </div>
+            {db.cargasSync.state !== "live" && (
+              <div role="status" className={`rounded-lg border px-3 py-2 text-xs font-semibold ${db.cargasSync.state === "error" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+                {db.cargasSync.state === "loading"
+                  ? "Carregando e validando as cargas no servidor..."
+                  : db.cargasSync.state === "error"
+                    ? "Não foi possível sincronizar as cargas. Confira a conexão antes de vincular pedidos."
+                    : "Exibindo dados em cache. Aguarde a confirmação do servidor para vincular pedidos."}
+              </div>
+            )}
             <div className="flex items-center justify-between border-t border-slate-100 pt-3">
               <span className="text-xs text-slate-600"><strong>{selectedVisibleCount}</strong> item(ns) selecionado(s) • <strong>{selectedTotal}</strong> un</span>
-              <button onClick={attachSelectedOrders} disabled={!targetCargaId || selectedTotal <= 0} className="h-9 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg text-xs font-extrabold">Vincular à carga</button>
+              <button onClick={attachSelectedOrders} disabled={!targetCargaId || selectedTotal <= 0 || isLinkingOrders || db.cargasSync.state !== "live"} className="h-9 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg text-xs font-extrabold">{isLinkingOrders ? "Vinculando..." : db.cargasSync.state !== "live" ? "Aguardando sincronização" : "Vincular à carga"}</button>
             </div>
           </div>
 
