@@ -506,41 +506,121 @@ function Welcome({
 
   const handleNotificationClick = React.useCallback(
     (n: AppNotification) => {
-      const match = n.message.match(/\b\d{4,8}\b/);
-      let found = null;
-      if (match) {
-        found = db.orders.find((o) => o.orderCode === match[0]);
-      }
-      if (found) {
-        setSelectedOrder(found);
-      } else {
-        const orderWithCustomer = db.orders.find((o) =>
-          n.message.toLowerCase().includes(o.customerName.toLowerCase()),
-        );
-        if (orderWithCustomer) {
-          setSelectedOrder(orderWithCustomer);
-        } else {
-          setInfoModalData({
-            title: "Notificação Informativa",
-            body: (
-              <div className="space-y-4 text-left">
-                <p className="text-gray-750 font-medium text-sm border-l-4 border-blue-500 pl-3 py-1 bg-gray-50 rounded">
-                  {n.message}
-                </p>
-                <div className="text-xs text-gray-500">
-                  Registrada em: {new Date(n.createdAt).toLocaleString()}
-                </div>
-                <p className="text-xs text-gray-500 italic mt-2">
-                  Dica: Marque como lida na listagem se este aviso já tiver sido
-                  processado.
-                </p>
-              </div>
-            ),
-          });
+      const details =
+        n.details && typeof n.details === "object" ? n.details : {};
+      const linkedOrders = new Map<number, Order>();
+
+      const addOrderById = (value: unknown) => {
+        if (value === undefined || value === null || String(value).trim() === "") {
+          return;
         }
+        const valueText = String(value).trim();
+        const order =
+          db.orders.find((candidate) => String(candidate.id) === valueText) ||
+          db.orders.find((candidate) => candidate.orderCode === valueText);
+        if (order) linkedOrders.set(order.id, order);
+      };
+
+      const addOrderByCode = (value: unknown) => {
+        if (value === undefined || value === null || String(value).trim() === "") {
+          return;
+        }
+        const valueText = String(value).trim().replace(/^#/, "");
+        const order =
+          db.orders.find((candidate) => candidate.orderCode === valueText) ||
+          db.orders.find((candidate) => String(candidate.id) === valueText);
+        if (order) linkedOrders.set(order.id, order);
+      };
+
+      addOrderById(n.orderId);
+      addOrderById(details.orderId);
+      if (Array.isArray(details.orderIds)) {
+        details.orderIds.forEach(addOrderById);
       }
+      addOrderByCode(details.orderCode);
+      if (Array.isArray(details.orderCodes)) {
+        details.orderCodes.forEach(addOrderByCode);
+      }
+
+      // Só reconhece números explicitamente identificados como pedidos.
+      // Quantidades, medidas ou outros números da mensagem não viram orderCode.
+      const messageOrderCodes = [
+        ...(n.message.match(/#(?:Pedido\s*)?\d{3,8}\b/gi) || []).map(
+          (value) => value.replace(/^#(?:Pedido\s*)?/i, ""),
+        ),
+        ...(n.message.match(/\bPedido\s*[:#]?\s*\d{3,8}\b/gi) || []).map(
+          (value) => value.replace(/^Pedido\s*[:#]?\s*/i, "").replace(/^#/, ""),
+        ),
+      ];
+      messageOrderCodes.forEach(addOrderByCode);
+
+      const ordersToOpen = Array.from(linkedOrders.values());
+      if (ordersToOpen.length === 1) {
+        setInfoModalData(null);
+        setSelectedOrder(ordersToOpen[0]);
+        return;
+      }
+
+      if (ordersToOpen.length > 1) {
+        setInfoModalData({
+          title: "Pedidos desta embalagem",
+          body: (
+            <div className="space-y-3 text-left">
+              <p className="text-xs text-gray-600">
+                Esta notificação está vinculada a {ordersToOpen.length} pedidos.
+                Escolha qual ficha de produção deseja consultar.
+              </p>
+              <p className="text-xs text-gray-700 border-l-4 border-blue-500 pl-3 py-1 bg-gray-50 rounded">
+                {n.message}
+              </p>
+              <div className="max-h-64 overflow-y-auto space-y-2">
+                {ordersToOpen.map((order) => (
+                  <button
+                    key={order.id}
+                    type="button"
+                    onClick={() => {
+                      setInfoModalData(null);
+                      setSelectedOrder(order);
+                    }}
+                    className="w-full rounded-lg border border-gray-200 p-3 text-left hover:border-[#FB9214] hover:bg-orange-50 transition"
+                  >
+                    <span className="block text-sm font-bold text-gray-800">
+                      Pedido #{order.orderCode || order.id}
+                    </span>
+                    <span className="block text-xs text-gray-600">
+                      {order.customerName}
+                    </span>
+                    <span className="block text-xs text-gray-500">
+                      {db.items.find((item) => item.id === order.itemId)?.name ||
+                        `Item ${order.itemId}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ),
+        });
+        return;
+      }
+
+      setInfoModalData({
+        title: "Notificação Informativa",
+        body: (
+          <div className="space-y-4 text-left">
+            <p className="text-gray-750 font-medium text-sm border-l-4 border-blue-500 pl-3 py-1 bg-gray-50 rounded">
+              {n.message}
+            </p>
+            <div className="text-xs text-gray-500">
+              Registrada em: {new Date(n.createdAt).toLocaleString()}
+            </div>
+            <p className="text-xs text-gray-500 italic mt-2">
+              Este aviso não possui um pedido vinculado para abrir a ficha.
+            </p>
+          </div>
+        ),
+      });
     },
-    [db.orders],
+    [db.orders, db.items],
   );
 
   const getOrderStatusBadgeColor = React.useCallback((status?: string) => {
@@ -12967,6 +13047,7 @@ function AdminScreen({
     let totalAssignedQty = 0;
     let logsToAdd: any[] = [];
     let updatedOrders = [...db.orders];
+    const attendedOrders: { id: number; orderCode: string }[] = [];
 
     for (let o of matchedOrders) {
       if (qtyToAllocate <= 0) break;
@@ -12984,6 +13065,9 @@ function AdminScreen({
 
       const allocate = Math.min(needed, qtyToAllocate);
       if (allocate > 0) {
+        if (pack.type === "EMBALAGEM") {
+          attendedOrders.push({ id: o.id, orderCode: o.orderCode });
+        }
         const oIndex = updatedOrders.findIndex((uo) => uo.id === o.id);
         if (oIndex >= 0) {
           const targetOrder = updatedOrders[oIndex];
@@ -13163,9 +13247,30 @@ function AdminScreen({
     }
 
     const itemDb = db.items.find((i) => i.id === pack.itemId);
+    const packagingOrderSuffix =
+      pack.type === "EMBALAGEM" && attendedOrders.length > 0
+        ? ` (Pedidos: ${attendedOrders.map((order) => `#${order.orderCode || order.id}`).join(", ")})`
+        : "";
+    const notificationOrders =
+      pack.type === "EMBALAGEM" ? attendedOrders : [];
     db.addNotification?.({
-      message: `Apontamento finalizado por Gerência (${pack.type.replace("_", " ")}): ${targetQty} de ${itemDb?.name || "Item"} (${pack.color || "-"} | ${pack.size || "-"}) do Operador ${pack.operatorId}`,
+      message: `Apontamento finalizado por Gerência (${pack.type.replace("_", " ")}): ${targetQty} de ${itemDb?.name || "Item"} (${pack.color || "-"} | ${pack.size || "-"}) do Operador ${pack.operatorId}${packagingOrderSuffix}`,
       read: false,
+      ...(notificationOrders.length === 1
+        ? { orderId: notificationOrders[0].id }
+        : {}),
+      ...(notificationOrders.length > 0
+        ? {
+            details: {
+              orderIds: notificationOrders.map((order) => order.id),
+              orderCodes: notificationOrders.map((order) => order.orderCode),
+              itemId: pack.itemId,
+              color: pack.color,
+              size: pack.size,
+              variation: pack.variation,
+            },
+          }
+        : {}),
     });
 
     db.updateOrders(updatedOrders);
