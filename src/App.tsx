@@ -15599,6 +15599,14 @@ export default function App() {
       currentUser.id === "gerencia.imperio" ||
       currentUser.id === "gerencia");
 
+  const isImperioGerencia =
+    db.activeTenantId === "imperio" && currentUser.role === "GERENCIA";
+
+  const canAccessCustomerManagement =
+    currentUser.role === "ADMIN" ||
+    currentUser.role === "PCP" ||
+    isImperioGerencia;
+
   const canManageImperioStock =
     db.activeTenantId === "imperio" &&
     (currentUser.role === "ADMIN" ||
@@ -15632,6 +15640,7 @@ export default function App() {
     ) return false;
     if (isImperioPcpOrGerencia && screenKey === "injetora") return true;
     if (currentUser.id === "gerencia.imperio" && screenKey === "itens") return true;
+    if (isImperioGerencia && screenKey === "gestao-clientes") return true;
     if (isImperioMarcosProjetista && screenKey === "nests") return true;
     if (screenKey === "embalagem" && isImperioPackagingUser(db.activeTenantId, currentUser)) return true;
     if (currentUser?.id === "raul") return true;
@@ -16034,7 +16043,7 @@ export default function App() {
                   element={<PCPScreen db={db} currentUser={currentUser} />}
                 />
               )}
-            {(currentUser.role === "ADMIN" || currentUser.role === "PCP") && (
+            {canAccessCustomerManagement && (
               <Route
                 path="/gestao-clientes"
                 element={
@@ -16160,7 +16169,7 @@ export default function App() {
             />
           )}
 
-          {isScreenAllowed("gestao-clientes") && (currentUser.role === "ADMIN" || currentUser.role === "PCP") && (
+          {isScreenAllowed("gestao-clientes") && canAccessCustomerManagement && (
             <NavLink
               to="/gestao-clientes"
               icon={<Users size={24} />}
