@@ -892,30 +892,6 @@ function Welcome({
         )}
       </div>
 
-      {(currentUser.role === "ADMIN" ||
-        currentUser.role === "GERENCIA" ||
-        currentUser.role === "PCP") && (
-        <div className="mt-6 w-full max-w-6xl text-left bg-white border border-slate-200 shadow-sm rounded-xl p-5 md:p-6 font-sans shrink-0">
-          <div className="flex border-b border-slate-100 pb-3 justify-between items-center flex-wrap gap-2 mb-4">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <span className="bg-indigo-100 text-indigo-700 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-semibold">
-                  <List size={16} />
-                </span>
-                Fila de Produção
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Pedidos em acompanhamento PCP.
-              </p>
-            </div>
-          </div>
-          <p className="text-sm font-medium text-slate-600 mb-2">
-            Acompanhe pedidos abertos sem lote gerado, verifique urgências
-            sinalizadas e agrupamentos recomendados.
-          </p>
-        </div>
-      )}
-
       {/* --- ORDER DETAILS POPUP MODAL --- */}
       {selectedOrder && (
         <div className="fixed inset-0 bg-black/55 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">

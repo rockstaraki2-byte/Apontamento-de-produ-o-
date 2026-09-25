@@ -46,6 +46,8 @@ interface RealTimeFactoryMonitoringProps {
 
 type SubTab = "OVERVIEW" | "STATIONS" | "OPERATORS" | "METRICS" | "LIVE_LOGS";
 
+const STALE_ACTIVITY_THRESHOLD_HOURS = 24;
+
 interface ErrorBoundaryProps {
   children: React.ReactNode;
 }
@@ -158,6 +160,14 @@ function RealTimeFactoryMonitoringContent({
     return (now - startTime) / (1000 * 60 * 60);
   };
 
+  const isStaleActivity = (task: ActiveTask) =>
+    getElapsedHours(task.startTime) >= STALE_ACTIVITY_THRESHOLD_HOURS;
+
+  const currentActivePacks = useMemo(
+    () => (activePacks || []).filter((pack) => pack && !isStaleActivity(pack)),
+    [activePacks, now],
+  );
+
   // Dynamic sector categories based on active tenant's registered sectors + intelligent operator allocation
   const activeTenantSectors = useMemo(() => {
     const tenantIdStr = String(activeTenantId || activeTenant?.id || "").toLowerCase();
@@ -251,116 +261,219 @@ function RealTimeFactoryMonitoringContent({
         bgCard: visuals.bgCard || "bg-blue-50/50 hover:bg-blue-50",
         matchesPack: (p: ActiveTask) => {
           if (!p) return false;
-          // 1. Direct sectorId match on task
-          if ((p as any).sectorId && String((p as any).sectorId) === sIdStr) return true;
 
-          // 2. USER ALLOCATION MATCHING (Highest priority for operators)
+          const normalizeKey = (value: unknown) =>
+            String(value ?? "")
+              .normalize("NFD")
+              .replace(/[\u0300-\u036f]/g, "")
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_+|_+$/g, "");
+          const hasValue = (value: unknown) =>
+            value !== undefined && value !== null && String(value).trim() !== "";
+
+          let allowedSectorIds: Set<string> | undefined;
+          const availableSectors = () =>
+            mergedSectorsList.filter(
+              (sector) =>
+                Boolean(sector) &&
+                (!allowedSectorIds || allowedSectorIds.has(String(sector.id))),
+            );
+          const findUniqueSectorId = (
+            predicate: (sector: Sector) => boolean,
+          ): string | null => {
+            const matches = availableSectors().filter(predicate);
+            return matches.length === 1 ? String(matches[0].id) : null;
+          };
+
+          const findSectorByLabel = (label: unknown) => {
+            const labelKey = normalizeKey(label);
+            if (!labelKey) return null;
+            return findUniqueSectorId((sector) => {
+              const roleKey = normalizeKey(sector.role);
+              const codeKey = normalizeKey(sector.code);
+              return (
+                normalizeKey(sector.name) === labelKey ||
+                roleKey === labelKey ||
+                codeKey === labelKey
+              );
+            });
+          };
+
+          const matchesRole = (role: string, sector: Sector) => {
+            const roleKey = normalizeKey(role);
+            const sectorName = normalizeKey(sector.name);
+            if (
+              normalizeKey(sector.role) === roleKey ||
+              normalizeKey(sector.code) === roleKey
+            ) {
+              return true;
+            }
+
+            switch (roleKey) {
+              case "SOLDA":
+                return sectorName.includes("solda");
+              case "CORTE_LASER":
+                return sectorName.includes("laser") && !sectorName.includes("solda");
+              case "CORTE_TUBOS":
+                return sectorName.includes("tubo") || sectorName.includes("perfil");
+              case "CORTE":
+                return (
+                  !sectorName.includes("solda") &&
+                  (sectorName.includes("corte") || sectorName.includes("laser"))
+                );
+              case "PINTURA":
+                return sectorName.includes("pintura") || sectorName.includes("epoxi");
+              case "EMBALAGEM":
+                return sectorName.includes("embalag") || sectorName.includes("exped");
+              case "QUALIDADE":
+                return sectorName.includes("qualidade") || sectorName.includes("inspec");
+              case "PRENSA_EDUARDO":
+                return sectorName.includes("eduardo");
+              case "PRENSA_RAFAEL":
+                return sectorName.includes("rafael");
+              case "PRENSA":
+                return sectorName.includes("prensa");
+              case "TORNO_CNC_WILLIAN":
+                return sectorName.includes("willian") || sectorName.includes("william");
+              case "TORNO_CNC_HENRIQUE":
+                return sectorName.includes("henrique");
+              case "TORNO_CNC":
+                return sectorName.includes("torno") || sectorName.includes("cnc");
+              case "INJETORA":
+                return sectorName.includes("injetora");
+              case "BANHO_QUIMICO":
+                return (
+                  sectorName.includes("banho") ||
+                  sectorName.includes("quimico") ||
+                  sectorName.includes("zincagem")
+                );
+              case "MONTAGEM_RETRATIL":
+                return sectorName.includes("retratil") || sectorName.includes("mecanismo");
+              case "MONTAGEM":
+                return sectorName.includes("montagem");
+              default:
+                return false;
+            }
+          };
+
+          const findUniqueSectorByRole = (role: string) =>
+            findUniqueSectorId((sector) => matchesRole(role, sector));
+
+          const inferRole = (value: unknown): string | null => {
+            const key = normalizeKey(value);
+            if (!key || key === "producao") return null;
+            if (key.includes("solda")) return "SOLDA";
+            if (key.includes("laser")) return "CORTE_LASER";
+            if (key.includes("tubo") || key.includes("perfil")) return "CORTE_TUBOS";
+            if (key.includes("pint") || key.includes("epoxi") || key.includes("verniz")) return "PINTURA";
+            if (key.includes("embalag") || key.includes("etiquet") || key.includes("exped") || key.includes("caixa")) return "EMBALAGEM";
+            if (key.includes("qualidade") || key.includes("inspec") || key.includes("revisao") || key.includes("libera")) return "QUALIDADE";
+            if (key.includes("prensa") && key.includes("eduardo")) return "PRENSA_EDUARDO";
+            if (key.includes("prensa") && key.includes("rafael")) return "PRENSA_RAFAEL";
+            if (key.includes("prensa") || key.includes("estamp") || key.includes("dobra")) return "PRENSA";
+            if ((key.includes("torno") || key.includes("usin") || key.includes("cnc")) && (key.includes("willian") || key.includes("william"))) return "TORNO_CNC_WILLIAN";
+            if ((key.includes("torno") || key.includes("usin") || key.includes("cnc")) && key.includes("henrique")) return "TORNO_CNC_HENRIQUE";
+            if (key.includes("torno") || key.includes("usin") || key.includes("cnc")) return "TORNO_CNC";
+            if (key.includes("injet") || key.includes("plast")) return "INJETORA";
+            if (key.includes("banho") || key.includes("zinc") || key.includes("quim")) return "BANHO_QUIMICO";
+            if (key.includes("retratil") || key.includes("conificar")) return "MONTAGEM_RETRATIL";
+            if (key.includes("montagem") || key.includes("furar") || key.includes("estrutur") || key.includes("movel")) return "MONTAGEM";
+            if (key.includes("corte") || key.includes("chapa")) return "CORTE";
+            return null;
+          };
+
+          const explicitSectorId = (p as any).sectorId;
+          if (hasValue(explicitSectorId)) {
+            return String(explicitSectorId) === sIdStr;
+          }
+
+          const explicitSectorName = String((p as any).sectorName || "").trim();
+          if (explicitSectorName) {
+            const labelSectorId = findSectorByLabel(explicitSectorName);
+            if (labelSectorId) return labelSectorId === sIdStr;
+            const inferredRole = inferRole(explicitSectorName);
+            return inferredRole
+              ? findUniqueSectorByRole(inferredRole) === sIdStr
+              : false;
+          }
+
+          if (p.associatedBatchId && productionBatches?.length) {
+            const batch = productionBatches.find(
+              (candidate) => candidate && candidate.id === p.associatedBatchId,
+            );
+            const batchSectorId = (batch as any)?.sectorId;
+            if (hasValue(batchSectorId)) {
+              return String(batchSectorId) === sIdStr;
+            }
+          }
+
           const rawOp = String(p.operatorId || "").trim().toLowerCase();
           const baseOp = rawOp.split(" - ")[0].trim();
-          const foundUser = (users || []).find((u) => {
-            if (!u) return false;
-            const uid = String(u.id || "").toLowerCase();
-            const uname = String(u.name || "").toLowerCase();
+          const foundUser = (users || []).find((user) => {
+            if (!user) return false;
+            const userId = String(user.id || "").toLowerCase();
+            const userName = String(user.name || "").toLowerCase();
             return (
-              (uid && (uid === baseOp || uid === rawOp || rawOp.includes(uid))) ||
-              (uname && (uname === baseOp || uname === rawOp || rawOp.includes(uname)))
+              (userId && (userId === baseOp || userId === rawOp || rawOp.includes(userId))) ||
+              (userName && (userName === baseOp || userName === rawOp || rawOp.includes(userName)))
             );
           });
 
-          if (foundUser) {
-            // Check user's assigned sectorIds
-            if (Array.isArray(foundUser.sectorIds) && foundUser.sectorIds.length > 0) {
-              const userSectorIdsStr = foundUser.sectorIds.map(String);
-              if (userSectorIdsStr.includes(sIdStr)) {
-                return true;
-              }
-              // If user is explicitly assigned to specific sectors and this sector is not among them, do not match
-              return false;
-            }
-
-            // Role-based matching for specialized roles
-            if (foundUser.role) {
-              const r = String(foundUser.role);
-              if (r === "SOLDA" && sNameNorm.includes("solda")) return true;
-              if (r === "PINTURA" && (sNameNorm.includes("pintura") || sNameNorm.includes("epoxi"))) return true;
-              if (r === "EMBALAGEM" && (sNameNorm.includes("embalag") || sNameNorm.includes("exped"))) return true;
-              if (r === "QUALIDADE" && (sNameNorm.includes("qualidade") || sNameNorm.includes("inspec"))) return true;
-              if (r === "CORTE_LASER" && (sNameNorm.includes("corte") || sNameNorm.includes("laser"))) return true;
-              if (r === "PRENSA_EDUARDO" && (sNameNorm.includes("eduardo") || (sNameNorm.includes("prensa") && !sNameNorm.includes("rafael")))) return true;
-              if (r === "PRENSA_RAFAEL" && (sNameNorm.includes("rafael") || (sNameNorm.includes("prensa") && !sNameNorm.includes("eduardo")))) return true;
-              if ((r === "TORNO_CNC_WILLIAN" || r === "TORNO_CNC_HENRIQUE") && (sNameNorm.includes("torno") || sNameNorm.includes("cnc"))) return true;
-              if (r === "INJETORA" && sNameNorm.includes("injetora")) return true;
-              if (r === "BANHO_QUIMICO" && (sNameNorm.includes("banho") || sNameNorm.includes("quimico") || sNameNorm.includes("zincagem"))) return true;
-              if (r === "MONTAGEM_RETRATIL" && (sNameNorm.includes("retratil") || sNameNorm.includes("retrátil") || sNameNorm.includes("montagem"))) return true;
-            }
+          const assignedSectorIds = Array.isArray(foundUser?.sectorIds)
+            ? foundUser.sectorIds.map(String).filter(Boolean)
+            : [];
+          if (assignedSectorIds.length === 1) {
+            return assignedSectorIds[0] === sIdStr;
+          }
+          if (assignedSectorIds.length > 1) {
+            allowedSectorIds = new Set(assignedSectorIds);
           }
 
-          // 3. Employee table matching
-          if (employees && employees.length > 0) {
-            const emp = employees.find((e) => {
-              if (!e) return false;
-              const eid = String(e.id || "").toLowerCase();
-              const ename = String(e.name || "").toLowerCase();
+          const taskType = String(p.type || "").trim();
+          const taskTypeKey = normalizeKey(taskType);
+          if (taskTypeKey && taskTypeKey !== "producao") {
+            const exactTypeSectorId = findSectorByLabel(taskType);
+            if (exactTypeSectorId) return exactTypeSectorId === sIdStr;
+            const typeRole = inferRole(taskType);
+            if (typeRole) return findUniqueSectorByRole(typeRole) === sIdStr;
+          }
+
+          const processName = String(p.processName || "").trim();
+          if (processName) {
+            const exactProcessSectorId = findSectorByLabel(processName);
+            if (exactProcessSectorId) return exactProcessSectorId === sIdStr;
+            const processRole = inferRole(processName);
+            if (processRole) return findUniqueSectorByRole(processRole) === sIdStr;
+          }
+
+          if (employees?.length) {
+            const employee = employees.find((candidate) => {
+              if (!candidate) return false;
+              const employeeId = String(candidate.id || "").toLowerCase();
+              const employeeName = String(candidate.name || "").toLowerCase();
               return (
-                (eid && eid === baseOp) ||
-                (ename && (ename === baseOp || rawOp.includes(ename)))
+                (employeeId && employeeId === baseOp) ||
+                (employeeName && (employeeName === baseOp || rawOp.includes(employeeName)))
               );
             });
-            if (emp && emp.sectorId && String(emp.sectorId) === sIdStr) {
-              return true;
+            const employeeSectorId = employee?.sectorId;
+            if (hasValue(employeeSectorId)) {
+              return String(employeeSectorId) === sIdStr;
             }
           }
 
-          // 4. Direct sectorName match on task
-          const pSecName = String((p as any).sectorName || "").toLowerCase().trim();
-          if (pSecName && (pSecName === sNameNorm || sNameNorm.includes(pSecName) || pSecName.includes(sNameNorm))) return true;
-
-          // 5. Associated Batch sector match
-          if (p.associatedBatchId && productionBatches && productionBatches.length > 0) {
-            const batch = productionBatches.find((b) => b && b.id === p.associatedBatchId);
-            if (batch && (batch as any).sectorId && String((batch as any).sectorId) === sIdStr) return true;
+          const userRole = foundUser?.role ? String(foundUser.role) : "";
+          const userRoleKey = normalizeKey(userRole);
+          if (userRoleKey && userRoleKey !== "producao") {
+            const roleSectorId = findUniqueSectorByRole(userRole);
+            if (roleSectorId) return roleSectorId === sIdStr;
           }
 
-          // 6. Process name matching
-          const pProc = String(p.processName || "").toLowerCase().trim();
-          if (pProc) {
-            if (pProc === sNameNorm || sNameNorm.includes(pProc) || pProc.includes(sNameNorm)) return true;
-            if (sNameNorm.includes("solda") && pProc.includes("solda")) return true;
-            if (sNameNorm.includes("corte") && (pProc.includes("corte") || pProc.includes("cortar") || pProc.includes("laser") || pProc.includes("chapa"))) return true;
-            if (sNameNorm.includes("pintura") && (pProc.includes("pint") || pProc.includes("verniz") || pProc.includes("epóxi") || pProc.includes("epoxi"))) return true;
-            if (sNameNorm.includes("montagem") && (pProc.includes("mont") || pProc.includes("furar") || pProc.includes("conificar") || pProc.includes("estrutur") || pProc.includes("móvel") || pProc.includes("movel"))) return true;
-            if (sNameNorm.includes("qualidade") && (pProc.includes("qualidade") || pProc.includes("inspe") || pProc.includes("revisão") || pProc.includes("libera"))) return true;
-            if (sNameNorm.includes("embalag") && (pProc.includes("embal") || pProc.includes("etiquet") || pProc.includes("exped") || pProc.includes("caixa"))) return true;
-            if ((sNameNorm.includes("retratil") || sNameNorm.includes("retrátil")) && (pProc.includes("retratil") || pProc.includes("retrátil") || pProc.includes("conificar") || pProc.includes("furar"))) return true;
-            if (sNameNorm.includes("prensa") && (pProc.includes("prensa") || pProc.includes("estamp") || pProc.includes("dobra"))) return true;
-            if (sNameNorm.includes("torno") && (pProc.includes("torno") || pProc.includes("usin") || pProc.includes("cnc"))) return true;
-            if (sNameNorm.includes("injetora") && (pProc.includes("injet") || pProc.includes("plast"))) return true;
-            if (sNameNorm.includes("banho") && (pProc.includes("banho") || pProc.includes("zinc") || pProc.includes("quim"))) return true;
+          const operatorRole = inferRole(rawOp);
+          if (operatorRole) {
+            return findUniqueSectorByRole(operatorRole) === sIdStr;
           }
-
-          // 7. Task Type matching
-          const pType = String(p.type || "").toLowerCase().trim();
-          if (pType && pType !== "producao") {
-            if (pType === sNameNorm || pType === sRoleNorm || pType === sCodeNorm) return true;
-            if (sNameNorm.includes("corte") && (pType.includes("corte") || pType === "corte_laser")) return true;
-            if (sNameNorm.includes("solda") && pType.includes("solda")) return true;
-            if (sNameNorm.includes("pintura") && pType.includes("pintura")) return true;
-            if (sNameNorm.includes("embalagem") && pType.includes("embalagem")) return true;
-            if (sNameNorm.includes("qualidade") && pType.includes("qualidade")) return true;
-            if (sNameNorm.includes("montagem") && (pType.includes("montagem") || pType.includes("retratil") || pType.includes("retrátil"))) return true;
-            if (sNameNorm.includes("prensa") && (pType.includes("prensa") || pType.includes("estamp"))) return true;
-            if (sNameNorm.includes("torno") && (pType.includes("torno") || pType.includes("cnc"))) return true;
-            if (sNameNorm.includes("injetora") && pType.includes("injetora")) return true;
-            if (sNameNorm.includes("banho") && (pType.includes("banho") || pType.includes("quimico"))) return true;
-          }
-
-          // 8. Operator string keywords (e.g., "flavio - Solda" or "cyrne soldador")
-          if (sNameNorm.includes("solda") && rawOp.includes("solda")) return true;
-          if (sNameNorm.includes("corte") && (rawOp.includes("corte") || rawOp.includes("laser"))) return true;
-          if (sNameNorm.includes("pintura") && rawOp.includes("pintura")) return true;
-          if (sNameNorm.includes("montagem") && rawOp.includes("montagem")) return true;
-          if (sNameNorm.includes("embalagem") && rawOp.includes("embalagem")) return true;
-          if (sNameNorm.includes("qualidade") && rawOp.includes("qualidade")) return true;
 
           return false;
         },
@@ -422,7 +535,7 @@ function RealTimeFactoryMonitoringContent({
   // Distinct active operators count
   const activeOperatorsList = useMemo(() => {
     const map = new Map<string, ActiveTask[]>();
-    (activePacks || []).forEach((pack) => {
+    currentActivePacks.forEach((pack) => {
       if (!pack) return;
       const op = String(pack.operatorId || "Não identificado");
       if (!map.has(op)) {
@@ -434,18 +547,21 @@ function RealTimeFactoryMonitoringContent({
       operatorId,
       tasks,
     }));
-  }, [activePacks]);
+  }, [currentActivePacks]);
 
   // Overall statistics
-  const totalActive = activePacks.length;
+  const totalActive = currentActivePacks.length;
   const longRunningCount = useMemo(() => {
-    return activePacks.filter((p) => getElapsedHours(p.startTime) >= 2).length;
-  }, [activePacks, now]);
+    return currentActivePacks.filter((p) => getElapsedHours(p.startTime) >= 2).length;
+  }, [currentActivePacks]);
 
-  const activeSectorsCount = useMemo(() => {
-    const typesSet = new Set(activePacks.map((p) => p.type).filter(Boolean));
-    return typesSet.size;
-  }, [activePacks]);
+  const activeSectorsCount = useMemo(
+    () =>
+      activeTenantSectors.filter((sector) =>
+        currentActivePacks.some((pack) => sector.matchesPack(pack)),
+      ).length,
+    [currentActivePacks, activeTenantSectors],
+  );
 
   // Recent logs today
   const todayLogs = useMemo(() => {
@@ -699,6 +815,8 @@ function RealTimeFactoryMonitoringContent({
 
               // Find matching active packs for this sector using cat.matchesPack
               const sectorPacks = filteredActivePacks.filter((p) => cat.matchesPack(p));
+              const currentSectorPacks = sectorPacks.filter((pack) => !isStaleActivity(pack));
+              const staleSectorPacks = sectorPacks.filter(isStaleActivity);
 
               // If filtering by sector or search term and this sector has 0 packs, hide it unless "ALL" filter
               if (sectorPacks.length === 0 && (selectedSectorFilter !== "ALL" || searchTerm.trim() !== "" || onlyLongDuration)) {
@@ -726,19 +844,24 @@ function RealTimeFactoryMonitoringContent({
                               ? "bg-emerald-100 text-emerald-800 border border-emerald-200" 
                               : "bg-slate-200 text-slate-600"
                           }`}>
-                            {sectorPacks.length} {sectorPacks.length === 1 ? "ativo" : "ativos"}
+                            {currentSectorPacks.length} ativos{staleSectorPacks.length > 0 ? ` • ${staleSectorPacks.length} antigos` : ""}
                           </span>
                         </h3>
                         <p className="text-[11px] text-slate-500 font-medium">{cat.subtitle}</p>
                       </div>
                     </div>
 
-                    {sectorPacks.length > 0 && (
+                    {currentSectorPacks.length > 0 ? (
                       <div className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                         Em Operação
                       </div>
-                    )}
+                    ) : staleSectorPacks.length > 0 ? (
+                      <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                        <AlertTriangle size={14} />
+                        Validar registro antigo
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Cards Grid */}
@@ -756,15 +879,18 @@ function RealTimeFactoryMonitoringContent({
                         {sectorPacks.map((pack) => {
                           const item = items.find((i) => i.id === pack.itemId);
                           const elapsedHrs = getElapsedHours(pack.startTime);
-                          const isWarning = elapsedHrs >= 2;
-                          const isCritical = elapsedHrs >= 4;
+                          const isStale = isStaleActivity(pack);
+                          const isWarning = !isStale && elapsedHrs >= 2;
+                          const isCritical = !isStale && elapsedHrs >= 4;
 
                           return (
                             <div
                               key={pack.id}
                               onClick={() => onOpenModal(pack)}
                               className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3 relative overflow-hidden group shadow-2xs hover:shadow-md ${
-                                isCritical
+                                isStale
+                                  ? "border-amber-400 bg-amber-50/50 hover:bg-amber-50"
+                                  : isCritical
                                   ? "border-rose-400 bg-rose-50/40 hover:bg-rose-50/80"
                                   : isWarning
                                   ? "border-amber-400 bg-amber-50/40 hover:bg-amber-50/80"
@@ -772,13 +898,17 @@ function RealTimeFactoryMonitoringContent({
                               }`}
                             >
                             {/* Warning Indicator Ribbon */}
-                            {isWarning && (
+                            {isStale ? (
+                              <div className="absolute top-0 right-0 text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl shadow-2xs text-white bg-amber-600">
+                                ⚠️ Aberto há mais de 24h • validar
+                              </div>
+                            ) : isWarning ? (
                               <div className={`absolute top-0 right-0 text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl shadow-2xs text-white ${
                                 isCritical ? "bg-rose-600" : "bg-amber-500"
                               }`}>
                                 {isCritical ? "🚨 +4h Rodando" : "⚠️ +2h Operando"}
                               </div>
-                            )}
+                            ) : null}
 
                             <div>
                               {/* Lote / Batch Pill */}
@@ -835,8 +965,8 @@ function RealTimeFactoryMonitoringContent({
 
                               <div className="flex flex-col items-end shrink-0">
                                 <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                  Tempo Decorrido
+                                  <span className={`w-1.5 h-1.5 rounded-full ${isStale ? "bg-amber-500" : "bg-emerald-500 animate-pulse"}`}></span>
+                                  {isStale ? "Sem encerramento recente" : "Tempo Decorrido"}
                                 </span>
                                 <span className={`font-mono font-black text-xs ${
                                   isCritical ? "text-rose-700 animate-pulse" : isWarning ? "text-amber-700" : cat.textAccent
@@ -870,14 +1000,52 @@ function RealTimeFactoryMonitoringContent({
           {activeTenantSectors.map((cat) => {
             const CAT_ICON = cat.icon || Layers;
             const activeSectorPacks = (activePacks || []).filter((p) => cat.matchesPack(p));
+            const currentSectorPacks = activeSectorPacks.filter((pack) => !isStaleActivity(pack));
+            const staleSectorPacks = activeSectorPacks.filter(isStaleActivity);
+            const isOperating = currentSectorPacks.length > 0;
+            const hasStaleActivity = staleSectorPacks.length > 0;
 
-            const isOperating = activeSectorPacks.length > 0;
+            const renderSectorTask = (pack: ActiveTask, isStale: boolean) => {
+              const item = (items || []).find((candidate) => candidate && candidate.id === pack.itemId);
+              return (
+                <div
+                  key={pack.id}
+                  onClick={() => onOpenModal(pack)}
+                  className={`p-3 rounded-xl cursor-pointer transition flex items-center justify-between gap-2 ${
+                    isStale
+                      ? "bg-amber-50 border border-amber-300 hover:border-amber-500"
+                      : "bg-slate-50 border border-slate-200 hover:border-blue-400"
+                  }`}
+                >
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-bold text-slate-800 text-xs truncate max-w-[160px]">
+                      {pack.partName || pack.customProductName || item?.name || "Peça em produção"}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      Op: {pack.operatorId || "Operador"}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className={`font-mono font-bold text-xs block ${isStale ? "text-amber-700" : "text-blue-600"}`}>
+                      {formatLiveElapsed(pack.startTime)}
+                    </span>
+                    <span className={`text-[9px] uppercase font-extrabold ${isStale ? "text-amber-700" : "text-slate-400"}`}>
+                      {isStale ? "Validar apontamento" : "Rodando"}
+                    </span>
+                  </div>
+                </div>
+              );
+            };
 
             return (
               <div
                 key={cat.key}
                 className={`bg-white rounded-2xl border p-5 shadow-xs flex flex-col justify-between gap-4 transition ${
-                  isOperating ? "border-emerald-300 ring-2 ring-emerald-500/10" : "border-slate-200"
+                  isOperating
+                    ? "border-emerald-300 ring-2 ring-emerald-500/10"
+                    : hasStaleActivity
+                    ? "border-amber-300 ring-2 ring-amber-500/10"
+                    : "border-slate-200"
                 }`}
               >
                 <div className="flex items-start justify-between">
@@ -894,46 +1062,40 @@ function RealTimeFactoryMonitoringContent({
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
                     isOperating
                       ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                      : hasStaleActivity
+                      ? "bg-amber-100 text-amber-800 border border-amber-300"
                       : "bg-slate-100 text-slate-500 border border-slate-200"
                   }`}>
-                    <span className={`w-2 h-2 rounded-full ${isOperating ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`}></span>
-                    {isOperating ? "EM OPERAÇÃO" : "OCIOSO"}
+                    <span className={`w-2 h-2 rounded-full ${
+                      isOperating
+                        ? "bg-emerald-500 animate-pulse"
+                        : hasStaleActivity
+                        ? "bg-amber-500"
+                        : "bg-slate-400"
+                    }`}></span>
+                    {isOperating ? "EM OPERAÇÃO" : hasStaleActivity ? "VALIDAR REGISTRO" : "OCIOSO"}
                   </span>
                 </div>
 
-                {isOperating ? (
+                {isOperating && (
                   <div className="space-y-2 border-t border-slate-100 pt-3">
                     <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">
-                      Tarefas em Execução ({activeSectorPacks.length}):
+                      Tarefas em Execução ({currentSectorPacks.length}):
                     </span>
-                    {activeSectorPacks.map((pack) => {
-                      const item = (items || []).find((i) => i && i.id === pack.itemId);
-                      return (
-                        <div
-                          key={pack.id}
-                          onClick={() => onOpenModal(pack)}
-                          className="bg-slate-50 border border-slate-200 hover:border-blue-400 p-3 rounded-xl cursor-pointer transition flex items-center justify-between gap-2"
-                        >
-                          <div className="flex flex-col">
-                            <span className="font-bold text-slate-800 text-xs truncate max-w-[160px]">
-                              {pack.partName || pack.customProductName || item?.name || "Peça em produção"}
-                            </span>
-                            <span className="text-[10px] text-slate-500 font-medium">
-                              Op: {pack.operatorId || "Operador"}
-                            </span>
-                          </div>
-
-                          <div className="text-right shrink-0">
-                            <span className="font-mono font-bold text-xs text-blue-600 block">
-                              {formatLiveElapsed(pack.startTime)}
-                            </span>
-                            <span className="text-[9px] text-slate-400 uppercase font-extrabold">Rodando</span>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {currentSectorPacks.map((pack) => renderSectorTask(pack, false))}
                   </div>
-                ) : (
+                )}
+
+                {hasStaleActivity && (
+                  <div className="space-y-2 border-t border-amber-200 pt-3">
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[10px] font-bold text-amber-800">
+                      Apontamentos abertos há {STALE_ACTIVITY_THRESHOLD_HOURS}h ou mais. Confirme se foram encerrados.
+                    </div>
+                    {staleSectorPacks.map((pack) => renderSectorTask(pack, true))}
+                  </div>
+                )}
+
+                {!isOperating && !hasStaleActivity && (
                   <div className="p-4 bg-slate-50 rounded-xl text-center border border-dashed border-slate-200">
                     <p className="text-xs font-bold text-slate-500">Nenhuma máquina ocupada</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">Posto pronto para novos apontamentos de lote.</p>
