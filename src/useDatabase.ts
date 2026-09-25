@@ -51,6 +51,7 @@ import {
   doc,
   deleteDoc as firestoreDeleteDoc,
   writeBatch,
+  runTransaction,
   updateDoc as updateDocFirebase,
   disableNetwork,
   enableNetwork,
@@ -63,6 +64,7 @@ import {
   DEMO_USER,
   isDemoModeEnabled,
 } from "./demoData";
+import { isFullySeparated } from "./expeditionMetrics";
 
 function cleanUndefined<T>(obj: T): T {
   if (obj === null || typeof obj !== "object") {
@@ -256,7 +258,7 @@ const BILLING_LOAD_STATUSES = new Set<Carga["status"]>([
 
 const ROLE_SCOPED_LISTENER_COLLECTIONS: Record<string, readonly string[]> = {
   PINTURA: ["items", "orders", "attributes", "activePacks", "stocks", "notifications", "sectors"],
-  EMBALAGEM: ["items", "orders", "attributes", "activePacks", "logs", "productionSteps", "stocks", "notifications", "sectors"],
+  EMBALAGEM: ["items", "orders", "attributes", "activePacks", "logs", "productionSteps", "stocks", "notifications", "sectors", "cargas"],
   TORNO_CNC_WILLIAN: ["items", "orders", "activePacks", "logs", "coilCuttingPlans", "customers", "productionBatches", "notifications", "sectors"],
   TORNO_CNC_HENRIQUE: ["items", "orders", "activePacks", "logs", "coilCuttingPlans", "customers", "productionBatches", "notifications", "sectors"],
   CORTE_LASER: ["items", "activePacks", "nestTasks", "sheetStocks", "stocks", "notifications", "sectors"],
@@ -599,6 +601,7 @@ export function useDatabase(currentUser?: User | null) {
     if (isQuota) {
       setQuotaExceeded(true);
       quotaExceededRef.current = true;
+      setCargasSync((previous) => ({ ...previous, state: "cache" }));
       setPermissionError(
         `Quota de leitura do Firestore atingida ao carregar "${collectionName}". Os dados já carregados foram preservados; a tela não será tratada como vazia.`,
       );
@@ -713,6 +716,9 @@ export function useDatabase(currentUser?: User | null) {
     [],
   );
   const [cargas, setCargas] = useState<Carga[]>([]);
+  const [cargasSync, setCargasSync] = useState<{ state: "loading" | "live" | "cache" | "error"; updatedAt: number | null }>(
+    { state: isDemoMode ? "live" : "loading", updatedAt: null },
+  );
   const [expeditionRoutes, setExpeditionRoutes] = useState<ExpeditionRoute[]>([]);
   const [productionSchedules, setProductionSchedules] = useState<
     ProductionSchedule[]
@@ -808,6 +814,7 @@ export function useDatabase(currentUser?: User | null) {
       collectionName: string,
       onNext: (snapshot: any) => void,
       onError: (error: any) => void,
+      includeMetadataChanges = false,
     ) => {
       if (
         roleScopedCollections &&
@@ -815,7 +822,7 @@ export function useDatabase(currentUser?: User | null) {
       ) {
         return () => {};
       }
-      return onSnapshot(scopedCollection(collectionName), onNext, onError);
+      return onSnapshot(scopedCollection(collectionName), { includeMetadataChanges }, onNext, onError);
     };
 
     const unsubTenants = onSnapshot(
@@ -1107,9 +1114,20 @@ export function useDatabase(currentUser?: User | null) {
         setCoilCuttingPlans(snap.docs.map((d) => d.data() as CoilCuttingPlan)),
       (err) => handleSnapshotError("coilCuttingPlans", err),
     );
+    setCargasSync({ state: "loading", updatedAt: null });
     const unsubCargas = listenTenantCollection("cargas",
-      (snap) => setCargas(snap.docs.map((d) => d.data() as Carga)),
-      (err) => handleSnapshotError("cargas", err),
+      (snap) => {
+        setCargas(snap.docs.map((d) => d.data() as Carga));
+        setCargasSync((previous) => ({
+          state: snap.metadata.fromCache || snap.metadata.hasPendingWrites ? "cache" : "live",
+          updatedAt: snap.metadata.fromCache || snap.metadata.hasPendingWrites ? previous.updatedAt : Date.now(),
+        }));
+      },
+      (err) => {
+        setCargasSync((previous) => ({ ...previous, state: "error" }));
+        handleSnapshotError("cargas", err);
+      },
+      true,
     );
     const unsubExpeditionRoutes = listenTenantCollection("expeditionRoutes",
       (snap) => setExpeditionRoutes(snap.docs.map((d) => d.data() as ExpeditionRoute)),
@@ -2406,44 +2424,40 @@ export function useDatabase(currentUser?: User | null) {
         const preBillingChanged = nextPreBillingStatus !== carga.preBillingStatus;
         if (!statusChanged && !preBillingChanged) continue;
 
-        const updated: Carga = {
-          ...carga,
-          status: nextStatus,
-        };
+        await runTransaction(db, async (transaction) => {
+          const ref = doc(db, "cargas", carga.id);
+          const snapshot = await transaction.get(ref);
+          if (!snapshot.exists()) return;
+          const live = snapshot.data() as Carga;
+          // Os itens podem ter mudado enquanto calculávamos o faturamento.
+          // Nesse caso o próximo snapshot recalcula o status correto.
+          if (JSON.stringify(live.orderIds) !== JSON.stringify(carga.orderIds) ||
+              JSON.stringify(live.orderQuantities) !== JSON.stringify(carga.orderQuantities)) return;
 
-        if (statusChanged) {
-          const statusLabel =
-            nextStatus === "FATURADA_COMPLETA"
-              ? "FATURADA COMPLETA"
-              : nextStatus === "FATURADA_PARCIAL"
-                ? "FATURADA PARCIAL"
-                : nextStatus;
-          updated.auditTrail = [
-            ...(carga.auditTrail || []),
-            {
-              timestamp: Date.now(),
-              userId: "system",
-              userName: "Sistema",
-              action: `Status atualizado automaticamente para ${statusLabel}`,
-              reason: "Quantidade faturada acumulada dos pedidos vinculados à carga",
-            },
-          ];
-        }
+          const liveIsBilling = BILLING_LOAD_STATUSES.has(live.status);
+          const liveStatus = desiredStatus || (liveIsBilling ? live.preBillingStatus || "ABERTA" : live.status);
+          const livePreBilling = desiredStatus
+            ? liveIsBilling
+              ? live.preBillingStatus || "ABERTA"
+              : live.status === "FATURADA" ? "DESPACHADA" : live.status
+            : undefined;
+          if (liveStatus === live.status && livePreBilling === live.preBillingStatus) return;
 
-        if (desiredStatus) {
-          updated.preBillingStatus = nextPreBillingStatus;
-        } else {
-          delete updated.preBillingStatus;
-        }
-
-        const firestoreUpdated: any = cleanUndefined(updated);
-        if (!desiredStatus) firestoreUpdated.preBillingStatus = deleteField();
-        await setDoc(doc(db, "cargas", carga.id), firestoreUpdated, { merge: true });
-        if (!cancelled) {
-          setCargas((previous) =>
-            previous.map((item) => (item.id === carga.id ? updated : item)),
-          );
-        }
+          const statusLabel = liveStatus === "FATURADA_COMPLETA"
+            ? "FATURADA COMPLETA"
+            : liveStatus === "FATURADA_PARCIAL" ? "FATURADA PARCIAL" : liveStatus;
+          transaction.update(ref, {
+            status: liveStatus,
+            preBillingStatus: livePreBilling ?? deleteField(),
+            ...(liveStatus !== live.status ? {
+              auditTrail: [...(live.auditTrail || []), {
+                timestamp: Date.now(), userId: "system", userName: "Sistema",
+                action: `Status atualizado automaticamente para ${statusLabel}`,
+                reason: "Quantidade faturada acumulada dos pedidos vinculados à carga",
+              }],
+            } : {}),
+          });
+        });
       }
     };
 
@@ -2859,6 +2873,7 @@ export function useDatabase(currentUser?: User | null) {
     },
 
     cargas: filteredCargas,
+    cargasSync,
     addCarga: async (carga: Omit<Carga, "id"> & { id?: string }) => {
       const id =
         carga.id ||
@@ -2868,9 +2883,80 @@ export function useDatabase(currentUser?: User | null) {
     },
     updateCarga: async (carga: Carga) => {
       const current = cargas.find((c) => c.id === carga.id);
-      if (current && JSON.stringify(current) === JSON.stringify(carga)) return;
-      await setDoc(doc(db, "cargas", carga.id), cleanUndefined(carga), {
-        merge: true,
+      if (!current) throw new Error("A carga não está mais disponível. Atualize a tela.");
+      const changed = Object.fromEntries(
+        Object.entries(carga).filter(([key, value]) =>
+          key !== "auditTrail" && value !== undefined &&
+          JSON.stringify(value) !== JSON.stringify((current as any)[key]),
+        ),
+      );
+      const newAudit = (carga.auditTrail || []).slice((current.auditTrail || []).length);
+      if (Object.keys(changed).length === 0 && newAudit.length === 0) return;
+      await runTransaction(db, async (transaction) => {
+        const ref = doc(db, "cargas", carga.id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error("A carga foi excluída. Atualize a tela.");
+        const live = snapshot.data() as Carga;
+        for (const key of Object.keys(changed)) {
+          if (JSON.stringify((live as any)[key]) !== JSON.stringify((current as any)[key])) {
+            throw new Error("A carga foi alterada por outra pessoa. Confira os dados atualizados e tente novamente.");
+          }
+        }
+        transaction.update(ref, {
+          ...cleanUndefined(changed),
+          ...(newAudit.length ? { auditTrail: [...(live.auditTrail || []), ...newAudit] } : {}),
+        });
+      });
+    },
+    updateCargaSeparation: async (id: string, orderId: number, value: number, actor: User) => {
+      if (!Number.isFinite(value) || !Number.isInteger(value)) throw new Error("Informe uma quantidade inteira.");
+      await runTransaction(db, async (transaction) => {
+        const ref = doc(db, "cargas", id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error("Carga não encontrada.");
+        const carga = snapshot.data() as Carga;
+        if (!["LIBERADA", "EM_SEPARACAO", "FATURADA_PARCIAL", "PRONTA"].includes(carga.status)) {
+          throw new Error("Esta carga não aceita novos apontamentos de separação.");
+        }
+        if (!(carga.orderIds || []).includes(orderId)) throw new Error("O item não está mais vinculado a esta carga.");
+        const allocated = Number(carga.orderQuantities?.[orderId] || 0);
+        if (value < 0 || value > allocated) throw new Error(`Quantidade permitida: 0 a ${allocated}.`);
+        const updates: Record<string, unknown> = {
+          [`separatedQuantities.${orderId}`]: value,
+          auditTrail: [...(carga.auditTrail || []), {
+            timestamp: Date.now(), userId: actor.id, userName: actor.name,
+            action: `Separação do item ${orderId} ajustada para ${value} un`,
+          }],
+        };
+        if (carga.status === "LIBERADA" && value > 0) updates.status = "EM_SEPARACAO";
+        if (carga.status === "PRONTA" && value < allocated) updates.status = "EM_SEPARACAO";
+        if (carga.status === "FATURADA_PARCIAL" && carga.preBillingStatus === "PRONTA" && value < allocated) {
+          updates.preBillingStatus = "EM_SEPARACAO";
+        }
+        transaction.update(ref, updates);
+      });
+    },
+    markCargaReady: async (id: string, actor: User) => {
+      await runTransaction(db, async (transaction) => {
+        const ref = doc(db, "cargas", id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error("Carga não encontrada.");
+        const carga = snapshot.data() as Carga;
+        if (!["LIBERADA", "EM_SEPARACAO", "FATURADA_PARCIAL"].includes(carga.status)) {
+          throw new Error("O status da carga mudou. Atualize a tela.");
+        }
+        if (!isFullySeparated(carga)) {
+          throw new Error("A carga só pode ser marcada pronta após separar todas as unidades.");
+        }
+        transaction.update(ref, {
+          ...(carga.status === "FATURADA_PARCIAL"
+            ? { preBillingStatus: "PRONTA" }
+            : { status: "PRONTA" }),
+          auditTrail: [...(carga.auditTrail || []), {
+            timestamp: Date.now(), userId: actor.id, userName: actor.name,
+            action: "Carga marcada como pronta pela embalagem",
+          }],
+        });
       });
     },
     deleteCarga: async (id: string) => {
