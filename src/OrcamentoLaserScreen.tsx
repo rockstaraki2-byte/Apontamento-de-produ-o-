@@ -2081,9 +2081,14 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
               </button>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Selecione quais valores devem ser exibidos nas colunas e totais do relatório oficial em PDF enviado para o cliente:
-            </p>
+            <div className="space-y-1">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Selecione quais valores devem aparecer nas colunas e nos totais do PDF.
+              </p>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Compartilhar PDF abre o menu do aparelho para escolher WhatsApp, e-mail ou outro app. Se o navegador não aceitar o compartilhamento de arquivos, o PDF será baixado para você anexar manualmente.
+              </p>
+            </div>
 
             <div className="space-y-2.5">
               <label
