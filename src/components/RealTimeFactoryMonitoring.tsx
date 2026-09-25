@@ -255,22 +255,24 @@ function RealTimeFactoryMonitoringContent({
           const normalizeKey = (value: unknown) =>
             String(value ?? "")
               .normalize("NFD")
-              .replace(/[\\u0300-\\u036f]/g, "")
+              .replace(/[\u0300-\u036f]/g, "")
               .toLowerCase()
               .replace(/[^a-z0-9]+/g, "_")
               .replace(/^_+|_+$/g, "");
           const hasValue = (value: unknown) =>
             value !== undefined && value !== null && String(value).trim() !== "";
 
-          const availableSectors = mergedSectorsList.filter(
-            (sector) =>
-              Boolean(sector) &&
-              (!allowedSectorIds || allowedSectorIds.has(String(sector.id))),
-          );
+          let allowedSectorIds: Set<string> | undefined;
+          const availableSectors = () =>
+            mergedSectorsList.filter(
+              (sector) =>
+                Boolean(sector) &&
+                (!allowedSectorIds || allowedSectorIds.has(String(sector.id))),
+            );
           const findUniqueSectorId = (
             predicate: (sector: Sector) => boolean,
           ): string | null => {
-            const matches = availableSectors.filter(predicate);
+            const matches = availableSectors().filter(predicate);
             return matches.length === 1 ? String(matches[0].id) : null;
           };
 
@@ -405,7 +407,6 @@ function RealTimeFactoryMonitoringContent({
             );
           });
 
-          let allowedSectorIds: Set<string> | undefined;
           const assignedSectorIds = Array.isArray(foundUser?.sectorIds)
             ? foundUser.sectorIds.map(String).filter(Boolean)
             : [];
