@@ -542,20 +542,100 @@ function Welcome({
         details.orderCodes.forEach(addOrderByCode);
       }
 
-      // Metadados estruturados são a fonte principal. Só analisa o texto em
-      // notificações antigas que não tenham vínculo explícito com pedidos.
+      // Avisos antigos não tinham orderId estruturado. Recupera o vínculo
+      // somente pelos logs do mesmo apontamento, sem inferir por pedidos que
+      // compartilham o produto ou aparecem numa lista antiga da mensagem.
+      if (
+        linkedOrders.size === 0 &&
+        n.message.toLowerCase().includes("embalagem")
+      ) {
+        const messageLower = n.message.toLowerCase();
+        const notificationItem = db.items
+          .filter(
+            (item) =>
+              item.name?.trim() &&
+              messageLower.includes(item.name.toLowerCase()),
+          )
+          .sort((a, b) => b.name.length - a.name.length)[0];
+
+        const operatorIdInMessage = n.message.match(
+          /\bdo Operador\s+(.+?)(?:\s+\(Pedidos:|$)/i,
+        )?.[1]?.trim();
+        const operatorNameInMessage = n.message.match(
+          /\bpor\s+(.+?)(?:\s+\(Pedidos:|$)/i,
+        )?.[1]?.trim();
+        const operatorLabel = operatorIdInMessage || operatorNameInMessage;
+        const matchedOperator = operatorLabel
+          ? db.users.find(
+              (user) =>
+                user.id === operatorLabel ||
+                user.name.toLowerCase() === operatorLabel.toLowerCase(),
+            )
+          : undefined;
+        const eventOperatorId =
+          matchedOperator?.id ||
+          operatorIdInMessage ||
+          (operatorNameInMessage?.toLowerCase() ===
+          currentUser.name.toLowerCase()
+            ? currentUser.id
+            : undefined);
+
+        if (notificationItem) {
+          const ordersById = new Map(
+            db.orders.map((order) => [String(order.id), order] as const),
+          );
+          const logsByTimestamp = new Map<number, Set<number>>();
+          db.logs.forEach((log) => {
+            if (log.type !== "EMBALAGEM" || log.orderId == null) return;
+            const logTimestamp = Number(log.timestamp);
+            if (
+              !Number.isFinite(logTimestamp) ||
+              Math.abs(logTimestamp - Number(n.createdAt)) > 5000 ||
+              (eventOperatorId && log.operatorId !== eventOperatorId)
+            ) {
+              return;
+            }
+
+            const linkedOrder = ordersById.get(String(log.orderId));
+            const logItemId = log.itemId ?? linkedOrder?.itemId;
+            if (logItemId !== notificationItem.id) return;
+
+            const orderId = Number(log.orderId);
+            if (!Number.isFinite(orderId)) return;
+            const orderIds = logsByTimestamp.get(logTimestamp) || new Set<number>();
+            orderIds.add(orderId);
+            logsByTimestamp.set(logTimestamp, orderIds);
+          });
+
+          const nearestGroups = Array.from(logsByTimestamp.entries()).sort(
+            (a, b) =>
+              Math.abs(a[0] - Number(n.createdAt)) -
+              Math.abs(b[0] - Number(n.createdAt)),
+          );
+          const nearest = nearestGroups[0];
+          const nextNearest = nearestGroups[1];
+          const nearestDistance = nearest
+            ? Math.abs(nearest[0] - Number(n.createdAt))
+            : Number.POSITIVE_INFINITY;
+          const nextDistance = nextNearest
+            ? Math.abs(nextNearest[0] - Number(n.createdAt))
+            : Number.POSITIVE_INFINITY;
+
+          // Se dois apontamentos estiverem praticamente empatados no tempo,
+          // não escolhe um pedido por suposição.
+          if (nearest && nearestDistance <= 5000 && nextDistance - nearestDistance >= 500) {
+            nearest[1].forEach(addOrderById);
+          }
+        }
+      }
+
+      // Mantém compatibilidade com avisos antigos que mencionam um único
+      // pedido explicitamente. Listas no plural não são usadas como vínculo.
       if (linkedOrders.size === 0) {
-        // Quantidades, medidas ou outros números não viram orderCode.
-        const messageOrderCodes = [
-          ...(n.message.match(/#(?:Pedido\s*)?\d{3,8}\b/gi) || []).map(
-            (value) => value.replace(/^#(?:Pedido\s*)?/i, ""),
-          ),
-          ...(n.message.match(/\bPedido\s*[:#]?\s*\d{3,8}\b/gi) || []).map(
-            (value) =>
-              value.replace(/^Pedido\s*[:#]?\s*/i, "").replace(/^#/, ""),
-          ),
-        ];
-        messageOrderCodes.forEach(addOrderByCode);
+        const singleOrderMatch = n.message.match(
+          /\bPedido\s*[:#]?\s*#?(\d{3,8})\b/i,
+        );
+        if (singleOrderMatch) addOrderByCode(singleOrderMatch[1]);
       }
 
       const ordersToOpen = Array.from(linkedOrders.values());
@@ -567,12 +647,12 @@ function Welcome({
 
       if (ordersToOpen.length > 1) {
         setInfoModalData({
-          title: "Pedidos desta embalagem",
+          title: "Pedidos vinculados ao apontamento",
           body: (
             <div className="space-y-3 text-left">
               <p className="text-xs text-gray-600">
-                Esta notificação envolve {ordersToOpen.length} pedidos.
-                Escolha qual ficha de produção deseja consultar.
+                Este apontamento registrou produção para {ordersToOpen.length} pedidos.
+                Escolha somente entre os pedidos vinculados a estes registros.
               </p>
               <p className="text-xs text-gray-700 border-l-4 border-blue-500 pl-3 py-1 bg-gray-50 rounded">
                 {n.message}
