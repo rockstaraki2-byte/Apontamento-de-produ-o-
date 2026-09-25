@@ -504,6 +504,7 @@ export function EmbalagemScreen({
     let totalAssignedQty = 0;
     let logsToAdd: any[] = [];
     let updatedOrders = [...db.orders];
+    const attendedOrders: { id: number; orderCode: string }[] = [];
 
     let remainingConfig = config ? JSON.parse(JSON.stringify(config)) : [];
     
@@ -579,6 +580,7 @@ export function EmbalagemScreen({
       const allocate = Math.min(needed, qtyToAllocate);
 
       if (allocate > 0) {
+        attendedOrders.push({ id: o.id, orderCode: o.orderCode });
         const oIndex = updatedOrders.findIndex((uo) => uo.id === o.id);
         if (oIndex >= 0) {
           const newPacked = updatedOrders[oIndex].packedQuantity + allocate;
@@ -670,12 +672,28 @@ export function EmbalagemScreen({
       db.addLogs(logsToAdd);
 
       const itemDb = db.items.find((i) => i.id === activePack.itemId);
-      const attendedOrdersText = updatedOrders.filter((o) => o.status === "EMBALADO" || o.status === "EMBALANDO").map((o) => o.orderCode ? `#${o.orderCode}` : `#${o.id}`).filter(Boolean);
-      const ordersSuffix = attendedOrdersText.length > 0 ? ` (Pedidos: ${attendedOrdersText.join(", ")})` : "";
+      const attendedOrdersText = attendedOrders.map((order) =>
+        order.orderCode ? `#${order.orderCode}` : `#${order.id}`,
+      );
+      const ordersSuffix =
+        attendedOrdersText.length > 0
+          ? ` (Pedidos: ${attendedOrdersText.join(", ")})`
+          : "";
       db.addNotification({
         message: `Embalagem Finalizada: ${totalAssignedQty} de ${itemDb?.name || "Item"} (${activePack.color || "-"} | ${activePack.size || "-"}) por ${currentUser.name}${ordersSuffix}`,
         read: false,
         tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
+        ...(attendedOrders.length === 1
+          ? { orderId: attendedOrders[0].id }
+          : {}),
+        details: {
+          orderIds: attendedOrders.map((order) => order.id),
+          orderCodes: attendedOrders.map((order) => order.orderCode),
+          itemId: activePack.itemId,
+          color: activePack.color,
+          size: activePack.size,
+          variation: activePack.variation,
+        },
       });
     }
 
