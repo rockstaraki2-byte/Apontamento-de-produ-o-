@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useDatabase } from "./useDatabase";
 import {
   Layers,
@@ -27,6 +28,7 @@ import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
 import { RelatorioEpiPrintSheet, DistributionRecord, EmployeeReportData } from "./RelatorioEpiPrintSheet";
 import { resolveCompanyInfo } from "./utils/companyUtils";
+import { getDistributionTiming } from "./ppeMetrics";
 
 export function EstoqueScreen({
   db,
@@ -35,6 +37,8 @@ export function EstoqueScreen({
   db: ReturnType<typeof useDatabase>;
   currentUser: import("./types").User;
 }) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const isImperio = db.activeTenantId === "imperio";
   const [epiHistoryLimit, setEpiHistoryLimit] = useState(50);
   const [uniformHistoryLimit, setUniformHistoryLimit] = useState(50);
@@ -53,6 +57,11 @@ export function EstoqueScreen({
   const [activeTab, setActiveTab] = useState<
     "PRODUTOS" | "EPIS" | "COLABORADORES" | "UNIFORMES" | "RELATORIOS"
   >("PRODUTOS");
+  React.useEffect(() => {
+    if (location.state?.initialTab === "EPIS" || location.state?.initialTab === "UNIFORMES") {
+      setActiveTab(location.state.initialTab);
+    }
+  }, [location.state]);
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<
@@ -132,7 +141,8 @@ export function EstoqueScreen({
             itemName: item.name,
             caNumber: caMatch ? caMatch[1] : "",
             quantity: d.quantity,
-            date: d.date
+            date: d.date,
+            ...getDistributionTiming("EPI", d, db.epiDistributions, db.uniformDistributions),
           });
         }
       });
@@ -149,7 +159,8 @@ export function EstoqueScreen({
             size: uni.size,
             caNumber: caMatch ? caMatch[1] : "",
             quantity: d.quantity,
-            date: d.date
+            date: d.date,
+            ...getDistributionTiming("UNIFORME", d, db.epiDistributions, db.uniformDistributions),
           });
         }
       });
@@ -272,6 +283,8 @@ export function EstoqueScreen({
   const [newEpiQty, setNewEpiQty] = useState<number | "">("");
   const [newEpiPrice, setNewEpiPrice] = useState<number | "">("");
   const [newEpiPoints, setNewEpiPoints] = useState<number | "">("");
+  const [newEpiMinStock, setNewEpiMinStock] = useState<number | "">("");
+  const [newEpiReplacementDays, setNewEpiReplacementDays] = useState<number | "">("");
   const [isEpiFormVisible, setIsEpiFormVisible] = useState(false);
   const [isEpiDistVisible, setIsEpiDistVisible] = useState(false);
 
@@ -341,6 +354,15 @@ export function EstoqueScreen({
       }
     }
 
+    if (newEpiMinStock !== "" && Number(newEpiMinStock) < 0) {
+      alert("O estoque mínimo do EPI não pode ser negativo.");
+      return;
+    }
+    if (newEpiReplacementDays !== "" && Number(newEpiReplacementDays) <= 0) {
+      alert("O intervalo para troca deve ser maior que zero dia.");
+      return;
+    }
+
     const existing = db.items.find(
       (i) =>
         i.code === newEpiCode ||
@@ -354,49 +376,35 @@ export function EstoqueScreen({
     const price = newEpiPrice === "" ? undefined : Number(newEpiPrice);
     const points = newEpiPoints === "" ? undefined : Number(newEpiPoints);
 
-    await db.addItem({
+    const newItemId = await db.addItem({
       code: newEpiCode,
       name: newEpiName,
       notes: "",
       type: "EPI",
       basePrice: price,
       productionPoints: points,
+      minStock: Number(newEpiMinStock) || 0,
+      replacementIntervalDays: Number(newEpiReplacementDays) || undefined,
     });
 
     const qty = newEpiQty === "" ? 0 : Number(newEpiQty);
     if (qty > 0) {
-      let attempts = 0;
-      const interval = setInterval(() => {
-        const newlyAdded = db.items.find((i) => i.code === newEpiCode);
-        if (newlyAdded) {
-          clearInterval(interval);
-          const stockId = `${newlyAdded.id}|OUTROS|OUTROS|OUTROS|ACABADO`;
-          db.updateStocks([
-            {
-              id: stockId,
-              itemId: newlyAdded.id,
-              color: "OUTROS",
-              size: "OUTROS",
-              variation: "OUTROS",
-              stage: "ACABADO",
-              quantity: qty,
-            },
-          ]);
-          db.addStockMovement({
-            itemId: newlyAdded.id,
-            color: "OUTROS",
-            size: "OUTROS",
-            variation: "OUTROS",
-            quantity: qty,
-            type: "ENTRADA",
-            description: `Cadastro inicial de EPI com estoque`,
-          });
-        }
-        attempts++;
-        if (attempts > 20) {
-          clearInterval(interval);
-        }
-      }, 300);
+      try {
+        await db.adjustPpeInventoryBalance({
+          inventoryType: "EPI",
+          itemId: newItemId,
+          stockId: `${newItemId}|OUTROS|OUTROS|OUTROS|ACABADO`,
+          color: "OUTROS",
+          size: "OUTROS",
+          variation: "OUTROS",
+          quantityDelta: qty,
+          description: "Saldo inicial no cadastro do EPI",
+          operatorName: currentUser.name,
+        });
+      } catch (error: any) {
+        alert(`O EPI foi cadastrado, mas não foi possível lançar o saldo inicial: ${error?.message || error}`);
+        return;
+      }
     }
 
     setNewEpiCode("");
@@ -404,6 +412,8 @@ export function EstoqueScreen({
     setNewEpiQty("");
     setNewEpiPrice("");
     setNewEpiPoints("");
+    setNewEpiMinStock("");
+    setNewEpiReplacementDays("");
     alert("EPI cadastrado com sucesso!");
   };
 
@@ -1082,39 +1092,44 @@ export function EstoqueScreen({
         title="Controle de Estoque e EPIs"
         icon={<Layers size={20} className="text-emerald-700" />}
         actions={
-          <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 shrink-0">
-            {isSubTabAllowed(db.activeTenant, "estoque:produtos") && (
-              <button
-                onClick={() => setActiveTab("PRODUTOS")}
-                className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "PRODUTOS" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-              >
-                Produtos
-              </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {isImperio && (currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.role === "PCP") && (
+              <button onClick={() => navigate("/estoque-epis")} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100">Métricas e entradas</button>
             )}
-            {isSubTabAllowed(db.activeTenant, "estoque:epis") && (
-              <button
-                onClick={() => setActiveTab("EPIS")}
-                className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "EPIS" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-              >
-                EPI
-              </button>
-            )}
-            {isSubTabAllowed(db.activeTenant, "estoque:uniformes") && (
-              <button
-                onClick={() => setActiveTab("UNIFORMES")}
-                className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "UNIFORMES" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-              >
-                Uniformes
-              </button>
-            )}
-            {isSubTabAllowed(db.activeTenant, "estoque:relatorios") && (
-              <button
-                onClick={() => setActiveTab("RELATORIOS")}
-                className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "RELATORIOS" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
-              >
-                Ficha/Recibo
-              </button>
-            )}
+            <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 shrink-0">
+              {isSubTabAllowed(db.activeTenant, "estoque:produtos") && (
+                <button
+                  onClick={() => setActiveTab("PRODUTOS")}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "PRODUTOS" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+                >
+                  Produtos
+                </button>
+              )}
+              {isSubTabAllowed(db.activeTenant, "estoque:epis") && (
+                <button
+                  onClick={() => setActiveTab("EPIS")}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "EPIS" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+                >
+                  EPI
+                </button>
+              )}
+              {isSubTabAllowed(db.activeTenant, "estoque:uniformes") && (
+                <button
+                  onClick={() => setActiveTab("UNIFORMES")}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "UNIFORMES" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+                >
+                  Uniformes
+                </button>
+              )}
+              {isSubTabAllowed(db.activeTenant, "estoque:relatorios") && (
+                <button
+                  onClick={() => setActiveTab("RELATORIOS")}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition ${activeTab === "RELATORIOS" ? "bg-emerald-600 text-white shadow-xs" : "text-gray-600 hover:text-gray-800"}`}
+                >
+                  Ficha/Recibo
+                </button>
+              )}
+            </div>
           </div>
         }
       />
@@ -1993,6 +2008,7 @@ export function EstoqueScreen({
                           }
                           className="w-full border border-gray-200 rounded-lg p-2 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                           min="0"
+                          step="1"
                         />
                       </div>
                       <div>
@@ -2041,6 +2057,16 @@ export function EstoqueScreen({
                           className="w-full border border-gray-200 rounded-lg p-2 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                           min="0"
                         />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-500 mb-0.5">Estoque mínimo</label>
+                      <input type="number" min="0" step="1" value={newEpiMinStock} onChange={(e) => setNewEpiMinStock(e.target.value === "" ? "" : Number(e.target.value))} className="w-full border border-gray-200 rounded-lg p-2 text-sm bg-gray-50" placeholder="Ex: 10" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-500 mb-0.5">Troca a cada (dias)</label>
+                      <input type="number" min="1" step="1" value={newEpiReplacementDays} onChange={(e) => setNewEpiReplacementDays(e.target.value === "" ? "" : Number(e.target.value))} className="w-full border border-gray-200 rounded-lg p-2 text-sm bg-gray-50" placeholder="Ex: 90" />
                       </div>
                     </div>
                     <button
@@ -2131,7 +2157,7 @@ export function EstoqueScreen({
                       </div>
                     </div>
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         let matchedEmployeeId = "";
                         if (epiDistEmployeeName) {
                           const mEmp = db.employees.find(
@@ -2160,55 +2186,18 @@ export function EstoqueScreen({
                           );
                           if (!selectedEpi) return;
 
-                          // Calculate current stock to see if we have enough
-                          const stockEntry = db.stocks.find(
-                            (s) => s.itemId === matchedItemId,
-                          );
-                          const existingQty = stockEntry
-                            ? stockEntry.quantity
-                            : 0;
-
-                          if (existingQty < Number(quantity)) {
-                            alert(
-                              `Atenção: Saldo de estoque insuficiente (${existingQty}). Reduza a quantidade ou ajuste o estoque primeiro.`,
-                            );
+                          try {
+                            await db.addEpiDistribution({
+                              employeeId: matchedEmployeeId,
+                              itemId: matchedItemId,
+                              quantity: Number(quantity),
+                              date: Date.now(),
+                              operatorName: currentUser.name,
+                            });
+                          } catch (error: any) {
+                            alert(error?.message || "Não foi possível registrar a entrega do EPI.");
                             return;
                           }
-
-                          db.addEpiDistribution({
-                            employeeId: matchedEmployeeId,
-                            itemId: matchedItemId,
-                            quantity: Number(quantity),
-                            date: Date.now(),
-                          });
-
-                          const newStockId = stockEntry
-                            ? stockEntry.id
-                            : `${matchedItemId}|OUTROS|OUTROS|OUTROS|ACABADO`;
-
-                          db.updateStocks([
-                            {
-                              id: newStockId,
-                              itemId: matchedItemId,
-                              color: stockEntry ? stockEntry.color : "OUTROS",
-                              size: stockEntry ? stockEntry.size : "OUTROS",
-                              variation: stockEntry
-                                ? stockEntry.variation
-                                : "OUTROS",
-                              stage: stockEntry ? stockEntry.stage : "ACABADO",
-                              quantity: existingQty - Number(quantity),
-                            },
-                          ]);
-
-                          db.addStockMovement({
-                            itemId: matchedItemId,
-                            color: "OUTROS",
-                            size: "OUTROS",
-                            variation: "OUTROS",
-                            quantity: Number(quantity),
-                            type: "SAIDA",
-                            description: `Distribuição de EPI para colaborador ID: ${matchedEmployeeId}`,
-                          });
 
                           alert("EPI Distribuído com sucesso!");
                           setEpiDistEmployeeName("");
@@ -2294,45 +2283,23 @@ export function EstoqueScreen({
                                   )
                                     return;
 
+                                  const diff = newQty - totalStock;
+                                  if (diff === 0) return;
                                   const stockEntry = stockEntries[0];
-                                  const oldQty = stockEntry
-                                    ? stockEntry.quantity
-                                    : 0;
-                                  const diff = newQty - oldQty;
-                                  const stockId = stockEntry
-                                    ? stockEntry.id
-                                    : `${epi.id}|OUTROS|OUTROS|OUTROS|ACABADO`;
-
-                                  await db.updateStocks([
-                                    {
-                                      id: stockId,
+                                  try {
+                                    await db.adjustPpeInventoryBalance({
+                                      inventoryType: "EPI",
                                       itemId: epi.id,
-                                      color: stockEntry
-                                        ? stockEntry.color
-                                        : "OUTROS",
-                                      size: stockEntry
-                                        ? stockEntry.size
-                                        : "OUTROS",
-                                      variation: stockEntry
-                                        ? stockEntry.variation
-                                        : "OUTROS",
-                                      stage: stockEntry
-                                        ? stockEntry.stage
-                                        : "ACABADO",
-                                      quantity: newQty,
-                                    },
-                                  ]);
-
-                                  if (diff !== 0) {
-                                    db.addStockMovement({
-                                      itemId: epi.id,
-                                      color: "OUTROS",
-                                      size: "OUTROS",
-                                      variation: "OUTROS",
-                                      quantity: Math.abs(diff),
-                                      type: diff > 0 ? "ENTRADA" : "SAIDA",
-                                      description: `Ajuste manual de saldo de EPI (Anterior: ${oldQty} -> Novo: ${newQty})`,
+                                      stockId: stockEntry?.id || `${epi.id}|OUTROS|OUTROS|OUTROS|ACABADO`,
+                                      color: stockEntry?.color || "OUTROS",
+                                      size: stockEntry?.size || "OUTROS",
+                                      variation: stockEntry?.variation || "OUTROS",
+                                      quantityDelta: diff,
+                                      description: `Ajuste manual de saldo de EPI (Anterior: ${totalStock} -> Novo: ${newQty})`,
+                                      operatorName: currentUser.name,
                                     });
+                                  } catch (error: any) {
+                                    alert(error?.message || "Não foi possível ajustar o estoque do EPI.");
                                   }
                                 }}
                                 onKeyDown={async (e) => {
@@ -2498,6 +2465,8 @@ export function EstoqueScreen({
                     </label>
                     <input
                       type="number"
+                      min="0"
+                      step="1"
                       value={uniformFormStock}
                       onChange={(e) => setUniformFormStock(e.target.value === "" ? "" : Number(e.target.value))}
                       className="w-full border border-gray-200 rounded-lg p-2 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium text-slate-700"
@@ -2520,17 +2489,32 @@ export function EstoqueScreen({
                   </div>
                   <div className="sm:col-span-4 flex justify-end gap-2 mt-2">
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         if (!uniformFormName.trim() || !uniformFormSize) {
                           alert("Preencha o nome e o tamanho do uniforme.");
                           return;
                         }
-                        db.addUniform({
+                        const initialStock = Number(uniformFormStock) || 0;
+                        const uniformId = await db.addUniform({
                           name: uniformFormName,
                           size: uniformFormSize,
-                          stock: Number(uniformFormStock) || 0,
+                          stock: 0,
                           minStock: Number(uniformFormMinStock) || 0,
                         });
+                        if (initialStock > 0) {
+                          try {
+                            await db.adjustPpeInventoryBalance({
+                              inventoryType: "UNIFORME",
+                              uniformId,
+                              quantityDelta: initialStock,
+                              description: "Saldo inicial no cadastro do uniforme",
+                              operatorName: currentUser.name,
+                            });
+                          } catch (error: any) {
+                            alert(`O uniforme foi cadastrado, mas não foi possível lançar o saldo inicial: ${error?.message || error}`);
+                            return;
+                          }
+                        }
                         setUniformFormName("");
                         setUniformFormSize("");
                         setUniformFormStock("");
@@ -2661,13 +2645,13 @@ export function EstoqueScreen({
                         );
                         if (!matchEmp) {
                           if (confirm(`Colaborador '${uniformDistEmployeeName}' não cadastrado. Deseja cadastrá-lo automaticamente agora?`)) {
-                             await db.addEmployee({
+                             const newEmployeeId = await db.addEmployee({
                                name: uniformDistEmployeeName.trim(),
                                sectorId: 0,
                                isActive: true,
                              });
-                             // Mock the matchEmp so the rest of the logic works locally without waiting for snapshot reload
-                             matchEmp = { id: Date.now().toString(), name: uniformDistEmployeeName.trim(), sectorId: 0, isActive: true };
+                             // Usa o ID retornado pelo cadastro para vincular a entrega sem aguardar o listener.
+                             matchEmp = { id: newEmployeeId, name: uniformDistEmployeeName.trim(), sectorId: 0, isActive: true };
                           } else {
                              return;
                           }
@@ -2680,22 +2664,19 @@ export function EstoqueScreen({
                         }
 
                         const reqQty = Number(uniformDistQty);
-                        if (matchUni.stock < reqQty) {
-                          alert(`Saldo de estoque insuficiente para entrega (${matchUni.stock} disponíveis).`);
+                        try {
+                          await db.addUniformDistribution({
+                            employeeId: matchEmp.id,
+                            uniformId: matchUni.id,
+                            quantity: reqQty,
+                            date: Date.now(),
+                            notes: uniformDistNotes || "",
+                            operatorName: currentUser.name,
+                          });
+                        } catch (error: any) {
+                          alert(error?.message || "Não foi possível registrar a entrega do uniforme.");
                           return;
                         }
-
-                        await db.addUniformDistribution({
-                          employeeId: matchEmp.id,
-                          uniformId: matchUni.id,
-                          quantity: reqQty,
-                          date: Date.now(),
-                          notes: uniformDistNotes || "",
-                        });
-
-                        await db.updateUniform(matchUni.id, {
-                          stock: matchUni.stock - reqQty,
-                        });
 
                         setUniformDistEmployeeName("");
                         setUniformDistUniformId("");
@@ -2773,8 +2754,18 @@ export function EstoqueScreen({
                                     onClick={async () => {
                                       const amt = Number(editingUniformStock);
                                       if (!isNaN(amt) && amt >= 0) {
-                                        await db.updateUniform(uni.id, { stock: amt });
-                                        setEditingUniformId(null);
+                                        try {
+                                          await db.adjustPpeInventoryBalance({
+                                            inventoryType: "UNIFORME",
+                                            uniformId: uni.id,
+                                            quantityDelta: amt - uni.stock,
+                                            description: `Ajuste manual de estoque de uniforme (Anterior: ${uni.stock} -> Novo: ${amt})`,
+                                            operatorName: currentUser.name,
+                                          });
+                                          setEditingUniformId(null);
+                                        } catch (error: any) {
+                                          alert(error?.message || "Não foi possível ajustar o estoque do uniforme.");
+                                        }
                                       } else {
                                         alert("Insira um número inteiro válido.");
                                       }
@@ -2887,11 +2878,12 @@ export function EstoqueScreen({
                                   <div className="flex gap-1">
                                     <button
                                       onClick={async () => {
-                                        if (uni) {
-                                          await db.updateUniform(uni.id, { stock: uni.stock + dist.quantity });
+                                        try {
+                                          await db.reverseUniformDistribution(dist.id, currentUser.name);
+                                          setStornoUniformDistId(null);
+                                        } catch (error: any) {
+                                          alert(error?.message || "Não foi possível estornar a distribuição.");
                                         }
-                                        await db.deleteUniformDistribution(dist.id);
-                                        setStornoUniformDistId(null);
                                       }}
                                       className="bg-red-500 hover:bg-red-600 text-white text-xs font-bold px-2.5 py-1.5 rounded transition cursor-pointer"
                                     >

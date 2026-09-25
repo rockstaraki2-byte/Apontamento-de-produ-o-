@@ -8,6 +8,9 @@ export interface DistributionRecord {
   caNumber: string;
   quantity: number;
   date: number;
+  previousDeliveryAt?: number | null;
+  daysSincePreviousDelivery?: number | null;
+  averageUseDays?: number | null;
 }
 
 export interface EmployeeReportData {
@@ -99,33 +102,41 @@ export const RelatorioEpiPrintSheet = forwardRef<
 
                   {/* Table */}
                   <div className="flex-1 min-h-0 overflow-hidden border border-slate-300 rounded">
-                    <table className="w-full text-xs text-left text-slate-800">
+                    <table className="w-full table-fixed text-xs text-left text-slate-800">
                       <thead className="bg-slate-100 uppercase text-[10px] font-bold border-b border-slate-300">
                         <tr>
-                          <th className="px-2 py-1 border-r border-slate-300">Tipo</th>
-                          <th className="px-2 py-1 border-r border-slate-300">Cód.</th>
-                          <th className="px-2 py-1 border-r border-slate-300">Descrição do Item</th>
-                          <th className="px-2 py-1 border-r border-slate-300">Nº C.A.</th>
-                          <th className="px-2 py-1 border-r border-slate-300 text-center">Qtd</th>
-                          <th className="px-2 py-1 text-center">Data / Hora</th>
+                          <th className="w-[7%] px-1 py-1 border-r border-slate-300">Tipo</th>
+                          <th className="w-[7%] px-1 py-1 border-r border-slate-300">Cód.</th>
+                          <th className="w-[23%] px-1 py-1 border-r border-slate-300">Descrição do Item</th>
+                          <th className="w-[13%] px-1 py-1 border-r border-slate-300 text-center">Última entrega</th>
+                          <th className="w-[13%] px-1 py-1 border-r border-slate-300 text-center">Média de uso em dias</th>
+                          <th className="w-[8%] px-1 py-1 border-r border-slate-300">Nº C.A.</th>
+                          <th className="w-[6%] px-1 py-1 border-r border-slate-300 text-center">Qtd</th>
+                          <th className="w-[23%] px-1 py-1 text-center">Data / Hora</th>
                         </tr>
                       </thead>
                       <tbody>
                         {report.records.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="text-center py-4 text-slate-500 text-xs">Nenhum registro encontrado neste período.</td>
+                            <td colSpan={8} className="text-center py-4 text-slate-500 text-xs">Nenhum registro encontrado neste período.</td>
                           </tr>
                         ) : (
                           report.records.map((r, i) => (
                             <tr key={i} className="border-b border-slate-200 last:border-b-0">
                               <td className="px-2 py-0.5 border-r border-slate-200 font-semibold text-[11px]">{r.type}</td>
                               <td className="px-2 py-0.5 border-r border-slate-200 font-mono text-[10px]">{r.itemCode}</td>
-                              <td className="px-2 py-0.5 border-r border-slate-200 uppercase font-medium text-[11px]">
+                              <td className="px-1 py-0.5 border-r border-slate-200 uppercase font-medium text-[10px]">
                                 {r.itemName} {r.size ? `(Tam: ${r.size})` : ""}
                               </td>
-                              <td className="px-2 py-0.5 border-r border-slate-200 uppercase font-mono text-[10px]">{r.caNumber || "-"}</td>
-                              <td className="px-2 py-0.5 border-r border-slate-200 text-center font-bold text-[11px]">{r.quantity}</td>
-                              <td className="px-2 py-0.5 text-center font-mono text-[10px]">
+                              <td className="px-1 py-0.5 border-r border-slate-200 text-center text-[9px]">
+                                {r.daysSincePreviousDelivery == null ? "—" : <><strong>{r.daysSincePreviousDelivery} dias</strong><br /><span className="text-slate-500">{r.previousDeliveryAt ? new Date(r.previousDeliveryAt).toLocaleDateString("pt-BR") : ""}</span></>}
+                              </td>
+                              <td className="px-1 py-0.5 border-r border-slate-200 text-center text-[9px] font-semibold">
+                                {r.averageUseDays == null ? "—" : r.averageUseDays.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}
+                              </td>
+                              <td className="px-1 py-0.5 border-r border-slate-200 uppercase font-mono text-[9px]">{r.caNumber || "-"}</td>
+                              <td className="px-1 py-0.5 border-r border-slate-200 text-center font-bold text-[10px]">{r.quantity}</td>
+                              <td className="px-1 py-0.5 text-center font-mono text-[9px]">
                                 {formatTimestamp(r.date)}
                               </td>
                             </tr>

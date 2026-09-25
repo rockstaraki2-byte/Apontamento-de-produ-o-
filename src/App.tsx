@@ -94,6 +94,11 @@ import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
 import { normalizeString, findCustomerForOrder, getCustomerLocationLabel } from "./searchUtils";
 import { RealTimeFactoryMonitoring } from "./components/RealTimeFactoryMonitoring";
 import { parsePositiveUnitPrice } from "./utils/orderPrice";
+import {
+  getLoginIdentifierCandidates,
+  isImperioTornoWillianUser,
+  normalizeTornoWillianUser,
+} from "./loginAliases";
 
 // Custom virtualization and metrics components
 import { useVirtualScroll } from "./hooks/useVirtualScroll";
@@ -130,6 +135,7 @@ const EmbalagemScreen = lazyNamed(() => import("./EmbalagemScreen"), "EmbalagemS
 const EstoqueScreen = lazyNamed(() => import("./EstoqueScreen"), "EstoqueScreen");
 const EstoqueNestingScreen = lazyNamed(() => import("./EstoqueNestingScreen"), "EstoqueNestingScreen");
 const EstoqueChapasScreen = lazyNamed(() => import("./EstoqueChapasScreen"), "EstoqueChapasScreen");
+const EstoqueEpiUniformeScreen = lazyNamed(() => import("./EstoqueEpiUniformeScreen"), "EstoqueEpiUniformeScreen");
 const RepresentanteScreen = lazyNamed(() => import("./RepresentanteScreen"), "RepresentanteScreen");
 const UploadNestScreen = lazyNamed(() => import("./UploadNestScreen"), "UploadNestScreen");
 const HistoricoProducaoScreen = lazyNamed(() => import("./HistoricoProducaoScreen"), "HistoricoProducaoScreen");
@@ -1347,6 +1353,18 @@ function LoginScreen({
     }
 
     const targetTenantId = explicitTenantId || selectedLoginTenantId || "imperio";
+    const baseCandidates = new Set(
+      getLoginIdentifierCandidates(baseTyped).map((candidate) =>
+        candidate.replace(/\.[^.]+$/, ""),
+      ),
+    );
+    const exactIdCandidates = new Set<string>([
+      ...getLoginIdentifierCandidates(typed),
+      ...Array.from(baseCandidates).map(
+        (candidate) => `${candidate}.${normalizeStr(targetTenantId)}`,
+      ),
+      ...(explicitTenantId ? [] : Array.from(baseCandidates)),
+    ]);
 
     let user: User | undefined;
 
@@ -1359,12 +1377,15 @@ function LoginScreen({
     // This prevents a legacy alias such as "gerencia" from winning over
     // the canonical account "gerencia.imperio".
     if (!user) {
-      user = users.find((u) => {
-        if (!u || !u.id) return false;
-        const uTenant = u.tenantId || "imperio";
-        if (uTenant !== targetTenantId && uTenant !== "global") return false;
-        return normalizeStr(u.id) === typed;
-      });
+      for (const candidateId of exactIdCandidates) {
+        user = users.find((u) => {
+          if (!u || !u.id) return false;
+          const uTenant = u.tenantId || "imperio";
+          if (uTenant !== targetTenantId && uTenant !== "global") return false;
+          return normalizeStr(u.id) === candidateId;
+        });
+        if (user) break;
+      }
     }
 
     // 3. Backward-compatible alias/base match within the target tenant.
@@ -1376,11 +1397,7 @@ function LoginScreen({
 
         const uId = normalizeStr(u.id);
         const uIdBase = uId.replace(/\.[^.]+$/, "");
-        return (
-          uId === `${baseTyped}.${normalizeStr(targetTenantId)}` ||
-          uId === baseTyped ||
-          uIdBase === baseTyped
-        );
+        return baseCandidates.has(uId) || baseCandidates.has(uIdBase);
       });
     }
 
@@ -1397,7 +1414,14 @@ function LoginScreen({
           .replace(/\s*\([^)]*\)/g, "")
           .trim();
 
-        return uName === typed || uName === baseTyped || cleanName === baseTyped;
+        return (
+          uName === typed ||
+          uName === baseTyped ||
+          cleanName === baseTyped ||
+          Array.from(baseCandidates).some(
+            (candidate) => cleanName === candidate || uName === candidate,
+          )
+        );
       });
     }
 
@@ -1410,8 +1434,8 @@ function LoginScreen({
         const uIdBase = uId.replace(/\.[^.]+$/, "");
         const uName = normalizeStr(u.name || "");
         return (
-          uId === typed ||
-          uIdBase === typed ||
+          exactIdCandidates.has(uId) ||
+          baseCandidates.has(uIdBase) ||
           uName === typed ||
           uName.replace(/\s*\([^)]*\)/g, "").trim() === typed
         );
@@ -1438,6 +1462,7 @@ function LoginScreen({
     }
 
     if (user) {
+      user = normalizeTornoWillianUser(user);
       const userPass = user.password || "0000";
       const isRaulOverride = user.id === "raul" && password === "230213";
       if (password !== userPass && !isRaulOverride) {
@@ -1467,7 +1492,7 @@ function LoginScreen({
       ) {
         Notification.requestPermission();
       }
-      onLogin({ ...user });
+      onLogin(normalizeTornoWillianUser({ ...user }));
     } else {
       alert("Usuário Incorreto");
     }
@@ -14961,7 +14986,7 @@ export default function App() {
             tenantId: "imperio",
           };
         }
-        return parsed;
+        return normalizeTornoWillianUser(parsed);
       } catch (e) {
         localStorage.removeItem("imperio_logged_user");
         return null;
@@ -15269,13 +15294,14 @@ export default function App() {
             (u.tenantId === currentUser.tenantId || currentUser.tenantId === "global")))
     );
     if (freshUser) {
+      const sessionUser = normalizeTornoWillianUser(freshUser);
       const isDifferent =
-        freshUser.name !== currentUser.name ||
-        freshUser.role !== currentUser.role ||
-        freshUser.tenantId !== currentUser.tenantId ||
-        freshUser.password !== currentUser.password ||
-        freshUser.avatarUrl !== currentUser.avatarUrl ||
-        JSON.stringify(freshUser.permissions || {}) !==
+        sessionUser.name !== currentUser.name ||
+        sessionUser.role !== currentUser.role ||
+        sessionUser.tenantId !== currentUser.tenantId ||
+        sessionUser.password !== currentUser.password ||
+        sessionUser.avatarUrl !== currentUser.avatarUrl ||
+        JSON.stringify(sessionUser.permissions || {}) !==
           JSON.stringify(currentUser.permissions || {});
 
       if (isDifferent) {
@@ -15283,7 +15309,7 @@ export default function App() {
           if (!prev) return null;
           return {
             ...prev,
-            ...freshUser,
+            ...sessionUser,
             ...(prev.id === "raul" ? { role: "ADMIN", tenantId: "global" } : {}),
           };
         });
@@ -15601,6 +15627,7 @@ export default function App() {
 
   const isImperioGerencia =
     db.activeTenantId === "imperio" && currentUser.role === "GERENCIA";
+  const canAccessTornoWillian = isImperioTornoWillianUser(currentUser);
 
   const canAccessCustomerManagement =
     currentUser.role === "ADMIN" ||
@@ -15628,6 +15655,8 @@ export default function App() {
 
   const isScreenAllowed = (screenKey: string) => {
     if (screenKey === "estoque" && canManageImperioStock) return true;
+    if (screenKey === "estoque-epi-uniformes") return canManageImperioStock;
+    if (screenKey === "torno-cnc-willian" && canAccessTornoWillian) return true;
     // Regras específicas do tenant Império:
     // - PCP/Gerência não usam mais as telas de Qualidade e Cadastros PCP.
     // - PCP/Gerência devem sempre enxergar a Injetora, mesmo se a configuração
@@ -15849,6 +15878,12 @@ export default function App() {
                 element={<EstoqueScreen db={db} currentUser={currentUser} />}
               />
             )}
+            {canManageImperioStock && isScreenAllowed("estoque-epi-uniformes") && (
+              <Route
+                path="/estoque-epis"
+                element={<EstoqueEpiUniformeScreen db={db} currentUser={currentUser} />}
+              />
+            )}
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "PCP" ||
               currentUser.role === "GERENCIA" ||
@@ -15893,7 +15928,8 @@ export default function App() {
             )}
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "GERENCIA" ||
-              currentUser.role === "TORNO_CNC_WILLIAN") && (
+              currentUser.role === "TORNO_CNC_WILLIAN" ||
+              canAccessTornoWillian) && (
               <Route
                 path="/torno-cnc-willian"
                 element={
@@ -16224,6 +16260,14 @@ export default function App() {
             />
           )}
 
+          {canManageImperioStock && isScreenAllowed("estoque-epi-uniformes") && (
+            <NavLink
+              to="/estoque-epis"
+              icon={<Layers size={24} />}
+              label="EPIs e Uniformes"
+            />
+          )}
+
           {(currentUser.role === "ADMIN" ||
             currentUser.role === "PCP" ||
             currentUser.role === "GERENCIA" ||
@@ -16319,10 +16363,10 @@ export default function App() {
             />
           )}
 
-          {isScreenAllowed("torno-cnc-willian") && (currentUser.role === "ADMIN" ||
+          {isScreenAllowed("torno-cnc-willian") && (canAccessTornoWillian || currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "TORNO_CNC_WILLIAN") && 
-            (currentUser.id === "raul" || hasMachine("willian") || hasMachine("torno") || hasSector("torno")) && (
+            (currentUser.id === "raul" || canAccessTornoWillian || hasMachine("willian") || hasMachine("torno") || hasSector("torno")) && (
             <NavLink
               to="/torno-cnc-willian"
               icon={<Hammer size={24} />}

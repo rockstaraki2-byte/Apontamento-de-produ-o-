@@ -52,6 +52,7 @@ import {
   deleteDoc as firestoreDeleteDoc,
   writeBatch,
   runTransaction,
+  getDocs,
   updateDoc as updateDocFirebase,
   disableNetwork,
   enableNetwork,
@@ -583,6 +584,21 @@ export function useDatabase(currentUser?: User | null) {
       alert(
         `⚠️ Falha ao salvar dados (${operationName}). Detalhes: ${msg}. Por favor, verifique se a conexão com o Firestore está ativa.`,
       );
+      throw e;
+    }
+  };
+
+  const runInventoryWrite = async (
+    operationName: string,
+    operation: () => Promise<void>,
+  ) => {
+    try {
+      await operation();
+    } catch (e: any) {
+      console.error(`Error during Firestore inventory operation [${operationName}]:`, e);
+      if (e?.code) {
+        setPermissionError(`Erro ao salvar no Firestore [${operationName}]: ${e.message || String(e)}`);
+      }
       throw e;
     }
   };
@@ -2544,15 +2560,270 @@ export function useDatabase(currentUser?: User | null) {
     updateStocks,
     stockMovements: filteredStockMovements,
     addStockMovement,
+    addPpeStockEntry: async (entry: {
+      inventoryType: "EPI" | "UNIFORME";
+      itemId?: number;
+      uniformId?: string;
+      quantity: number;
+      unitPrice: number;
+      purchaseOrderNumber: string;
+      invoiceNumber: string;
+      supplier: string;
+      color?: string;
+      size?: string;
+      variation?: string;
+      operatorName: string;
+      notes?: string;
+      date?: number;
+    }) => {
+      const quantity = Number(entry.quantity);
+      const unitPrice = Number(entry.unitPrice);
+      if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new Error("Informe uma quantidade e um preço unitário válidos.");
+      }
+      if (!entry.purchaseOrderNumber.trim() || !entry.invoiceNumber.trim() || !entry.supplier.trim()) {
+        throw new Error("Informe pedido de compra, nota fiscal/notinha e fornecedor.");
+      }
+
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const timestamp = entry.date || Date.now();
+      const stockColor = entry.color?.trim() || "OUTROS";
+      const stockSize = entry.size?.trim() || "OUTROS";
+      const stockVariation = entry.variation?.trim() || "OUTROS";
+      const movement: StockMovement = {
+        id,
+        itemId: entry.itemId || 0,
+        uniformId: entry.uniformId,
+        color: stockColor,
+        size: stockSize,
+        variation: stockVariation,
+        quantity,
+        type: "ENTRADA",
+        description: `Entrada ${entry.inventoryType === "EPI" ? "EPI" : "uniforme"} — pedido ${entry.purchaseOrderNumber} — NF/notinha ${entry.invoiceNumber}${entry.notes?.trim() ? ` — ${entry.notes.trim()}` : ""}`,
+        timestamp,
+        inventoryType: entry.inventoryType,
+        purchaseOrderNumber: entry.purchaseOrderNumber.trim(),
+        invoiceNumber: entry.invoiceNumber.trim(),
+        supplier: entry.supplier.trim(),
+        unitPrice,
+        totalValue: quantity * unitPrice,
+        operatorName: entry.operatorName,
+      };
+
+      await runInventoryWrite("Entrada de EPI/Uniforme", async () => {
+        if (isDemoMode) {
+          if (entry.inventoryType === "EPI") {
+            if (!entry.itemId || !items.some((item) => item.id === entry.itemId && matchesTenant(item.tenantId || (item as any).companyId))) {
+              throw new Error("Selecione um EPI válido desta empresa.");
+            }
+            const stockId = `${entry.itemId}|${stockColor}|${stockSize}|${stockVariation}|ACABADO`;
+            const currentStock = stocks.find((stock) => stock.id === stockId);
+            if (currentStock && !matchesTenant(currentStock.tenantId || (currentStock as any).companyId)) {
+              throw new Error("O saldo de estoque encontrado não pertence a esta empresa.");
+            }
+            setStocks((previous) => {
+              const found = previous.find((stock) => stock.id === stockId && matchesTenant(stock.tenantId || (stock as any).companyId));
+              return found
+                ? previous.map((stock) => stock.id === stockId ? { ...stock, quantity: stock.quantity + quantity } : stock)
+                : [...previous, { id: stockId, itemId: entry.itemId!, color: stockColor, size: stockSize, variation: stockVariation, stage: "ACABADO", quantity, tenantId: activeTenantId }];
+            });
+          } else {
+            const selectedUniform = uniforms.find((uniform) => uniform.id === entry.uniformId && matchesTenant(uniform.tenantId || (uniform as any).companyId));
+            if (!entry.uniformId || !selectedUniform) throw new Error("Selecione um uniforme válido desta empresa.");
+            setUniforms((previous) => previous.map((uniform) => uniform.id === entry.uniformId && matchesTenant(uniform.tenantId || (uniform as any).companyId) ? { ...uniform, stock: uniform.stock + quantity } : uniform));
+          }
+          setStockMovements((previous) => [{ ...movement, tenantId: activeTenantId }, ...previous]);
+          return;
+        }
+
+        await runTransaction(db, async (transaction) => {
+          let stockRef;
+          let uniformRef;
+          let stockSnapshot;
+          let uniformSnapshot;
+          if (entry.inventoryType === "EPI") {
+            if (!entry.itemId) throw new Error("Selecione um EPI válido.");
+            const itemRef = doc(db, "items", String(entry.itemId));
+            const itemSnapshot = await transaction.get(itemRef);
+            if (!itemSnapshot.exists() || itemSnapshot.data()?.tenantId !== activeTenantId) throw new Error("O EPI selecionado não pertence a esta empresa ou não existe mais.");
+            const stockId = `${entry.itemId}|${stockColor}|${stockSize}|${stockVariation}|ACABADO`;
+            stockRef = doc(db, "stocks", stockId);
+            stockSnapshot = await transaction.get(stockRef);
+            if (stockSnapshot.exists() && stockSnapshot.data()?.tenantId !== activeTenantId) throw new Error("O saldo de estoque encontrado não pertence a esta empresa.");
+            transaction.update(itemRef, { ppeInventoryUpdatedAt: timestamp });
+          } else {
+            if (!entry.uniformId) throw new Error("Selecione um uniforme válido.");
+            uniformRef = doc(db, "uniforms", entry.uniformId);
+            uniformSnapshot = await transaction.get(uniformRef);
+            if (!uniformSnapshot.exists() || uniformSnapshot.data()?.tenantId !== activeTenantId) {
+              throw new Error("O uniforme selecionado não pertence a esta empresa ou não existe mais.");
+            }
+          }
+
+          if (entry.inventoryType === "EPI" && stockRef) {
+            const existing = stockSnapshot?.exists() ? stockSnapshot.data() as StockEntry : null;
+            const updatedStock: StockEntry & { tenantId: string } = {
+              id: stockRef.id,
+              itemId: entry.itemId!,
+              color: stockColor,
+              size: stockSize,
+              variation: stockVariation,
+              stage: "ACABADO",
+              quantity: Number(existing?.quantity || 0) + quantity,
+              tenantId: activeTenantId,
+            };
+            transaction.set(stockRef, cleanUndefined(updatedStock), { merge: true });
+          } else if (uniformRef && uniformSnapshot?.exists()) {
+            transaction.update(uniformRef, { stock: Number(uniformSnapshot.data()?.stock || 0) + quantity });
+          }
+
+          transaction.set(doc(db, "stock_movements", id), cleanUndefined({ ...movement, tenantId: activeTenantId }));
+        });
+      });
+      return id;
+    },
+    adjustPpeInventoryBalance: async (adjustment: {
+      inventoryType: "EPI" | "UNIFORME";
+      quantityDelta: number;
+      itemId?: number;
+      stockId?: string;
+      uniformId?: string;
+      color?: string;
+      size?: string;
+      variation?: string;
+      description: string;
+      operatorName: string;
+    }) => {
+      const delta = Number(adjustment.quantityDelta);
+      if (!Number.isFinite(delta) || delta === 0) return;
+      if (!Number.isInteger(delta)) throw new Error("O saldo de estoque deve ser ajustado em unidades inteiras.");
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const movement: StockMovement = {
+        id,
+        itemId: adjustment.itemId || 0,
+        uniformId: adjustment.uniformId,
+        color: adjustment.color || "OUTROS",
+        size: adjustment.size || "OUTROS",
+        variation: adjustment.variation || "OUTROS",
+        quantity: Math.abs(delta),
+        type: delta > 0 ? "ENTRADA" : "SAIDA",
+        description: adjustment.description,
+        timestamp: Date.now(),
+        inventoryType: adjustment.inventoryType,
+        operatorName: adjustment.operatorName,
+      };
+      const epiStockQuerySnapshot = !isDemoMode && adjustment.inventoryType === "EPI" && adjustment.itemId
+        ? await getDocs(query(collection(db, "stocks"), where("tenantId", "==", activeTenantId), where("itemId", "==", adjustment.itemId)))
+        : null;
+
+      await runInventoryWrite("Ajuste de estoque EPI/Uniforme", async () => {
+        if (isDemoMode) {
+          if (adjustment.inventoryType === "EPI") {
+            if (!adjustment.itemId || !items.some((item) => item.id === adjustment.itemId && matchesTenant(item.tenantId || (item as any).companyId))) {
+              throw new Error("Selecione um EPI válido desta empresa.");
+            }
+            const itemStocks = stocks.filter((stock) => stock.itemId === adjustment.itemId && matchesTenant(stock.tenantId || (stock as any).companyId)).sort((a, b) => a.id.localeCompare(b.id));
+            const currentTotal = itemStocks.reduce((sum, stock) => sum + Math.max(0, Number(stock.quantity) || 0), 0);
+            if (currentTotal + delta < 0) throw new Error("O ajuste não pode deixar o estoque negativo.");
+            if (delta > 0) {
+              const targetId = adjustment.stockId || `${adjustment.itemId}|OUTROS|OUTROS|OUTROS|ACABADO`;
+              const existingById = stocks.find((stock) => stock.id === targetId);
+              if (existingById && !matchesTenant(existingById.tenantId || (existingById as any).companyId)) {
+                throw new Error("O saldo de estoque encontrado não pertence a esta empresa.");
+              }
+            }
+            setStocks((previous) => {
+              if (delta > 0) {
+                const targetId = adjustment.stockId || `${adjustment.itemId}|OUTROS|OUTROS|OUTROS|ACABADO`;
+                const target = itemStocks.find((stock) => stock.id === targetId);
+                return target
+                  ? previous.map((stock) => stock.id === targetId ? { ...stock, quantity: stock.quantity + delta } : stock)
+                  : [...previous, { id: targetId, itemId: adjustment.itemId!, color: adjustment.color || "OUTROS", size: adjustment.size || "OUTROS", variation: adjustment.variation || "OUTROS", stage: "ACABADO", quantity: delta, tenantId: activeTenantId }];
+              }
+              let remaining = Math.abs(delta);
+              return previous.map((stock) => {
+                if (stock.itemId !== adjustment.itemId || !matchesTenant(stock.tenantId || (stock as any).companyId) || remaining <= 0) return stock;
+                const used = Math.min(stock.quantity, remaining);
+                remaining -= used;
+                return { ...stock, quantity: stock.quantity - used };
+              });
+            });
+          } else {
+            const uniform = uniforms.find((entry) => entry.id === adjustment.uniformId && matchesTenant(entry.tenantId || (entry as any).companyId));
+            if (!adjustment.uniformId || !uniform) throw new Error("Selecione um uniforme válido desta empresa.");
+            if (Number(uniform.stock) + delta < 0) throw new Error("O ajuste não pode deixar o estoque negativo.");
+            setUniforms((previous) => previous.map((entry) => entry.id === adjustment.uniformId && matchesTenant(entry.tenantId || (entry as any).companyId) ? { ...entry, stock: entry.stock + delta } : entry));
+          }
+          setStockMovements((previous) => [{ ...movement, tenantId: activeTenantId }, ...previous]);
+          return;
+        }
+
+        await runTransaction(db, async (transaction) => {
+          if (adjustment.inventoryType === "EPI") {
+            if (!adjustment.itemId) throw new Error("Selecione um EPI válido.");
+            const refs = new Map((epiStockQuerySnapshot?.docs || []).map((snapshot) => [snapshot.id, snapshot.ref]));
+            if (adjustment.stockId) refs.set(adjustment.stockId, doc(db, "stocks", adjustment.stockId));
+            const itemRef = doc(db, "items", String(adjustment.itemId));
+            const itemSnapshot = await transaction.get(itemRef);
+            if (!itemSnapshot.exists() || itemSnapshot.data()?.tenantId !== activeTenantId) throw new Error("O EPI selecionado não pertence a esta empresa.");
+            const rows: Array<{ ref: import("firebase/firestore").DocumentReference; stock: StockEntry }> = [];
+            for (const ref of refs.values()) {
+              const snapshot = await transaction.get(ref);
+              if (snapshot.exists() && snapshot.data()?.tenantId !== activeTenantId) throw new Error("Um saldo de estoque vinculado ao EPI pertence a outra empresa.");
+              if (snapshot.exists() && snapshot.data()?.tenantId === activeTenantId) rows.push({ ref, stock: snapshot.data() as StockEntry });
+            }
+            const total = rows.reduce((sum, row) => sum + Math.max(0, Number(row.stock.quantity) || 0), 0);
+            if (total + delta < 0) throw new Error("O ajuste não pode deixar o estoque negativo.");
+            if (delta > 0) {
+              const targetId = adjustment.stockId || `${adjustment.itemId}|${adjustment.color || "OUTROS"}|${adjustment.size || "OUTROS"}|${adjustment.variation || "OUTROS"}|ACABADO`;
+              const targetRow = rows.find((row) => row.ref.id === targetId);
+              if (targetRow) {
+                transaction.update(targetRow.ref, { quantity: Number(targetRow.stock.quantity || 0) + delta });
+              } else {
+                transaction.set(doc(db, "stocks", targetId), cleanUndefined({
+                  id: targetId,
+                  itemId: adjustment.itemId,
+                  color: adjustment.color || "OUTROS",
+                  size: adjustment.size || "OUTROS",
+                  variation: adjustment.variation || "OUTROS",
+                  stage: "ACABADO",
+                  quantity: delta,
+                  tenantId: activeTenantId,
+                }));
+              }
+            } else {
+              let remaining = Math.abs(delta);
+              for (const row of rows) {
+                if (remaining <= 0) break;
+                const current = Math.max(0, Number(row.stock.quantity) || 0);
+                const used = Math.min(current, remaining);
+                transaction.update(row.ref, { quantity: current - used });
+                remaining -= used;
+              }
+            }
+            transaction.update(itemRef, { ppeInventoryUpdatedAt: Date.now() });
+          } else {
+            if (!adjustment.uniformId) throw new Error("Selecione um uniforme válido.");
+            const uniformRef = doc(db, "uniforms", adjustment.uniformId);
+            const snapshot = await transaction.get(uniformRef);
+            if (!snapshot.exists() || snapshot.data()?.tenantId !== activeTenantId) throw new Error("O uniforme não pertence a esta empresa.");
+            const current = Number(snapshot.data()?.stock || 0);
+            if (current + delta < 0) throw new Error("O ajuste não pode deixar o estoque negativo.");
+            transaction.update(uniformRef, { stock: current + delta });
+          }
+          transaction.set(doc(db, "stock_movements", id), cleanUndefined({ ...movement, tenantId: activeTenantId }));
+        });
+      });
+    },
     employees: filteredEmployees,
     addEmployee: async (employee: Omit<Employee, "id">) => {
       const id = getUniqueNumericId().toString();
       await runWrite("Cadastrar Colaborador", async () => {
-        await setDoc(
-          doc(db, "employees", id),
-          cleanUndefined({ ...employee, id, tenantId: (employee as any).tenantId || activeTenantId }),
-        );
+        const savedEmployee = { ...employee, id, tenantId: (employee as any).tenantId || activeTenantId };
+        await setDoc(doc(db, "employees", id), cleanUndefined(savedEmployee));
+        if (isDemoMode) setEmployees((previous) => [...previous, savedEmployee]);
       });
+      return id;
     },
     updateEmployee: async (id: string, updates: Partial<Employee>) => {
       await runWrite("Atualizar Colaborador", async () => {
@@ -2568,20 +2839,113 @@ export function useDatabase(currentUser?: User | null) {
     },
     epiDistributions: filteredEpiDistributions,
     addEpiDistribution: async (dist: Omit<EpiDistribution, "id">) => {
-      const id = Date.now().toString();
-      await runWrite("Distribuir EPI", async () => {
-        await setDoc(
-          doc(db, "epiDistributions", id),
-          cleanUndefined({ ...dist, id, tenantId: (dist as any).tenantId || activeTenantId }),
-        );
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const movementId = `${id}-out`;
+      const timestamp = dist.date || Date.now();
+      const movement: StockMovement = {
+        id: movementId,
+        itemId: dist.itemId,
+        color: "GERAL",
+        size: "GERAL",
+        variation: "GERAL",
+        quantity: dist.quantity,
+        type: "SAIDA",
+        description: `Distribuição de EPI para colaborador ${dist.employeeId}`,
+        timestamp,
+        inventoryType: "EPI",
+        employeeId: dist.employeeId,
+        distributionId: id,
+        operatorName: dist.operatorName,
+      };
+      if (!Number.isInteger(Number(dist.quantity)) || Number(dist.quantity) <= 0) throw new Error("Informe uma quantidade inteira maior que zero para a entrega do EPI.");
+      if (!isDemoMode && typeof navigator !== "undefined" && !navigator.onLine) {
+        await runInventoryWrite("Distribuir EPI offline", async () => {
+          const item = items.find((candidate) => candidate.id === dist.itemId && matchesTenant(candidate.tenantId || (candidate as any).companyId));
+          if (!item) throw new Error("O EPI selecionado não pertence a esta empresa ou não existe mais.");
+          const matchingStocks = stocks
+            .filter((stock) => stock.itemId === dist.itemId && matchesTenant(stock.tenantId || (stock as any).companyId))
+            .sort((a, b) => a.id.localeCompare(b.id));
+          const total = matchingStocks.reduce((sum, stock) => sum + Math.max(0, Number(stock.quantity) || 0), 0);
+          if (total < dist.quantity) throw new Error(`Saldo insuficiente para distribuir. Disponível: ${total}.`);
+
+          let remaining = dist.quantity;
+          const updatedStocks = matchingStocks.map((stock) => {
+            const used = Math.min(Math.max(0, Number(stock.quantity) || 0), remaining);
+            remaining -= used;
+            return { ...stock, quantity: stock.quantity - used, tenantId: activeTenantId };
+          });
+          await safeSetDocFirebase(doc(db, "epiDistributions", id), cleanUndefined({ ...dist, id, tenantId: activeTenantId }));
+          await updateStocks(updatedStocks);
+          const queuedMovement = { ...movement, tenantId: activeTenantId };
+          await enqueueAction("ADD_STOCK_MOVEMENT", { movement: queuedMovement });
+          runSync();
+          setEpiDistributions((previous) => previous.some((entry) => entry.id === id) ? previous : [{ ...dist, id, tenantId: activeTenantId }, ...previous]);
+          setStockMovements((previous) => previous.some((entry) => entry.id === movementId) ? previous : [queuedMovement, ...previous]);
+        });
+        return id;
+      }
+      const epiStockQuerySnapshot = !isDemoMode
+        ? await getDocs(query(collection(db, "stocks"), where("tenantId", "==", activeTenantId), where("itemId", "==", dist.itemId)))
+        : null;
+      await runInventoryWrite("Distribuir EPI", async () => {
+        if (isDemoMode) {
+          const item = items.find((candidate) => candidate.id === dist.itemId && matchesTenant(candidate.tenantId || (candidate as any).companyId));
+          if (!item) throw new Error("O EPI selecionado não pertence a esta empresa ou não existe mais.");
+          const matchingStocks = stocks.filter((stock) => stock.itemId === dist.itemId && matchesTenant(stock.tenantId || (stock as any).companyId)).sort((a, b) => a.id.localeCompare(b.id));
+          const total = matchingStocks.reduce((sum, stock) => sum + Math.max(0, Number(stock.quantity) || 0), 0);
+          if (total < dist.quantity) throw new Error(`Saldo insuficiente para distribuir. Disponível: ${total}.`);
+          let remaining = dist.quantity;
+          const updated = matchingStocks.map((stock) => {
+            const used = Math.min(stock.quantity, remaining);
+            remaining -= used;
+            return { ...stock, quantity: stock.quantity - used };
+          });
+          setStocks((previous) => previous.map((stock) => updated.find((next) => next.id === stock.id) || stock));
+          setEpiDistributions((previous) => [{ ...dist, id, tenantId: activeTenantId }, ...previous]);
+          setStockMovements((previous) => [{ ...movement, tenantId: activeTenantId }, ...previous]);
+          return;
+        }
+
+        await runTransaction(db, async (transaction) => {
+          const stockRefs = new Map((epiStockQuerySnapshot?.docs || []).map((snapshot) => [snapshot.id, snapshot.ref]));
+          const canonicalStockId = `${dist.itemId}|OUTROS|OUTROS|OUTROS|ACABADO`;
+          stockRefs.set(canonicalStockId, doc(db, "stocks", canonicalStockId));
+          const itemRef = doc(db, "items", String(dist.itemId));
+          const itemSnapshot = await transaction.get(itemRef);
+          if (!itemSnapshot.exists() || itemSnapshot.data()?.tenantId !== activeTenantId) throw new Error("O EPI selecionado não pertence a esta empresa ou não existe mais.");
+          const stockRows: Array<{ ref: import("firebase/firestore").DocumentReference; stock: StockEntry }> = [];
+          for (const ref of stockRefs.values()) {
+            const snapshot = await transaction.get(ref);
+            if (snapshot.exists() && snapshot.data()?.tenantId === activeTenantId) stockRows.push({ ref, stock: snapshot.data() as StockEntry });
+          }
+          stockRows.sort((a, b) => a.ref.id.localeCompare(b.ref.id));
+          const total = stockRows.reduce((sum, row) => sum + Math.max(0, Number(row.stock.quantity) || 0), 0);
+          if (total < dist.quantity) throw new Error(`Saldo insuficiente para distribuir. Disponível: ${total}.`);
+
+          let remaining = dist.quantity;
+          for (const row of stockRows) {
+            if (remaining <= 0) break;
+            const current = Math.max(0, Number(row.stock.quantity) || 0);
+            const used = Math.min(current, remaining);
+            transaction.update(row.ref, { quantity: current - used });
+            remaining -= used;
+          }
+          transaction.update(itemRef, { ppeInventoryUpdatedAt: timestamp });
+          transaction.set(doc(db, "epiDistributions", id), cleanUndefined({ ...dist, id, tenantId: activeTenantId }));
+          transaction.set(doc(db, "stock_movements", movementId), cleanUndefined({ ...movement, tenantId: activeTenantId }));
+        });
       });
+      return id;
     },
     uniforms: filteredUniforms,
     addUniform: async (u: Omit<Uniform, "id">) => {
-      const id = Date.now().toString();
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       await runWrite("Cadastrar Uniforme", async () => {
-        await setDoc(doc(db, "uniforms", id), cleanUndefined({ ...u, id, tenantId: (u as any).tenantId || activeTenantId }));
+        const uniform = { ...u, id, tenantId: (u as any).tenantId || activeTenantId };
+        await setDoc(doc(db, "uniforms", id), cleanUndefined(uniform));
+        if (isDemoMode) setUniforms((previous) => [...previous, uniform]);
       });
+      return id;
     },
     updateUniform: async (id: string, updates: Partial<Uniform>) => {
       await runWrite("Atualizar Uniforme", async () => {
@@ -2595,17 +2959,120 @@ export function useDatabase(currentUser?: User | null) {
     },
     uniformDistributions: filteredUniformDistributions,
     addUniformDistribution: async (dist: Omit<UniformDistribution, "id">) => {
-      const id = Date.now().toString();
-      await runWrite("Distribuir Uniforme", async () => {
-        await setDoc(
-          doc(db, "uniformDistributions", id),
-          cleanUndefined({ ...dist, id, tenantId: (dist as any).tenantId || activeTenantId }),
-        );
+      if (!Number.isInteger(Number(dist.quantity)) || Number(dist.quantity) <= 0) throw new Error("Informe uma quantidade inteira maior que zero para a entrega do uniforme.");
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const movementId = `${id}-out`;
+      const timestamp = dist.date || Date.now();
+      const movement: StockMovement = {
+        id: movementId,
+        itemId: 0,
+        uniformId: dist.uniformId,
+        color: "GERAL",
+        size: "GERAL",
+        variation: "GERAL",
+        quantity: dist.quantity,
+        type: "SAIDA",
+        description: `Distribuição de uniforme ${dist.uniformId} para colaborador ${dist.employeeId}`,
+        timestamp,
+        inventoryType: "UNIFORME",
+        employeeId: dist.employeeId,
+        distributionId: id,
+        operatorName: dist.operatorName,
+      };
+      if (!isDemoMode && typeof navigator !== "undefined" && !navigator.onLine) {
+        await runInventoryWrite("Distribuir uniforme offline", async () => {
+          const uniform = uniforms.find((candidate) => candidate.id === dist.uniformId && matchesTenant(candidate.tenantId || (candidate as any).companyId));
+          if (!uniform || uniform.stock < dist.quantity) throw new Error(`Saldo insuficiente para entrega. Disponível: ${uniform?.stock || 0}.`);
+          const updatedUniform = { ...uniform, stock: uniform.stock - dist.quantity };
+          await updateDocFirebase(doc(db, "uniforms", dist.uniformId), { stock: updatedUniform.stock });
+          await safeSetDocFirebase(doc(db, "uniformDistributions", id), cleanUndefined({ ...dist, id, tenantId: activeTenantId }));
+          const queuedMovement = { ...movement, tenantId: activeTenantId };
+          await enqueueAction("ADD_STOCK_MOVEMENT", { movement: queuedMovement });
+          runSync();
+          setUniforms((previous) => previous.map((candidate) => candidate.id === dist.uniformId && matchesTenant(candidate.tenantId || (candidate as any).companyId) ? updatedUniform : candidate));
+          setUniformDistributions((previous) => previous.some((entry) => entry.id === id) ? previous : [{ ...dist, id, tenantId: activeTenantId }, ...previous]);
+          setStockMovements((previous) => previous.some((entry) => entry.id === movementId) ? previous : [queuedMovement, ...previous]);
+        });
+        return id;
+      }
+      await runInventoryWrite("Distribuir Uniforme", async () => {
+        if (isDemoMode) {
+          const uniform = uniforms.find((entry) => entry.id === dist.uniformId && matchesTenant(entry.tenantId || (entry as any).companyId));
+          if (!uniform || uniform.stock < dist.quantity) throw new Error(`Saldo insuficiente para entrega. Disponível: ${uniform?.stock || 0}.`);
+          setUniforms((previous) => previous.map((entry) => entry.id === dist.uniformId && matchesTenant(entry.tenantId || (entry as any).companyId) ? { ...entry, stock: entry.stock - dist.quantity } : entry));
+          setUniformDistributions((previous) => [{ ...dist, id, tenantId: activeTenantId }, ...previous]);
+          setStockMovements((previous) => [{ ...movement, tenantId: activeTenantId }, ...previous]);
+          return;
+        }
+
+        await runTransaction(db, async (transaction) => {
+          const uniformRef = doc(db, "uniforms", dist.uniformId);
+          const uniformSnapshot = await transaction.get(uniformRef);
+          if (!uniformSnapshot.exists() || uniformSnapshot.data()?.tenantId !== activeTenantId) throw new Error("O uniforme selecionado não pertence a esta empresa ou não existe mais.");
+          const current = Number(uniformSnapshot.data()?.stock || 0);
+          if (current < dist.quantity) throw new Error(`Saldo insuficiente para entrega. Disponível: ${current}.`);
+          transaction.update(uniformRef, { stock: current - dist.quantity });
+          transaction.set(doc(db, "uniformDistributions", id), cleanUndefined({ ...dist, id, tenantId: activeTenantId }));
+          transaction.set(doc(db, "stock_movements", movementId), cleanUndefined({ ...movement, tenantId: activeTenantId }));
+        });
       });
+      return id;
     },
     deleteUniformDistribution: async (id: string) => {
       await runWrite("Deletar Distribuição de Uniforme", async () => {
         await safeDeleteDoc(doc(db, "uniformDistributions", id));
+      });
+    },
+    reverseUniformDistribution: async (id: string, operatorName: string) => {
+      const movementId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await runInventoryWrite("Estornar distribuição de uniforme", async () => {
+        if (isDemoMode) {
+          const distribution = uniformDistributions.find((entry) => entry.id === id);
+          if (!distribution) throw new Error("A distribuição não foi encontrada.");
+          const uniform = uniforms.find((entry) => entry.id === distribution.uniformId && matchesTenant(entry.tenantId || (entry as any).companyId));
+          if (!uniform) throw new Error("O uniforme da distribuição não está disponível para estorno.");
+          setUniforms((previous) => previous.map((entry) => entry.id === distribution.uniformId && matchesTenant(entry.tenantId || (entry as any).companyId) ? { ...entry, stock: entry.stock + distribution.quantity } : entry));
+          setUniformDistributions((previous) => previous.filter((entry) => entry.id !== id));
+          setStockMovements((previous) => [{
+            id: movementId, itemId: 0, uniformId: distribution.uniformId,
+            color: "GERAL", size: "GERAL", variation: "GERAL",
+            quantity: distribution.quantity, type: "ENTRADA",
+            description: `Estorno da distribuição de uniforme ${id}`,
+            timestamp: Date.now(), inventoryType: "UNIFORME",
+            employeeId: distribution.employeeId, distributionId: id,
+            operatorName, tenantId: activeTenantId,
+          }, ...previous]);
+          return;
+        }
+
+        await runTransaction(db, async (transaction) => {
+          const distributionRef = doc(db, "uniformDistributions", id);
+          const distributionSnapshot = await transaction.get(distributionRef);
+          if (!distributionSnapshot.exists() || distributionSnapshot.data()?.tenantId !== activeTenantId) throw new Error("A distribuição não pertence a esta empresa ou não existe mais.");
+          const distribution = distributionSnapshot.data() as UniformDistribution;
+          const uniformRef = doc(db, "uniforms", distribution.uniformId);
+          const uniformSnapshot = await transaction.get(uniformRef);
+          if (!uniformSnapshot.exists() || uniformSnapshot.data()?.tenantId !== activeTenantId) throw new Error("O uniforme da distribuição não está disponível para estorno.");
+          transaction.update(uniformRef, { stock: Number(uniformSnapshot.data()?.stock || 0) + distribution.quantity });
+          transaction.delete(distributionRef);
+          transaction.set(doc(db, "stock_movements", movementId), cleanUndefined({
+            id: movementId,
+            itemId: 0,
+            uniformId: distribution.uniformId,
+            color: "GERAL",
+            size: "GERAL",
+            variation: "GERAL",
+            quantity: distribution.quantity,
+            type: "ENTRADA",
+            description: `Estorno da distribuição de uniforme ${id}`,
+            timestamp: Date.now(),
+            inventoryType: "UNIFORME",
+            employeeId: distribution.employeeId,
+            distributionId: id,
+            operatorName,
+            tenantId: activeTenantId,
+          }));
+        });
       });
     },
     priceHistories: filteredPriceHistories,
