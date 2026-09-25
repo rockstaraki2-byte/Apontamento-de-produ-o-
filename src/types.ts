@@ -212,6 +212,7 @@ export const ALL_AVAILABLE_SCREENS: ScreenOption[] = [
 
   // Estoque
   { key: "estoque", label: "Estoque Geral (Produtos/EPIs)", category: "Estoque", path: "/estoque" },
+  { key: "estoque-epi-uniformes", label: "Controle de EPIs e Uniformes", category: "Estoque", path: "/estoque-epis" },
   { key: "estoque-chapas", label: "Estoque de Chapas", category: "Estoque", path: "/estoque-chapas" },
   { key: "estoque-laser", label: "Estoque Pçs Cortadas Laser", category: "Estoque", path: "/estoque-laser" },
 
@@ -230,6 +231,8 @@ export interface Item {
   productiveCost?: number; // Custo produtivo unitário (R$)
   productionPoints?: number;
   type?: "PRODUTO" | "PECA" | "EPI";
+  minStock?: number;
+  replacementIntervalDays?: number;
   components?: { itemId: number; quantity: number }[];
   imageUrl?: string;
   standardCycles?: Record<number, number>; // sectorId -> time in minutes
@@ -266,6 +269,7 @@ export interface Uniform {
   size: string;
   stock: number;
   minStock: number;
+  tenantId?: string;
 }
 
 export interface UniformDistribution {
@@ -275,6 +279,8 @@ export interface UniformDistribution {
   quantity: number;
   date: number;
   notes?: string;
+  operatorName?: string;
+  tenantId?: string;
 }
 
 export interface EpiDistribution {
@@ -284,6 +290,8 @@ export interface EpiDistribution {
   quantity: number;
   date: number;
   notes?: string;
+  operatorName?: string;
+  tenantId?: string;
 }
 
 export interface ProductAttribute {
@@ -321,6 +329,7 @@ export interface StockEntry {
   stage: "INTERMEDIARIO" | "ACABADO";
   declaredPackages?: number;
   measurementUnit?: string;
+  tenantId?: string;
 }
 
 export interface Order {
@@ -709,6 +718,17 @@ export interface StockMovement {
   type: "ENTRADA" | "SAIDA";
   description: string;
   timestamp: number;
+  inventoryType?: "EPI" | "UNIFORME";
+  uniformId?: string;
+  purchaseOrderNumber?: string;
+  invoiceNumber?: string;
+  supplier?: string;
+  unitPrice?: number;
+  totalValue?: number;
+  employeeId?: string;
+  distributionId?: string;
+  operatorName?: string;
+  tenantId?: string;
 }
 
 export interface CoilCuttingPlan {
@@ -956,6 +976,3 @@ export interface LaserQuote {
   approvalMaterialMode?: "COM_MATERIAL" | "SEM_MATERIAL" | null;
   tenantId?: string;
 }
-
-
-
