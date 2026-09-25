@@ -46,6 +46,8 @@ interface RealTimeFactoryMonitoringProps {
 
 type SubTab = "OVERVIEW" | "STATIONS" | "OPERATORS" | "METRICS" | "LIVE_LOGS";
 
+const STALE_ACTIVITY_THRESHOLD_HOURS = 24;
+
 interface ErrorBoundaryProps {
   children: React.ReactNode;
 }
@@ -157,6 +159,14 @@ function RealTimeFactoryMonitoringContent({
     if (!startTime || isNaN(startTime) || typeof startTime !== "number") return 0;
     return (now - startTime) / (1000 * 60 * 60);
   };
+
+  const isStaleActivity = (task: ActiveTask) =>
+    getElapsedHours(task.startTime) >= STALE_ACTIVITY_THRESHOLD_HOURS;
+
+  const currentActivePacks = useMemo(
+    () => (activePacks || []).filter((pack) => pack && !isStaleActivity(pack)),
+    [activePacks, now],
+  );
 
   // Dynamic sector categories based on active tenant's registered sectors + intelligent operator allocation
   const activeTenantSectors = useMemo(() => {
@@ -304,11 +314,14 @@ function RealTimeFactoryMonitoringContent({
               case "SOLDA":
                 return sectorName.includes("solda");
               case "CORTE_LASER":
-                return sectorName.includes("laser");
+                return sectorName.includes("laser") && !sectorName.includes("solda");
               case "CORTE_TUBOS":
                 return sectorName.includes("tubo") || sectorName.includes("perfil");
               case "CORTE":
-                return sectorName.includes("corte") || sectorName.includes("laser");
+                return (
+                  !sectorName.includes("solda") &&
+                  (sectorName.includes("corte") || sectorName.includes("laser"))
+                );
               case "PINTURA":
                 return sectorName.includes("pintura") || sectorName.includes("epoxi");
               case "EMBALAGEM":
@@ -522,7 +535,7 @@ function RealTimeFactoryMonitoringContent({
   // Distinct active operators count
   const activeOperatorsList = useMemo(() => {
     const map = new Map<string, ActiveTask[]>();
-    (activePacks || []).forEach((pack) => {
+    currentActivePacks.forEach((pack) => {
       if (!pack) return;
       const op = String(pack.operatorId || "Não identificado");
       if (!map.has(op)) {
@@ -534,20 +547,20 @@ function RealTimeFactoryMonitoringContent({
       operatorId,
       tasks,
     }));
-  }, [activePacks]);
+  }, [currentActivePacks]);
 
   // Overall statistics
-  const totalActive = activePacks.length;
+  const totalActive = currentActivePacks.length;
   const longRunningCount = useMemo(() => {
-    return activePacks.filter((p) => getElapsedHours(p.startTime) >= 2).length;
-  }, [activePacks, now]);
+    return currentActivePacks.filter((p) => getElapsedHours(p.startTime) >= 2).length;
+  }, [currentActivePacks]);
 
   const activeSectorsCount = useMemo(
     () =>
       activeTenantSectors.filter((sector) =>
-        activePacks.some((pack) => sector.matchesPack(pack)),
+        currentActivePacks.some((pack) => sector.matchesPack(pack)),
       ).length,
-    [activePacks, activeTenantSectors],
+    [currentActivePacks, activeTenantSectors],
   );
 
   // Recent logs today
@@ -802,6 +815,8 @@ function RealTimeFactoryMonitoringContent({
 
               // Find matching active packs for this sector using cat.matchesPack
               const sectorPacks = filteredActivePacks.filter((p) => cat.matchesPack(p));
+              const currentSectorPacks = sectorPacks.filter((pack) => !isStaleActivity(pack));
+              const staleSectorPacks = sectorPacks.filter(isStaleActivity);
 
               // If filtering by sector or search term and this sector has 0 packs, hide it unless "ALL" filter
               if (sectorPacks.length === 0 && (selectedSectorFilter !== "ALL" || searchTerm.trim() !== "" || onlyLongDuration)) {
@@ -829,19 +844,24 @@ function RealTimeFactoryMonitoringContent({
                               ? "bg-emerald-100 text-emerald-800 border border-emerald-200" 
                               : "bg-slate-200 text-slate-600"
                           }`}>
-                            {sectorPacks.length} {sectorPacks.length === 1 ? "ativo" : "ativos"}
+                            {currentSectorPacks.length} ativos{staleSectorPacks.length > 0 ? ` • ${staleSectorPacks.length} antigos` : ""}
                           </span>
                         </h3>
                         <p className="text-[11px] text-slate-500 font-medium">{cat.subtitle}</p>
                       </div>
                     </div>
 
-                    {sectorPacks.length > 0 && (
+                    {currentSectorPacks.length > 0 ? (
                       <div className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                         Em Operação
                       </div>
-                    )}
+                    ) : staleSectorPacks.length > 0 ? (
+                      <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                        <AlertTriangle size={14} />
+                        Validar registro antigo
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Cards Grid */}
@@ -859,15 +879,18 @@ function RealTimeFactoryMonitoringContent({
                         {sectorPacks.map((pack) => {
                           const item = items.find((i) => i.id === pack.itemId);
                           const elapsedHrs = getElapsedHours(pack.startTime);
-                          const isWarning = elapsedHrs >= 2;
-                          const isCritical = elapsedHrs >= 4;
+                          const isStale = isStaleActivity(pack);
+                          const isWarning = !isStale && elapsedHrs >= 2;
+                          const isCritical = !isStale && elapsedHrs >= 4;
 
                           return (
                             <div
                               key={pack.id}
                               onClick={() => onOpenModal(pack)}
                               className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3 relative overflow-hidden group shadow-2xs hover:shadow-md ${
-                                isCritical
+                                isStale
+                                  ? "border-amber-400 bg-amber-50/50 hover:bg-amber-50"
+                                  : isCritical
                                   ? "border-rose-400 bg-rose-50/40 hover:bg-rose-50/80"
                                   : isWarning
                                   ? "border-amber-400 bg-amber-50/40 hover:bg-amber-50/80"
@@ -875,13 +898,17 @@ function RealTimeFactoryMonitoringContent({
                               }`}
                             >
                             {/* Warning Indicator Ribbon */}
-                            {isWarning && (
+                            {isStale ? (
+                              <div className="absolute top-0 right-0 text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl shadow-2xs text-white bg-amber-600">
+                                ⚠️ Aberto há mais de 24h • validar
+                              </div>
+                            ) : isWarning ? (
                               <div className={`absolute top-0 right-0 text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-bl shadow-2xs text-white ${
                                 isCritical ? "bg-rose-600" : "bg-amber-500"
                               }`}>
                                 {isCritical ? "🚨 +4h Rodando" : "⚠️ +2h Operando"}
                               </div>
-                            )}
+                            ) : null}
 
                             <div>
                               {/* Lote / Batch Pill */}
@@ -938,8 +965,8 @@ function RealTimeFactoryMonitoringContent({
 
                               <div className="flex flex-col items-end shrink-0">
                                 <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                  Tempo Decorrido
+                                  <span className={`w-1.5 h-1.5 rounded-full ${isStale ? "bg-amber-500" : "bg-emerald-500 animate-pulse"}`}></span>
+                                  {isStale ? "Sem encerramento recente" : "Tempo Decorrido"}
                                 </span>
                                 <span className={`font-mono font-black text-xs ${
                                   isCritical ? "text-rose-700 animate-pulse" : isWarning ? "text-amber-700" : cat.textAccent
@@ -973,14 +1000,52 @@ function RealTimeFactoryMonitoringContent({
           {activeTenantSectors.map((cat) => {
             const CAT_ICON = cat.icon || Layers;
             const activeSectorPacks = (activePacks || []).filter((p) => cat.matchesPack(p));
+            const currentSectorPacks = activeSectorPacks.filter((pack) => !isStaleActivity(pack));
+            const staleSectorPacks = activeSectorPacks.filter(isStaleActivity);
+            const isOperating = currentSectorPacks.length > 0;
+            const hasStaleActivity = staleSectorPacks.length > 0;
 
-            const isOperating = activeSectorPacks.length > 0;
+            const renderSectorTask = (pack: ActiveTask, isStale: boolean) => {
+              const item = (items || []).find((candidate) => candidate && candidate.id === pack.itemId);
+              return (
+                <div
+                  key={pack.id}
+                  onClick={() => onOpenModal(pack)}
+                  className={`p-3 rounded-xl cursor-pointer transition flex items-center justify-between gap-2 ${
+                    isStale
+                      ? "bg-amber-50 border border-amber-300 hover:border-amber-500"
+                      : "bg-slate-50 border border-slate-200 hover:border-blue-400"
+                  }`}
+                >
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-bold text-slate-800 text-xs truncate max-w-[160px]">
+                      {pack.partName || pack.customProductName || item?.name || "Peça em produção"}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      Op: {pack.operatorId || "Operador"}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className={`font-mono font-bold text-xs block ${isStale ? "text-amber-700" : "text-blue-600"}`}>
+                      {formatLiveElapsed(pack.startTime)}
+                    </span>
+                    <span className={`text-[9px] uppercase font-extrabold ${isStale ? "text-amber-700" : "text-slate-400"}`}>
+                      {isStale ? "Validar apontamento" : "Rodando"}
+                    </span>
+                  </div>
+                </div>
+              );
+            };
 
             return (
               <div
                 key={cat.key}
                 className={`bg-white rounded-2xl border p-5 shadow-xs flex flex-col justify-between gap-4 transition ${
-                  isOperating ? "border-emerald-300 ring-2 ring-emerald-500/10" : "border-slate-200"
+                  isOperating
+                    ? "border-emerald-300 ring-2 ring-emerald-500/10"
+                    : hasStaleActivity
+                    ? "border-amber-300 ring-2 ring-amber-500/10"
+                    : "border-slate-200"
                 }`}
               >
                 <div className="flex items-start justify-between">
@@ -997,46 +1062,40 @@ function RealTimeFactoryMonitoringContent({
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
                     isOperating
                       ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                      : hasStaleActivity
+                      ? "bg-amber-100 text-amber-800 border border-amber-300"
                       : "bg-slate-100 text-slate-500 border border-slate-200"
                   }`}>
-                    <span className={`w-2 h-2 rounded-full ${isOperating ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`}></span>
-                    {isOperating ? "EM OPERAÇÃO" : "OCIOSO"}
+                    <span className={`w-2 h-2 rounded-full ${
+                      isOperating
+                        ? "bg-emerald-500 animate-pulse"
+                        : hasStaleActivity
+                        ? "bg-amber-500"
+                        : "bg-slate-400"
+                    }`}></span>
+                    {isOperating ? "EM OPERAÇÃO" : hasStaleActivity ? "VALIDAR REGISTRO" : "OCIOSO"}
                   </span>
                 </div>
 
-                {isOperating ? (
+                {isOperating && (
                   <div className="space-y-2 border-t border-slate-100 pt-3">
                     <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">
-                      Tarefas em Execução ({activeSectorPacks.length}):
+                      Tarefas em Execução ({currentSectorPacks.length}):
                     </span>
-                    {activeSectorPacks.map((pack) => {
-                      const item = (items || []).find((i) => i && i.id === pack.itemId);
-                      return (
-                        <div
-                          key={pack.id}
-                          onClick={() => onOpenModal(pack)}
-                          className="bg-slate-50 border border-slate-200 hover:border-blue-400 p-3 rounded-xl cursor-pointer transition flex items-center justify-between gap-2"
-                        >
-                          <div className="flex flex-col">
-                            <span className="font-bold text-slate-800 text-xs truncate max-w-[160px]">
-                              {pack.partName || pack.customProductName || item?.name || "Peça em produção"}
-                            </span>
-                            <span className="text-[10px] text-slate-500 font-medium">
-                              Op: {pack.operatorId || "Operador"}
-                            </span>
-                          </div>
-
-                          <div className="text-right shrink-0">
-                            <span className="font-mono font-bold text-xs text-blue-600 block">
-                              {formatLiveElapsed(pack.startTime)}
-                            </span>
-                            <span className="text-[9px] text-slate-400 uppercase font-extrabold">Rodando</span>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {currentSectorPacks.map((pack) => renderSectorTask(pack, false))}
                   </div>
-                ) : (
+                )}
+
+                {hasStaleActivity && (
+                  <div className="space-y-2 border-t border-amber-200 pt-3">
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[10px] font-bold text-amber-800">
+                      Apontamentos abertos há {STALE_ACTIVITY_THRESHOLD_HOURS}h ou mais. Confirme se foram encerrados.
+                    </div>
+                    {staleSectorPacks.map((pack) => renderSectorTask(pack, true))}
+                  </div>
+                )}
+
+                {!isOperating && !hasStaleActivity && (
                   <div className="p-4 bg-slate-50 rounded-xl text-center border border-dashed border-slate-200">
                     <p className="text-xs font-bold text-slate-500">Nenhuma máquina ocupada</p>
                     <p className="text-[10px] text-slate-400 mt-0.5">Posto pronto para novos apontamentos de lote.</p>
