@@ -31,6 +31,7 @@ import { canManageExpedition } from "./expeditionAccess";
 import { findCustomerForOrder, normalizeString } from "./searchUtils";
 import { LoadSuggestionsTab } from "./LoadSuggestionsTab";
 import { PdfPreviewModal } from "./PdfPreviewModal";
+import { createLoadMetrics } from "./expeditionMetrics";
 
 const DAY_NAMES = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const SHIFT_LABEL: Record<string, string> = { MANHA: "Manhã", TARDE: "Tarde" };
@@ -165,7 +166,7 @@ export function ProgramacaoCargasScreen({
 }) {
   const [tab, setTab] = useState<"SEMANA" | "PEDIDOS" | "SUGESTOES" | "ROTAS" | "HISTORICO">("SEMANA");
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
-  const [selectedCarga, setSelectedCarga] = useState<Carga | null>(null);
+  const [selectedCargaId, setSelectedCargaId] = useState<string | null>(null);
   const [showLoadForm, setShowLoadForm] = useState(false);
   const [editingLoadId, setEditingLoadId] = useState<string | null>(null);
   const [loadRouteId, setLoadRouteId] = useState("");
@@ -226,44 +227,12 @@ export function ProgramacaoCargasScreen({
 
   const itemsById = useMemo(() => new Map(db.items.map((i) => [i.id, i])), [db.items]);
   const ordersById = useMemo(() => new Map(db.orders.map((o) => [o.id, o])), [db.orders]);
-  const invoicedQuantitiesByLoad = useMemo(() => {
-    const byLoad = new Map<string, Record<number, number>>();
-    const loadsByOrder = new Map<number, Carga[]>();
-
-    (db.cargas || []).forEach((carga) => {
-      (carga.orderIds || []).forEach((orderId) => {
-        const relatedLoads = loadsByOrder.get(orderId) || [];
-        if (!relatedLoads.some((related) => related.id === carga.id)) {
-          relatedLoads.push(carga);
-        }
-        loadsByOrder.set(orderId, relatedLoads);
-      });
-    });
-
-    loadsByOrder.forEach((relatedLoads, orderId) => {
-      let remainingInvoiced = Math.max(
-        0,
-        Number(ordersById.get(orderId)?.invoicedQuantity || 0),
-      );
-
-      [...relatedLoads].sort(loadSort).forEach((carga) => {
-        const allocated = Math.max(
-          0,
-          Number(carga.orderQuantities?.[orderId] || 0),
-        );
-        const invoiced = Math.min(allocated, remainingInvoiced);
-        const perOrder = byLoad.get(carga.id) || {};
-        perOrder[orderId] = invoiced;
-        byLoad.set(carga.id, perOrder);
-        remainingInvoiced = Math.max(0, remainingInvoiced - allocated);
-      });
-    });
-
-    return byLoad;
-  }, [db.cargas, ordersById]);
-
-  const invoicedForLoad = (carga: Carga, orderId: number) =>
-    Number(invoicedQuantitiesByLoad.get(carga.id)?.[orderId] || 0);
+  const selectedCarga = (db.cargas || []).find((c) => c.id === selectedCargaId) || null;
+  const loadCalculations = useMemo(
+    () => createLoadMetrics(db.cargas || [], db.orders),
+    [db.cargas, db.orders],
+  );
+  const { packedForLoad, invoicedForLoad, metrics: loadMetrics } = loadCalculations;
   const batchIdsByOrder = useMemo(() => {
     const map = new Map<number, number[]>();
     (db.productionBatches || []).forEach((batch) => {
@@ -469,61 +438,6 @@ export function ProgramacaoCargasScreen({
     setOrderBatchFilter("TODOS");
   };
 
-  const packedForLoad = (carga: Carga, orderId: number) => {
-    const order = ordersById.get(orderId);
-    if (!order) return 0;
-
-    let packedAvailable = Math.max(0, Number(order.packedQuantity || 0));
-    const relatedLoads = (db.cargas || [])
-      .filter((c) => (c.orderIds || []).includes(orderId))
-      .sort(loadSort);
-
-    for (const related of relatedLoads) {
-      const allocated = Math.max(0, Number(related.orderQuantities?.[orderId] || 0));
-      const packedHere = Math.min(allocated, packedAvailable);
-      if (related.id === carga.id) return packedHere;
-      packedAvailable = Math.max(0, packedAvailable - allocated);
-    }
-    return 0;
-  };
-
-  const loadMetrics = (carga: Carga) => {
-    const ids = carga.orderIds || [];
-    let required = 0;
-    let packed = 0;
-    let separated = 0;
-    let invoiced = 0;
-    const customers = new Set<string>();
-    const orderCodes = new Set<string>();
-    let incompleteOrders = 0;
-
-    ids.forEach((id) => {
-      const order = ordersById.get(id);
-      if (!order) return;
-      const qty = Number(carga.orderQuantities?.[id] || 0);
-      const sep = Math.min(qty, Number(carga.separatedQuantities?.[id] || 0));
-      const pack = packedForLoad(carga, id);
-      required += qty;
-      packed += pack;
-      separated += sep;
-      invoiced += invoicedForLoad(carga, id);
-      customers.add(order.customerName);
-      orderCodes.add(order.orderCode);
-      if (sep < qty) incompleteOrders += 1;
-    });
-
-    const percent = required > 0 ? Math.round((separated / required) * 100) : 0;
-    return {
-      required,
-      packed,
-      separated,
-      invoiced,
-      percent,
-      customerCount: customers.size,
-      orderCount: orderCodes.size,
-      incompleteOrders,
-    };
-  };
 
   const resetRouteForm = () => {
     setRouteName("");
@@ -594,7 +508,7 @@ export function ProgramacaoCargasScreen({
     setLoadDate(getLoadDate(carga) || dateKey(new Date()));
     setLoadLocation(carga.stagingLocation || "");
     setLoadNotes(carga.notes || "");
-    setSelectedCarga(null);
+    setSelectedCargaId(null);
     setShowLoadForm(true);
   };
 
@@ -618,7 +532,7 @@ export function ProgramacaoCargasScreen({
 
     await db.deleteCarga(carga.id);
     if (targetCargaId === carga.id) setTargetCargaId("");
-    setSelectedCarga(null);
+    setSelectedCargaId(null);
   };
 
   const includeOrdersInLoad = (carga: Carga) => {
@@ -629,7 +543,7 @@ export function ProgramacaoCargasScreen({
 
     setTargetCargaId(carga.id);
     setSelectedQuantities({});
-    setSelectedCarga(null);
+    setSelectedCargaId(null);
     setTab("PEDIDOS");
   };
 
@@ -806,7 +720,6 @@ export function ProgramacaoCargasScreen({
       ],
     };
     await db.updateCarga(updated);
-    setSelectedCarga(updated);
   };
 
   const changeStatus = async (carga: Carga, status: Carga["status"]) => {
@@ -841,7 +754,6 @@ export function ProgramacaoCargasScreen({
       ],
     };
     await db.updateCarga(updated);
-    setSelectedCarga(updated);
   };
 
   const getLoadProjectedRevenue = (carga: Carga) => {
@@ -1069,7 +981,7 @@ export function ProgramacaoCargasScreen({
       <button
         key={carga.id}
         type="button"
-        onClick={() => setSelectedCarga(carga)}
+        onClick={() => setSelectedCargaId(carga.id)}
         className="text-left bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition p-4 flex flex-col gap-3"
       >
         <div className="flex items-start justify-between gap-3">
@@ -1334,9 +1246,9 @@ export function ProgramacaoCargasScreen({
       )}
 
       {selectedCarga && (
-        <div className="fixed inset-0 z-[130] bg-black/50 backdrop-blur-sm flex items-center justify-center p-3" onClick={() => setSelectedCarga(null)}>
+        <div className="fixed inset-0 z-[130] bg-black/50 backdrop-blur-sm flex items-center justify-center p-3" onClick={() => setSelectedCargaId(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50"><div><div className="flex items-center gap-2 flex-wrap"><h3 className="font-black text-slate-900 text-lg">{selectedCarga.name}</h3><span className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${STATUS_CLASS[selectedCarga.status] || STATUS_CLASS.PLANEJADA}`}>{STATUS_LABEL[selectedCarga.status] || selectedCarga.status}</span></div><p className="text-xs text-slate-500">{formatDate(getLoadDate(selectedCarga))} • Área/Pallet: {selectedCarga.stagingLocation || "não definida"}</p></div><div className="flex items-center gap-2 flex-wrap justify-end"><button onClick={() => previewLoad(selectedCarga, false)} className="h-9 px-3 border border-slate-300 bg-white rounded-lg text-xs font-bold flex items-center gap-1.5" title="Abre a prévia sem salvar o arquivo"><Eye size={14} /> Visualizar Produção</button><button onClick={() => previewLoad(selectedCarga, true)} className="h-9 px-3 border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-lg text-xs font-extrabold flex items-center gap-1.5 hover:bg-emerald-100" title="Abre a prévia gerencial com faturamento previsto"><DollarSign size={14} /> Visualizar + Faturamento</button><button onClick={() => setSelectedCarga(null)} className="p-2 rounded-lg hover:bg-slate-200"><X size={18} /></button></div></div>
+            <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50"><div><div className="flex items-center gap-2 flex-wrap"><h3 className="font-black text-slate-900 text-lg">{selectedCarga.name}</h3><span className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${STATUS_CLASS[selectedCarga.status] || STATUS_CLASS.PLANEJADA}`}>{STATUS_LABEL[selectedCarga.status] || selectedCarga.status}</span></div><p className="text-xs text-slate-500">{formatDate(getLoadDate(selectedCarga))} • Área/Pallet: {selectedCarga.stagingLocation || "não definida"}</p></div><div className="flex items-center gap-2 flex-wrap justify-end"><button onClick={() => previewLoad(selectedCarga, false)} className="h-9 px-3 border border-slate-300 bg-white rounded-lg text-xs font-bold flex items-center gap-1.5" title="Abre a prévia sem salvar o arquivo"><Eye size={14} /> Visualizar Produção</button><button onClick={() => previewLoad(selectedCarga, true)} className="h-9 px-3 border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-lg text-xs font-extrabold flex items-center gap-1.5 hover:bg-emerald-100" title="Abre a prévia gerencial com faturamento previsto"><DollarSign size={14} /> Visualizar + Faturamento</button><button onClick={() => setSelectedCargaId(null)} className="p-2 rounded-lg hover:bg-slate-200"><X size={18} /></button></div></div>
             <div className="p-4 overflow-y-auto flex-1 space-y-4">
               <div className="flex flex-wrap gap-2">
                 {canManage && <><button onClick={() => openEditLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-blue-300 bg-blue-50 text-blue-800 text-xs font-bold flex items-center gap-1"><Pencil size={13} /> Editar carga</button>{EDITABLE_STATUSES.has(selectedCarga.status) && <button onClick={() => includeOrdersInLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-bold flex items-center gap-1"><Plus size={13} /> Incluir pedidos</button>}<button onClick={() => deleteLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-rose-300 bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1"><Trash2 size={13} /> Excluir carga</button></>}
