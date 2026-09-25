@@ -704,7 +704,7 @@ function Welcome({
         ),
       });
     },
-    [db.orders, db.items],
+    [db.orders, db.items, db.users, db.logs, currentUser],
   );
 
   const getOrderStatusBadgeColor = React.useCallback((status?: string) => {
