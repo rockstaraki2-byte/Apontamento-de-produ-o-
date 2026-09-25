@@ -542,17 +542,21 @@ function Welcome({
         details.orderCodes.forEach(addOrderByCode);
       }
 
-      // Só reconhece números explicitamente identificados como pedidos.
-      // Quantidades, medidas ou outros números da mensagem não viram orderCode.
-      const messageOrderCodes = [
-        ...(n.message.match(/#(?:Pedido\s*)?\d{3,8}\b/gi) || []).map(
-          (value) => value.replace(/^#(?:Pedido\s*)?/i, ""),
-        ),
-        ...(n.message.match(/\bPedido\s*[:#]?\s*\d{3,8}\b/gi) || []).map(
-          (value) => value.replace(/^Pedido\s*[:#]?\s*/i, "").replace(/^#/, ""),
-        ),
-      ];
-      messageOrderCodes.forEach(addOrderByCode);
+      // Metadados estruturados são a fonte principal. Só analisa o texto em
+      // notificações antigas que não tenham vínculo explícito com pedidos.
+      if (linkedOrders.size === 0) {
+        // Quantidades, medidas ou outros números não viram orderCode.
+        const messageOrderCodes = [
+          ...(n.message.match(/#(?:Pedido\s*)?\d{3,8}\b/gi) || []).map(
+            (value) => value.replace(/^#(?:Pedido\s*)?/i, ""),
+          ),
+          ...(n.message.match(/\bPedido\s*[:#]?\s*\d{3,8}\b/gi) || []).map(
+            (value) =>
+              value.replace(/^Pedido\s*[:#]?\s*/i, "").replace(/^#/, ""),
+          ),
+        ];
+        messageOrderCodes.forEach(addOrderByCode);
+      }
 
       const ordersToOpen = Array.from(linkedOrders.values());
       if (ordersToOpen.length === 1) {
@@ -567,7 +571,7 @@ function Welcome({
           body: (
             <div className="space-y-3 text-left">
               <p className="text-xs text-gray-600">
-                Esta notificação está vinculada a {ordersToOpen.length} pedidos.
+                Esta notificação envolve {ordersToOpen.length} pedidos.
                 Escolha qual ficha de produção deseja consultar.
               </p>
               <p className="text-xs text-gray-700 border-l-4 border-blue-500 pl-3 py-1 bg-gray-50 rounded">
