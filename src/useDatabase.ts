@@ -64,7 +64,8 @@ import {
   DEMO_USER,
   isDemoModeEnabled,
 } from "./demoData";
-import { isFullySeparated } from "./expeditionMetrics";
+import { isFullySeparated, mergeCargaOrderAllocations } from "./expeditionMetrics";
+import type { CargaOrderAllocationRequest } from "./expeditionMetrics";
 
 function cleanUndefined<T>(obj: T): T {
   if (obj === null || typeof obj !== "object") {
@@ -2880,6 +2881,44 @@ export function useDatabase(currentUser?: User | null) {
         Date.now().toString() + Math.random().toString(36).substring(2, 6);
       await setDoc(doc(db, "cargas", id), cleanUndefined({ ...carga, id }));
       return id;
+    },
+    addOrdersToCarga: async (
+      id: string,
+      requests: CargaOrderAllocationRequest[],
+      actor: User,
+    ) => {
+      const timestamp = Date.now();
+      const auditEntry = {
+        timestamp,
+        userId: actor.id,
+        userName: actor.name,
+        action: `${requests.length} pedido(s) vinculado(s) à carga`,
+      };
+
+      if (isDemoMode) {
+        const current = cargas.find((carga) => carga.id === id);
+        if (!current) throw new Error("A carga não foi encontrada. Atualize a tela e tente novamente.");
+        const merged = mergeCargaOrderAllocations(current, requests);
+        setCargas((previous) => previous.map((carga) =>
+          carga.id === id
+            ? { ...carga, ...merged, auditTrail: [...(carga.auditTrail || []), auditEntry] }
+            : carga,
+        ));
+        return;
+      }
+
+      await runTransaction(db, async (transaction) => {
+        const ref = doc(db, "cargas", id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error("A carga não foi encontrada. Atualize a tela e tente novamente.");
+        const current = snapshot.data() as Carga;
+        const merged = mergeCargaOrderAllocations(current, requests);
+
+        transaction.update(ref, {
+          ...merged,
+          auditTrail: [...(current.auditTrail || []), auditEntry],
+        });
+      });
     },
     updateCarga: async (carga: Carga) => {
       const current = cargas.find((c) => c.id === carga.id);

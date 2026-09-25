@@ -1,5 +1,87 @@
 import type { Carga, Order } from "./types";
 
+export const ORDER_ALLOCATION_ALLOWED_STATUSES = new Set<Carga["status"]>([
+  "PLANEJADA",
+  "ABERTA",
+  "FECHADA",
+  "LIBERADA",
+  "EM_SEPARACAO",
+  "FATURADA_PARCIAL",
+]);
+
+export type CargaOrderAllocationRequest = {
+  orderId: number;
+  quantity: number;
+  availableQuantity: number;
+  targetQuantityAtSelection: number;
+};
+
+export function mergeCargaOrderAllocations(
+  carga: Carga,
+  requests: CargaOrderAllocationRequest[],
+) {
+  if (!ORDER_ALLOCATION_ALLOWED_STATUSES.has(carga.status)) {
+    throw new Error("Esta carga não aceita novos pedidos. Atualize a tela e tente novamente.");
+  }
+  if (requests.length === 0) {
+    throw new Error("Selecione ao menos um pedido e uma quantidade.");
+  }
+
+  const orderIds = new Set(carga.orderIds || []);
+  const orderQuantities = { ...(carga.orderQuantities || {}) } as Record<number, number>;
+  const requestedOrderIds = new Set<number>();
+
+  for (const request of requests) {
+    const orderId = Number(request.orderId);
+    const quantity = Number(request.quantity);
+    const availableQuantity = Number(request.availableQuantity);
+    const targetQuantityAtSelection = Number(request.targetQuantityAtSelection);
+
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      throw new Error("Um dos pedidos selecionados não é válido. Atualize a tela e tente novamente.");
+    }
+    if (requestedOrderIds.has(orderId)) {
+      throw new Error(`O pedido ${orderId} foi selecionado mais de uma vez.`);
+    }
+    requestedOrderIds.add(orderId);
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      throw new Error(`Informe uma quantidade inteira válida para o pedido ${orderId}.`);
+    }
+    if (!Number.isInteger(availableQuantity) || availableQuantity < 0) {
+      throw new Error(`O saldo do pedido ${orderId} mudou. Atualize a tela e tente novamente.`);
+    }
+
+    const currentTargetQuantity = Math.max(
+      0,
+      Number(orderQuantities[orderId] || 0),
+    );
+    const previousTargetQuantity = Math.max(
+      0,
+      Number.isFinite(targetQuantityAtSelection) ? targetQuantityAtSelection : 0,
+    );
+    const concurrentTargetIncrease = Math.max(
+      0,
+      currentTargetQuantity - previousTargetQuantity,
+    );
+    const availableNow = Math.max(0, availableQuantity - concurrentTargetIncrease);
+
+    if (quantity > availableNow) {
+      throw new Error(
+        `O pedido ${orderId} não tem mais saldo suficiente para esta carga. Disponível agora: ${availableNow}. Atualize a tela e revise a quantidade.`,
+      );
+    }
+
+    orderIds.add(orderId);
+    orderQuantities[orderId] = currentTargetQuantity + quantity;
+  }
+
+  return {
+    orderIds: Array.from(orderIds),
+    orderQuantities,
+  };
+}
+
 export function loadDate(carga: Carga) {
   return (carga.scheduledDate || carga.departureDate || "").split("T")[0];
 }
