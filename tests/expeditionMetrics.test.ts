@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createLoadMetrics, isFullySeparated, loadDate } from "../src/expeditionMetrics";
+import {
+  createLoadMetrics,
+  isFullySeparated,
+  loadDate,
+  mergeCargaOrderAllocations,
+} from "../src/expeditionMetrics";
 import type { Carga, Order } from "../src/types";
 
 const order = { id: 13, orderCode: "65133", customerName: "Cliente", packedQuantity: 12, invoicedQuantity: 8 } as Order;
@@ -32,4 +37,50 @@ test("carga só pode ficar pronta quando todos os pedidos vinculados estão sepa
 
 test("data programada em ISO continua no dia correto da TV", () => {
   assert.equal(loadDate({ ...first, scheduledDate: "2026-09-25T15:30:00.000Z" }), "2026-09-25");
+});
+
+test("vínculo mescla a versão atual da carga e preserva inclusões concorrentes", () => {
+  const liveCarga = {
+    ...first,
+    orderIds: [13, 14],
+    orderQuantities: { 13: 7, 14: 2 },
+  } as Carga;
+
+  const merged = mergeCargaOrderAllocations(liveCarga, [
+    {
+      orderId: 13,
+      quantity: 2,
+      availableQuantity: 4,
+      targetQuantityAtSelection: 6,
+    },
+    {
+      orderId: 15,
+      quantity: 1,
+      availableQuantity: 1,
+      targetQuantityAtSelection: 0,
+    },
+  ]);
+
+  assert.deepEqual(merged.orderIds, [13, 14, 15]);
+  assert.deepEqual(merged.orderQuantities, { 13: 9, 14: 2, 15: 1 });
+});
+
+test("vínculo bloqueia quantidade que ficou indisponível enquanto a tela estava aberta", () => {
+  const liveCarga = {
+    ...first,
+    orderQuantities: { 13: 7 },
+  } as Carga;
+
+  assert.throws(
+    () =>
+      mergeCargaOrderAllocations(liveCarga, [
+        {
+          orderId: 13,
+          quantity: 4,
+          availableQuantity: 4,
+          targetQuantityAtSelection: 6,
+        },
+      ]),
+    /Disponível agora: 3/,
+  );
 });
