@@ -462,7 +462,7 @@ function RealTimeFactoryMonitoringContent({
           }
 
           return false;
-        },,
+        },
       };
     });
   }, [sectors, activeTenantId, activeTenant, users, employees, productionBatches]);
