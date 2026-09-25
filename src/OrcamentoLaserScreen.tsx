@@ -642,9 +642,10 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
   };
 
   // Export PDF Report with flexible display mode options
-  const handleExportPDF = (
+  const handleExportPDF = async (
     quote: LaserQuote,
-    reportMode: "AMBOS" | "COM_MATERIAL" | "SEM_MATERIAL" = "AMBOS"
+    reportMode: "AMBOS" | "COM_MATERIAL" | "SEM_MATERIAL" = "AMBOS",
+    action: "download" | "share" = "download"
   ) => {
     const doc = new jsPDF({
       orientation: "portrait",
@@ -903,7 +904,40 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
         ? "_Sem_Material"
         : "";
 
-    doc.save(`Orcamento_Corte_Laser_${quote.quoteCode}_${quote.customerName.replace(/\s+/g, "_")}${reportSuffix}.pdf`);
+    const fileName = `Orcamento_Corte_Laser_${quote.quoteCode}_${quote.customerName.replace(/\s+/g, "_")}${reportSuffix}.pdf`;
+
+    if (action === "share") {
+      const shareApi = navigator as unknown as {
+        canShare?: (data: { files?: File[] }) => boolean;
+        share?: (data: { files?: File[]; title?: string; text?: string }) => Promise<void>;
+      };
+
+      try {
+        if (typeof File !== "undefined" && shareApi.share) {
+          const file = new File([doc.output("blob")], fileName, {
+            type: "application/pdf",
+          });
+          if (shareApi.canShare?.({ files: [file] })) {
+            await shareApi.share({
+              files: [file],
+              title: `Orçamento ${quote.quoteCode}`,
+              text: `Segue o orçamento ${quote.quoteCode} para ${quote.customerName}.`,
+            });
+            return;
+          }
+        }
+      } catch (error) {
+        if ((error as { name?: string })?.name === "AbortError") return;
+      }
+
+      doc.save(fileName);
+      window.alert(
+        "Este navegador não permite compartilhar o PDF diretamente. O arquivo foi baixado; anexe-o no WhatsApp, e-mail ou outro aplicativo.",
+      );
+      return;
+    }
+
+    doc.save(fileName);
   };
 
   return (
@@ -931,7 +965,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
@@ -960,34 +994,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
-              Taxa de Conversão
-            </span>
-            {(() => {
-              const totalCount = db.laserQuotes?.length || 0;
-              const approvedCount = (db.laserQuotes || []).filter(
-                (q) =>
-                  q.status === "APROVADO" ||
-                  q.status === "APROVADO_COM_MATERIAL" ||
-                  q.status === "APROVADO_SEM_MATERIAL"
-              ).length;
-              const rate = totalCount > 0 ? ((approvedCount / totalCount) * 100).toFixed(1) : "0.0";
-              return (
-                <div>
-                  <span className="text-2xl font-black text-emerald-600">{rate}%</span>
-                  <span className="text-[10px] text-slate-400 block font-semibold">
-                    {approvedCount} de {totalCount} aprovados
-                  </span>
-                </div>
-              );
-            })()}
-          </div>
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-            <CheckCircle size={20} />
-          </div>
-        </div>
+
       </div>
 
       {/* Filter and List Section */}
@@ -2074,9 +2081,14 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
               </button>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Selecione quais valores devem ser exibidos nas colunas e totais do relatório oficial em PDF enviado para o cliente:
-            </p>
+            <div className="space-y-1">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Selecione quais valores devem aparecer nas colunas e nos totais do PDF.
+              </p>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Compartilhar PDF abre o menu do aparelho para escolher WhatsApp, e-mail ou outro app. Se o navegador não aceitar o compartilhamento de arquivos, o PDF será baixado para você anexar manualmente.
+              </p>
+            </div>
 
             <div className="space-y-2.5">
               <label
@@ -2155,21 +2167,32 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
               </label>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 onClick={() => setPdfModalQuote(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                className="w-full sm:w-auto px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
               >
                 Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  const q = pdfModalQuote;
+                  const mode = selectedReportMode;
+                  setPdfModalQuote(null);
+                  await handleExportPDF(q, mode, "share");
+                }}
+                className="w-full sm:w-auto px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Send size={14} /> Compartilhar PDF
               </button>
               <button
                 onClick={() => {
                   const q = pdfModalQuote;
                   const mode = selectedReportMode;
                   setPdfModalQuote(null);
-                  handleExportPDF(q, mode);
+                  void handleExportPDF(q, mode, "download");
                 }}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+                className="w-full sm:w-auto px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <Download size={14} /> Gerar e Baixar PDF
               </button>
