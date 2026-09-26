@@ -6428,6 +6428,11 @@ function PedidosScreen({
 
   // IMPERIO_ORDER_LOAD_PLANNER_STATE
   const [selectedExpeditionCargaId, setSelectedExpeditionCargaId] = useState("");
+  const expeditionDeliveryDateKey = String(deliveryDate || "").split("T")[0];
+  const expeditionTodayKey = React.useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  }, []);
   const expeditionCustomer = React.useMemo(() => {
     const normalized = normalizeString(customerName || "");
     if (!normalized) return null;
@@ -6443,49 +6448,115 @@ function PedidosScreen({
     }) || null;
   }, [customerName, db.customers]);
 
+  const expeditionCustomerCity = React.useMemo(() => {
+    const customer = expeditionCustomer as any;
+    if (!customer) return "";
+    const city = String(
+      customer.city || customer.cidade || customer.municipio || customer.municipality || "",
+    ).trim();
+    if (city) return city;
+    const address = String(customer.address || customer.endereco || "").trim();
+    const cityStateMatch = address.match(/(?:^|,)\s*([^,]+?)\s*[-–/]\s*[A-Za-z]{2}\s*$/);
+    return cityStateMatch?.[1]?.trim() || "";
+  }, [expeditionCustomer]);
+
   const expeditionRoutesForCustomer = React.useMemo(() => {
     if (!expeditionCustomer || db.activeTenantId !== "imperio") return [];
-    return (db.expeditionRoutes || []).filter(
+    const routes = (db.expeditionRoutes || []).filter((r: any) => r.active !== false);
+    const assignedRoutes = routes.filter(
       (r: any) => r.active !== false && (r.customerIds || []).includes(expeditionCustomer.id),
     );
-  }, [expeditionCustomer, db.expeditionRoutes, db.activeTenantId]);
+    if (assignedRoutes.length > 0) return assignedRoutes;
+
+    const normalizedCity = normalizeString(expeditionCustomerCity);
+    const cityRoutes = normalizedCity
+      ? routes.filter((r: any) => normalizeString(r.name).includes(normalizedCity))
+      : [];
+    if (cityRoutes.length > 0) return cityRoutes;
+
+    // Cidades sem rota regional cadastrada usam a rota complementar de transportadoras.
+    return normalizedCity
+      ? routes.filter((r: any) => normalizeString(r.name).includes("cidadesdespacho"))
+      : [];
+  }, [expeditionCustomer, expeditionCustomerCity, db.expeditionRoutes, db.activeTenantId]);
 
   const expeditionLoadsForCustomer = React.useMemo(() => {
     const routeIds = new Set(expeditionRoutesForCustomer.map((r: any) => r.id));
+    const routeNames = new Set(expeditionRoutesForCustomer.map((r: any) => normalizeString(r.name)));
     return (db.cargas || [])
-      .filter((c: any) => c.routeId && routeIds.has(c.routeId))
+      .filter((c: any) => {
+        if (c.routeId && routeIds.has(c.routeId)) return true;
+        return [c.routeName, c.name, ...(Array.isArray(c.route) ? c.route : [])]
+          .filter(Boolean)
+          .some((name: string) => routeNames.has(normalizeString(name)));
+      })
       .sort((a: any, b: any) => {
-        const dateCompare = String(a.scheduledDate || a.departureDate || "").localeCompare(String(b.scheduledDate || b.departureDate || ""));
+        const dateA = String(a.scheduledDate || a.departureDate || "").split("T")[0];
+        const dateB = String(b.scheduledDate || b.departureDate || "").split("T")[0];
+        const dateCompare = dateA.localeCompare(dateB);
         if (dateCompare !== 0) return dateCompare;
         const shiftRank = (shift?: string) => shift === "MANHA" ? 0 : shift === "TARDE" ? 1 : 2;
         return shiftRank(a.shift) - shiftRank(b.shift) || Number(a.createdAt || 0) - Number(b.createdAt || 0);
       });
   }, [db.cargas, expeditionRoutesForCustomer]);
 
+  const expeditionAvailableLoads = React.useMemo(() => expeditionLoadsForCustomer.filter((c: any) => {
+    const date = String(c.scheduledDate || c.departureDate || "").split("T")[0];
+    return date >= expeditionTodayKey && (c.status === "ABERTA" || c.status === "PLANEJADA");
+  }), [expeditionLoadsForCustomer, expeditionTodayKey]);
+
   // IMPERIO_LOAD_SELECTION_CUSTOMER_GUARD
   React.useEffect(() => {
     if (
       selectedExpeditionCargaId &&
-      !expeditionLoadsForCustomer.some((c: any) => c.id === selectedExpeditionCargaId)
+      !expeditionAvailableLoads.some((c: any) => c.id === selectedExpeditionCargaId)
     ) {
       setSelectedExpeditionCargaId("");
     }
-  }, [selectedExpeditionCargaId, expeditionLoadsForCustomer]);
+  }, [selectedExpeditionCargaId, expeditionAvailableLoads]);
 
   const expeditionSuggestedLoad = React.useMemo(() => {
-    const today = new Date().toISOString().split("T")[0];
-    return expeditionLoadsForCustomer.find((c: any) =>
-      (c.status === "ABERTA" || c.status === "PLANEJADA") &&
-      String(c.scheduledDate || c.departureDate || "") >= today
-    ) || null;
-  }, [expeditionLoadsForCustomer]);
+    const deliveryKey = expeditionDeliveryDateKey;
+    const candidates = [...expeditionAvailableLoads];
+    candidates.sort((a: any, b: any) => {
+      const dateA = String(a.scheduledDate || a.departureDate || "").split("T")[0];
+      const dateB = String(b.scheduledDate || b.departureDate || "").split("T")[0];
+      if (deliveryKey) {
+        const aBeforeDue = dateA <= deliveryKey;
+        const bBeforeDue = dateB <= deliveryKey;
+        if (aBeforeDue !== bBeforeDue) return aBeforeDue ? -1 : 1;
+        const dateOrder = aBeforeDue
+          ? dateB.localeCompare(dateA)
+          : dateA.localeCompare(dateB);
+        if (dateOrder !== 0) return dateOrder;
+      } else {
+        const dateOrder = dateA.localeCompare(dateB);
+        if (dateOrder !== 0) return dateOrder;
+      }
+      const shiftRank = (shift?: string) => shift === "MANHA" ? 0 : shift === "TARDE" ? 1 : 2;
+      return shiftRank(a.shift) - shiftRank(b.shift) || Number(a.createdAt || 0) - Number(b.createdAt || 0);
+    });
+    return candidates[0] || null;
+  }, [expeditionAvailableLoads, expeditionDeliveryDateKey]);
+
+  const expeditionSuggestedLoadTiming = React.useMemo(() => {
+    if (!expeditionSuggestedLoad) return "";
+    const scheduledDate = String(expeditionSuggestedLoad.scheduledDate || expeditionSuggestedLoad.departureDate || "").split("T")[0];
+    const deliveryKey = expeditionDeliveryDateKey;
+    if (!deliveryKey) return "próxima carga disponível desta rota";
+    const difference = Math.round(
+      (new Date(`${scheduledDate}T12:00:00`).getTime() - new Date(`${deliveryKey}T12:00:00`).getTime()) / 86_400_000,
+    );
+    if (difference === 0) return "na data prevista de entrega";
+    if (difference < 0) return `${Math.abs(difference)} dia(s) antes da entrega prevista`;
+    return `${difference} dia(s) após a entrega prevista`;
+  }, [expeditionSuggestedLoad, expeditionDeliveryDateKey]);
 
   const expeditionLastLoad = React.useMemo(() => {
-    const today = new Date().toISOString().split("T")[0];
     return [...expeditionLoadsForCustomer]
-      .filter((c: any) => String(c.scheduledDate || c.departureDate || "") < today)
-      .sort((a: any, b: any) => String(b.scheduledDate || b.departureDate || "").localeCompare(String(a.scheduledDate || a.departureDate || "")))[0] || null;
-  }, [expeditionLoadsForCustomer]);
+      .filter((c: any) => String(c.scheduledDate || c.departureDate || "").split("T")[0] < expeditionTodayKey)
+      .sort((a: any, b: any) => String(b.scheduledDate || b.departureDate || "").split("T")[0].localeCompare(String(a.scheduledDate || a.departureDate || "").split("T")[0]))[0] || null;
+  }, [expeditionLoadsForCustomer, expeditionTodayKey]);
 
   const linkCreatedOrdersToSelectedCarga = async (createdItems: { id: number; qty: number }[]) => {
     // IMPERIO_LOAD_LINK_ACCESS_GUARD
@@ -6494,8 +6565,8 @@ function PedidosScreen({
       !selectedExpeditionCargaId ||
       createdItems.length === 0
     ) return;
-    const carga = (db.cargas || []).find((c: any) => c.id === selectedExpeditionCargaId);
-    const belongsToCustomerRoute = !!carga?.routeId && expeditionRoutesForCustomer.some((r: any) => r.id === carga.routeId);
+    const carga = expeditionAvailableLoads.find((c: any) => c.id === selectedExpeditionCargaId);
+    const belongsToCustomerRoute = !!carga && expeditionLoadsForCustomer.some((candidate: any) => candidate.id === carga.id);
     if (
       !carga ||
       !belongsToCustomerRoute ||
@@ -9845,7 +9916,7 @@ function PedidosScreen({
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
                           <span className="text-[10px] uppercase tracking-wider font-extrabold text-blue-700">🚚 Programação de carga</span>
-                          <p className="text-[10px] text-slate-600 mt-0.5">Cliente: <strong>{expeditionCustomer.tradeName || expeditionCustomer.name}</strong></p>
+                          <p className="text-[10px] text-slate-600 mt-0.5">Cliente: <strong>{expeditionCustomer.tradeName || expeditionCustomer.name}</strong>{expeditionCustomerCity ? <> · Cidade: <strong>{expeditionCustomerCity}</strong></> : null}</p>
                         </div>
                         <button type="button" onClick={() => window.open("/cargas", "_blank")} className="px-2.5 py-1.5 rounded-lg bg-white border border-blue-200 text-blue-700 text-[10px] font-extrabold hover:bg-blue-100">Abrir programação</button>
                       </div>
@@ -9855,17 +9926,19 @@ function PedidosScreen({
                         <>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[10px]">
                             <div className="bg-white border border-blue-100 rounded-lg px-2.5 py-2 text-slate-600">Última carga: <strong className="text-slate-800">{expeditionLastLoad ? `${expeditionLastLoad.routeName || expeditionLastLoad.name} • ${expeditionLastLoad.scheduledDate || expeditionLastLoad.departureDate || "-"}` : "Nenhuma carga anterior"}</strong></div>
-                            <div className="bg-white border border-blue-100 rounded-lg px-2.5 py-2 text-slate-600">Próxima aberta: <strong className="text-blue-700">{expeditionSuggestedLoad ? `${expeditionSuggestedLoad.routeName || expeditionSuggestedLoad.name} • ${expeditionSuggestedLoad.scheduledDate || expeditionSuggestedLoad.departureDate || "-"}` : "Nenhuma carga programada"}</strong></div>
+                            <div className={`bg-white border rounded-lg px-2.5 py-2 text-slate-600 ${expeditionSuggestedLoad && expeditionDeliveryDateKey && String(expeditionSuggestedLoad.scheduledDate || expeditionSuggestedLoad.departureDate || "").split("T")[0] > expeditionDeliveryDateKey ? "border-amber-200" : "border-blue-100"}`}>
+                              Carga sugerida pela data e rota: <strong className={expeditionSuggestedLoad && expeditionDeliveryDateKey && String(expeditionSuggestedLoad.scheduledDate || expeditionSuggestedLoad.departureDate || "").split("T")[0] > expeditionDeliveryDateKey ? "text-amber-700" : "text-blue-700"}>{expeditionSuggestedLoad ? `${expeditionSuggestedLoad.routeName || expeditionSuggestedLoad.name} • ${String(expeditionSuggestedLoad.scheduledDate || expeditionSuggestedLoad.departureDate || "").split("T")[0].split("-").reverse().join("/")} (${expeditionSuggestedLoadTiming})` : "Nenhuma carga futura disponível nesta rota"}</strong>
+                            </div>
                           </div>
                           <div className="flex flex-col sm:flex-row gap-2">
-                            <select value={selectedExpeditionCargaId} onChange={(e) => setSelectedExpeditionCargaId(e.target.value)} className="flex-1 h-8 rounded-lg border border-blue-200 bg-white px-2 text-[10px] font-semibold text-slate-700">
+                            <select value={selectedExpeditionCargaId} onChange={(e) => setSelectedExpeditionCargaId(e.target.value)} aria-label="Selecionar carga para este pedido" className="flex-1 h-8 rounded-lg border border-blue-200 bg-white px-2 text-[10px] font-semibold text-slate-700">
                               <option value="">Não vincular agora / escolher depois</option>
-                              {expeditionLoadsForCustomer.filter((c: any) => c.status === "ABERTA" || c.status === "PLANEJADA").map((c: any) => (
-                                <option key={c.id} value={c.id}>{c.scheduledDate || c.departureDate || "Sem data"} • {c.routeName || c.name}</option>
+                              {expeditionAvailableLoads.map((c: any) => (
+                                <option key={c.id} value={c.id}>{String(c.scheduledDate || c.departureDate || "").split("T")[0].split("-").reverse().join("/")} • {c.shift === "MANHA" ? "Manhã" : c.shift === "TARDE" ? "Tarde" : "Turno não definido"} • {c.routeName || c.name}{c.id === expeditionSuggestedLoad?.id ? " • SUGESTÃO" : ""}</option>
                               ))}
                             </select>
                             {expeditionSuggestedLoad && (
-                              <button type="button" onClick={() => setSelectedExpeditionCargaId(expeditionSuggestedLoad.id)} className="h-8 px-3 rounded-lg bg-blue-600 text-white text-[10px] font-extrabold hover:bg-blue-700">Usar próxima carga</button>
+                              <button type="button" onClick={() => setSelectedExpeditionCargaId(expeditionSuggestedLoad.id)} className="h-8 px-3 rounded-lg bg-blue-600 text-white text-[10px] font-extrabold hover:bg-blue-700">Selecionar sugestão</button>
                             )}
                           </div>
                           {selectedExpeditionCargaId && <p className="text-[9px] text-blue-800 font-bold">✓ Todos os itens adicionados neste lançamento serão vinculados à carga selecionada com suas respectivas quantidades.</p>}

@@ -84,6 +84,19 @@ const STATUS_CLASS: Record<string, string> = {
   FATURADA_COMPLETA: "bg-purple-100 text-purple-900 border-purple-300",
 };
 
+const USER_MANAGED_STATUSES: Carga["status"][] = [
+  "PLANEJADA",
+  "ABERTA",
+  "FECHADA",
+  "LIBERADA",
+  "EM_SEPARACAO",
+  "PRONTA",
+  "CARREGADA",
+  "DESPACHADA",
+  "EM_TRANSITO",
+  "ENTREGUE",
+];
+
 function dateKey(date: Date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -174,6 +187,7 @@ export function ProgramacaoCargasScreen({
   const [editingLoadId, setEditingLoadId] = useState<string | null>(null);
   const [loadRouteId, setLoadRouteId] = useState("");
   const [loadDate, setLoadDate] = useState(dateKey(new Date()));
+  const [loadStatus, setLoadStatus] = useState<Carga["status"]>("ABERTA");
   const [loadLocation, setLoadLocation] = useState("");
   const [loadNotes, setLoadNotes] = useState("");
 
@@ -187,6 +201,9 @@ export function ProgramacaoCargasScreen({
 
   const [orderSearch, setOrderSearch] = useState("");
   const [targetCargaId, setTargetCargaId] = useState("");
+  const [loadSearch, setLoadSearch] = useState("");
+  const [loadDateStart, setLoadDateStart] = useState("");
+  const [loadDateEnd, setLoadDateEnd] = useState("");
   const [selectedQuantities, setSelectedQuantities] = useState<Record<number, number>>({});
   const [isLinkingOrders, setIsLinkingOrders] = useState(false);
   const linkInProgressRef = useRef(false);
@@ -229,6 +246,20 @@ export function ProgramacaoCargasScreen({
     () => activeLoads.filter((c) => EDITABLE_STATUSES.has(c.status)),
     [activeLoads],
   );
+
+  const filteredEditableLoads = useMemo(() => {
+    const q = normalizeString(loadSearch);
+    return editableLoads.filter((carga) => {
+      const scheduledDate = getLoadDate(carga);
+      if (loadDateStart && (!scheduledDate || scheduledDate < loadDateStart)) return false;
+      if (loadDateEnd && (!scheduledDate || scheduledDate > loadDateEnd)) return false;
+      if (!q) return true;
+      return normalizeString(
+        `${carga.name} ${carga.routeName || ""} ${STATUS_LABEL[carga.status] || carga.status} ${scheduledDate} ${carga.shift || ""}`,
+      ).includes(q);
+    });
+  }, [editableLoads, loadSearch, loadDateStart, loadDateEnd]);
+  const selectedTargetLoad = editableLoads.find((carga) => carga.id === targetCargaId) || null;
 
   const itemsById = useMemo(() => new Map(db.items.map((i) => [i.id, i])), [db.items]);
   const ordersById = useMemo(() => new Map(db.orders.map((o) => [o.id, o])), [db.orders]);
@@ -492,6 +523,7 @@ export function ProgramacaoCargasScreen({
 
   const openNewLoad = (route?: ExpeditionRoute) => {
     setEditingLoadId(null);
+    setLoadStatus("ABERTA");
     const r = route || routes[0];
     if (r) {
       setLoadRouteId(r.id);
@@ -624,15 +656,17 @@ export function ProgramacaoCargasScreen({
       orderQuantities: {},
       separatedQuantities: {},
       stagingLocation: loadLocation.trim() || undefined,
-      status: "ABERTA",
+      status: loadStatus,
       createdAt: Date.now(),
+      closedAt: loadStatus === "FECHADA" ? Date.now() : undefined,
+      releasedAt: loadStatus === "LIBERADA" ? Date.now() : undefined,
       notes: loadNotes.trim() || undefined,
       auditTrail: [
         {
           timestamp: Date.now(),
           userId: currentUser.id,
           userName: currentUser.name,
-          action: "Carga criada",
+          action: `Carga criada com status ${STATUS_LABEL[loadStatus] || loadStatus}`,
         },
       ],
       tenantId: db.activeTenantId || undefined,
@@ -1123,19 +1157,29 @@ export function ProgramacaoCargasScreen({
       {tab === "PEDIDOS" && (
         <div className="space-y-4">
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              <div>
-                <h3 className="font-extrabold text-slate-900">Adicionar pedidos à carga</h3>
-                <p className="text-xs text-slate-500">Busque qualquer pedido com saldo disponível, inclusive pedidos que já estejam loteados. O lote de produção não interfere na programação da carga.</p>
+              <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-extrabold text-slate-900">Adicionar pedidos à carga</h3>
+                  <p className="text-xs text-slate-500">Busque qualquer pedido com saldo disponível, inclusive pedidos que já estejam loteados. O lote de produção não interfere na programação da carga.</p>
+                </div>
+                <div className="flex flex-col gap-2 min-w-0 lg:w-[600px]">
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-[9px] font-extrabold uppercase tracking-wide text-slate-500">Data da carga — de<input type="date" value={loadDateStart} onChange={(e) => setLoadDateStart(e.target.value)} className="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700" /></label>
+                    <label className="text-[9px] font-extrabold uppercase tracking-wide text-slate-500">Até<input type="date" value={loadDateEnd} onChange={(e) => setLoadDateEnd(e.target.value)} className="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700" /></label>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 min-w-0">
+                    <div className="relative flex-1"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" /><input value={orderSearch} onChange={(e) => setOrderSearch(e.target.value)} placeholder="Cliente, pedido ou produto..." className="w-full h-9 pl-8 pr-2 border border-slate-300 rounded-lg text-xs" /></div>
+                    <div className="relative flex-1"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" /><input value={loadSearch} onChange={(e) => setLoadSearch(e.target.value)} placeholder="Filtrar carga, rota ou status..." aria-label="Filtrar cargas disponíveis" className="w-full h-9 pl-8 pr-2 border border-slate-300 rounded-lg text-xs" /></div>
+                    <select value={targetCargaId} onChange={(e) => setTargetCargaId(e.target.value)} aria-label="Carga destino" className="h-9 border border-slate-300 rounded-lg px-2 text-xs bg-white sm:w-[260px]">
+                      <option value="">Selecione a carga destino...</option>
+                      {selectedTargetLoad && !filteredEditableLoads.some((carga) => carga.id === selectedTargetLoad.id) && <option value={selectedTargetLoad.id}>Selecionada (fora dos filtros) • {formatDate(getLoadDate(selectedTargetLoad))} • {selectedTargetLoad.routeName || selectedTargetLoad.name}</option>}
+                      {filteredEditableLoads.map((c) => <option key={c.id} value={c.id}>{formatDate(getLoadDate(c))} • {SHIFT_LABEL[c.shift || ""] || "Turno não definido"} • {c.routeName || c.name} • {STATUS_LABEL[c.status] || c.status}</option>)}
+                      {filteredEditableLoads.length === 0 && <option value="" disabled>Nenhuma carga para estes filtros</option>}
+                    </select>
+                  </div>
+                  {(loadSearch || loadDateStart || loadDateEnd) && <button type="button" onClick={() => { setLoadSearch(""); setLoadDateStart(""); setLoadDateEnd(""); }} className="self-end text-[10px] font-extrabold text-blue-600 hover:underline">Limpar filtros de cargas</button>}
+                </div>
               </div>
-              <div className="flex flex-col sm:flex-row gap-2 min-w-0 lg:min-w-[520px]">
-                <div className="relative flex-1"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" /><input value={orderSearch} onChange={(e) => setOrderSearch(e.target.value)} placeholder="Cliente, pedido ou produto..." className="w-full h-9 pl-8 pr-2 border border-slate-300 rounded-lg text-xs" /></div>
-                <select value={targetCargaId} onChange={(e) => setTargetCargaId(e.target.value)} className="h-9 border border-slate-300 rounded-lg px-2 text-xs bg-white sm:w-[260px]">
-                  <option value="">Selecione a carga destino...</option>
-                  {editableLoads.map((c) => <option key={c.id} value={c.id}>{c.name} • {c.routeName || "Sem rota"}</option>)}
-                </select>
-              </div>
-            </div>
             <div className="border-t border-slate-100 pt-3 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500">Filtros de pedidos</span>
@@ -1280,8 +1324,9 @@ export function ProgramacaoCargasScreen({
             <div className="flex justify-between items-start"><div><h3 className="font-extrabold text-slate-900 text-lg">{editingLoadId ? "Editar carga" : "Programar nova carga"}</h3><p className="text-xs text-slate-500">{editingLoadId ? "Altere rota, data, área/pallet ou observações da carga." : "Escolha a rota fixa e a data. Depois você será levado para buscar e incluir os pedidos, inclusive os já loteados."}</p></div><button onClick={() => { setShowLoadForm(false); setEditingLoadId(null); }} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={18} /></button></div>
             <label className="block"><span className="text-[10px] uppercase font-extrabold text-slate-500">Rota</span><select value={loadRouteId} onChange={(e) => { setLoadRouteId(e.target.value); const r = routes.find((x) => x.id === e.target.value); if (r) setLoadDate(dateKey(nextWeekday(r.weekday))); }} className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm bg-white"><option value="">Selecione...</option>{routes.map((r) => <option key={r.id} value={r.id}>{r.name} • {DAY_NAMES[r.weekday]} • {SHIFT_LABEL[r.shift]}</option>)}</select></label>
             <div className="grid grid-cols-2 gap-3"><label><span className="text-[10px] uppercase font-extrabold text-slate-500">Data da carga</span><input type="date" value={loadDate} onChange={(e) => setLoadDate(e.target.value)} className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm" /></label><label><span className="text-[10px] uppercase font-extrabold text-slate-500">Área/Pallet</span><input value={loadLocation} onChange={(e) => setLoadLocation(e.target.value)} placeholder="Ex: A-03" className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm" /></label></div>
+            {!editingLoadId && <label className="block"><span className="text-[10px] uppercase font-extrabold text-slate-500">Status inicial — definido pelo usuário</span><select value={loadStatus} onChange={(e) => setLoadStatus(e.target.value as Carga["status"])} className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm bg-white">{USER_MANAGED_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABEL[status]}</option>)}</select></label>}
             <textarea value={loadNotes} onChange={(e) => setLoadNotes(e.target.value)} placeholder="Observações da carga..." className="w-full min-h-[90px] border border-slate-300 rounded-lg p-2 text-sm" />
-            <div className="flex justify-end gap-2"><button onClick={() => { setShowLoadForm(false); setEditingLoadId(null); }} className="h-9 px-4 border border-slate-300 rounded-lg text-xs font-bold">Cancelar</button><button onClick={saveLoad} className="h-9 px-4 bg-emerald-600 text-white rounded-lg text-xs font-extrabold">{editingLoadId ? "Salvar alterações" : "Criar carga aberta"}</button></div>
+            <div className="flex justify-end gap-2"><button onClick={() => { setShowLoadForm(false); setEditingLoadId(null); }} className="h-9 px-4 border border-slate-300 rounded-lg text-xs font-bold">Cancelar</button><button onClick={saveLoad} className="h-9 px-4 bg-emerald-600 text-white rounded-lg text-xs font-extrabold">{editingLoadId ? "Salvar alterações" : "Criar carga"}</button></div>
           </div>
         </div>
       )}
@@ -1292,6 +1337,8 @@ export function ProgramacaoCargasScreen({
             <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50"><div><div className="flex items-center gap-2 flex-wrap"><h3 className="font-black text-slate-900 text-lg">{selectedCarga.name}</h3><span className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${STATUS_CLASS[selectedCarga.status] || STATUS_CLASS.PLANEJADA}`}>{STATUS_LABEL[selectedCarga.status] || selectedCarga.status}</span></div><p className="text-xs text-slate-500">{formatDate(getLoadDate(selectedCarga))} • Área/Pallet: {selectedCarga.stagingLocation || "não definida"}</p></div><div className="flex items-center gap-2 flex-wrap justify-end"><button onClick={() => previewLoad(selectedCarga, false)} className="h-9 px-3 border border-slate-300 bg-white rounded-lg text-xs font-bold flex items-center gap-1.5" title="Abre a prévia sem salvar o arquivo"><Eye size={14} /> Visualizar Produção</button><button onClick={() => previewLoad(selectedCarga, true)} className="h-9 px-3 border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-lg text-xs font-extrabold flex items-center gap-1.5 hover:bg-emerald-100" title="Abre a prévia gerencial com faturamento previsto"><DollarSign size={14} /> Visualizar + Faturamento</button><button onClick={() => setSelectedCargaId(null)} className="p-2 rounded-lg hover:bg-slate-200"><X size={18} /></button></div></div>
             <div className="p-4 overflow-y-auto flex-1 space-y-4">
               <div className="flex flex-wrap gap-2">
+                {canManage && USER_MANAGED_STATUSES.includes(selectedCarga.status) && <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600"><span>Status da carga</span><select value={selectedCarga.status} onChange={(e) => { const nextStatus = e.target.value as Carga["status"]; if (nextStatus !== selectedCarga.status) void changeStatus(selectedCarga, nextStatus); }} aria-label="Definir status da carga" className="h-8 max-w-[190px] rounded-md border border-slate-300 bg-white px-2 text-xs font-extrabold text-slate-800">{USER_MANAGED_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABEL[status]}</option>)}</select></label>}
+                {canManage && !USER_MANAGED_STATUSES.includes(selectedCarga.status) && <span className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-800" title="Este status é atualizado a partir do faturamento dos itens da carga.">Status de faturamento: {STATUS_LABEL[selectedCarga.status] || selectedCarga.status}</span>}
                 {canManage && <><button onClick={() => openEditLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-blue-300 bg-blue-50 text-blue-800 text-xs font-bold flex items-center gap-1"><Pencil size={13} /> Editar carga</button>{EDITABLE_STATUSES.has(selectedCarga.status) && <button onClick={() => includeOrdersInLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-bold flex items-center gap-1"><Plus size={13} /> Incluir pedidos</button>}<button onClick={() => deleteLoad(selectedCarga)} className="px-3 py-1.5 rounded-lg border border-rose-300 bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-1"><Trash2 size={13} /> Excluir carga</button></>}
                 {(selectedCarga.status === "PLANEJADA" || selectedCarga.status === "ABERTA") && <button onClick={() => changeStatus(selectedCarga, "FECHADA")} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold">Fechar carga</button>}
                 {selectedCarga.status === "FECHADA" && <><button onClick={() => changeStatus(selectedCarga, "ABERTA")} className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 text-xs font-bold">Reabrir</button><button onClick={() => changeStatus(selectedCarga, "LIBERADA")} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold">Liberar</button></>}

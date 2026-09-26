@@ -140,8 +140,8 @@ export function EstoqueEpiUniformeScreen({ db, currentUser }: Props) {
   const dueSoonCount = replacements.filter((row) => row.status !== "NO PRAZO").length;
 
   return (
-    <main className="min-h-screen bg-slate-50 px-3 py-5 text-slate-800 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <div id="estoque-epis-scroll" role="region" aria-label="Controle de EPIs e Uniformes" tabIndex={0} className="flex-1 min-h-0 w-full overflow-y-auto overscroll-y-contain touch-pan-y bg-slate-50 px-3 py-5 text-slate-800 focus:outline-none sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-6 pb-8">
         <header className="flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-slate-950 to-slate-800 p-5 text-white shadow-lg sm:flex-row sm:items-center sm:justify-between">
           <div>
             <button onClick={() => navigate(-1)} className="mb-3 inline-flex items-center gap-2 text-sm text-slate-300 hover:text-white"><ArrowLeft size={16} /> Voltar</button>
@@ -242,7 +242,7 @@ export function EstoqueEpiUniformeScreen({ db, currentUser }: Props) {
       </form></Modal>}
 
       {settingsItem && <Modal title={`Parâmetros: ${settingsItem.name}`} onClose={() => setSettingsItem(null)}><div className="space-y-4"><p className="text-sm text-slate-500">Esses dados alimentam os avisos de reposição e a previsão individual de troca.</p><label className="block text-xs font-bold text-slate-600">Estoque mínimo<input type="number" min="0" step="1" className={`${inputClass} mt-1`} value={minStockValue} onChange={(event) => setMinStockValue(event.target.value)} /></label><label className="block text-xs font-bold text-slate-600">Intervalo para troca (dias)<input type="number" min="1" step="1" className={`${inputClass} mt-1`} value={replacementDaysValue} onChange={(event) => setReplacementDaysValue(event.target.value)} placeholder="Deixe em branco se não se aplica" /></label><button onClick={saveEpiSettings} disabled={saving} className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white disabled:opacity-50">{saving ? "Salvando..." : "Salvar parâmetros"}</button></div></Modal>}
-    </main>
+    </div>
   );
 }
 
