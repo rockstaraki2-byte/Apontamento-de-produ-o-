@@ -52,6 +52,8 @@ import { getItemUnit } from "./utils/unitUtils";
 import { resolveCompanyInfo } from "./utils/companyUtils";
 import html2pdf from "html2pdf.js";
 
+type AcompBatchOrderSelection = { batchId: number; orderId: number };
+
 export function LotesScreen({
   db,
   currentUser,
@@ -79,7 +81,10 @@ export function LotesScreen({
 
   const [isPreviewAcompOpen, setIsPreviewAcompOpen] = useState(false);
   const [previewAcompBatch, setPreviewAcompBatch] = useState<ProductionBatch | null>(null);
-  const [acompSelectedOrderIds, setAcompSelectedOrderIds] = useState<number[]>([]);
+  const [acompSelectedBatchIds, setAcompSelectedBatchIds] = useState<number[]>([]);
+  const [acompSelectedOrders, setAcompSelectedOrders] = useState<AcompBatchOrderSelection[]>([]);
+  const [acompBatchSearch, setAcompBatchSearch] = useState("");
+  const [acompOrderSearch, setAcompOrderSearch] = useState("");
   const [destrincharComposicoes, setDestrincharComposicoes] = useState(false);
   const [ocultarPaiComposicao, setOcultarPaiComposicao] = useState(false);
 
@@ -299,11 +304,11 @@ export function LotesScreen({
     };
   };
 
-  const handleGenerateAcompPdf = async (b: ProductionBatch, selectedIds?: number[]) => {
+  const handleGenerateAcompPdf = async (b: ProductionBatch, selectedOrders?: AcompBatchOrderSelection[]) => {
     setIsGeneratingAcomp(true);
     setAcompBatch(b);
-    if (selectedIds) {
-      setAcompSelectedOrderIds(selectedIds);
+    if (selectedOrders) {
+      setAcompSelectedOrders(selectedOrders);
     }
     try {
       await new Promise((resolve) => setTimeout(resolve, 350));
@@ -352,8 +357,12 @@ export function LotesScreen({
         pdf.addImage(imgData, "JPEG", 0, 0, imgWidth, pageHeight);
       }
 
-      const sanitizedName = b.name.replace(/[^a-zA-Z0-9]/g, "_");
-      pdf.save(`Ficha_Acompanhamento_Lote_${sanitizedName}.pdf`);
+      const selectedBatchIds = Array.from(new Set((selectedOrders || []).map((selection) => selection.batchId)));
+      const sanitizedName = selectedBatchIds.length > 1
+        ? `${selectedBatchIds.length}_Lotes`
+        : ((db.productionBatches || []).find((batch) => batch.id === selectedBatchIds[0])?.name || b.name || `Lote_${b.id}`)
+          .replace(/[^a-zA-Z0-9]/g, "_");
+      pdf.save(`Ficha_Acompanhamento_${sanitizedName}.pdf`);
     } catch (e: any) {
       alert(`Erro ao salvar PDF de acompanhamento: ${e.message || e}`);
     } finally {
@@ -398,6 +407,55 @@ export function LotesScreen({
       ? orderIds.filter((orderId) => laserOrderIds.has(orderId))
       : orderIds;
   }, [laserProductsOnly, laserOrderIds]);
+
+  const acompCandidateBatches = useMemo(() => {
+    return [...batches]
+      .filter((batch) => batch && getVisibleBatchOrderIds(batch).length > 0)
+      .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+  }, [batches, getVisibleBatchOrderIds]);
+
+  const acompFilteredBatchChoices = useMemo(() => {
+    const term = acompBatchSearch.trim().toLocaleLowerCase("pt-BR");
+    if (!term) return acompCandidateBatches;
+    const itemNamesById = new Map<number, string>((db.items || []).map((item) => [item.id, item.name || ""]));
+    const ordersBySearchText = new Map<number, string>((db.orders || []).map((order) => [
+      order.id,
+      `${order.orderCode || order.id} ${order.customerName || ""} ${itemNamesById.get(order.itemId) || ""}`.toLocaleLowerCase("pt-BR"),
+    ]));
+    return acompCandidateBatches.filter((batch) => {
+      if (`${batch.name || ""} ${batch.id}`.toLocaleLowerCase("pt-BR").includes(term)) return true;
+      return getVisibleBatchOrderIds(batch).some((orderId) => ordersBySearchText.get(orderId)?.includes(term));
+    });
+  }, [acompCandidateBatches, acompBatchSearch, db.orders, db.items, getVisibleBatchOrderIds]);
+
+  const acompSelectedBatchOrderCandidates = useMemo(() => {
+    return batches.flatMap((batch) => {
+      if (!acompSelectedBatchIds.includes(batch.id)) return [];
+      return getVisibleBatchOrderIds(batch).flatMap((orderId) => {
+        const order = (db.orders || []).find((candidate) => candidate && candidate.id === orderId);
+        if (!order) return [];
+        const item = (db.items || []).find((candidate) => candidate && candidate.id === order.itemId);
+        return [{ batch, orderId, order, item }];
+      });
+    });
+  }, [batches, acompSelectedBatchIds, getVisibleBatchOrderIds, db.orders, db.items]);
+
+  const acompVisibleOrderCandidates = useMemo(() => {
+    const term = acompOrderSearch.trim().toLocaleLowerCase("pt-BR");
+    if (!term) return acompSelectedBatchOrderCandidates;
+    return acompSelectedBatchOrderCandidates.filter(({ batch, order, item }) =>
+      `${batch.name || ""} ${order.orderCode || order.id} ${order.customerName || ""} ${item?.name || ""}`
+        .toLocaleLowerCase("pt-BR")
+        .includes(term),
+    );
+  }, [acompSelectedBatchOrderCandidates, acompOrderSearch]);
+
+  const acompPrintOrderSelections = useMemo(() => {
+    return acompSelectedOrders.flatMap((selection) => {
+      const batch = batches.find((candidate) => candidate.id === selection.batchId);
+      return batch ? [{ orderId: selection.orderId, batch }] : [];
+    });
+  }, [acompSelectedOrders, batches]);
 
   // Apply search term and status filters
   const filteredBatches = useMemo(() => {
@@ -698,7 +756,13 @@ export function LotesScreen({
         throw new Error("A ficha de acompanhamento não pôde ser encontrada no DOM.");
       }
 
-      printElementById(targetId, `Acompanhamento_Lote_${previewAcompBatch.name}`, true);
+      const selectedBatchCount = new Set(acompSelectedOrders.map((selection) => selection.batchId)).size;
+      const selectedBatchId = acompSelectedOrders[0]?.batchId;
+      const selectedBatchName = (db.productionBatches || []).find((batch) => batch.id === selectedBatchId)?.name;
+      const printName = selectedBatchCount > 1
+        ? `Acompanhamento_${selectedBatchCount}_Lotes`
+        : `Acompanhamento_Lote_${selectedBatchName || previewAcompBatch.name || previewAcompBatch.id}`;
+      printElementById(targetId, printName, true);
 
     } catch (err: any) {
       console.error("[Print Acomp] failed:", err);
@@ -1220,7 +1284,10 @@ export function LotesScreen({
                         disabled={isGeneratingAcomp}
                         onClick={() => {
                           setPreviewAcompBatch(b);
-                          setAcompSelectedOrderIds(batchOrderIds);
+                          setAcompSelectedBatchIds([b.id]);
+                          setAcompSelectedOrders(batchOrderIds.map((orderId) => ({ batchId: b.id, orderId })));
+                          setAcompBatchSearch("");
+                          setAcompOrderSearch("");
                           setIsPreviewAcompOpen(true);
                         }}
                         className={`border text-[10px] font-black px-3 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer transition active:scale-[0.98] uppercase tracking-wide bg-indigo-50 border-indigo-200/80 text-indigo-855 hover:bg-indigo-100/80`}
@@ -2131,7 +2198,7 @@ export function LotesScreen({
                 <FileText className="text-indigo-600" size={22} />
                 <div>
                   <h3 className="font-extrabold text-slate-900 text-lg">Pré-Visualização: Ficha de Acompanhamento</h3>
-                  <p className="text-xs text-slate-500 font-medium">Lote: {previewAcompBatch.name || `Lote #${previewAcompBatch.id}`} — Escolha quais peças/pedidos deseja imprimir e configure a ficha.</p>
+                  <p className="text-xs text-slate-500 font-medium">Lote inicial: {previewAcompBatch.name || `Lote #${previewAcompBatch.id}`} — selecione peças de um ou mais lotes para montar a ficha.</p>
                 </div>
               </div>
               <button
@@ -2185,70 +2252,114 @@ export function LotesScreen({
                     )}
                   </div>
 
-                  {/* Items selection check List */}
-                  <div className="bg-white border border-slate-200/80 p-3.5 rounded-xl shadow-2xs space-y-3 flex-1 flex flex-col">
-                    <div className="flex justify-between items-center">
+                  <div className="bg-white border border-slate-200/80 p-3.5 rounded-xl shadow-2xs space-y-2.5">
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Lotes incluídos</span>
+                      <span className="text-[10px] text-indigo-600 font-bold">{acompSelectedBatchIds.length} selecionado(s)</span>
+                    </div>
+                    <input
+                      type="search"
+                      value={acompBatchSearch}
+                      onChange={(e) => setAcompBatchSearch(e.target.value)}
+                      placeholder="Buscar lote, pedido ou produto..."
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                      {acompFilteredBatchChoices.map((candidateBatch) => {
+                        const isSelected = acompSelectedBatchIds.includes(candidateBatch.id);
+                        return (
+                          <label key={candidateBatch.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-indigo-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                if (isSelected) {
+                                  setAcompSelectedBatchIds((current) => current.filter((id) => id !== candidateBatch.id));
+                                  setAcompSelectedOrders((current) => current.filter((selection) => selection.batchId !== candidateBatch.id));
+                                } else {
+                                  setAcompSelectedBatchIds((current) => [...current, candidateBatch.id]);
+                                }
+                              }}
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                            />
+                            <span className="text-[11px] font-semibold text-slate-700 truncate flex-1">
+                              {candidateBatch.name || `Lote #${candidateBatch.id}`}
+                            </span>
+                            <span className="text-[10px] text-slate-400">{getVisibleBatchOrderIds(candidateBatch).length} itens</span>
+                          </label>
+                        );
+                      })}
+                      {acompFilteredBatchChoices.length === 0 && (
+                        <div className="text-center p-2 text-slate-400 text-[11px] italic">Nenhum lote encontrado.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Multi-batch order selection */}
+                  <div className="bg-white border border-slate-200/80 p-3.5 rounded-xl shadow-2xs space-y-2.5 flex-1 flex flex-col">
+                    <div className="flex justify-between items-start gap-2">
                       <div>
-                        <span className="text-xs font-black text-slate-800 uppercase tracking-wider block">
-                          Peças / Pedidos na Ficha
-                        </span>
+                        <span className="text-xs font-black text-slate-800 uppercase tracking-wider block">Peças / Pedidos na Ficha</span>
                         <span className="text-[11px] text-indigo-600 font-bold">
-                          {acompSelectedOrderIds.length} de {getVisibleBatchOrderIds(previewAcompBatch).length} selecionados
+                          {acompSelectedOrders.length} selecionado(s) em {acompSelectedBatchIds.length} lote(s)
                         </span>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1.5 shrink-0">
                         <button
-                          onClick={() => setAcompSelectedOrderIds(getVisibleBatchOrderIds(previewAcompBatch))}
-                          className="text-[10px] text-indigo-600 font-extrabold hover:underline uppercase cursor-pointer bg-indigo-50 px-2 py-1 rounded"
+                          onClick={() => setAcompSelectedOrders(acompSelectedBatchOrderCandidates.map(({ batch, orderId }) => ({ batchId: batch.id, orderId })))}
+                          disabled={acompSelectedBatchIds.length === 0}
+                          className="text-[9px] text-indigo-600 font-extrabold hover:underline uppercase cursor-pointer bg-indigo-50 px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                          Todos
+                          Todos dos lotes
                         </button>
                         <button
-                          onClick={() => setAcompSelectedOrderIds([])}
-                          className="text-[10px] text-slate-500 font-extrabold hover:underline uppercase cursor-pointer bg-slate-100 px-2 py-1 rounded"
+                          onClick={() => setAcompSelectedOrders([])}
+                          className="text-[9px] text-slate-500 font-extrabold hover:underline uppercase cursor-pointer bg-slate-100 px-2 py-1 rounded"
                         >
                           Nenhum
                         </button>
                       </div>
                     </div>
-
-                    <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                      {getVisibleBatchOrderIds(previewAcompBatch).map((oid) => {
-                        const o = (db.orders || []).find((x) => x && x.id === oid);
-                        if (!o) return null;
-                        const it = (db.items || []).find((i) => i && i.id === o.itemId);
-                        const isIncluded = acompSelectedOrderIds.includes(oid);
-
+                    <input
+                      type="search"
+                      value={acompOrderSearch}
+                      onChange={(e) => setAcompOrderSearch(e.target.value)}
+                      placeholder="Buscar pedido, cliente ou produto..."
+                      className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <div className="space-y-2 max-h-[270px] overflow-y-auto pr-1">
+                      {acompVisibleOrderCandidates.map(({ batch: candidateBatch, order: o, orderId, item: it }) => {
+                        const isIncluded = acompSelectedOrders.some((selection) => selection.batchId === candidateBatch.id && selection.orderId === orderId);
                         return (
                           <label
-                            key={oid}
+                            key={`${candidateBatch.id}:${orderId}`}
                             className={`flex items-start gap-2.5 p-2.5 rounded-xl cursor-pointer transition select-none border ${
                               isIncluded
                                 ? "bg-indigo-50/60 border-indigo-200 text-indigo-950 shadow-2xs"
-                                : "bg-slate-50/50 border-slate-200 text-slate-400 opacity-60 hover:opacity-90"
+                                : "bg-slate-50/50 border-slate-200 text-slate-500 hover:bg-slate-50"
                             }`}
                           >
                             <input
                               type="checkbox"
                               checked={isIncluded}
-                              onChange={() => {
-                                if (isIncluded) {
-                                  setAcompSelectedOrderIds(acompSelectedOrderIds.filter((x) => x !== oid));
-                                } else {
-                                  setAcompSelectedOrderIds([...acompSelectedOrderIds, oid]);
-                                }
-                              }}
+                              onChange={() => setAcompSelectedOrders((current) => isIncluded
+                                ? current.filter((selection) => !(selection.batchId === candidateBatch.id && selection.orderId === orderId))
+                                : [...current, { batchId: candidateBatch.id, orderId }]
+                              )}
                               className="mt-0.5 border-slate-300 rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
                             />
                             <div className="text-xs leading-tight min-w-0 flex-1">
                               <div className="flex justify-between items-center gap-1">
-                                <strong className="font-mono text-indigo-700 text-xs font-extrabold">#{o.orderCode}</strong>
+                                <strong className="font-mono text-indigo-700 text-xs font-extrabold">#{o.orderCode || o.id}</strong>
                                 <span className="font-bold text-[11px] text-slate-800 bg-white border px-1.5 py-0.5 rounded shadow-2xs">
                                   {o.totalQuantity} {getItemUnit(it, o)}
                                 </span>
                               </div>
                               <div className="text-slate-900 font-bold truncate mt-0.5">{o.customerName}</div>
                               <div className="text-[11px] text-slate-600 truncate mt-0.5">{it?.name || "Desconhecido"}</div>
+                              <span className="inline-block mt-1 text-[9px] font-extrabold uppercase tracking-wide text-indigo-700 bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded">
+                                {candidateBatch.name || `Lote #${candidateBatch.id}`}
+                              </span>
                               {(o.color || o.size || o.variation) && (
                                 <div className="text-[10px] text-slate-500 mt-0.5 flex flex-wrap gap-1">
                                   {o.color && <span>Cor: <strong>{o.color}</strong></span>}
@@ -2260,11 +2371,11 @@ export function LotesScreen({
                           </label>
                         );
                       })}
-
-                      {getVisibleBatchOrderIds(previewAcompBatch).length === 0 && (
-                        <div className="text-center p-4 text-slate-400 text-xs italic">
-                          Nenhum pedido encontrado neste lote.
-                        </div>
+                      {acompSelectedBatchIds.length === 0 && (
+                        <div className="text-center p-4 text-slate-400 text-xs italic">Selecione pelo menos um lote para ver os itens.</div>
+                      )}
+                      {acompSelectedBatchIds.length > 0 && acompVisibleOrderCandidates.length === 0 && (
+                        <div className="text-center p-4 text-slate-400 text-xs italic">Nenhum pedido corresponde à busca nos lotes selecionados.</div>
                       )}
                     </div>
                   </div>
@@ -2274,7 +2385,7 @@ export function LotesScreen({
 
               {/* Right Column - Scrollable Visual A4 Workspace */}
               <div className="flex-1 overflow-y-auto bg-slate-100 p-6 flex justify-center items-start">
-                {acompSelectedOrderIds.length === 0 ? (
+                {acompSelectedOrders.length === 0 ? (
                   <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center max-w-md my-12 shadow-sm">
                     <Layers className="mx-auto text-slate-300 mb-3" size={40} />
                     <h4 className="font-bold text-slate-700 text-sm mb-1">Nenhuma peça selecionada</h4>
@@ -2287,7 +2398,8 @@ export function LotesScreen({
                     {/* Visual A4 Mock */}
                     <AcompanhamentoPrintSheet
                       batch={previewAcompBatch}
-                      orderIds={acompSelectedOrderIds}
+                      orderIds={acompSelectedOrders.map((selection) => selection.orderId)}
+                      orderSelections={acompPrintOrderSelections}
                       db={db}
                       destrincharComposicoes={destrincharComposicoes}
                       ocultarPaiComposicao={ocultarPaiComposicao}
@@ -2300,7 +2412,7 @@ export function LotesScreen({
             {/* Footer */}
             <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-3 shrink-0">
               <span className="text-xs text-slate-600 font-bold uppercase tracking-wide">
-                IMPÉRIO ACESSÓRIOS · {acompSelectedOrderIds.length} {acompSelectedOrderIds.length === 1 ? "pedido selecionado" : "pedidos selecionados"}
+                IMPÉRIO ACESSÓRIOS · {acompSelectedOrders.length} {acompSelectedOrders.length === 1 ? "pedido" : "pedidos"} · {new Set(acompSelectedOrders.map((selection) => selection.batchId)).size} {new Set(acompSelectedOrders.map((selection) => selection.batchId)).size === 1 ? "lote" : "lotes"}
               </span>
               <div className="flex gap-3 justify-end">
                 <button
@@ -2314,10 +2426,10 @@ export function LotesScreen({
                 </button>
 
                 <button
-                  disabled={isDirectPrintingAcomp || acompSelectedOrderIds.length === 0}
+                  disabled={isDirectPrintingAcomp || acompSelectedOrders.length === 0}
                   onClick={handleDirectPrintAcomp}
                   className={`px-5 py-2.5 text-xs font-black text-white rounded-xl cursor-pointer flex items-center gap-1.5 transition active:scale-95 shadow-lg ${
-                    isDirectPrintingAcomp || acompSelectedOrderIds.length === 0
+                    isDirectPrintingAcomp || acompSelectedOrders.length === 0
                       ? "bg-slate-300 cursor-not-allowed text-slate-500"
                       : "bg-sky-600 hover:bg-sky-500 shadow-sky-700/20"
                   }`}
@@ -2327,16 +2439,16 @@ export function LotesScreen({
                 </button>
 
                 <button
-                  disabled={acompSelectedOrderIds.length === 0}
+                  disabled={acompSelectedOrders.length === 0}
                   onClick={() => {
                     const b = previewAcompBatch;
-                    const ids = acompSelectedOrderIds;
+                    const selections = acompSelectedOrders;
                     setIsPreviewAcompOpen(false);
                     setPreviewAcompBatch(null);
-                    handleGenerateAcompPdf(b, ids);
+                    handleGenerateAcompPdf(b, selections);
                   }}
                   className={`font-extrabold text-xs px-6 py-2.5 rounded-xl transition cursor-pointer shadow-md flex items-center gap-2 ${
-                    acompSelectedOrderIds.length === 0
+                    acompSelectedOrders.length === 0
                       ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none"
                       : "bg-indigo-600 hover:bg-indigo-550 text-white shadow-indigo-600/10 hover:scale-[1.01]"
                   }`}
@@ -2708,7 +2820,8 @@ export function LotesScreen({
             <AcompanhamentoPrintSheet
               ref={acompPrintRef}
               batch={acompBatch}
-              orderIds={acompSelectedOrderIds}
+              orderIds={acompSelectedOrders.map((selection) => selection.orderId)}
+              orderSelections={acompPrintOrderSelections}
               db={db}
               destrincharComposicoes={destrincharComposicoes}
               ocultarPaiComposicao={ocultarPaiComposicao}

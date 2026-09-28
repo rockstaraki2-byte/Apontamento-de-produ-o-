@@ -9,6 +9,7 @@ import { findCustomerForOrder } from "./searchUtils";
 interface AcompanhamentoPrintSheetProps {
   batch: ProductionBatch;
   orderIds: number[];
+  orderSelections?: { orderId: number; batch: ProductionBatch }[];
   db: ReturnType<typeof useDatabase>;
   destrincharComposicoes?: boolean;
   ocultarPaiComposicao?: boolean;
@@ -17,7 +18,7 @@ interface AcompanhamentoPrintSheetProps {
 export const AcompanhamentoPrintSheet = forwardRef<
   HTMLDivElement,
   AcompanhamentoPrintSheetProps
->(({ batch, orderIds = [], db, destrincharComposicoes = false, ocultarPaiComposicao = false }, ref) => {
+>(({ batch, orderIds = [], orderSelections, db, destrincharComposicoes = false, ocultarPaiComposicao = false }, ref) => {
   const logoUrl = db.activeTenant?.logoUrl || "/icon.png";
   const companyName = db.activeTenant?.name || "SUA EMPRESA";
 
@@ -26,6 +27,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
   const groupedProducts = React.useMemo(() => {
     const list: {
       itemId: number;
+      batch: ProductionBatch;
       color: string;
       size: string;
       variation: string;
@@ -37,7 +39,11 @@ export const AcompanhamentoPrintSheet = forwardRef<
       componentUnitQty?: number;
     }[] = [];
 
-    (orderIds || []).forEach((oid) => {
+    const sourceOrders = orderSelections?.length
+      ? orderSelections
+      : (orderIds || []).map((orderId) => ({ orderId, batch }));
+
+    sourceOrders.forEach(({ orderId: oid, batch: sourceBatch }) => {
       const order = (db.orders || []).find((o) => o && (o.id === oid || String(o.id) === String(oid)));
       if (!order) return;
 
@@ -50,6 +56,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
           const existingParent = list.find(
             (p) =>
               !p.isComponent &&
+              p.batch.id === sourceBatch.id &&
               p.itemId === order.itemId &&
               p.color === (order.color || "-") &&
               p.size === (order.size || "-") &&
@@ -68,6 +75,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
           } else {
             list.push({
               itemId: order.itemId,
+              batch: sourceBatch,
               color: order.color || "-",
               size: order.size || "-",
               variation: order.variation || "-",
@@ -91,6 +99,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
           const existingComponent = list.find(
             (p) =>
               p.isComponent &&
+              p.batch.id === sourceBatch.id &&
               p.itemId === comp.itemId &&
               p.parentItemCode === (item.code || "") &&
               p.color === (order.color || "-") &&
@@ -110,6 +119,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
           } else {
             list.push({
               itemId: comp.itemId,
+              batch: sourceBatch,
               color: order.color || "-",
               size: order.size || "-",
               variation: order.variation || "-",
@@ -134,6 +144,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
         const existing = list.find(
           (p) =>
             !p.isComponent &&
+            p.batch.id === sourceBatch.id &&
             p.itemId === order.itemId &&
             p.color === (order.color || "-") &&
             p.size === (order.size || "-") &&
@@ -152,6 +163,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
         } else {
           list.push({
             itemId: order.itemId,
+            batch: sourceBatch,
             color: order.color || "-",
             size: order.size || "-",
             variation: order.variation || "-",
@@ -169,7 +181,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
     });
 
     return list;
-  }, [orderIds, db.orders, db.items, destrincharComposicoes, ocultarPaiComposicao]);
+  }, [orderIds, orderSelections, batch, db.orders, db.items, destrincharComposicoes, ocultarPaiComposicao]);
 
   const chunks = React.useMemo(() => {
     const list: typeof groupedProducts[] = [];
@@ -216,7 +228,8 @@ export const AcompanhamentoPrintSheet = forwardRef<
               {chunk.map((p, indexInChunk) => {
                 const globalIndex = chunkIdx * 2 + indexInChunk;
                 const item = (db.items || []).find((it) => it && (it.id === p.itemId || String(it.id) === String(p.itemId)));
-                const sector = (db.sectors || []).find((s) => s && s.id === batch?.sectorId);
+                const productBatch = p.batch || batch;
+                const sector = (db.sectors || []).find((s) => s && s.id === productBatch?.sectorId);
 
                 return (
                   <React.Fragment key={`acomp-item-frag-${globalIndex}`}>
@@ -244,7 +257,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
                           </div>
                           <div className="text-right">
                             <span className="text-[8.5px] border border-slate-950 text-slate-950 bg-slate-50 px-2.5 py-1 rounded-md font-extrabold uppercase inline-block tracking-wide leading-none shadow-sm text-center">
-                              {batch?.name || "GERAL"}
+                              {productBatch?.name || "GERAL"}
                             </span>
                             <p className="text-[8px] text-slate-400 font-semibold mt-1.5 leading-none">
                               Item #{globalIndex + 1} de {groupedProducts.length}
@@ -343,15 +356,15 @@ export const AcompanhamentoPrintSheet = forwardRef<
                             <div className="col-span-2">
                               <span className="text-[7.5px] uppercase text-slate-400 font-extrabold block">Setor Responsável</span>
                               <strong className="text-slate-800 truncate block">
-                                {batch?.isGerenciaLote || batch?.sectorId === 999 
-                                  ? "⚡ Corte a Laser (Gerência)" 
+                                {productBatch?.isGerenciaLote || productBatch?.sectorId === 999
+                                  ? "⚡ Corte a Laser (Gerência)"
                                   : (sector ? sector.name : "📦 Geral / Sem Setor")}
                               </strong>
                             </div>
                             <div>
                               <span className="text-[7.5px] uppercase text-slate-400 font-extrabold block">Criação</span>
                               <strong className="text-slate-800">
-                                {batch?.createdAt ? new Date(batch.createdAt).toLocaleDateString("pt-BR") : new Date().toLocaleDateString("pt-BR")}
+                                {productBatch?.createdAt ? new Date(productBatch.createdAt).toLocaleDateString("pt-BR") : new Date().toLocaleDateString("pt-BR")}
                               </strong>
                             </div>
                             <div>
@@ -382,7 +395,7 @@ export const AcompanhamentoPrintSheet = forwardRef<
                           </div>
 
                           {/* Embedded drawing visualizer */}
-                          <div 
+                          <div
                             className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 bg-slate-50/30 rounded-lg p-1.5 overflow-hidden select-none relative"
                             style={{
                               minHeight: "150px"
@@ -440,4 +453,3 @@ export const AcompanhamentoPrintSheet = forwardRef<
 });
 
 AcompanhamentoPrintSheet.displayName = "AcompanhamentoPrintSheet";
-
