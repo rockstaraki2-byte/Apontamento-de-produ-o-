@@ -2,13 +2,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createLoadMetrics,
+  getOrderBillingSummary,
   isFullySeparated,
   loadDate,
   mergeCargaOrderAllocations,
 } from "../src/expeditionMetrics";
 import type { Carga, Order } from "../src/types";
 
-const order = { id: 13, orderCode: "65133", customerName: "Cliente", packedQuantity: 12, invoicedQuantity: 8 } as Order;
+const order = {
+  id: 13,
+  orderCode: "65133",
+  customerName: "Cliente",
+  totalQuantity: 16,
+  packedQuantity: 12,
+  invoicedQuantity: 8,
+} as Order;
 const first = {
   id: "first", name: "Primeira", status: "EM_SEPARACAO", orderIds: [13],
   scheduledDate: "2026-09-25", orderQuantities: { 13: 6 }, separatedQuantities: { 13: 6 }, createdAt: 1,
@@ -17,6 +25,39 @@ const second = {
   id: "second", name: "Segunda", status: "EM_SEPARACAO", orderIds: [13],
   scheduledDate: "2026-09-26", orderQuantities: { 13: 10 }, separatedQuantities: { 13: 5 }, createdAt: 2,
 } as Carga;
+
+function orderForBilling(overrides: Partial<Order> = {}): Order {
+  return {
+    ...order,
+    id: 101,
+    orderCode: "PED-101",
+    itemId: 1,
+    color: "Preto",
+    size: "Padrão",
+    variation: "",
+    customerName: "Cliente Teste",
+    totalQuantity: 100,
+    packedQuantity: 0,
+    isActive: true,
+    createdAt: 1,
+    deliveryDate: "2026-10-01",
+    status: "PENDENTE",
+    ...overrides,
+  } as Order;
+}
+
+function loadForBilling(overrides: Partial<Carga> = {}): Carga {
+  return {
+    id: "load-1",
+    name: "Rota Teste",
+    orderIds: [101],
+    orderQuantities: { 101: 50 },
+    status: "ABERTA",
+    createdAt: 1,
+    scheduledDate: "2026-10-01",
+    ...overrides,
+  } as Carga;
+}
 
 test("distribui embalado e faturado por carga sem contar o mesmo pedido duas vezes", () => {
   const calc = createLoadMetrics([second, first], [order]);
@@ -82,5 +123,60 @@ test("vínculo bloqueia quantidade que ficou indisponível enquanto a tela estav
         },
       ]),
     /Disponível agora: 3/,
+  );
+});
+
+test("saldo de pedidos parcialmente faturados exclui as unidades já faturadas", () => {
+  assert.deepEqual(
+    getOrderBillingSummary(orderForBilling({ status: "FATURADO_PARCIAL", invoicedQuantity: 25 })),
+    {
+      total: 100,
+      invoiced: 25,
+      remaining: 75,
+      isFullyInvoiced: false,
+      isPartiallyInvoiced: true,
+      billingDataIncomplete: false,
+    },
+  );
+});
+
+test("pedido totalmente faturado fica bloqueado mesmo se faltar a quantidade faturada", () => {
+  const complete = getOrderBillingSummary(orderForBilling({ status: "FATURADO", invoicedQuantity: 0 }));
+  assert.equal(complete.invoiced, 100);
+  assert.equal(complete.remaining, 0);
+  assert.equal(complete.isFullyInvoiced, true);
+});
+
+test("faturamento parcial sem quantidade registrada permanece bloqueado para conferência", () => {
+  const summary = getOrderBillingSummary(orderForBilling({ status: "FATURADO_PARCIAL", invoicedQuantity: 0 }));
+  assert.equal(summary.remaining, 0);
+  assert.equal(summary.billingDataIncomplete, true);
+});
+
+test("quantidade faturada é atribuída primeiro às cargas mais antigas", () => {
+  const earlier = loadForBilling({ scheduledDate: "2026-09-30", orderQuantities: { 101: 30 } });
+  const future = loadForBilling({
+    id: "load-2",
+    scheduledDate: "2026-10-02",
+    orderQuantities: { 101: 70 },
+  });
+  const metrics = createLoadMetrics(
+    [future, earlier],
+    [orderForBilling({ status: "FATURADO_PARCIAL", invoicedQuantity: 40 })],
+  );
+
+  assert.equal(metrics.invoicedForLoad(earlier, 101), 30);
+  assert.equal(metrics.invoicedForLoad(future, 101), 10);
+});
+
+test("vínculo recusa quantidade acima do saldo liberado sem carga", () => {
+  assert.throws(
+    () => mergeCargaOrderAllocations(loadForBilling(), [{
+      orderId: 101,
+      quantity: 76,
+      availableQuantity: 75,
+      targetQuantityAtSelection: 50,
+    }]),
+    /Disponível agora: 75/,
   );
 });

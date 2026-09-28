@@ -12,6 +12,7 @@ import {
 import { useDatabase } from "./useDatabase";
 import type { ExpeditionRoute, Item, Order, User } from "./types";
 import { findCustomerForOrder } from "./searchUtils";
+import { getOrderBillingSummary } from "./expeditionMetrics";
 
 const DAY_NAMES = [
   "Domingo",
@@ -32,6 +33,8 @@ type SuggestionRow = {
   order: Order;
   item?: Item;
   quantity: number;
+  invoiced: number;
+  total: number;
   revenue: number;
   netUnitPrice: number;
   hasPrice: boolean;
@@ -260,12 +263,13 @@ export function LoadSuggestionsTab({
     db.orders.forEach(function (order) {
       const allocated = map.get(order.id) || 0;
       if (allocated <= 0) return;
+      const billing = getOrderBillingSummary(order);
 
       map.set(
         order.id,
         Math.max(
           0,
-          allocated - Math.max(0, Number(order.invoicedQuantity || 0)),
+          allocated - billing.invoiced,
         ),
       );
     });
@@ -283,6 +287,8 @@ export function LoadSuggestionsTab({
       revenue: number;
       netUnitPrice: number;
       hasPrice: boolean;
+      invoiced: number;
+      total: number;
     };
 
     type OrderGroup = {
@@ -298,12 +304,9 @@ export function LoadSuggestionsTab({
     const groupMap = new Map<string, OrderGroup>();
 
     db.orders.forEach(function (order) {
-      if (order.status === "CANCELADO" || order.status === "FATURADO") return;
-
-      const open = Math.max(
-        0,
-        Number(order.totalQuantity || 0) - Number(order.invoicedQuantity || 0),
-      );
+      if (order.status === "CANCELADO") return;
+      const billing = getOrderBillingSummary(order);
+      const open = billing.remaining;
       if (open <= 0) return;
 
       const allocated = allocationsByOrder.get(order.id) || 0;
@@ -341,6 +344,8 @@ export function LoadSuggestionsTab({
           revenue,
           netUnitPrice,
           hasPrice: unitPrice > 0,
+          invoiced: billing.invoiced,
+          total: billing.total,
         });
 
         if (
@@ -367,6 +372,8 @@ export function LoadSuggestionsTab({
               revenue,
               netUnitPrice,
               hasPrice: unitPrice > 0,
+              invoiced: billing.invoiced,
+              total: billing.total,
             },
           ],
           deliveryDate: deliveryKey,
@@ -463,6 +470,8 @@ export function LoadSuggestionsTab({
             order: line.order,
             item: line.item,
             quantity: line.available,
+            invoiced: line.invoiced,
+            total: line.total,
             revenue: line.revenue,
             netUnitPrice: line.netUnitPrice,
             hasPrice: line.hasPrice,
@@ -600,11 +609,7 @@ export function LoadSuggestionsTab({
         const order = ordersById.get(row.order.id);
         if (!order) return;
 
-        const open = Math.max(
-          0,
-          Number(order.totalQuantity || 0) -
-            Number(order.invoicedQuantity || 0),
-        );
+        const open = getOrderBillingSummary(order).remaining;
         const allocatedNow = allocationsByOrder.get(order.id) || 0;
         const availableNow = Math.max(0, open - allocatedNow);
         const quantity = Math.min(row.quantity, availableNow);
@@ -961,6 +966,11 @@ export function LoadSuggestionsTab({
                                 row.item?.name ||
                                 "Item"}
                             </span>
+                            {row.invoiced > 0 && (
+                              <span className="inline-flex mt-1 px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[9px] font-extrabold">
+                                Faturado parcial · {row.invoiced}/{row.total}
+                              </span>
+                            )}
                             <span className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
                               <MapPin size={10} />
                               {city || "Cidade não identificada"} • entrega{" "}

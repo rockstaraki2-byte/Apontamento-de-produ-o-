@@ -1,5 +1,29 @@
 import type { Carga, Order } from "./types";
 
+export function getOrderBillingSummary(order: Pick<Order, "status" | "totalQuantity" | "invoicedQuantity">) {
+  const total = Math.max(0, Number(order.totalQuantity || 0));
+  const reportedInvoiced = Math.max(0, Number(order.invoicedQuantity || 0));
+  const invoiced = order.status === "FATURADO"
+    ? total
+    : Math.min(total, reportedInvoiced);
+  const isFullyInvoiced = order.status === "FATURADO" || (total > 0 && invoiced >= total);
+  const isPartiallyInvoiced = !isFullyInvoiced && (
+    order.status === "FATURADO_PARCIAL" || invoiced > 0
+  );
+  const billingDataIncomplete = order.status === "FATURADO_PARCIAL" && invoiced <= 0;
+
+  return {
+    total,
+    invoiced,
+    remaining: isFullyInvoiced || billingDataIncomplete
+      ? 0
+      : Math.max(0, total - invoiced),
+    isFullyInvoiced,
+    isPartiallyInvoiced,
+    billingDataIncomplete,
+  };
+}
+
 export const ORDER_ALLOCATION_ALLOWED_STATUSES = new Set<Carga["status"]>([
   "PLANEJADA",
   "ABERTA",
@@ -116,7 +140,7 @@ export function createLoadMetrics(cargas: Carga[], orders: Order[]) {
   loadsByOrder.forEach((related, id) => {
     const order = ordersById.get(id);
     let remainingPacked = Math.max(0, Number(order?.packedQuantity || 0));
-    let remainingInvoiced = Math.max(0, Number(order?.invoicedQuantity || 0));
+    let remainingInvoiced = order ? getOrderBillingSummary(order).invoiced : 0;
     [...related].sort(sortLoads).forEach((carga) => {
       const allocated = Math.max(0, Number(carga.orderQuantities?.[id] || 0));
       packedByLoad.set(carga.id, {

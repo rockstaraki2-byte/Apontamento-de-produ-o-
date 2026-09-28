@@ -33,6 +33,7 @@ import { LoadSuggestionsTab } from "./LoadSuggestionsTab";
 import { PdfPreviewModal } from "./PdfPreviewModal";
 import {
   createLoadMetrics,
+  getOrderBillingSummary,
   ORDER_ALLOCATION_ALLOWED_STATUSES,
 } from "./expeditionMetrics";
 
@@ -212,6 +213,7 @@ export function ProgramacaoCargasScreen({
   const [orderCreatedStart, setOrderCreatedStart] = useState("");
   const [orderCreatedEnd, setOrderCreatedEnd] = useState("");
   const [orderBatchFilter, setOrderBatchFilter] = useState<"TODOS" | "COM_LOTE" | "SEM_LOTE" | number>("TODOS");
+  const [orderBillingFilter, setOrderBillingFilter] = useState<"DISPONIVEIS" | "FATURADOS" | "TODOS">("DISPONIVEIS");
   const [pdfPreview, setPdfPreview] = useState<{ url: string; fileName: string; title: string } | null>(null);
 
   const canManage = canManageExpedition(db.activeTenantId, currentUser);
@@ -395,29 +397,42 @@ export function ProgramacaoCargasScreen({
     db.orders.forEach((order) => {
       const allocated = map.get(order.id) || 0;
       if (allocated <= 0) return;
+      const billing = getOrderBillingSummary(order);
       map.set(
         order.id,
-        Math.max(0, allocated - Math.max(0, Number(order.invoicedQuantity || 0))),
+        Math.max(0, allocated - billing.invoiced),
       );
     });
 
     return map;
   }, [db.cargas, db.orders]);
 
-  const pendingRows = useMemo(() => {
+  const planningRows = useMemo(() => {
     const q = normalizeString(orderSearch);
     return db.orders
-      .filter((o) => o.status !== "CANCELADO" && o.status !== "FATURADO")
-      .filter((o) => Number(o.invoicedQuantity || 0) < Number(o.totalQuantity || 0))
+      .filter((o) => o.status !== "CANCELADO")
       .map((o) => {
-        const open = Math.max(0, Number(o.totalQuantity || 0) - Number(o.invoicedQuantity || 0));
+        const billing = getOrderBillingSummary(o);
+        const open = billing.remaining;
         const allocated = allocationsByOrder.get(o.id) || 0;
         const unallocated = Math.max(0, open - allocated);
         const item = itemsById.get(o.itemId);
         const batchIds = batchIdsByOrder.get(o.id) || [];
-        return { order: o, open, allocated, unallocated, item, batchIds };
+        return {
+          order: o,
+          open,
+          invoiced: billing.invoiced,
+          total: billing.total,
+          isFullyInvoiced: billing.isFullyInvoiced,
+          isPartiallyInvoiced: billing.isPartiallyInvoiced,
+          billingDataIncomplete: billing.billingDataIncomplete,
+          allocated,
+          unallocated,
+          item,
+          batchIds,
+        };
       })
-      .filter((row) => row.unallocated > 0)
+      .filter((row) => row.unallocated > 0 || row.invoiced > 0 || row.billingDataIncomplete)
       .filter((row) => {
         const deliveryKey = (row.order.deliveryDate || "").split("T")[0];
         if (orderDeliveryStart && (!deliveryKey || deliveryKey < orderDeliveryStart)) return false;
@@ -452,6 +467,24 @@ export function ProgramacaoCargasScreen({
     orderBatchFilter,
   ]);
 
+  const pendingRows = useMemo(
+    () => planningRows.filter((row) =>
+      row.unallocated > 0 && !row.isFullyInvoiced && !row.billingDataIncomplete,
+    ),
+    [planningRows],
+  );
+  const invoicedRows = useMemo(
+    () => planningRows.filter((row) =>
+      row.invoiced > 0 || row.isFullyInvoiced || row.billingDataIncomplete,
+    ),
+    [planningRows],
+  );
+  const visibleOrderRows = orderBillingFilter === "DISPONIVEIS"
+    ? pendingRows
+    : orderBillingFilter === "FATURADOS"
+      ? invoicedRows
+      : planningRows;
+
   const pendingRowIds = useMemo(() => new Set(pendingRows.map((row) => row.order.id)), [pendingRows]);
   const selectedVisibleCount = useMemo(
     () => Object.keys(selectedQuantities).filter((id) => pendingRowIds.has(Number(id))).length,
@@ -472,6 +505,7 @@ export function ProgramacaoCargasScreen({
     setOrderCreatedStart("");
     setOrderCreatedEnd("");
     setOrderBatchFilter("TODOS");
+    setOrderBillingFilter("DISPONIVEIS");
   };
 
 
@@ -1160,7 +1194,7 @@ export function ProgramacaoCargasScreen({
               <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
                 <div>
                   <h3 className="font-extrabold text-slate-900">Adicionar pedidos à carga</h3>
-                  <p className="text-xs text-slate-500">Busque qualquer pedido com saldo disponível, inclusive pedidos que já estejam loteados. O lote de produção não interfere na programação da carga.</p>
+                  <p className="text-xs text-slate-500">Pedidos totalmente faturados ficam bloqueados. Em pedidos parcialmente faturados, só o saldo não faturado e ainda sem carga pode ser selecionado.</p>
                 </div>
                 <div className="flex flex-col gap-2 min-w-0 lg:w-[600px]">
                   <div className="grid grid-cols-2 gap-2">
@@ -1185,7 +1219,7 @@ export function ProgramacaoCargasScreen({
                 <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500">Filtros de pedidos</span>
                 <button type="button" onClick={clearOrderFilters} className="text-[10px] font-extrabold text-blue-600 hover:text-blue-800 hover:underline">Limpar filtros</button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1.15fr_1.15fr_1fr_auto] gap-2.5 items-end">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[1.15fr_1.15fr_1fr_1fr_auto] gap-2.5 items-end">
                 <div>
                   <label className="block text-[9px] uppercase tracking-wider font-extrabold text-slate-500 mb-1">Data de entrega</label>
                   <div className="grid grid-cols-2 gap-1.5">
@@ -1217,11 +1251,24 @@ export function ProgramacaoCargasScreen({
                     {(db.productionBatches || []).map((batch) => <option key={batch.id} value={batch.id}>Lote: {batch.name} ({batch.status})</option>)}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-[9px] uppercase tracking-wider font-extrabold text-slate-500 mb-1">Faturamento</label>
+                  <select
+                    value={orderBillingFilter}
+                    onChange={(e) => setOrderBillingFilter(e.target.value as typeof orderBillingFilter)}
+                    className="w-full h-9 border border-slate-300 rounded-lg px-2 text-xs bg-white"
+                    aria-label="Filtrar pedidos por faturamento"
+                  >
+                    <option value="DISPONIVEIS">Disponíveis para carga</option>
+                    <option value="FATURADOS">Com faturamento</option>
+                    <option value="TODOS">Disponíveis + faturados</option>
+                  </select>
+                </div>
                 <div className="h-9 px-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center whitespace-nowrap text-[10px] font-bold text-slate-600">
-                  {pendingRows.length} item(ns) encontrado(s)
+                  {visibleOrderRows.length} item(ns) encontrado(s)
                 </div>
               </div>
-              <p className="text-[9px] text-slate-400 font-medium">Pedidos totalmente faturados são ocultados automaticamente. Pedidos faturados parcialmente aparecem somente pelo saldo ainda em aberto.</p>
+              <p className="text-[9px] text-slate-400 font-medium">Use “Com faturamento” para consultar os itens com tag. Itens totalmente faturados aparecem bloqueados; nos parciais, a quantidade faturada fica separada do saldo que ainda pode entrar em carga.</p>
             </div>
             {db.cargasSync.state !== "live" && (
               <div role="status" className={`rounded-lg border px-3 py-2 text-xs font-semibold ${db.cargasSync.state === "error" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
@@ -1240,17 +1287,18 @@ export function ProgramacaoCargasScreen({
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto max-h-[620px]">
-              <table className="w-full min-w-[1320px] text-left">
+              <table className="w-full min-w-[1450px] text-left">
                 <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-500">
-                  <tr><th className="p-3">Sel.</th><th className="p-3">Pedido</th><th className="p-3">Cliente / Produto</th><th className="p-3">Cidade</th><th className="p-3">Lançamento</th><th className="p-3">Entrega</th><th className="p-3">Lote</th><th className="p-3 text-right">Aberto</th><th className="p-3 text-right">Já em carga</th><th className="p-3 text-right">Sem carga</th><th className="p-3">Programação sugerida</th></tr>
+                  <tr><th className="p-3">Sel.</th><th className="p-3">Pedido</th><th className="p-3">Cliente / Produto</th><th className="p-3">Cidade</th><th className="p-3">Lançamento</th><th className="p-3">Entrega</th><th className="p-3">Lote</th><th className="p-3">Status faturamento</th><th className="p-3 text-right">Aberto</th><th className="p-3 text-right">Faturado</th><th className="p-3 text-right">Já em carga</th><th className="p-3 text-right">Sem carga</th><th className="p-3">Programação sugerida</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {pendingRows.map((row) => {
-                    const selected = selectedQuantities[row.order.id] !== undefined;
+                  {visibleOrderRows.map((row) => {
+                    const selectable = row.unallocated > 0 && !row.isFullyInvoiced && !row.billingDataIncomplete;
+                    const selected = selectable && selectedQuantities[row.order.id] !== undefined;
                     const { last, next } = getLastAndNextLoad(row.order);
                     return (
-                      <tr key={row.order.id} className="hover:bg-slate-50">
-                        <td className="p-3"><input type="checkbox" checked={selected} onChange={(e) => setSelectedQuantities((prev) => { const n = { ...prev }; if (e.target.checked) n[row.order.id] = row.unallocated; else delete n[row.order.id]; return n; })} /></td>
+                      <tr key={row.order.id} className={`hover:bg-slate-50 ${row.isFullyInvoiced || row.billingDataIncomplete ? "bg-purple-50/30" : ""}`}>
+                        <td className="p-3"><input type="checkbox" checked={selected} disabled={!selectable} aria-label={`Selecionar pedido ${row.order.orderCode}`} title={selectable ? "Selecionar saldo não faturado" : "Este item não está liberado para inclusão em carga"} onChange={(e) => setSelectedQuantities((prev) => { const n = { ...prev }; if (e.target.checked) n[row.order.id] = row.unallocated; else delete n[row.order.id]; return n; })} /></td>
                         <td className="p-3 text-xs font-mono font-bold text-slate-800">#{row.order.orderCode}</td>
                         <td className="p-3"><span className="block text-xs font-bold text-slate-800">{row.order.customerName}</span><span className="block text-[10px] text-slate-500">{row.order.customProductName || row.item?.name || "Item"}</span></td>
                         <td className="p-3 text-xs font-bold text-slate-700 whitespace-nowrap">{getOrderCustomerCity(row.order)}</td>
@@ -1263,14 +1311,26 @@ export function ProgramacaoCargasScreen({
                             <span className="inline-flex px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 font-extrabold">Sem lote</span>
                           )}
                         </td>
+                        <td className="p-3 text-[10px]">
+                          {row.billingDataIncomplete ? (
+                            <span className="inline-flex px-2 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-700 font-extrabold" title="O pedido está marcado como faturado parcial, mas não informa a quantidade faturada. Inclusão bloqueada por segurança.">Parcial · saldo a conferir</span>
+                          ) : row.isFullyInvoiced ? (
+                            <span className="inline-flex px-2 py-1 rounded-full bg-purple-50 border border-purple-200 text-purple-800 font-extrabold">Faturado</span>
+                          ) : row.isPartiallyInvoiced ? (
+                            <span className="inline-flex px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-extrabold">Parcial · {row.invoiced}/{row.total}</span>
+                          ) : (
+                            <span className="inline-flex px-2 py-1 rounded-full bg-slate-50 border border-slate-200 text-slate-600 font-bold">Pendente</span>
+                          )}
+                        </td>
                         <td className="p-3 text-xs font-bold text-right">{row.open}</td>
+                        <td className="p-3 text-xs text-purple-700 font-bold text-right">{row.invoiced}</td>
                         <td className="p-3 text-xs text-indigo-700 font-bold text-right">{row.allocated}</td>
-                        <td className="p-3 text-right">{selected ? <input type="number" min={1} max={row.unallocated} value={selectedQuantities[row.order.id]} onChange={(e) => setSelectedQuantities((prev) => ({ ...prev, [row.order.id]: Math.max(1, Math.min(row.unallocated, Number(e.target.value || 1))) }))} className="w-20 h-8 border border-blue-300 rounded text-center text-xs font-bold" /> : <span className="text-xs font-black text-amber-700">{row.unallocated}</span>}</td>
+                        <td className="p-3 text-right">{selected && selectable ? <input type="number" min={1} max={row.unallocated} value={selectedQuantities[row.order.id]} onChange={(e) => setSelectedQuantities((prev) => ({ ...prev, [row.order.id]: Math.max(1, Math.min(row.unallocated, Number(e.target.value || 1))) }))} className="w-20 h-8 border border-blue-300 rounded text-center text-xs font-bold" /> : row.isFullyInvoiced || row.billingDataIncomplete ? <span className="text-[10px] font-extrabold text-purple-700">Bloqueado</span> : <span className="text-xs font-black text-amber-700">{row.unallocated}</span>}</td>
                         <td className="p-3 text-[10px] text-slate-600 min-w-[260px]">
                           <div className="flex flex-col gap-1">
                             <span>Última: <strong>{last ? `${formatDate(getLoadDate(last))} • ${last.routeName || last.name}` : "nenhuma"}</strong></span>
                             <span>Próxima: <strong className="text-blue-700">{next ? `${formatDate(getLoadDate(next))} • ${next.routeName || next.name}` : "não programada"}</strong></span>
-                            {next && <button type="button" onClick={() => { setTargetCargaId(next.id); setSelectedQuantities((prev) => ({ ...prev, [row.order.id]: row.unallocated })); }} className="w-max px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded font-bold hover:bg-blue-100">Usar próxima carga</button>}
+                            {next && selectable && <button type="button" onClick={() => { setTargetCargaId(next.id); setSelectedQuantities((prev) => ({ ...prev, [row.order.id]: row.unallocated })); }} className="w-max px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded font-bold hover:bg-blue-100">Usar próxima carga</button>}
                           </div>
                         </td>
                       </tr>
@@ -1278,7 +1338,7 @@ export function ProgramacaoCargasScreen({
                   })}
                 </tbody>
               </table>
-              {pendingRows.length === 0 && <div className="p-10 text-center text-sm text-slate-500">Nenhum pedido disponível para os filtros informados. Pedidos totalmente faturados não são exibidos.</div>}
+              {visibleOrderRows.length === 0 && <div className="p-10 text-center text-sm text-slate-500">Nenhum pedido corresponde aos filtros informados.</div>}
             </div>
           </div>
         </div>
@@ -1351,7 +1411,7 @@ export function ProgramacaoCargasScreen({
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">{(() => { const m = loadMetrics(selectedCarga); return <><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.customerCount}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Clientes</span></div><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.orderCount}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Pedidos</span></div><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.required}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Necessário</span></div><div className="p-3 rounded-xl bg-blue-50 border border-blue-100"><strong className="block text-xl text-blue-700">{m.packed}</strong><span className="text-[9px] uppercase text-blue-600 font-bold">Embalado</span></div><div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100"><strong className="block text-xl text-emerald-700">{m.separated}</strong><span className="text-[9px] uppercase text-emerald-600 font-bold">Separado</span></div></>; })()}</div>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="p-3">Cliente</th><th className="p-3">Pedido</th><th className="p-3">Produto</th><th className="p-3 text-right">Qtd. carga</th><th className="p-3 text-right">Faturado</th><th className="p-3 text-right">Embalado</th><th className="p-3 text-right">Separado</th><th className="p-3"></th></tr></thead><tbody className="divide-y divide-slate-100">{(selectedCarga.orderIds || []).map((id) => { const o = ordersById.get(id); const item = o ? itemsById.get(o.itemId) : undefined; const qty = Number(selectedCarga.orderQuantities?.[id] || 0); return <tr key={id}><td className="p-3 text-xs font-bold">{o?.customerName || "-"}</td><td className="p-3 text-xs font-mono">#{o?.orderCode || id}</td><td className="p-3 text-xs">{o?.customProductName || item?.name || "Item"}</td><td className="p-3 text-xs font-bold text-right">{qty}</td><td className="p-3 text-xs text-purple-700 font-bold text-right">{invoicedForLoad(selectedCarga, id)}</td><td className="p-3 text-xs text-blue-700 font-bold text-right">{packedForLoad(selectedCarga, id)}</td><td className="p-3 text-xs text-emerald-700 font-black text-right">{Math.min(qty, Number(selectedCarga.separatedQuantities?.[id] || 0))}</td><td className="p-3 text-right">{EDITABLE_STATUSES.has(selectedCarga.status) && <button onClick={() => removeAllocation(selectedCarga, id)} className="text-[10px] font-bold text-rose-600 hover:underline">Remover</button>}</td></tr>; })}</tbody></table></div>{(selectedCarga.orderIds || []).length === 0 && <div className="p-8 text-center text-sm text-slate-500">Carga ainda sem itens vinculados.</div>}</div>
+              <div className="border border-slate-200 rounded-xl overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="p-3">Cliente</th><th className="p-3">Pedido</th><th className="p-3">Produto</th><th className="p-3 text-right">Qtd. carga</th><th className="p-3 text-right">Faturado</th><th className="p-3 text-right">Embalado</th><th className="p-3 text-right">Separado</th><th className="p-3"></th></tr></thead><tbody className="divide-y divide-slate-100">{(selectedCarga.orderIds || []).map((id) => { const o = ordersById.get(id); const item = o ? itemsById.get(o.itemId) : undefined; const qty = Number(selectedCarga.orderQuantities?.[id] || 0); const invoiced = invoicedForLoad(selectedCarga, id); return <tr key={id}><td className="p-3 text-xs font-bold">{o?.customerName || "-"}</td><td className="p-3 text-xs font-mono">#{o?.orderCode || id}</td><td className="p-3 text-xs"><div className="flex flex-col items-start gap-1">{o?.customProductName || item?.name || "Item"}{invoiced > 0 && <span className={`inline-flex px-1.5 py-0.5 rounded-full border text-[9px] font-extrabold ${invoiced >= qty ? "bg-purple-50 border-purple-200 text-purple-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>{invoiced >= qty ? "Faturado" : "Faturado parcial"} · {invoiced} un</span>}</div></td><td className="p-3 text-xs font-bold text-right">{qty}</td><td className="p-3 text-xs text-purple-700 font-bold text-right">{invoiced}</td><td className="p-3 text-xs text-blue-700 font-bold text-right">{packedForLoad(selectedCarga, id)}</td><td className="p-3 text-xs text-emerald-700 font-black text-right">{Math.min(qty, Number(selectedCarga.separatedQuantities?.[id] || 0))}</td><td className="p-3 text-right">{EDITABLE_STATUSES.has(selectedCarga.status) && <button onClick={() => removeAllocation(selectedCarga, id)} className="text-[10px] font-bold text-rose-600 hover:underline">Remover</button>}</td></tr>; })}</tbody></table></div>{(selectedCarga.orderIds || []).length === 0 && <div className="p-8 text-center text-sm text-slate-500">Carga ainda sem itens vinculados.</div>}</div>
 
               {(selectedCarga.auditTrail || []).length > 0 && <div><h4 className="text-[10px] uppercase tracking-widest font-extrabold text-slate-500 mb-2">Histórico da carga</h4><div className="space-y-1">{[...(selectedCarga.auditTrail || [])].reverse().slice(0, 10).map((a, idx) => <div key={`${a.timestamp}-${idx}`} className="text-[10px] bg-slate-50 border border-slate-100 rounded-lg p-2 flex justify-between gap-2"><span><strong>{a.userName}</strong> • {a.action}{a.reason ? ` — ${a.reason}` : ""}</span><span className="text-slate-400 whitespace-nowrap">{new Date(a.timestamp).toLocaleString("pt-BR")}</span></div>)}</div></div>}
             </div>
