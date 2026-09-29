@@ -16833,10 +16833,10 @@ export default function App() {
                             : "";
                         return {
                           id: carga.id,
-                          name: carga.name || `Carga #${carga.id}`,
-                          details: [
-                            carga.routeName && carga.routeName !== carga.name ? carga.routeName : "",
+                          label: [
                             dateLabel,
+                            carga.name || `Carga #${carga.id}`,
+                            carga.routeName && carga.routeName !== carga.name ? carga.routeName : "",
                             shiftLabel,
                           ].filter(Boolean).join(" · "),
                         };
@@ -17039,11 +17039,10 @@ export default function App() {
                                   Carga Vinculada
                                 </span>
                                 {linkedCargasDisplay.length > 0 ? (
-                                  <div className={`${isFull ? "text-[10px]" : "text-[8px]"} font-bold text-indigo-800 block mt-0.5 ${isFull ? "space-y-0.5" : "truncate"}`}>
+                                  <div className={`${isFull ? "text-[9px]" : "text-[7px]"} min-w-0 font-semibold leading-tight text-indigo-800 block mt-0.5 space-y-0.5`}>
                                     {linkedCargasDisplay.map((carga) => (
-                                      <div key={carga.id} className={isFull ? "break-words" : "truncate"}>
-                                        <span>{carga.name}</span>
-                                        {carga.details && <span className="font-medium text-slate-600"> · {carga.details}</span>}
+                                      <div key={carga.id} className="whitespace-normal break-words">
+                                        {carga.label}
                                       </div>
                                     ))}
                                   </div>
