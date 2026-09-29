@@ -1477,6 +1477,71 @@ export function useDatabase(currentUser?: User | null) {
     return id;
   };
 
+  const addOrders = async (ordersToAdd: Omit<Order, "id">[]) => {
+    if (ordersToAdd.length === 0) return [] as number[];
+
+    const preparedOrders = ordersToAdd.map((order) => {
+      const id = getUniqueNumericId();
+      const updatedOrder = {
+        ...order,
+        tenantId: (order as any).tenantId || activeTenantId,
+      };
+
+      if (updatedOrder.representativeName) {
+        const searchName = updatedOrder.representativeName.toLowerCase();
+        if (searchName.includes("mapefor")) {
+          updatedOrder.representativeName = "Danilo Representante";
+          updatedOrder.representativeId = "representante_danilo";
+        } else {
+          const rep = users.find(
+            (user) =>
+              user.role === "REPRESENTANTE" &&
+              (user.name.toLowerCase().includes(searchName) ||
+                searchName.includes(user.name.toLowerCase())),
+          );
+          if (rep) updatedOrder.representativeId = rep.id;
+        }
+      }
+
+      return { id, order: updatedOrder };
+    });
+
+    await runWrite("Adicionar Pedidos", async () => {
+      // Firestore accepts up to 500 operations per batch. Normal orders use one
+      // commit, so all products in the same order appear together.
+      for (let start = 0; start < preparedOrders.length; start += 450) {
+        const batch = writeBatch(db);
+        preparedOrders.slice(start, start + 450).forEach(({ id, order }) => {
+          batch.set(
+            doc(db, "orders", id.toString()),
+            cleanUndefined({ ...order, id }),
+          );
+        });
+        await batch.commit();
+      }
+    });
+
+    preparedOrders.forEach(({ id, order }) => {
+      if (order.representativeId) {
+        void addNotification({
+          message: `Novo pedido #${order.orderCode} recebido para o cliente ${order.customerName}.`,
+          read: false,
+          type: "novo_pedido",
+          recipientId: order.representativeId,
+          orderId: id,
+          details: {
+            customerName: order.customerName,
+            status: order.status,
+          },
+        }).catch((error) => {
+          console.error("Não foi possível criar a notificação do representante:", error);
+        });
+      }
+    });
+
+    return preparedOrders.map(({ id }) => id);
+  };
+
   const deleteOrder = async (id: number) => {
     await runWrite("Excluir Pedido", async () => {
       // 1. Delete order doc
@@ -2526,6 +2591,7 @@ export function useDatabase(currentUser?: User | null) {
     deleteItem,
     orders: filteredOrders,
     addOrder,
+    addOrders,
     deleteOrder,
     updateOrders,
     nestTasks: filteredNestTasks,

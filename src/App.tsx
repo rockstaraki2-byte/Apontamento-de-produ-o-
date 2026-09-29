@@ -6425,6 +6425,8 @@ function PedidosScreen({
   };
 
   const [orderToastMessage, setOrderToastMessage] = useState("");
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const orderSaveInProgressRef = React.useRef(false);
 
   // IMPERIO_ORDER_LOAD_PLANNER_STATE
   const [selectedExpeditionCargaId, setSelectedExpeditionCargaId] = useState("");
@@ -6599,77 +6601,13 @@ function PedidosScreen({
   };
 
   const handleCadastrar = async () => {
-    if (editingId) {
-      if (
-        !orderCode ||
-        !itemId ||
-        !customerName ||
-        !totalQuantity ||
-        !deliveryDate
-      )
-        return;
-      const parsedUnitPrice = parsePositiveUnitPrice(unitPrice);
-      if (parsedUnitPrice === null) {
-        alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
-        return;
-      }
-      const existing = db.orders.find((o) => o.id === editingId);
-      if (existing) {
-        const finalPaymentCondition =
-          paymentType === "outro"
-            ? customPaymentCondition
-            : paymentType.toUpperCase();
+    if (orderSaveInProgressRef.current) return;
 
-        await db.updateOrders([
-          {
-            ...existing,
-            orderCode,
-            itemId: Number(itemId),
-            customerName,
-            representativeName,
-            color,
-            size,
-            variation,
-            totalQuantity: Number(totalQuantity),
-            unitPrice: parsedUnitPrice,
-            deliveryDate,
-            paymentCondition: finalPaymentCondition,
-            paymentTerms,
-            fiscalType,
-            billingRule,
-            isThirdPartyLaser,
-            isUrgent,
-            isProgramacao,
-          },
-        ]);
-
-        // Evaluate if modified to Atrasado
-        const todayMs = new Date().setHours(12, 0, 0, 0);
-        const oldDeliveryMs = existing.deliveryDate
-          ? new Date(existing.deliveryDate).setUTCHours(12, 0, 0, 0)
-          : null;
-        const newDeliveryMs = new Date(deliveryDate).setUTCHours(12, 0, 0, 0);
-
-        const wasLate = oldDeliveryMs ? oldDeliveryMs - todayMs < 0 : false;
-        const isLate = newDeliveryMs - todayMs < 0;
-        const isFinished =
-          existing.status === "FATURADO" || existing.status === "EMBALADO";
-
-        if (!wasLate && isLate && !isFinished) {
-          sendServerPush(
-            "Atenção: Pedido Atrasado",
-            `O prazo do pedido ${orderCode} foi alterado ou venceu e encontra-se em atraso!`,
-            ["ADMIN", "PCP", "PRODUCAO"],
-          );
-        }
-      }
-      setEditingId(null);
-      setOrderToastMessage("Pedido atualizado com sucesso!");
-      setTimeout(() => setOrderToastMessage(""), 4000);
-    } else {
+    let itemsToProcess: typeof lineItems = [];
+    if (!editingId) {
       if (!orderCode || !customerName || !deliveryDate) return;
 
-      const itemsToProcess = [...lineItems];
+      itemsToProcess = [...lineItems];
       if (itemId && totalQuantity) {
         itemsToProcess.push({
           itemId: Number(itemId),
@@ -6701,110 +6639,220 @@ function PedidosScreen({
         );
         return;
       }
-
-      const finalPaymentCondition =
-        paymentType === "outro"
-          ? customPaymentCondition
-          : paymentType.toUpperCase();
-
-      let successCount = 0;
-      const createdExpeditionItems: { id: number; qty: number }[] = [];
-      for (const itemInfo of itemsToProcess) {
-        const numItemId = Number(itemInfo.itemId);
-        const numTotalQuantity = Number(itemInfo.totalQuantity);
-        const normalizedUnitPrice = parsePositiveUnitPrice(itemInfo.unitPrice)!;
-
-        const stockId = `${numItemId}|${itemInfo.color}|${itemInfo.size}|${itemInfo.variation}|ACABADO`;
-        const existingStock = db.stocks.find((s) => s.id === stockId);
-
-        let qtFromStock = 0;
-        let status: OrderStatus = "PENDENTE";
-
-        if (existingStock && existingStock.quantity > 0) {
-          qtFromStock = Math.min(existingStock.quantity, numTotalQuantity);
-          const newStockQty = existingStock.quantity - qtFromStock;
-          await db.updateStocks([{ ...existingStock, quantity: newStockQty }]);
-
-          if (qtFromStock >= numTotalQuantity) {
-            status = "TEM_ESTOQUE"; // fully covered by stock
-          }
-        }
-
-        const createdOrderId = await db.addOrder({
-          orderCode,
-          itemId: numItemId,
-          customerName,
-          representativeName,
-          color: itemInfo.color,
-          size: itemInfo.size,
-          variation: itemInfo.variation,
-          totalQuantity: numTotalQuantity,
-          unitPrice: normalizedUnitPrice,
-          paymentCondition: finalPaymentCondition,
-          paymentTerms,
-          fiscalType,
-          billingRule,
-          discountPercent: discountPercent === "" ? undefined : Number(discountPercent),
-          hasRET,
-          packedQuantity: qtFromStock,
-          producedQuantity: qtFromStock,
-          paintedQuantity: qtFromStock,
-          cutQuantity: qtFromStock,
-          isThirdPartyLaser: itemInfo.isThirdPartyLaser,
-          isUrgent: itemInfo.isUrgent,
-          isProgramacao: itemInfo.isProgramacao,
-          isActive: true,
-          createdAt: Date.now(),
-          deliveryDate,
-          status: status,
-        });
-        createdExpeditionItems.push({ id: createdOrderId, qty: numTotalQuantity });
-
-        if (itemInfo.isThirdPartyLaser) {
-          await db.addNotification({
-            message: `Novo Pedido Corte Laser Terceirizado: ${orderCode}`,
-            read: false,
-          });
-        }
-        successCount++;
+    } else {
+      if (!orderCode || !itemId || !customerName || !totalQuantity || !deliveryDate) return;
+      if (parsePositiveUnitPrice(unitPrice) === null) {
+        alert("Informe o preço unitário do item. O preço deve ser maior que zero.");
+        return;
       }
-
-      await linkCreatedOrdersToSelectedCarga(createdExpeditionItems);
-
-      // Trigger FCM Push notification
-      sendServerPush(
-        "Novo Pedido Gerado",
-        `Pedido ${orderCode} (Cliente: ${customerName}) foi adicionado ao sistema.`,
-        itemsToProcess.some((it) => it.isThirdPartyLaser)
-          ? ["ADMIN", "PCP", "PRODUCAO", "PROJETISTA"]
-          : ["ADMIN", "PCP", "PRODUCAO"],
-      );
-      
-      setOrderToastMessage(`${successCount} ${successCount > 1 ? 'itens foram inseridos' : 'item foi inserido'} com sucesso!`);
-      setTimeout(() => setOrderToastMessage(""), 4000);
     }
 
-    setOrderCode("");
-    setItemId("");
-    setOrderItemSearch("");
-    setCustomerName("");
-    setRepresentativeName("");
-    setColor("");
-    setSize("");
-    setVariation("");
-    setTotalQuantity("");
-    setUnitPrice("");
-    setPaymentCondition("");
-    setPaymentTerms("");
-    setCustomPaymentCondition("");
-    setIsThirdPartyLaser(false);
-    setIsUrgent(false);
-    setIsProgramacao(false);
-    setDiscountPercent("");
-    setHasRET(false);
-    setLineItems([]);
-    setSelectedExpeditionCargaId(""); // IMPERIO_ORDER_LOAD_PLANNER_RESET
-    setIsFormVisible(false);
+    orderSaveInProgressRef.current = true;
+    setIsSavingOrder(true);
+    try {
+      if (editingId) {
+        const parsedUnitPrice = parsePositiveUnitPrice(unitPrice);
+        const existing = db.orders.find((o) => o.id === editingId);
+        if (existing) {
+          const finalPaymentCondition =
+            paymentType === "outro"
+              ? customPaymentCondition
+              : paymentType.toUpperCase();
+
+          await db.updateOrders([
+            {
+              ...existing,
+              orderCode,
+              itemId: Number(itemId),
+              customerName,
+              representativeName,
+              color,
+              size,
+              variation,
+              totalQuantity: Number(totalQuantity),
+              unitPrice: parsedUnitPrice,
+              deliveryDate,
+              paymentCondition: finalPaymentCondition,
+              paymentTerms,
+              fiscalType,
+              billingRule,
+              isThirdPartyLaser,
+              isUrgent,
+              isProgramacao,
+            },
+          ]);
+
+          // Evaluate if modified to Atrasado
+          const todayMs = new Date().setHours(12, 0, 0, 0);
+          const oldDeliveryMs = existing.deliveryDate
+            ? new Date(existing.deliveryDate).setUTCHours(12, 0, 0, 0)
+            : null;
+          const newDeliveryMs = new Date(deliveryDate).setUTCHours(12, 0, 0, 0);
+
+          const wasLate = oldDeliveryMs ? oldDeliveryMs - todayMs < 0 : false;
+          const isLate = newDeliveryMs - todayMs < 0;
+          const isFinished =
+            existing.status === "FATURADO" || existing.status === "EMBALADO";
+
+          if (!wasLate && isLate && !isFinished) {
+            sendServerPush(
+              "Atenção: Pedido Atrasado",
+              `O prazo do pedido ${orderCode} foi alterado ou venceu e encontra-se em atraso!`,
+              ["ADMIN", "PCP", "PRODUCAO"],
+            );
+          }
+        }
+        setEditingId(null);
+        setOrderToastMessage("Pedido atualizado com sucesso!");
+        setTimeout(() => setOrderToastMessage(""), 4000);
+      } else {
+        const finalPaymentCondition =
+          paymentType === "outro"
+            ? customPaymentCondition
+            : paymentType.toUpperCase();
+
+        const stocksById = new Map(db.stocks.map((stock) => [stock.id, stock]));
+        const stockUpdatesById = new Map<string, (typeof db.stocks)[number]>();
+        const ordersToCreate = [];
+        for (const itemInfo of itemsToProcess) {
+          const numItemId = Number(itemInfo.itemId);
+          const numTotalQuantity = Number(itemInfo.totalQuantity);
+          const normalizedUnitPrice = parsePositiveUnitPrice(itemInfo.unitPrice)!;
+
+          const stockId = `${numItemId}|${itemInfo.color}|${itemInfo.size}|${itemInfo.variation}|ACABADO`;
+          const existingStock = stockUpdatesById.get(stockId) || stocksById.get(stockId);
+
+          let qtFromStock = 0;
+          let status: OrderStatus = "PENDENTE";
+
+          if (existingStock && existingStock.quantity > 0) {
+            qtFromStock = Math.min(existingStock.quantity, numTotalQuantity);
+            const newStockQty = existingStock.quantity - qtFromStock;
+            stockUpdatesById.set(stockId, { ...existingStock, quantity: newStockQty });
+
+            if (qtFromStock >= numTotalQuantity) {
+              status = "TEM_ESTOQUE"; // fully covered by stock
+            }
+          }
+
+          ordersToCreate.push({
+            orderCode,
+            itemId: numItemId,
+            customerName,
+            representativeName,
+            color: itemInfo.color,
+            size: itemInfo.size,
+            variation: itemInfo.variation,
+            totalQuantity: numTotalQuantity,
+            unitPrice: normalizedUnitPrice,
+            paymentCondition: finalPaymentCondition,
+            paymentTerms,
+            fiscalType,
+            billingRule,
+            discountPercent: discountPercent === "" ? undefined : Number(discountPercent),
+            hasRET,
+            packedQuantity: qtFromStock,
+            producedQuantity: qtFromStock,
+            paintedQuantity: qtFromStock,
+            cutQuantity: qtFromStock,
+            isThirdPartyLaser: itemInfo.isThirdPartyLaser,
+            isUrgent: itemInfo.isUrgent,
+            isProgramacao: itemInfo.isProgramacao,
+            isActive: true,
+            createdAt: Date.now(),
+            deliveryDate,
+            status: status,
+          });
+        }
+
+        if (stockUpdatesById.size > 0) {
+          await db.updateStocks(Array.from(stockUpdatesById.values()));
+        }
+
+        const createdOrderIds = await db.addOrders(ordersToCreate);
+        const createdExpeditionItems = createdOrderIds.map((id, index) => ({
+          id,
+          qty: Number(itemsToProcess[index].totalQuantity),
+        }));
+
+        // Trigger FCM Push notification
+        void sendServerPush(
+          "Novo Pedido Gerado",
+          `Pedido ${orderCode} (Cliente: ${customerName}) foi adicionado ao sistema.`,
+          itemsToProcess.some((it) => it.isThirdPartyLaser)
+            ? ["ADMIN", "PCP", "PRODUCAO", "PROJETISTA"]
+            : ["ADMIN", "PCP", "PRODUCAO"],
+        ).catch((error) => console.error("Não foi possível enviar o aviso do pedido:", error));
+
+        itemsToProcess.forEach((itemInfo) => {
+          if (itemInfo.isThirdPartyLaser) {
+            void db.addNotification({
+              message: `Novo Pedido Corte Laser Terceirizado: ${orderCode}`,
+              read: false,
+            }).catch((error) => console.error("Não foi possível criar a notificação do corte laser:", error));
+          }
+        });
+
+        setOrderToastMessage(`${createdOrderIds.length} ${createdOrderIds.length > 1 ? 'itens foram inseridos' : 'item foi inserido'} com sucesso!`);
+        setTimeout(() => setOrderToastMessage(""), 4000);
+
+        // O formulário fica disponível assim que os pedidos são gravados; o vínculo
+        // com a carga é uma segunda operação e segue em segundo plano.
+        setOrderCode("");
+        setItemId("");
+        setOrderItemSearch("");
+        setCustomerName("");
+        setRepresentativeName("");
+        setColor("");
+        setSize("");
+        setVariation("");
+        setTotalQuantity("");
+        setUnitPrice("");
+        setPaymentCondition("");
+        setPaymentTerms("");
+        setCustomPaymentCondition("");
+        setIsThirdPartyLaser(false);
+        setIsUrgent(false);
+        setIsProgramacao(false);
+        setDiscountPercent("");
+        setHasRET(false);
+        setLineItems([]);
+        setSelectedExpeditionCargaId(""); // IMPERIO_ORDER_LOAD_PLANNER_RESET
+        setIsFormVisible(true);
+
+        void linkCreatedOrdersToSelectedCarga(createdExpeditionItems).catch((error) => {
+          console.error("Pedido salvo, mas não foi possível vinculá-lo à carga:", error);
+          setOrderToastMessage("Pedido salvo, mas o vínculo com a carga falhou. Confira a aba de cargas.");
+          setTimeout(() => setOrderToastMessage(""), 6000);
+        });
+        return;
+      }
+
+      setOrderCode("");
+      setItemId("");
+      setOrderItemSearch("");
+      setCustomerName("");
+      setRepresentativeName("");
+      setColor("");
+      setSize("");
+      setVariation("");
+      setTotalQuantity("");
+      setUnitPrice("");
+      setPaymentCondition("");
+      setPaymentTerms("");
+      setCustomPaymentCondition("");
+      setIsThirdPartyLaser(false);
+      setIsUrgent(false);
+      setIsProgramacao(false);
+      setDiscountPercent("");
+      setHasRET(false);
+      setLineItems([]);
+      setSelectedExpeditionCargaId(""); // IMPERIO_ORDER_LOAD_PLANNER_RESET
+      setIsFormVisible(false);
+    } finally {
+      orderSaveInProgressRef.current = false;
+      setIsSavingOrder(false);
+    }
   };
 
   const handleEdit = (o: (typeof db.orders)[0]) => {
@@ -6993,14 +7041,21 @@ function PedidosScreen({
   const [visibleCount, setVisibleCount] = useState(30);
 
   const filteredOrders = React.useMemo(() => {
+    const term = normalizeString(debouncedSearchTerm);
+    const customerFilter = normalizeString(filterCustomer);
+    const customersByOrderName = new Map<string, (typeof db.customers)[number]>();
+    db.customers.forEach((customer) => {
+      [customer.name, customer.tradeName].filter(Boolean).forEach((name) => {
+        if (!customersByOrderName.has(name)) customersByOrderName.set(name, customer);
+      });
+    });
+    const itemsById = new Map<number, (typeof db.items)[number]>();
+    db.items.forEach((item) => itemsById.set(item.id, item));
+
     return db.orders
       .filter((o) => {
-        const term = normalizeString(debouncedSearchTerm);
-
-        const customer = db.customers.find(
-          (c) => c.name === o.customerName || c.tradeName === o.customerName,
-        );
-        const item = db.items.find((i) => i.id === o.itemId);
+        const customer = customersByOrderName.get(o.customerName);
+        const item = itemsById.get(o.itemId);
 
         const searchTarget = normalizeString(
           `${o.orderCode} ${o.customerName} ${customer?.tradeName || ""} ${item?.name || ""} ${item?.code || ""}`,
@@ -7027,8 +7082,8 @@ function PedidosScreen({
 
         // Filter by custom customer field
         if (filterCustomer) {
-          const matchesCust = normalizeString(o.customerName).includes(normalizeString(filterCustomer)) || 
-            normalizeString(customer?.tradeName || "").includes(normalizeString(filterCustomer));
+          const matchesCust = normalizeString(o.customerName).includes(customerFilter) ||
+            normalizeString(customer?.tradeName || "").includes(customerFilter);
           if (!matchesCust) return false;
         }
 
@@ -10123,7 +10178,7 @@ function PedidosScreen({
                               type="button"
                               onClick={handleAddProductToOrder}
                               className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded shadow-xs transition text-xs disabled:opacity-40 leading-none"
-                              disabled={!itemId || !totalQuantity}
+                              disabled={!itemId || !totalQuantity || isSavingOrder}
                             >
                               + Outro Produto
                             </button>
@@ -10135,9 +10190,10 @@ function PedidosScreen({
                               editingId
                                 ? "bg-blue-600 hover:bg-blue-700"
                                 : "bg-indigo-600 hover:bg-indigo-700"
-                            } font-bold text-white py-2 rounded shadow-xs transition text-xs leading-none`}
+                            } font-bold text-white py-2 rounded shadow-xs transition text-xs leading-none disabled:opacity-50`}
+                            disabled={isSavingOrder}
                           >
-                            {editingId ? "Salvar Alterações" : "Gerar Pedido"}
+                            {isSavingOrder ? "Gravando..." : editingId ? "Salvar Alterações" : "Gerar Pedido"}
                           </button>
                         </>
                       )}

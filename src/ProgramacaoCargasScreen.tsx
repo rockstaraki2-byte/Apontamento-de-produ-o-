@@ -215,6 +215,10 @@ export function ProgramacaoCargasScreen({
   const [orderCreatedEnd, setOrderCreatedEnd] = useState("");
   const [orderBatchFilter, setOrderBatchFilter] = useState<"TODOS" | "COM_LOTE" | "SEM_LOTE" | number>("TODOS");
   const [orderBillingFilter, setOrderBillingFilter] = useState<"DISPONIVEIS" | "FATURADOS" | "TODOS">("DISPONIVEIS");
+  const [visiblePlanningRowCount, setVisiblePlanningRowCount] = useState(100);
+  const [isSavingLoad, setIsSavingLoad] = useState(false);
+  const loadSaveInProgressRef = useRef(false);
+  const [operationNotice, setOperationNotice] = useState<string | null>(null);
   const [pdfPreview, setPdfPreview] = useState<{ url: string; fileName: string; title: string } | null>(null);
 
   const canManage = canManageExpedition(db.activeTenantId, currentUser);
@@ -512,11 +516,29 @@ export function ProgramacaoCargasScreen({
     ),
     [planningRows],
   );
-  const visibleOrderRows = orderBillingFilter === "DISPONIVEIS"
+  const filteredOrderRows = orderBillingFilter === "DISPONIVEIS"
     ? pendingRows
     : orderBillingFilter === "FATURADOS"
       ? invoicedRows
       : planningRows;
+  const visibleOrderRows = filteredOrderRows.slice(0, visiblePlanningRowCount);
+
+  React.useEffect(() => {
+    setVisiblePlanningRowCount(100);
+  }, [
+    orderSearch,
+    orderDeliveryStart,
+    orderDeliveryEnd,
+    orderCreatedStart,
+    orderCreatedEnd,
+    orderBatchFilter,
+    orderBillingFilter,
+  ]);
+
+  const showOperationNotice = (message: string) => {
+    setOperationNotice(message);
+    window.setTimeout(() => setOperationNotice(null), 4000);
+  };
 
   const pendingRowIds = useMemo(() => new Set(pendingRows.map((row) => row.order.id)), [pendingRows]);
   const selectedVisibleCount = useMemo(
@@ -652,6 +674,7 @@ export function ProgramacaoCargasScreen({
   };
 
   const saveLoad = async () => {
+    if (loadSaveInProgressRef.current) return;
     const route = routes.find((r) => r.id === loadRouteId);
     if (!route) {
       alert("Selecione uma rota cadastrada.");
@@ -670,15 +693,49 @@ export function ProgramacaoCargasScreen({
       if (!ok) return;
     }
 
-    if (editingLoadId) {
-      const current = (db.cargas || []).find((c) => c.id === editingLoadId);
-      if (!current) {
-        alert("A carga não foi encontrada. Atualize a tela e tente novamente.");
+    loadSaveInProgressRef.current = true;
+    setIsSavingLoad(true);
+    try {
+      if (editingLoadId) {
+        const current = (db.cargas || []).find((c) => c.id === editingLoadId);
+        if (!current) {
+          alert("A carga não foi encontrada. Atualize a tela e tente novamente.");
+          return;
+        }
+
+        const updated: Carga = {
+          ...current,
+          name: route.name,
+          routeId: route.id,
+          routeName: route.name,
+          route: [route.name],
+          shift: route.shift,
+          scheduledDate: loadDate,
+          departureDate: loadDate,
+          dayOfWeek: selectedDate
+            ? DAY_NAMES[selectedDate.getDay()]
+            : DAY_NAMES[route.weekday],
+          stagingLocation: loadLocation.trim() || undefined,
+          notes: loadNotes.trim() || undefined,
+          auditTrail: [
+            ...(current.auditTrail || []),
+            {
+              timestamp: Date.now(),
+              userId: currentUser.id,
+              userName: currentUser.name,
+              action: "Planejamento da carga editado",
+            },
+          ],
+        };
+
+        await db.updateCarga(updated);
+        setEditingLoadId(null);
+        setShowLoadForm(false);
+        showOperationNotice("Carga atualizada com sucesso.");
         return;
       }
 
-      const updated: Carga = {
-        ...current,
+      const cargaId = await db.addCarga({
         name: route.name,
         routeId: route.id,
         routeName: route.name,
@@ -689,61 +746,36 @@ export function ProgramacaoCargasScreen({
         dayOfWeek: selectedDate
           ? DAY_NAMES[selectedDate.getDay()]
           : DAY_NAMES[route.weekday],
+        orderIds: [],
+        orderQuantities: {},
+        separatedQuantities: {},
         stagingLocation: loadLocation.trim() || undefined,
+        status: loadStatus,
+        createdAt: Date.now(),
+        closedAt: loadStatus === "FECHADA" ? Date.now() : undefined,
+        releasedAt: loadStatus === "LIBERADA" ? Date.now() : undefined,
         notes: loadNotes.trim() || undefined,
         auditTrail: [
-          ...(current.auditTrail || []),
           {
             timestamp: Date.now(),
             userId: currentUser.id,
             userName: currentUser.name,
-            action: "Planejamento da carga editado",
+            action: `Carga criada com status ${STATUS_LABEL[loadStatus] || loadStatus}`,
           },
         ],
-      };
+        tenantId: db.activeTenantId || undefined,
+      });
 
-      await db.updateCarga(updated);
-      setEditingLoadId(null);
+      setTargetCargaId(cargaId);
+      setSelectedQuantities({});
+      setOrderSearch("");
       setShowLoadForm(false);
-      return;
+      setTab("PEDIDOS");
+      showOperationNotice("Carga criada. Você já pode incluir pedidos.");
+    } finally {
+      loadSaveInProgressRef.current = false;
+      setIsSavingLoad(false);
     }
-
-    const cargaId = await db.addCarga({
-      name: route.name,
-      routeId: route.id,
-      routeName: route.name,
-      route: [route.name],
-      shift: route.shift,
-      scheduledDate: loadDate,
-      departureDate: loadDate,
-      dayOfWeek: selectedDate
-        ? DAY_NAMES[selectedDate.getDay()]
-        : DAY_NAMES[route.weekday],
-      orderIds: [],
-      orderQuantities: {},
-      separatedQuantities: {},
-      stagingLocation: loadLocation.trim() || undefined,
-      status: loadStatus,
-      createdAt: Date.now(),
-      closedAt: loadStatus === "FECHADA" ? Date.now() : undefined,
-      releasedAt: loadStatus === "LIBERADA" ? Date.now() : undefined,
-      notes: loadNotes.trim() || undefined,
-      auditTrail: [
-        {
-          timestamp: Date.now(),
-          userId: currentUser.id,
-          userName: currentUser.name,
-          action: `Carga criada com status ${STATUS_LABEL[loadStatus] || loadStatus}`,
-        },
-      ],
-      tenantId: db.activeTenantId || undefined,
-    });
-
-    setTargetCargaId(cargaId);
-    setSelectedQuantities({});
-    setOrderSearch("");
-    setShowLoadForm(false);
-    setTab("PEDIDOS");
   };
 
   const attachSelectedOrders = async () => {
@@ -805,7 +837,7 @@ export function ProgramacaoCargasScreen({
       await db.addOrdersToCarga(carga.id, requests, currentUser);
       setSelectedQuantities({});
       setTargetCargaId("");
-      alert("Pedidos vinculados à carga com sucesso.");
+      showOperationNotice("Pedidos vinculados à carga com sucesso.");
     } catch (error) {
       console.error("Não foi possível vincular os pedidos à carga:", error);
       const code = String((error as any)?.code || "");
@@ -1194,6 +1226,12 @@ export function ProgramacaoCargasScreen({
         ))}
       </div>
 
+      {operationNotice && (
+        <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">
+          {operationNotice}
+        </div>
+      )}
+
       {tab === "SEMANA" && (
         <div className="space-y-4">
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
@@ -1371,7 +1409,7 @@ export function ProgramacaoCargasScreen({
                   </select>
                 </div>
                 <div className="h-9 px-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center whitespace-nowrap text-[10px] font-bold text-slate-600">
-                  {visibleOrderRows.length} item(ns) encontrado(s)
+                  {filteredOrderRows.length} item(ns) encontrado(s)
                 </div>
               </div>
               <p className="text-[9px] text-slate-400 font-medium">Use “Com faturamento” para consultar os itens com tag. Itens totalmente faturados aparecem bloqueados; nos parciais, a quantidade faturada fica separada do saldo que ainda pode entrar em carga.</p>
@@ -1446,6 +1484,20 @@ export function ProgramacaoCargasScreen({
               </table>
               {visibleOrderRows.length === 0 && <div className="p-10 text-center text-sm text-slate-500">Nenhum pedido corresponde aos filtros informados.</div>}
             </div>
+            {visibleOrderRows.length < filteredOrderRows.length && (
+              <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3">
+                <span className="text-[10px] text-slate-500">
+                  Exibindo {visibleOrderRows.length} de {filteredOrderRows.length} pedidos. Use a busca ou os filtros para localizar um pedido específico.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setVisiblePlanningRowCount((count) => count + 100)}
+                  className="shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-extrabold text-blue-700 hover:bg-blue-100"
+                >
+                  Mostrar mais 100
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1492,7 +1544,7 @@ export function ProgramacaoCargasScreen({
             <div className="grid grid-cols-2 gap-3"><label><span className="text-[10px] uppercase font-extrabold text-slate-500">Data da carga</span><input type="date" value={loadDate} onChange={(e) => setLoadDate(e.target.value)} className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm" /></label><label><span className="text-[10px] uppercase font-extrabold text-slate-500">Área/Pallet</span><input value={loadLocation} onChange={(e) => setLoadLocation(e.target.value)} placeholder="Ex: A-03" className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm" /></label></div>
             {!editingLoadId && <label className="block"><span className="text-[10px] uppercase font-extrabold text-slate-500">Status inicial — definido pelo usuário</span><select value={loadStatus} onChange={(e) => setLoadStatus(e.target.value as Carga["status"])} className="mt-1 w-full h-10 border border-slate-300 rounded-lg px-2 text-sm bg-white">{USER_MANAGED_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABEL[status]}</option>)}</select></label>}
             <textarea value={loadNotes} onChange={(e) => setLoadNotes(e.target.value)} placeholder="Observações da carga..." className="w-full min-h-[90px] border border-slate-300 rounded-lg p-2 text-sm" />
-            <div className="flex justify-end gap-2"><button onClick={() => { setShowLoadForm(false); setEditingLoadId(null); }} className="h-9 px-4 border border-slate-300 rounded-lg text-xs font-bold">Cancelar</button><button onClick={saveLoad} className="h-9 px-4 bg-emerald-600 text-white rounded-lg text-xs font-extrabold">{editingLoadId ? "Salvar alterações" : "Criar carga"}</button></div>
+            <div className="flex justify-end gap-2"><button onClick={() => { setShowLoadForm(false); setEditingLoadId(null); }} disabled={isSavingLoad} className="h-9 px-4 border border-slate-300 rounded-lg text-xs font-bold disabled:opacity-50">Cancelar</button><button onClick={saveLoad} disabled={isSavingLoad} className="h-9 px-4 bg-emerald-600 text-white rounded-lg text-xs font-extrabold disabled:opacity-50">{isSavingLoad ? "Gravando..." : editingLoadId ? "Salvar alterações" : "Criar carga"}</button></div>
           </div>
         </div>
       )}
