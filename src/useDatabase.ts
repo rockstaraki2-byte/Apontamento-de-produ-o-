@@ -2216,7 +2216,7 @@ export function useDatabase(currentUser?: User | null) {
     runSync();
   };
 
-  const deleteLog = async (logId: number) => {
+  const deleteLog = async (logId: number | string) => {
     await enqueueAction("DELETE_LOG", { id: logId });
     runSync();
   };

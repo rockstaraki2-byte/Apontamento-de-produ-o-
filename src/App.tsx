@@ -1143,6 +1143,8 @@ function Welcome({
                         actionText = `Embalou ${log.quantityPacked || 0} pçs`;
                       if (log.type === "FATURAMENTO")
                         actionText = `Faturou/Entregou ${log.quantityInvoiced || 0} pçs`;
+                      if (log.type === "CANCELAMENTO_FATURAMENTO")
+                        actionText = `Cancelou o faturamento de ${log.quantityInvoiced || 0} pçs`;
 
                       return (
                         <div
@@ -5885,6 +5887,257 @@ function PedidosScreen({
 
     alert(`Pedido ${orderCode} faturado com sucesso!`);
     setSelectedOrderCode(null);
+  };
+
+  const handleCancelInvoice = async (orderId: number) => {
+    const order = db.orders.find((entry) => entry.id === orderId);
+    if (!order) return;
+
+    const billedQuantity = Math.max(
+      0,
+      Number(order.invoicedQuantity) ||
+        (order.status === "FATURADO" ? Number(order.totalQuantity) || 0 : 0),
+    );
+    if (billedQuantity <= 0) {
+      alert("Este item não tem quantidade faturada para cancelar.");
+      return;
+    }
+
+    const item = db.items.find((entry) => entry.id === order.itemId);
+    const itemName = item?.name || order.customProductName || "item do pedido";
+    const confirmed = window.confirm(
+      `Cancelar todo o faturamento atual de ${billedQuantity} un. de ${itemName} no pedido ${order.orderCode}?\n\n` +
+        "O item voltará para a fila de faturamento e o estoque será recomposto.",
+    );
+    if (!confirmed) return;
+
+    const inferPreviousStatus = (): OrderStatus => {
+      if (order.status === "CANCELADO") return "CANCELADO";
+      if (
+        order.billingPreviousStatus &&
+        order.billingPreviousStatus !== "FATURADO" &&
+        order.billingPreviousStatus !== "FATURADO_PARCIAL"
+      ) {
+        return order.billingPreviousStatus;
+      }
+      const total = Math.max(0, Number(order.totalQuantity) || 0);
+      if (total > 0 && (order.packedQuantity || 0) >= total) return "EMBALADO";
+      if ((order.packedQuantity || 0) > 0) return "EMBALANDO";
+      if (total > 0 && (order.paintedQuantity || 0) >= total) return "PINTADO";
+      if ((order.paintedQuantity || 0) > 0) return "EM_PINTURA";
+      if (total > 0 && (order.producedQuantity || 0) >= total) return "PRODUZIDO";
+      if ((order.producedQuantity || 0) > 0) return "EM_PRODUCAO";
+      if (total > 0 && (order.cutQuantity || 0) >= total) return "CORTADO";
+      if ((order.cutQuantity || 0) > 0) return "EM_CORTE";
+      return "PENDENTE";
+    };
+    const restoredStatus = inferPreviousStatus();
+    const restoredIsActive =
+      restoredStatus === "CANCELADO"
+        ? false
+        : order.billingPreviousIsActive ?? true;
+    const restoredIsUrgent = order.billingPreviousIsUrgent ?? order.isUrgent;
+
+    setIsUpdating(order.id);
+    try {
+      const stockUpdates = new Map<string, (typeof db.stocks)[number]>();
+      const addStockBack = (
+        stockId: string,
+        itemId: number,
+        color: string,
+        size: string,
+        variation: string,
+        quantity: number,
+        stage: "INTERMEDIARIO" | "ACABADO",
+        restoreReservation = false,
+      ) => {
+        const existing =
+          stockUpdates.get(stockId) || db.stocks.find((stock) => stock.id === stockId);
+        const nextQuantity = (Number(existing?.quantity) || 0) + quantity;
+        const nextReserved = restoreReservation
+          ? Math.min(
+              nextQuantity,
+              (Number(existing?.reservedQuantity) || 0) + quantity,
+            )
+          : Number(existing?.reservedQuantity) || 0;
+        stockUpdates.set(stockId, {
+          ...(existing || {
+            id: stockId,
+            itemId,
+            color,
+            size,
+            variation,
+            quantity: 0,
+            stage,
+          }),
+          quantity: nextQuantity,
+          reservedQuantity: nextReserved,
+        });
+      };
+
+      const productStockId = `${order.itemId}|${order.color}|${order.size}|${order.variation}|ACABADO`;
+      addStockBack(
+        productStockId,
+        order.itemId,
+        order.color,
+        order.size,
+        order.variation,
+        billedQuantity,
+        "ACABADO",
+        true,
+      );
+
+      const componentMovements: {
+        itemId: number;
+        color: string;
+        size: string;
+        variation: string;
+        quantity: number;
+        type: "ENTRADA";
+        description: string;
+      }[] = [];
+      for (const component of item?.components || []) {
+        const componentQuantity = billedQuantity * component.quantity;
+        const possibleStocks = db.stocks.filter(
+          (stock) => stock.itemId === component.itemId,
+        );
+        const matchingStock =
+          possibleStocks.find(
+            (stock) =>
+              stock.color === order.color &&
+              stock.size === order.size &&
+              stock.variation === order.variation,
+          ) ||
+          possibleStocks.find(
+            (stock) =>
+              stock.color === "Padrão" ||
+              stock.color === "Sem Cor" ||
+              stock.color === "OUTROS" ||
+              stock.color === "",
+          ) ||
+          possibleStocks[0];
+        const color = matchingStock?.color || order.color || "Padrão";
+        const size = matchingStock?.size || order.size || "Único";
+        const variation = matchingStock?.variation || order.variation || "Padrão";
+        const stage = matchingStock?.stage || "ACABADO";
+        const stockId =
+          matchingStock?.id ||
+          `${component.itemId}|${color}|${size}|${variation}|${stage}`;
+        addStockBack(
+          stockId,
+          component.itemId,
+          color,
+          size,
+          variation,
+          componentQuantity,
+          stage,
+        );
+        componentMovements.push({
+          itemId: component.itemId,
+          color,
+          size,
+          variation,
+          quantity: componentQuantity,
+          type: "ENTRADA",
+          description: `Estorno de componente pelo cancelamento do faturamento do Pedido ${order.orderCode}`,
+        });
+      }
+
+      const updatedStockEntries = Array.from(stockUpdates.values());
+      if (updatedStockEntries.length > 0) {
+        await db.updateStocks(updatedStockEntries);
+      }
+      await db.addStockMovement?.({
+        itemId: order.itemId,
+        color: order.color,
+        size: order.size,
+        variation: order.variation,
+        quantity: billedQuantity,
+        type: "ENTRADA",
+        description: `Estorno por cancelamento do faturamento do Pedido ${order.orderCode} (Cliente: ${order.customerName})`,
+      });
+      for (const movement of componentMovements) {
+        await db.addStockMovement?.(movement);
+      }
+
+      if (order.status === "FATURADO" && order.laserAssignments?.length) {
+        const restoredTasks = [...db.nestTasks];
+        for (const assignment of order.laserAssignments) {
+          let quantityToRestore = assignment.quantity;
+          for (let index = 0; index < restoredTasks.length; index++) {
+            if (quantityToRestore <= 0) break;
+            const task = restoredTasks[index];
+            if (
+              task.partName !== assignment.partName ||
+              task.size !== assignment.size ||
+              task.status !== "CORTADO"
+            ) {
+              continue;
+            }
+            const availableRoom = Math.max(
+              0,
+              task.totalQuantity - task.cutQuantity,
+            );
+            const quantityForTask = Math.min(quantityToRestore, availableRoom);
+            if (quantityForTask > 0) {
+              restoredTasks[index] = {
+                ...task,
+                cutQuantity: task.cutQuantity + quantityForTask,
+              };
+              quantityToRestore -= quantityForTask;
+            }
+          }
+        }
+        await db.updateNestTasks(restoredTasks);
+      }
+
+      const previousInvoiceLogs = db.logs.filter(
+        (log) => log.orderId === order.id && log.type === "FATURAMENTO",
+      );
+      const invoiceLogDocumentIds = new Set<string>([
+        `faturamento_${order.id}`,
+        ...previousInvoiceLogs.map((log) => String(log.id)),
+      ]);
+      await Promise.all(
+        Array.from(invoiceLogDocumentIds).map((id) => db.deleteLog(id)),
+      );
+
+      await db.updateOrders([
+        {
+          ...order,
+          invoicedQuantity: 0,
+          status: restoredStatus,
+          isActive: restoredIsActive,
+          isUrgent: restoredIsUrgent,
+          billingPreviousStatus: restoredStatus,
+          billingPreviousIsUrgent: restoredIsUrgent,
+          billingPreviousIsActive: restoredIsActive,
+          invoicedAt: 0,
+          invoiceLogId: 0,
+          invoicedBy: "",
+          _alreadyDeducted: false,
+        },
+      ]);
+      await db.addLogs([
+        {
+          id: Date.now() + Math.floor(Math.random() * 1000),
+          orderId: order.id,
+          operatorId: currentUser.id,
+          quantityInvoiced: billedQuantity,
+          type: "CANCELAMENTO_FATURAMENTO",
+          timestamp: Date.now(),
+          durationMillis: 0,
+          processName: `Cancelamento do faturamento do Pedido ${order.orderCode}`,
+        },
+      ]);
+
+      alert(`Faturamento de ${billedQuantity} un. cancelado para o pedido ${order.orderCode}.`);
+    } catch (error) {
+      console.error("Falha ao cancelar faturamento do pedido:", error);
+      alert("Não foi possível cancelar o faturamento. Tente novamente.");
+    } finally {
+      setIsUpdating(null);
+    }
   };
 
   const handleBatchInvoice = () => {
@@ -11604,7 +11857,7 @@ function PedidosScreen({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 w-full md:w-auto justify-end shrink-0 select-none">
+                        <div className="flex items-center flex-wrap gap-2 w-full md:w-auto justify-end shrink-0 select-none">
                           {(() => {
                             const itemEffSt = (o.status === "FATURADO_PARCIAL" || ((o.invoicedQuantity || 0) > 0 && (o.invoicedQuantity || 0) < o.totalQuantity))
                               ? "FATURADO_PARCIAL"
@@ -11644,7 +11897,9 @@ function PedidosScreen({
                           {(currentUser.role === "ADMIN" ||
                             currentUser.role === "PCP" ||
                             currentUser.role === "GERENCIA") &&
-                            (o.invoicedQuantity || 0) < o.totalQuantity && (
+                            (o.invoicedQuantity ||
+                              (o.status === "FATURADO" ? o.totalQuantity : 0)) <
+                              o.totalQuantity && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -11654,7 +11909,9 @@ function PedidosScreen({
                                     db.stocks.find((s) => s.id === stockId)
                                       ?.quantity || 0;
                                   const limit = Math.max(
-                                    o.totalQuantity - (o.invoicedQuantity || 0),
+                                    o.totalQuantity -
+                                      (o.invoicedQuantity ||
+                                        (o.status === "FATURADO" ? o.totalQuantity : 0)),
                                     physicalStock,
                                   );
                                   setInvoiceModalData({ order: o, limit });
@@ -11664,6 +11921,25 @@ function PedidosScreen({
                                 title="Faturamento Parcial"
                               >
                                 Faturar
+                              </button>
+                            )}
+
+                          {(currentUser.role === "ADMIN" ||
+                            currentUser.role === "PCP" ||
+                            currentUser.role === "GERENCIA") &&
+                            (Number(o.invoicedQuantity) > 0 ||
+                              (o.status === "FATURADO" && Number(o.totalQuantity) > 0)) && (
+                              <button
+                                type="button"
+                                disabled={isUpdating === o.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleCancelInvoice(o.id);
+                                }}
+                                className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[9px] sm:text-[10px] px-2.5 py-1.5 rounded shadow-xs shrink-0 transition disabled:opacity-50"
+                                title={`Cancelar todo o faturamento deste item (${o.invoicedQuantity || o.totalQuantity} un.)`}
+                              >
+                                Cancelar faturamento
                               </button>
                             )}
 
@@ -11980,6 +12256,11 @@ function PedidosScreen({
                           case "FATURAMENTO":
                             actionLabel = "Faturado";
                             actionColor = "bg-emerald-50 text-emerald-800 border border-emerald-200";
+                            actionQty = log.quantityInvoiced || log.quantityProcessed || 0;
+                            break;
+                          case "CANCELAMENTO_FATURAMENTO":
+                            actionLabel = "Faturamento cancelado";
+                            actionColor = "bg-rose-50 text-rose-800 border border-rose-200";
                             actionQty = log.quantityInvoiced || log.quantityProcessed || 0;
                             break;
                           case "BANHO_QUIMICO":
@@ -15264,9 +15545,37 @@ export default function App() {
   db.updateOrders = React.useCallback(
     async (updatedOrders: any) => {
       if (isDemoMode) return;
-      const list = Array.isArray(updatedOrders)
+      const incomingList = Array.isArray(updatedOrders)
         ? updatedOrders
         : [updatedOrders];
+      const list = incomingList.map((updated: any) => {
+        const current = db.orders.find((o) => o.id === updated.id);
+        if (!current) return updated;
+
+        const currentInvoiced = Number(current.invoicedQuantity) || 0;
+        const updatedInvoiced = Number(updated.invoicedQuantity) || 0;
+        const invoiceIncreased =
+          updatedInvoiced > currentInvoiced ||
+          (updated.status === "FATURADO" && current.status !== "FATURADO");
+        if (!invoiceIncreased) return updated;
+
+        return {
+          ...updated,
+          billingPreviousStatus:
+            updated.billingPreviousStatus ||
+            current.billingPreviousStatus ||
+            current.status ||
+            "PENDENTE",
+          billingPreviousIsUrgent:
+            updated.billingPreviousIsUrgent ??
+            current.billingPreviousIsUrgent ??
+            current.isUrgent,
+          billingPreviousIsActive:
+            updated.billingPreviousIsActive ??
+            current.billingPreviousIsActive ??
+            current.isActive,
+        };
+      });
       const stocksToUpdate: any[] = [];
 
       for (const updated of list) {
@@ -15381,7 +15690,7 @@ export default function App() {
         await db.updateNestTasks(updatedNestTasks);
       }
 
-      return originalUpdateOrders.current(updatedOrders);
+      return originalUpdateOrders.current(list);
     },
     [
       db.orders,

@@ -348,6 +348,12 @@ export interface Order {
   paintedQuantity?: number;
   cutQuantity?: number;
   invoicedQuantity?: number;
+  billingPreviousStatus?: OrderStatus;
+  billingPreviousIsUrgent?: boolean;
+  billingPreviousIsActive?: boolean;
+  invoicedAt?: number;
+  invoiceLogId?: number;
+  invoicedBy?: string;
   isThirdPartyLaser?: boolean;
   isPrinted?: boolean;
   printedAt?: number;
@@ -388,7 +394,7 @@ export interface ProductionLog {
   quantityPainted?: number;
   quantityCut?: number;
   quantityInvoiced?: number;
-  type?: "EMBALAGEM" | "PRODUCAO" | "PINTURA" | "CORTE_LASER" | "FATURAMENTO" | "BANHO_QUIMICO" | "PRENSA_RAFAEL" | "PRENSA_EDUARDO" | "INJETORA" | "RESERVA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE" | "MONTAGEM_RETRATIL";
+  type?: "EMBALAGEM" | "PRODUCAO" | "PINTURA" | "CORTE_LASER" | "FATURAMENTO" | "CANCELAMENTO_FATURAMENTO" | "BANHO_QUIMICO" | "PRENSA_RAFAEL" | "PRENSA_EDUARDO" | "INJETORA" | "RESERVA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE" | "MONTAGEM_RETRATIL";
   timestamp: number;
   durationMillis: number;
   skipInventoryUpdate?: boolean;
