@@ -201,6 +201,7 @@ export function ProgramacaoCargasScreen({
   const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
 
   const [orderSearch, setOrderSearch] = useState("");
+  const [loadOrderSearch, setLoadOrderSearch] = useState("");
   const [targetCargaId, setTargetCargaId] = useState("");
   const [loadSearch, setLoadSearch] = useState("");
   const [loadDateStart, setLoadDateStart] = useState("");
@@ -265,6 +266,38 @@ export function ProgramacaoCargasScreen({
 
   const itemsById = useMemo(() => new Map(db.items.map((i) => [i.id, i])), [db.items]);
   const ordersById = useMemo(() => new Map(db.orders.map((o) => [o.id, o])), [db.orders]);
+  const normalizedLoadOrderSearch = normalizeString(loadOrderSearch.replace(/^\s*#/, ""));
+  const loadOrderSearchResults = useMemo(() => {
+    if (normalizedLoadOrderSearch.length < 2) return { total: 0, results: [] as {
+      order: Order;
+      item: (typeof db.items)[number] | undefined;
+      cargas: Carga[];
+    }[] };
+
+    const matchingOrders = db.orders.filter((order) => {
+      const item = itemsById.get(order.itemId);
+      return normalizeString(
+        `${order.orderCode} ${order.customerName} ${order.customProductName || ""} ${item?.code || ""} ${item?.name || ""}`,
+      ).includes(normalizedLoadOrderSearch);
+    });
+
+    matchingOrders.sort((a, b) => {
+      const aExact = normalizeString(a.orderCode) === normalizedLoadOrderSearch ? 1 : 0;
+      const bExact = normalizeString(b.orderCode) === normalizedLoadOrderSearch ? 1 : 0;
+      return bExact - aExact || (b.createdAt || 0) - (a.createdAt || 0);
+    });
+
+    return {
+      total: matchingOrders.length,
+      results: matchingOrders.slice(0, 20).map((order) => ({
+        order,
+        item: itemsById.get(order.itemId),
+        cargas: (db.cargas || [])
+          .filter((carga) => (carga.orderIds || []).includes(order.id))
+          .sort(loadSort),
+      })),
+    };
+  }, [normalizedLoadOrderSearch, db.orders, db.cargas, itemsById]);
   const selectedCarga = (db.cargas || []).find((c) => c.id === selectedCargaId) || null;
   const loadCalculations = useMemo(
     () => createLoadMetrics(db.cargas || [], db.orders),
@@ -1163,6 +1196,79 @@ export function ProgramacaoCargasScreen({
 
       {tab === "SEMANA" && (
         <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900">Localizar pedido em uma carga</h3>
+                <p className="text-xs text-slate-500">A busca consulta todas as cargas, inclusive as de outras semanas.</p>
+              </div>
+              <div className="relative w-full md:max-w-md">
+                <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={loadOrderSearch}
+                  onChange={(e) => setLoadOrderSearch(e.target.value)}
+                  placeholder="Número do pedido, cliente ou produto..."
+                  aria-label="Buscar pedido nas cargas"
+                  className="w-full h-10 pl-8 pr-9 border border-slate-300 rounded-lg text-xs"
+                />
+                {loadOrderSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setLoadOrderSearch("")}
+                    aria-label="Limpar busca de pedido"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {!normalizedLoadOrderSearch ? (
+              <p className="text-[11px] text-slate-400">Digite ao menos 2 caracteres para consultar.</p>
+            ) : normalizedLoadOrderSearch.length < 2 ? (
+              <p className="text-[11px] text-slate-400">Digite mais um caractere para consultar.</p>
+            ) : loadOrderSearchResults.total === 0 ? (
+              <p className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 text-xs text-slate-500">Nenhum pedido encontrado para essa busca.</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+                  {loadOrderSearchResults.results.map(({ order, item, cargas }) => (
+                    <div key={order.id} className="rounded-xl border border-slate-200 p-3 grid grid-cols-1 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-3">
+                      <div className="min-w-0">
+                        <span className="text-xs font-mono font-extrabold text-slate-900">Pedido #{order.orderCode}</span>
+                        <p className="mt-1 text-xs font-bold text-slate-700 truncate" title={order.customerName}>{order.customerName}</p>
+                        <p className="mt-0.5 text-[10px] text-slate-500 truncate" title={order.customProductName || item?.name || "Item"}>{order.customProductName || item?.name || "Item"}</p>
+                      </div>
+                      <div className="space-y-1.5">
+                        {cargas.length > 0 ? cargas.map((carga) => (
+                          <div key={carga.id} className="rounded-lg bg-blue-50/70 border border-blue-100 px-2.5 py-2">
+                            <div className="flex flex-wrap items-center justify-between gap-1">
+                              <span className="text-[11px] font-extrabold text-blue-900">{carga.name || `Carga #${carga.id}`}</span>
+                              <span className={`px-1.5 py-0.5 rounded-full border text-[9px] font-extrabold ${STATUS_CLASS[carga.status] || STATUS_CLASS.PLANEJADA}`}>
+                                {STATUS_LABEL[carga.status] || carga.status}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-[10px] text-slate-600">
+                              {carga.routeName && carga.routeName !== carga.name ? `${carga.routeName} · ` : ""}
+                              {formatDate(getLoadDate(carga))} · {SHIFT_LABEL[carga.shift || ""] || carga.shift || "Turno não definido"}
+                            </p>
+                            <p className="mt-0.5 text-[10px] font-bold text-slate-600">Quantidade na carga: {Number(carga.orderQuantities?.[order.id] || 0)} un</p>
+                          </div>
+                        )) : (
+                          <p className="rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-2 text-[10px] font-semibold text-slate-500">Este pedido ainda não está vinculado a uma carga.</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {loadOrderSearchResults.total > loadOrderSearchResults.results.length && (
+                  <p className="text-[10px] text-slate-400">Exibindo os primeiros {loadOrderSearchResults.results.length} de {loadOrderSearchResults.total} pedidos encontrados. Refine a busca para ver um pedido específico.</p>
+                )}
+              </>
+            )}
+          </div>
+
           <div className="flex items-center justify-between bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
             <button onClick={() => setWeekAnchor(addDays(monday, -7))} className="p-2 rounded-lg hover:bg-slate-100"><ChevronLeft size={18} /></button>
             <div className="text-center">
