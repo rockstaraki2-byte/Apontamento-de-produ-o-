@@ -16812,6 +16812,36 @@ export default function App() {
                               .join(", ")
                           : "Não vinculado";
 
+                      const linkedCargas = (db.cargas || [])
+                        .filter((carga) => (carga.orderIds || []).some((id) =>
+                          groupOrders.some((order) => Number(id) === Number(order.id)),
+                        ))
+                        .sort((a, b) => {
+                          const dateA = String(a.scheduledDate || a.departureDate || "").split("T")[0];
+                          const dateB = String(b.scheduledDate || b.departureDate || "").split("T")[0];
+                          return dateA.localeCompare(dateB) || String(a.name || a.id).localeCompare(String(b.name || b.id));
+                        });
+                      const linkedCargasDisplay = linkedCargas.map((carga) => {
+                        const scheduledDate = String(carga.scheduledDate || carga.departureDate || "").split("T")[0];
+                        const dateLabel = /^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)
+                          ? scheduledDate.split("-").reverse().join("/")
+                          : "";
+                        const shiftLabel = carga.shift === "MANHA"
+                          ? "Manhã"
+                          : carga.shift === "TARDE"
+                            ? "Tarde"
+                            : "";
+                        return {
+                          id: carga.id,
+                          name: carga.name || `Carga #${carga.id}`,
+                          details: [
+                            carga.routeName && carga.routeName !== carga.name ? carga.routeName : "",
+                            dateLabel,
+                            shiftLabel,
+                          ].filter(Boolean).join(" · "),
+                        };
+                      });
+
                       const orderDiscountPercent =
                         firstOrd.discountPercent !== undefined
                           ? firstOrd.discountPercent
@@ -16978,28 +17008,50 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* Row 4: Discounts & RET */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 border-t border-slate-200">
-                              <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
-                                <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Desconto no Pedido
-                                </span>
-                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-emerald-800 block mt-0.5 truncate`}>
-                                  {orderDiscountPercent && orderDiscountPercent > 0
-                                    ? `🏷️ ${orderDiscountPercent}% (-${discountAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`
-                                    : "Sem Desconto (0%)"}
-                                </span>
+                            {/* Row 4: Fiscal/commercial details grouped beside the linked delivery load */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 border-t border-slate-200">
+                              <div className="sm:col-span-2 grid grid-cols-2 divide-x divide-slate-200">
+                                <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                  <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                    Desconto no Pedido
+                                  </span>
+                                  <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-emerald-800 block mt-0.5 truncate`}>
+                                    {orderDiscountPercent && orderDiscountPercent > 0
+                                      ? `🏷️ ${orderDiscountPercent}% (-${discountAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`
+                                      : "Sem Desconto (0%)"}
+                                  </span>
+                                </div>
+
+                                <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
+                                  <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
+                                    Regime Tributário (RET)
+                                  </span>
+                                  <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-800 block mt-0.5 truncate`}>
+                                    {orderHasRET
+                                      ? "🏛️ SIM (Regime Especial de Tributação)"
+                                      : "NÃO (Regime Comum)"}
+                                  </span>
+                                </div>
                               </div>
 
                               <div className={`${isFull ? "p-2 sm:p-2.5" : "p-1 sm:p-1.5"}`}>
                                 <span className={`${isFull ? "text-[8.5px]" : "text-[7.5px]"} text-slate-500 font-extrabold uppercase tracking-wider block`}>
-                                  Regime Tributário (RET)
+                                  Carga Vinculada
                                 </span>
-                                <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-800 block mt-0.5 truncate`}>
-                                  {orderHasRET
-                                    ? "🏛️ SIM (Regime Especial de Tributação)"
-                                    : "NÃO (Regime Comum)"}
-                                </span>
+                                {linkedCargasDisplay.length > 0 ? (
+                                  <div className={`${isFull ? "text-[10px]" : "text-[8px]"} font-bold text-indigo-800 block mt-0.5 ${isFull ? "space-y-0.5" : "truncate"}`}>
+                                    {linkedCargasDisplay.map((carga) => (
+                                      <div key={carga.id} className={isFull ? "break-words" : "truncate"}>
+                                        <span>{carga.name}</span>
+                                        {carga.details && <span className="font-medium text-slate-600"> · {carga.details}</span>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-500 block mt-0.5`}>
+                                    Não vinculada
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
