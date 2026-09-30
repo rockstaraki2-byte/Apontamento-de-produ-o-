@@ -587,7 +587,7 @@ function Welcome({
             : undefined);
 
         if (notificationItem) {
-          const ordersById = new Map(
+          const ordersById = new Map<string, Order>(
             db.orders.map((order) => [String(order.id), order] as const),
           );
           const logsByTimestamp = new Map<number, Set<number>>();

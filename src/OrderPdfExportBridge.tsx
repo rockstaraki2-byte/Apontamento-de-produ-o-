@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useDatabase } from "./useDatabase";
-import type { User } from "./types";
+import type { Order, User } from "./types";
 import { findCustomerForOrder } from "./searchUtils";
 
 type PrintFilter = "NAO_IMPRESSOS" | "IMPRESSOS" | "TODOS";
@@ -124,8 +124,8 @@ function closePrintModal() {
 function AutomationController({ currentUser }: { currentUser: User }) {
   const db = useDatabase(currentUser);
 
-  const groupedOrders = useMemo(() => {
-    const groups = new Map<string, any[]>();
+  const groupedOrders = useMemo<Map<string, Order[]>>(() => {
+    const groups = new Map<string, Order[]>();
     for (const order of db.orders || []) {
       if (!order?.orderCode) continue;
       const code = String(order.orderCode);
@@ -153,12 +153,14 @@ function AutomationController({ currentUser }: { currentUser: User }) {
         const max = Math.max(start, end);
         const filter = normalizePrintFilter(command.statusImpressao);
         const excludeFullyInvoiced = shouldExcludeFullyInvoiced(command.statusImpressao);
-        const selected = Array.from(groupedOrders.entries())
-          .filter(([code]) => {
-            const numeric = comparableOrderNumber(code);
-            return Number.isFinite(numeric) && numeric >= min && numeric <= max;
-          })
-          .sort((a, b) => comparableOrderNumber(a[0]) - comparableOrderNumber(b[0]));
+        const selected: Array<[string, Order[]]> = [];
+        groupedOrders.forEach((group, code) => {
+          const numeric = comparableOrderNumber(code);
+          if (Number.isFinite(numeric) && numeric >= min && numeric <= max) {
+            selected.push([code, group]);
+          }
+        });
+        selected.sort((a, b) => comparableOrderNumber(a[0]) - comparableOrderNumber(b[0]));
 
         const eligible: any[] = [];
         const ignored: any[] = [];

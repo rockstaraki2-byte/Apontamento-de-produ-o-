@@ -56,6 +56,8 @@ import {
   updateDoc as updateDocFirebase,
   disableNetwork,
   enableNetwork,
+  type DocumentReference,
+  type SetOptions,
 } from "firebase/firestore";
 
 import { CUSTOMER_TRADE_NAMES } from "./data/customerTradeNames";
@@ -273,17 +275,23 @@ const USERS_LOAD_TIMEOUT_ERROR =
 export function useDatabase(currentUser?: User | null) {
   const isDemoMode = isDemoModeEnabled();
 
-  const safeSetDocFirebase = async (...args: any[]) => {
+  const safeSetDocFirebase = async (
+    reference: DocumentReference,
+    data: any,
+    options?: SetOptions,
+  ) => {
     if (isDemoMode) return;
-    return firestoreSetDoc(...args);
+    return options
+      ? firestoreSetDoc(reference, data, options)
+      : firestoreSetDoc(reference, data);
   };
-  const safeDeleteDoc = async (...args: any[]) => {
+  const safeDeleteDoc = async (reference: DocumentReference) => {
     if (isDemoMode) return;
-    return firestoreDeleteDoc(...args);
+    return firestoreDeleteDoc(reference);
   };
-  const enqueueAction = async (...args: any[]) => {
+  const enqueueAction = async (type: string, payload: any) => {
     if (isDemoMode) return;
-    return enqueueActionFirebase(...args);
+    return enqueueActionFirebase(type, payload);
   };
 
   const [usersLoaded, setUsersLoaded] = useState(false);
@@ -2429,7 +2437,7 @@ export function useDatabase(currentUser?: User | null) {
     const loadsHaveOrders = loads.some((carga) => (carga.orderIds || []).length > 0);
     if (loadsHaveOrders && filteredOrders.length === 0) return;
 
-    const ordersById = new Map(filteredOrders.map((order) => [order.id, order]));
+    const ordersById = new Map<number, Order>(filteredOrders.map((order) => [order.id, order]));
     const loadsByOrder = new Map<number, Carga[]>();
 
     loads.forEach((carga) => {

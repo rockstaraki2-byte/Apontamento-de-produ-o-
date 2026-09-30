@@ -523,6 +523,9 @@ export interface Customer {
   address?: string;
   neighborhood?: string;
   bairro?: string;
+  city?: string;
+  state?: string;
+  uf?: string;
   tradeName?: string;
   fiscalType?: "COM_NF" | "SEM_NF" | "MEIA_NOTA";
   defaultPaymentTerms?: string;
