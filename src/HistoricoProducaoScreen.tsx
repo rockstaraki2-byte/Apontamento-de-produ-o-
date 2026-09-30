@@ -831,6 +831,9 @@ export function HistoricoProducaoScreen({
         if (r.responsibleName) {
           baseLog.customOperatorName = r.responsibleName;
         }
+        if (r.lot.trim()) {
+          baseLog.productionLotName = r.lot.trim();
+        }
 
         const qVal = r.quantity;
         if (r.logType === "EMBALAGEM") {
@@ -1075,6 +1078,131 @@ export function HistoricoProducaoScreen({
     selectedOperatorId,
     selectedProcessType,
   ]);
+
+  const resolveLogContext = (log: ProductionLog) => {
+    const rawLog = log as ProductionLog & Record<string, any>;
+    const nestTask = log.type === "CORTE_LASER" && log.orderId
+      ? db.nestTasks?.find((task) => String(task.id) === String(log.orderId))
+      : undefined;
+    const planId = log.coilPlanId ?? rawLog.taskId;
+    const plan = planId
+      ? db.coilCuttingPlans?.find((candidate) => String(candidate.id) === String(planId))
+      : undefined;
+
+    let order = !nestTask && log.orderId
+      ? db.orders.find((candidate) => String(candidate.id) === String(log.orderId))
+      : undefined;
+    if (!order && plan?.orderId) {
+      order = db.orders.find((candidate) => String(candidate.id) === String(plan.orderId));
+    }
+
+    const itemIdCandidates = [
+      log.itemId,
+      log.parentItemId,
+      plan?.targetItemIds?.[0],
+    ].filter((id) => id !== undefined && id !== null && Number(id) > 0);
+    let item = itemIdCandidates
+      .map((id) => db.items.find((candidate) => String(candidate.id) === String(id)))
+      .find(Boolean);
+    if (!item && order) {
+      item = db.items.find((candidate) => String(candidate.id) === String(order?.itemId));
+    }
+
+    const productionLotName = String(log.productionLotName || "").trim();
+    const savedBatchName = String(log.associatedBatchName || "").trim();
+    const explicitBatchId = log.associatedBatchId ?? rawLog.batchId ?? plan?.batchId ?? nestTask?.batchId;
+    let explicitBatch = explicitBatchId !== undefined && explicitBatchId !== null
+      ? db.productionBatches.find((candidate) => String(candidate.id) === String(explicitBatchId))
+      : undefined;
+    if (!explicitBatch && (productionLotName || savedBatchName)) {
+      const normalizedLotName = normalizeString(productionLotName || savedBatchName);
+      explicitBatch = db.productionBatches.find(
+        (candidate) =>
+          normalizeString(candidate.name || "") === normalizedLotName ||
+          String(candidate.id) === (productionLotName || savedBatchName),
+      );
+    }
+
+    const linkedBatches = explicitBatch
+      ? [explicitBatch]
+      : order
+        ? db.productionBatches.filter((candidate) =>
+            candidate.orderIds?.some((id) => String(id) === String(order?.id)),
+          )
+        : [];
+
+    if (!order && linkedBatches.length > 0) {
+      const linkedOrderIds = new Set(linkedBatches.flatMap((batch) => batch.orderIds || []).map(String));
+      const batchOrders = db.orders.filter((candidate) => linkedOrderIds.has(String(candidate.id)));
+      const itemMatches = item
+        ? batchOrders.filter((candidate) => String(candidate.itemId) === String(item?.id))
+        : [];
+      const possibleOrders = itemMatches.length > 0 ? itemMatches : batchOrders;
+      if (possibleOrders.length === 1) {
+        order = possibleOrders[0];
+      }
+    }
+
+    // When an order belongs to multiple sector batches, show the batch for this
+    // sector when the log carries a recognizable sector name/type. If it does
+    // not, keep all linked batch names visible instead of guessing one.
+    let relevantBatches = linkedBatches;
+    if (!explicitBatch && linkedBatches.length > 1) {
+      const aliasesByType: Record<string, string[]> = {
+        PRENSA_EDUARDO: ["prensa eduardo", "prensa e", "prensa"],
+        PRENSA_RAFAEL: ["prensa rafael", "prensa r"],
+        CORTE_LASER: ["corte laser", "laser"],
+        PINTURA: ["pintura"],
+        EMBALAGEM: ["embalagem", "acabamento"],
+        BANHO_QUIMICO: ["banho", "zincagem"],
+        INJETORA: ["injetora"],
+        MONTAGEM_RETRATIL: ["montagem retratil"],
+        TORNO_CNC_WILLIAN: ["torno cnc willian", "torno willian"],
+        TORNO_CNC_HENRIQUE: ["torno cnc henrique", "torno henrique"],
+      };
+      const sectorAliases = aliasesByType[log.type || ""] || [];
+      const processName = normalizeString(log.processName || "");
+      const sectorMatches = linkedBatches.filter((candidate) => {
+        const sector = db.sectors.find((entry) => String(entry.id) === String(candidate.sectorId));
+        const sectorLabel = normalizeString(
+          `${sector?.name || ""} ${sector?.code || ""} ${sector?.role || ""} ${sector?.department || ""}`,
+        );
+        return (
+          sectorAliases.some((alias) => sectorLabel.includes(normalizeString(alias))) ||
+          (!!processName && sectorLabel.includes(processName))
+        );
+      });
+      if (sectorMatches.length > 0) relevantBatches = sectorMatches;
+    }
+
+    if (!item && order) {
+      item = db.items.find((candidate) => String(candidate.id) === String(order?.itemId));
+    }
+
+    const batchNames = relevantBatches.map((candidate) => candidate.name || `Lote ${candidate.id}`);
+    if (productionLotName && !batchNames.some((name) => normalizeString(name) === normalizeString(productionLotName))) {
+      batchNames.push(productionLotName);
+    }
+    if (
+      savedBatchName &&
+      (log.associatedBatchId !== undefined || log.type === "PRENSA_EDUARDO" || log.type === "PRENSA_RAFAEL") &&
+      !batchNames.some((name) => normalizeString(name) === normalizeString(savedBatchName))
+    ) {
+      batchNames.push(savedBatchName);
+    }
+
+    const nestPartName = nestTask?.partName || rawLog.nestedPartName || rawLog.partName || "";
+    const planItem = plan?.targetItemIds?.[0]
+      ? db.items.find((candidate) => String(candidate.id) === String(plan.targetItemIds[0]))
+      : undefined;
+
+    return {
+      item: item || planItem,
+      order,
+      batchNames,
+      nestPartName,
+    };
+  };
 
   const getActivityTypeColor = (type?: string) => {
     switch (type) {
@@ -2218,6 +2346,38 @@ export function HistoricoProducaoScreen({
                 else title = "Apontamento de Produção";
               }
 
+              const logContext = resolveLogContext(l);
+              const genericTitles = [
+                "apontamento de producao",
+                "corte avulso especial",
+                "item especial avulso",
+                "item desconhecido",
+                "registro desconhecido",
+                "peca desconhecida",
+              ];
+              if (
+                logContext.item?.name &&
+                (genericTitles.includes(normalizeString(title)) ||
+                  normalizeString(title) === normalizeString(l.processName || ""))
+              ) {
+                title = logContext.item.name;
+              } else if (!title && logContext.nestPartName) {
+                title = logContext.nestPartName;
+              }
+
+              const linkedOrderCode = logContext.order?.orderCode || (logContext.order ? String(logContext.order.id) : "");
+              const subtitleAlreadyHasOrder = !!linkedOrderCode &&
+                normalizeString(subtitle).includes(normalizeString(linkedOrderCode));
+              const associationSummary = [
+                logContext.order
+                  ? (subtitleAlreadyHasOrder ? "" : `Pedido: ${linkedOrderCode}`)
+                  : "Pedido: Sem vínculo",
+                logContext.batchNames.length > 0
+                  ? `Lote: ${logContext.batchNames.join(", ")}`
+                  : "Lote: Sem vínculo",
+              ].filter(Boolean).join(" | ");
+              subtitle = [subtitle, associationSummary].filter(Boolean).join(" | ");
+
               const operator = db.users.find(
                 (u) =>
                   u.id === l.operatorId ||
@@ -2490,6 +2650,28 @@ export function HistoricoProducaoScreen({
             else if (selectedLog.type === "MONTAGEM_RETRATIL") itemTitle = "Montagem Retrátil";
             else itemTitle = "Apontamento de Produção";
           }
+
+          const logContext = resolveLogContext(selectedLog);
+          orderInfo = logContext.order || orderInfo;
+          const genericTitles = [
+            "apontamento de producao",
+            "corte avulso especial",
+            "item especial avulso",
+            "item desconhecido",
+            "registro desconhecido",
+            "peca desconhecida",
+          ];
+          if (
+            logContext.item?.name &&
+            (genericTitles.includes(normalizeString(itemTitle)) ||
+              normalizeString(itemTitle) === normalizeString(selectedLog.processName || ""))
+          ) {
+            itemTitle = logContext.item.name;
+          } else if (logContext.nestPartName && genericTitles.includes(normalizeString(itemTitle))) {
+            itemTitle = logContext.nestPartName;
+          }
+          itemCode = itemCode || logContext.item?.code || "";
+          const linkedBatchNames = logContext.batchNames;
 
           const operator = db.users.find(
             (u) =>
@@ -2812,6 +2994,18 @@ export function HistoricoProducaoScreen({
                       <h3 className="text-2xl font-black text-slate-800 leading-tight">
                         {itemTitle || "Item Especial Avulso"}
                       </h3>
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-indigo-100 bg-indigo-50 text-[11px] font-semibold text-indigo-800">
+                          <Clipboard size={13} />
+                          Pedido: {orderInfo
+                            ? `${orderInfo.orderCode || orderInfo.id}${orderInfo.customerName ? ` · ${orderInfo.customerName}` : ""}`
+                            : "Sem vínculo"}
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-amber-100 bg-amber-50 text-[11px] font-semibold text-amber-800">
+                          <Layers size={13} />
+                          Lote: {linkedBatchNames.length > 0 ? linkedBatchNames.join(", ") : "Sem vínculo"}
+                        </span>
+                      </div>
                       {itemCode && (
                         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 mt-2 bg-slate-100 text-slate-700 text-xs font-mono font-bold rounded-md">
                           Código Sistema: {itemCode}
@@ -2958,7 +3152,7 @@ export function HistoricoProducaoScreen({
                       <div className="grid grid-cols-2 gap-y-3.5 gap-x-4 text-xs">
                         <div>
                           <span className="text-slate-400 font-bold block mb-0.5">
-                            Código do Lote/Pedido
+                            Código do Pedido
                           </span>
                           <span className="text-slate-800 font-mono font-bold text-sm bg-slate-50 px-2 py-1 rounded">
                             {orderInfo.orderCode || "N/A"}
@@ -2974,7 +3168,7 @@ export function HistoricoProducaoScreen({
                         </div>
                         <div>
                           <span className="text-slate-400 font-bold block mb-0.5">
-                            Status do Lote
+                            Status do Pedido
                           </span>
                           <span className="inline-block bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-bold text-[10px]">
                             {orderInfo.status

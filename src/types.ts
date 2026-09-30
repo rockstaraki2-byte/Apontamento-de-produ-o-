@@ -405,6 +405,7 @@ export interface ProductionLog {
   declaredPackages?: number; // Banho Químico
   thirdPartyName?: string; // Banho Químico
   customProductName?: string; // Banho Químico / Prensa
+  productionLotName?: string; // Lote informado em apontamentos importados
   nestedPartName?: string; // name of the part in nesting
   paintedColor?: string; // Pintura
   packagesConfig?: { boxes: number; itemsPerBox: number }[]; // Embalagem automatic labels
