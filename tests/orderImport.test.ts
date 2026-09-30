@@ -181,6 +181,31 @@ test("12. mesmo produto em duas cores continua em duas linhas", async () => {
   assert.deepEqual(repo.created[0].prepared.lines.map((l) => l.color), ["PRETO FOSCO", "DOURADO"]);
 });
 
+test("12b. observação do item preenche variação quando ela não foi informada", async () => {
+  const repo = new FakeRepo();
+  const order: any = baseOrder("70001");
+  order.itens[0].observacoes = "GIRATORIA DE 256 X 256";
+
+  const result = await processOrderImport(repo, { pedidos: [order] }, meta, false);
+
+  assert.equal(result.resultados[0].status, "CRIADO");
+  assert.equal(repo.created[0].prepared.lines[0].variation, "GIRATORIA DE 256 X 256");
+  assert.equal(repo.created[0].prepared.lines[0].itemNotes, "GIRATORIA DE 256 X 256");
+});
+
+test("12c. variação explícita tem prioridade sobre a observação", async () => {
+  const repo = new FakeRepo();
+  const order: any = baseOrder("70002");
+  order.itens[0].variacao = "GIRATORIA DE 195 X 195";
+  order.itens[0].observacoes = "observação complementar";
+
+  const result = await processOrderImport(repo, { pedidos: [order] }, meta, false);
+
+  assert.equal(result.resultados[0].status, "CRIADO");
+  assert.equal(repo.created[0].prepared.lines[0].variation, "GIRATORIA DE 195 X 195");
+  assert.equal(repo.created[0].prepared.lines[0].itemNotes, "observação complementar");
+});
+
 test("13. quantidade decimal é preservada em escala inteira", () => {
   const result = calculateLineTotals({ quantidade: "1,5000", precoUnitario: "2,0000", descontoPercentual: 0 });
   assert.equal(result.totals?.quantityScaled, 15000);
