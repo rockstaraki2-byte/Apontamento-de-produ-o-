@@ -67,8 +67,9 @@ import {
   DEMO_USER,
   isDemoModeEnabled,
 } from "./demoData";
-import { isFullySeparated, mergeCargaOrderAllocations } from "./expeditionMetrics";
+import { getOrderBillingSummary, isFullySeparated, mergeCargaOrderAllocations } from "./expeditionMetrics";
 import type { CargaOrderAllocationRequest } from "./expeditionMetrics";
+import { canManageExpedition } from "./expeditionAccess";
 
 function cleanUndefined<T>(obj: T): T {
   if (obj === null || typeof obj !== "object") {
@@ -3485,6 +3486,145 @@ export function useDatabase(currentUser?: User | null) {
         transaction.update(ref, {
           ...cleanUndefined(changed),
           ...(newAudit.length ? { auditTrail: [...(live.auditTrail || []), ...newAudit] } : {}),
+        });
+      });
+    },
+    reassignOrdersToCarga: async (
+      orderIds: number[],
+      allocations: Array<{ orderId: number; quantity: number }>,
+      targetCargaId: string | null,
+      actor: User,
+      actionLabel = "Vínculo de pedido atualizado",
+    ) => {
+      if (!canManageExpedition(activeTenantId, actor)) {
+        throw new Error("Seu usuário não tem permissão para alterar vínculos de carga.");
+      }
+      const affectedOrderIds = Array.from(new Set([
+        ...orderIds.map(Number),
+        ...allocations.map((allocation) => Number(allocation.orderId)),
+      ]));
+      if (affectedOrderIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+        throw new Error("Um dos itens do pedido não possui um identificador válido.");
+      }
+      const invoicedOrder = filteredOrders.find((order) =>
+        affectedOrderIds.includes(order.id) && getOrderBillingSummary(order).invoiced > 0,
+      );
+      if (invoicedOrder) {
+        throw new Error(`O item ${invoicedOrder.id} já possui faturamento. Cancele o faturamento antes de alterar a carga.`);
+      }
+
+      const allocationByOrder = new Map<number, number>();
+      allocations.forEach(({ orderId, quantity }) => {
+        const normalizedId = Number(orderId);
+        const normalizedQuantity = Number(quantity);
+        if (!Number.isInteger(normalizedQuantity) || normalizedQuantity <= 0) {
+          throw new Error(`A quantidade vinculada ao item ${normalizedId} é inválida.`);
+        }
+        allocationByOrder.set(normalizedId, normalizedQuantity);
+      });
+
+      const currentLoads = filteredCargas.filter((carga) =>
+        (carga.orderIds || []).some((id) => affectedOrderIds.includes(Number(id))),
+      );
+      const cargaIdsToRead = new Set<string>(currentLoads.map((carga) => carga.id));
+      if (targetCargaId) cargaIdsToRead.add(targetCargaId);
+      if (cargaIdsToRead.size === 0) return;
+
+      const applyReassignment = (liveLoads: Map<string, Carga>) => {
+        const target = targetCargaId ? liveLoads.get(targetCargaId) : undefined;
+        if (targetCargaId && !target) {
+          throw new Error("A carga selecionada não foi encontrada. Atualize a tela.");
+        }
+        if (target && !["PLANEJADA", "ABERTA"].includes(target.status)) {
+          throw new Error("A carga selecionada já está em etapa operacional e não aceita alteração de pedidos.");
+        }
+
+        const updates = new Map<string, Carga>();
+        liveLoads.forEach((carga) => {
+          const hasAffectedOrder = (carga.orderIds || []).some((id) =>
+            affectedOrderIds.includes(Number(id)),
+          );
+          const isTarget = carga.id === targetCargaId;
+          if (!hasAffectedOrder && !isTarget) return;
+          if (!["PLANEJADA", "ABERTA"].includes(carga.status)) {
+            throw new Error(`A carga ${carga.name || carga.routeName || carga.id} já avançou no processo. Não é possível mover esses pedidos com segurança.`);
+          }
+          for (const id of affectedOrderIds) {
+            if ((carga.separatedQuantities?.[id] || 0) > 0) {
+              throw new Error(`O item ${id} já possui separação apontada na carga ${carga.name || carga.id}; a troca foi bloqueada para preservar a operação.`);
+            }
+          }
+
+          const nextOrderIds = (carga.orderIds || []).filter((id) =>
+            !affectedOrderIds.includes(Number(id)),
+          );
+          const nextOrderQuantities = { ...(carga.orderQuantities || {}) } as Record<number, number>;
+          const nextSeparatedQuantities = { ...(carga.separatedQuantities || {}) } as Record<number, number>;
+          affectedOrderIds.forEach((id) => {
+            delete nextOrderQuantities[id];
+            delete nextSeparatedQuantities[id];
+          });
+
+          if (isTarget) {
+            allocationByOrder.forEach((quantity, orderId) => {
+              if (!nextOrderIds.some((id) => Number(id) === orderId)) nextOrderIds.push(orderId);
+              nextOrderQuantities[orderId] = quantity;
+            });
+          }
+
+          const targetLabel = target ? `${target.routeName || target.name} (${target.scheduledDate || target.departureDate || "sem data"})` : "sem carga";
+          updates.set(carga.id, {
+            ...carga,
+            orderIds: nextOrderIds,
+            orderQuantities: nextOrderQuantities,
+            separatedQuantities: nextSeparatedQuantities,
+            auditTrail: [
+              ...(carga.auditTrail || []),
+              {
+                timestamp: Date.now(),
+                userId: actor.id,
+                userName: actor.name,
+                action: `${actionLabel}: ${affectedOrderIds.length} item(ns) reprogramado(s) para ${targetLabel}`,
+              },
+            ],
+          });
+        });
+        return updates;
+      };
+
+      if (isDemoMode) {
+        const liveLoads = new Map<string, Carga>(
+          cargas
+            .filter((carga) => cargaIdsToRead.has(carga.id))
+            .map((carga): [string, Carga] => [carga.id, carga]),
+        );
+        const updates = applyReassignment(liveLoads);
+        setCargas((previous) => previous.map((carga) => updates.get(carga.id) || carga));
+        return;
+      }
+
+      await runTransaction(db, async (transaction) => {
+        const liveLoads = new Map<string, Carga>();
+        for (const id of cargaIdsToRead) {
+          const snapshot = await transaction.get(doc(db, "cargas", id));
+          if (!snapshot.exists()) {
+            throw new Error("Uma das cargas do pedido não foi encontrada. Atualize a tela antes de tentar novamente.");
+          }
+          const carga = snapshot.data() as Carga;
+          if (String(carga.tenantId || "") !== String(activeTenantId || "")) {
+            throw new Error("A carga não pertence à empresa ativa. Atualize a tela.");
+          }
+          liveLoads.set(id, carga);
+        }
+
+        const updates = applyReassignment(liveLoads);
+        updates.forEach((carga, id) => {
+          transaction.update(doc(db, "cargas", id), {
+            orderIds: carga.orderIds,
+            orderQuantities: cleanUndefined(carga.orderQuantities || {}),
+            separatedQuantities: cleanUndefined(carga.separatedQuantities || {}),
+            auditTrail: carga.auditTrail || [],
+          });
         });
       });
     },

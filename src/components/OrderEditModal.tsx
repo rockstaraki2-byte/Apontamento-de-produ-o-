@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   X,
   Plus,
@@ -14,9 +14,23 @@ import {
   Clock,
   Sparkles,
   Search,
+  Truck,
 } from "lucide-react";
-import { Order, OrderStatus, User, COLOR_MAP } from "../types";
+import { COLOR_MAP } from "../types";
+import type { Carga, Order, OrderStatus, User } from "../types";
 import { parsePositiveUnitPrice } from "../utils/orderPrice";
+import { canManageExpedition } from "../expeditionAccess";
+import { findCustomerForOrder } from "../searchUtils";
+import {
+  createPlannedOrderCarga,
+  EDITABLE_ORDER_LOAD_STATUSES,
+  getExpeditionCustomerCity,
+  getExpeditionRoutesForCustomer,
+  getLoadsForExpeditionRoutes,
+  getSuggestedExpeditionLoad,
+} from "../expeditionOrderUtils";
+
+const MULTIPLE_ORDER_LOADS = "__multiple_order_loads__";
 
 interface OrderEditModalProps {
   orderCode: string | null;
@@ -97,6 +111,167 @@ export function OrderEditModal({
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [fullSizeImage, setFullSizeImage] = useState<string | null>(null);
+  const [selectedOrderCargaId, setSelectedOrderCargaId] = useState("");
+  const [createdOrderCargas, setCreatedOrderCargas] = useState<Carga[]>([]);
+  const [orderCargaNotice, setOrderCargaNotice] = useState("");
+  const [isCreatingOrderCarga, setIsCreatingOrderCarga] = useState(false);
+  const initialOrderCargaSelectionRef = useRef({ orderCode: "", value: "" });
+
+  const selectedExpeditionCustomer = useMemo(
+    () => findCustomerForOrder({ customerName }, db.customers || []),
+    [customerName, db.customers],
+  );
+  const expeditionCustomerCity = useMemo(
+    () => getExpeditionCustomerCity(selectedExpeditionCustomer),
+    [selectedExpeditionCustomer],
+  );
+  const orderExpeditionRoutes = useMemo(() => {
+    if (db.activeTenantId !== "imperio" || !canManageExpedition(db.activeTenantId, currentUser)) return [];
+    return getExpeditionRoutesForCustomer(selectedExpeditionCustomer, db.expeditionRoutes || []);
+  }, [db.activeTenantId, db.expeditionRoutes, currentUser, selectedExpeditionCustomer]);
+  const orderRouteLoads = useMemo(
+    () => getLoadsForExpeditionRoutes(db.cargas || [], orderExpeditionRoutes),
+    [db.cargas, orderExpeditionRoutes],
+  );
+  const createdOrderLoadsForCustomer = useMemo(
+    () => getLoadsForExpeditionRoutes(createdOrderCargas, orderExpeditionRoutes),
+    [createdOrderCargas, orderExpeditionRoutes],
+  );
+  const orderLoadsForCustomer = useMemo(() => {
+    const unique = new Map<string, Carga>();
+    [...orderRouteLoads, ...createdOrderLoadsForCustomer].forEach((carga) => unique.set(carga.id, carga));
+    return Array.from(unique.values());
+  }, [orderRouteLoads, createdOrderLoadsForCustomer]);
+  const orderLinkedLoads = useMemo(
+    () => (db.cargas || []).filter((carga: Carga) =>
+      orderGroup.some((order: Order) => (carga.orderIds || []).includes(order.id)),
+    ),
+    [db.cargas, orderGroup],
+  );
+  useEffect(() => {
+    if (!firstOrder || initialOrderCargaSelectionRef.current.orderCode === firstOrder.orderCode) return;
+    if (db.cargasSync?.state === "loading") return;
+    const linkedCargaIds = Array.from(new Set(orderLinkedLoads.map((carga) => carga.id)));
+    const initialSelection = linkedCargaIds.length > 1
+      ? MULTIPLE_ORDER_LOADS
+      : linkedCargaIds[0] || "";
+    initialOrderCargaSelectionRef.current = {
+      orderCode: firstOrder.orderCode,
+      value: initialSelection,
+    };
+    setSelectedOrderCargaId(initialSelection);
+  }, [firstOrder?.orderCode, orderLinkedLoads, db.cargasSync?.state]);
+  const orderLoadsTodayKey = useMemo(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  }, []);
+  const availableOrderLoads = useMemo(() => orderRouteLoads.filter((carga: Carga) => {
+    const date = String(carga.scheduledDate || carga.departureDate || "").split("T")[0];
+    return date >= orderLoadsTodayKey && EDITABLE_ORDER_LOAD_STATUSES.has(carga.status);
+  }), [orderRouteLoads, orderLoadsTodayKey]);
+  const suggestedOrderCarga = useMemo(
+    () => getSuggestedExpeditionLoad(availableOrderLoads, deliveryDate),
+    [availableOrderLoads, deliveryDate],
+  );
+  const allOrderLoadOptions = useMemo(() => {
+    const unique = new Map<string, Carga>();
+    [...availableOrderLoads, ...orderLinkedLoads, ...createdOrderLoadsForCustomer].forEach((carga) => {
+      unique.set(carga.id, carga);
+    });
+    return Array.from(unique.values()).sort((a, b) =>
+      String(a.scheduledDate || a.departureDate || "").localeCompare(String(b.scheduledDate || b.departureDate || "")),
+    );
+  }, [availableOrderLoads, orderLinkedLoads, createdOrderLoadsForCustomer]);
+  const orderLoadsOnDeliveryDate = useMemo(() => {
+    const dateKey = String(deliveryDate || "").split("T")[0];
+    if (!dateKey) return [];
+    return orderLoadsForCustomer.filter((carga: Carga) =>
+      String(carga.scheduledDate || carga.departureDate || "").split("T")[0] === dateKey,
+    );
+  }, [deliveryDate, orderLoadsForCustomer]);
+  const recommendedOrderCreateRouteId = useMemo(() => {
+    if (!deliveryDate) return orderExpeditionRoutes[0]?.id || "";
+    const weekday = new Date(`${String(deliveryDate).split("T")[0]}T12:00:00`).getDay();
+    return orderExpeditionRoutes.find((route: any) => route.weekday === weekday)?.id || orderExpeditionRoutes[0]?.id || "";
+  }, [deliveryDate, orderExpeditionRoutes]);
+  const [orderCreateRouteId, setOrderCreateRouteId] = useState("");
+  const selectedOrderCreateRoute = useMemo(
+    () => orderExpeditionRoutes.find((candidate: any) => candidate.id === orderCreateRouteId),
+    [orderExpeditionRoutes, orderCreateRouteId],
+  );
+  const orderLoadOnSelectedRouteDate = useMemo(() => orderLoadsOnDeliveryDate.find((carga: Carga) => {
+    if (!selectedOrderCreateRoute) return false;
+    return carga.routeId
+      ? String(carga.routeId) === String(selectedOrderCreateRoute.id)
+      : String(carga.routeName || carga.name).trim().toLowerCase() === String(selectedOrderCreateRoute.name).trim().toLowerCase();
+  }), [orderLoadsOnDeliveryDate, selectedOrderCreateRoute]);
+
+  useEffect(() => {
+    if (recommendedOrderCreateRouteId) setOrderCreateRouteId(recommendedOrderCreateRouteId);
+  }, [recommendedOrderCreateRouteId]);
+
+  const createCargaForEditedOrder = async () => {
+    if (!deliveryDate) {
+      setOrderCargaNotice("Informe primeiro a data prevista de entrega.");
+      return;
+    }
+    const dueDate = String(deliveryDate).split("T")[0];
+    if (dueDate < orderLoadsTodayKey) {
+      setOrderCargaNotice("A carga precisa ser planejada para hoje ou uma data futura.");
+      return;
+    }
+    const route = orderExpeditionRoutes.find((candidate: any) => candidate.id === orderCreateRouteId);
+    if (!route) {
+      setOrderCargaNotice("Selecione uma rota válida para criar a carga.");
+      return;
+    }
+    const sameDateLoads = orderLoadsForCustomer.filter((carga: Carga) => {
+      const loadDate = String(carga.scheduledDate || carga.departureDate || "").split("T")[0];
+      const matchesRoute = carga.routeId
+        ? String(carga.routeId) === String(route.id)
+        : String(carga.routeName || carga.name).trim().toLowerCase() === String(route.name).trim().toLowerCase();
+      return matchesRoute && loadDate === dueDate;
+    });
+    const existingOnDate = sameDateLoads.find((carga: Carga) => EDITABLE_ORDER_LOAD_STATUSES.has(carga.status)) || sameDateLoads[0];
+    if (existingOnDate) {
+      if (EDITABLE_ORDER_LOAD_STATUSES.has(existingOnDate.status)) {
+        setSelectedOrderCargaId(existingOnDate.id);
+        setOrderCargaNotice("Já havia uma carga aberta nessa data; ela foi selecionada.");
+      } else {
+        setOrderCargaNotice("Já existe uma carga nesta rota e data, mas ela não aceita novos pedidos.");
+      }
+      return;
+    }
+
+    setIsCreatingOrderCarga(true);
+    setOrderCargaNotice("");
+    try {
+      const cargaId = await createPlannedOrderCarga(db, route, dueDate, currentUser);
+      const createdAt = Date.now();
+      setCreatedOrderCargas((current) => [...current, {
+        id: cargaId,
+        name: route.name,
+        routeId: route.id,
+        routeName: route.name,
+        route: [route.name],
+        shift: route.shift,
+        scheduledDate: dueDate,
+        departureDate: dueDate,
+        orderIds: [],
+        orderQuantities: {},
+        separatedQuantities: {},
+        status: "PLANEJADA",
+        createdAt,
+        tenantId: "imperio",
+      }]);
+      setSelectedOrderCargaId(cargaId);
+      setOrderCargaNotice(`Carga planejada para ${dueDate.split("-").reverse().join("/")} e selecionada.`);
+    } catch (error: any) {
+      setOrderCargaNotice(`Não foi possível criar a carga: ${error?.message || error}`);
+    } finally {
+      setIsCreatingOrderCarga(false);
+    }
+  };
 
   // Initialize state when modal opens
   useEffect(() => {
@@ -334,9 +509,50 @@ export function OrderEditModal({
     else if (paymentType === "a_prazo") finalPaymentCondition = "A Prazo";
     else if (paymentType === "outro") finalPaymentCondition = customPaymentCondition.trim() || "Outro";
 
+    const initialCargaSelection = initialOrderCargaSelectionRef.current;
+    const existingIdsInGroup = new Set(orderGroup.map((order: Order) => order.id));
+    const currentItemIds = new Set(lineItems.filter((item) => item.id !== undefined).map((item) => item.id!));
+    const removedOrderItem = orderGroup.some((order: Order) => !currentItemIds.has(order.id));
+    const addedOrderItem = lineItems.some((item) => !item.id || !existingIdsInGroup.has(item.id));
+    const changedOrderQuantity = lineItems.some((item) => {
+      if (!item.id) return false;
+      const existing = orderGroup.find((order: Order) => order.id === item.id);
+      return !!existing && Number(existing.totalQuantity || 0) !== Number(item.totalQuantity || 0);
+    });
+    const cargoAssignmentChanged = selectedOrderCargaId !== initialCargaSelection.value;
+    const orderItemsChangedForCarga = removedOrderItem || addedOrderItem || changedOrderQuantity;
+    const hasCargaToUpdate = orderLinkedLoads.length > 0 || !!initialCargaSelection.value || !!selectedOrderCargaId;
+    const shouldUpdateCarga = hasCargaToUpdate && (cargoAssignmentChanged || orderItemsChangedForCarga);
+
+    if (shouldUpdateCarga && selectedOrderCargaId === MULTIPLE_ORDER_LOADS) {
+      alert("Este pedido está dividido entre mais de uma carga. Selecione a carga destino ou escolha ‘Sem carga’ antes de salvar.");
+      return;
+    }
+    if (shouldUpdateCarga && selectedOrderCargaId && lineItems.some((item) => !Number.isInteger(Number(item.totalQuantity)) || Number(item.totalQuantity) <= 0)) {
+      alert("As quantidades dos itens vinculados à carga precisam ser números inteiros maiores que zero.");
+      return;
+    }
+    if (shouldUpdateCarga) {
+      const sourceLoads = orderLinkedLoads;
+      const advancedSource = sourceLoads.find((carga) => !EDITABLE_ORDER_LOAD_STATUSES.has(carga.status));
+      if (advancedSource) {
+        alert(`O pedido está na carga ${advancedSource.routeName || advancedSource.name}, que já avançou no processo. Não é possível alterar esse vínculo com segurança.`);
+        return;
+      }
+      const targetCarga = allOrderLoadOptions.find((carga) => carga.id === selectedOrderCargaId);
+      const targetWasCreatedHere = createdOrderLoadsForCustomer.some((carga) => carga.id === selectedOrderCargaId);
+      if (selectedOrderCargaId && selectedOrderCargaId !== MULTIPLE_ORDER_LOADS && !targetCarga && !targetWasCreatedHere) {
+        alert("A carga selecionada não está mais disponível. Atualize a tela e selecione outra.");
+        return;
+      }
+      if (targetCarga && !EDITABLE_ORDER_LOAD_STATUSES.has(targetCarga.status)) {
+        alert("A carga selecionada já avançou no processo e não aceita novos pedidos.");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
-      const existingIdsInGroup = new Set(orderGroup.map((g: Order) => g.id));
       const keepIds = new Set(
         lineItems.filter((li) => li.id !== undefined).map((li) => li.id!),
       );
@@ -349,8 +565,9 @@ export function OrderEditModal({
       // 2. Prepare updates for existing items
       const ordersToUpdate: Order[] = [];
       const newOrdersToCreate: Omit<Order, "id">[] = [];
+      const newOrderLineIndexes: number[] = [];
 
-      for (const li of lineItems) {
+      for (const [lineItemIndex, li] of lineItems.entries()) {
         const normalizedUnitPrice = parsePositiveUnitPrice(li.unitPrice)!;
         if (li.id && existingIdsInGroup.has(li.id)) {
           const existing = orderGroup.find((g: Order) => g.id === li.id)!;
@@ -379,6 +596,7 @@ export function OrderEditModal({
             isThirdPartyLaser: li.isThirdPartyLaser,
           });
         } else {
+          newOrderLineIndexes.push(lineItemIndex);
           newOrdersToCreate.push({
             orderCode: newCode,
             customerName: finalCustomerName,
@@ -418,10 +636,38 @@ export function OrderEditModal({
         await db.updateOrders(allUpdated);
       }
 
+      const persistedLineItems = [...lineItems];
       if (newOrdersToCreate.length > 0) {
-        for (const no of newOrdersToCreate) {
-          await db.addOrder(no);
+        for (let index = 0; index < newOrdersToCreate.length; index += 1) {
+          const id = await db.addOrder(newOrdersToCreate[index]);
+          const lineItemIndex = newOrderLineIndexes[index];
+          if (typeof id === "number") {
+            persistedLineItems[lineItemIndex] = { ...persistedLineItems[lineItemIndex], id };
+            setLineItems([...persistedLineItems]);
+          }
         }
+      }
+
+      if (shouldUpdateCarga) {
+        const allAffectedOrderIds = [
+          ...orderGroup.map((order: Order) => order.id),
+          ...persistedLineItems.flatMap((item) => item.id ? [item.id] : []),
+        ];
+        const allocations = selectedOrderCargaId && selectedOrderCargaId !== MULTIPLE_ORDER_LOADS
+          ? persistedLineItems.flatMap((item) => item.id
+            ? [{ orderId: item.id, quantity: Number(item.totalQuantity) }]
+            : [])
+          : [];
+        const targetCargaId = selectedOrderCargaId && selectedOrderCargaId !== MULTIPLE_ORDER_LOADS
+          ? selectedOrderCargaId
+          : null;
+        await db.reassignOrdersToCarga(
+          allAffectedOrderIds,
+          allocations,
+          targetCargaId,
+          currentUser,
+          `Pedido #${orderCode} editado`,
+        );
       }
 
       // Add audit log
@@ -732,12 +978,117 @@ export function OrderEditModal({
             </div>
           </div>
 
-          {/* SECTION 2: Condições de Pagamento e Faturamento */}
+          {canManageExpedition(db.activeTenantId, currentUser) && (
+            <div className="bg-white rounded-xl p-4 border border-blue-200 shadow-xs flex flex-col gap-3">
+              <div className="flex items-center gap-2 border-b border-blue-100 pb-2">
+                <Truck size={16} className="text-blue-600" />
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  2. Programação da Carga
+                </h3>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <p className="text-[10px] text-slate-600">
+                  {selectedExpeditionCustomer
+                    ? <>Cliente: <strong>{selectedExpeditionCustomer.tradeName || selectedExpeditionCustomer.name}</strong>{expeditionCustomerCity ? <> · {expeditionCustomerCity}</> : null}</>
+                    : "Não foi possível identificar a rota deste cliente."}
+                </p>
+                {orderLinkedLoads.length > 0 && (
+                  <span className="text-[10px] font-bold text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1">
+                    Carga atual: {orderLinkedLoads.map((carga) => `${carga.routeName || carga.name} · ${String(carga.scheduledDate || carga.departureDate || "-").split("T")[0].split("-").reverse().join("/")}`).join("; ")}
+                  </span>
+                )}
+              </div>
+
+              {orderExpeditionRoutes.length === 0 && orderLinkedLoads.length === 0 ? (
+                <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Este cliente ainda não está vinculado a uma rota. Cadastre a rota na Programação de Cargas para poder selecionar ou criar uma carga.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <select
+                      value={selectedOrderCargaId}
+                      onChange={(event) => {
+                        setSelectedOrderCargaId(event.target.value);
+                        setOrderCargaNotice("");
+                      }}
+                      aria-label="Selecionar ou trocar a carga do pedido"
+                      className="flex-1 h-9 rounded-lg border border-blue-200 bg-white px-2.5 text-xs font-semibold text-slate-700"
+                    >
+                      <option value="">Sem carga / desvincular ao salvar</option>
+                      {selectedOrderCargaId === MULTIPLE_ORDER_LOADS && (
+                        <option value={MULTIPLE_ORDER_LOADS}>Vinculado a várias cargas · manter como está</option>
+                      )}
+                      {allOrderLoadOptions.map((carga) => (
+                        <option key={carga.id} value={carga.id}>
+                          {String(carga.scheduledDate || carga.departureDate || "").split("T")[0].split("-").reverse().join("/")} · {carga.shift === "MANHA" ? "Manhã" : carga.shift === "TARDE" ? "Tarde" : "Turno não definido"} · {carga.routeName || carga.name} · {carga.status}
+                          {carga.id === suggestedOrderCarga?.id ? " · SUGESTÃO" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {suggestedOrderCarga && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOrderCargaId(suggestedOrderCarga.id)}
+                        className="h-9 px-3 rounded-lg bg-blue-600 text-white text-[10px] font-extrabold hover:bg-blue-700"
+                      >
+                        Selecionar sugestão
+                      </button>
+                    )}
+                  </div>
+
+                  {selectedOrderCargaId === MULTIPLE_ORDER_LOADS && (
+                    <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      Os itens deste pedido estão distribuídos entre várias cargas. Escolha uma carga destino ou “Sem carga” para fazer a realocação.
+                    </p>
+                  )}
+
+                  {orderExpeditionRoutes.length > 0 && deliveryDate && !orderLoadOnSelectedRouteDate && (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50/50 p-2.5">
+                      {orderExpeditionRoutes.length > 1 && (
+                        <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600">
+                          Rota
+                          <select
+                            value={orderCreateRouteId}
+                            onChange={(event) => setOrderCreateRouteId(event.target.value)}
+                            className="h-8 min-w-0 flex-1 rounded-lg border border-blue-200 bg-white px-2 text-[10px] font-semibold text-slate-700"
+                          >
+                            {orderExpeditionRoutes.map((route: any) => (
+                              <option key={route.id} value={route.id}>{route.name} · {route.shift === "MANHA" ? "Manhã" : "Tarde"}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void createCargaForEditedOrder()}
+                        disabled={isCreatingOrderCarga || isSubmitting || !orderCreateRouteId || String(deliveryDate).split("T")[0] < orderLoadsTodayKey}
+                        className="h-8 px-3 rounded-lg bg-emerald-600 text-white text-[10px] font-extrabold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isCreatingOrderCarga ? "Criando carga…" : `Criar carga para ${String(deliveryDate).split("T")[0].split("-").reverse().join("/")}`}
+                      </button>
+                      <span className="text-[9px] text-slate-500">Ela será planejada e vinculada ao salvar o pedido.</span>
+                    </div>
+                  )}
+
+                  {deliveryDate && orderLoadOnSelectedRouteDate && !EDITABLE_ORDER_LOAD_STATUSES.has(orderLoadOnSelectedRouteDate.status) && (
+                    <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      Já existe carga nesta rota e data, mas ela não aceita novos pedidos.
+                    </p>
+                  )}
+                  {orderCargaNotice && <p role="status" className="text-[10px] font-bold text-indigo-800">{orderCargaNotice}</p>}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* SECTION 3: Condições de Pagamento e Faturamento */}
           <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-col gap-3">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
               <CreditCard size={16} className="text-indigo-600" />
               <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                2. Condições de Faturamento & Pagamento
+                3. Condições de Faturamento & Pagamento
               </h3>
             </div>
 
@@ -870,13 +1221,13 @@ export function OrderEditModal({
             </div>
           </div>
 
-          {/* SECTION 3: Itens do Pedido */}
+          {/* SECTION 4: Itens do Pedido */}
           <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2 flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <Package size={16} className="text-indigo-600" />
                 <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                  3. Produtos e Itens do Pedido ({lineItems.length})
+                  4. Produtos e Itens do Pedido ({lineItems.length})
                 </h3>
               </div>
               <span className="text-xs font-bold text-slate-500">
