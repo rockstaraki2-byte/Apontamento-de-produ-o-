@@ -111,6 +111,10 @@ Os campos numéricos existentes (`unitPrice`, `discountPercent`, `discountAmount
 
 A regra de arredondamento é metade para cima na quarta casa decimal.
 
+## Variação do item
+
+A importação usa `variacao` quando ela estiver preenchida. Se esse campo estiver ausente, vazio ou `-`, a API usa a `observacoes` do item como variação. A observação original também continua gravada em `itemNotes`. Assim, uma variação explícita sempre prevalece, e a observação do documento não se perde.
+
 ## Cores TekSystem
 
 - `.1` = ZINCADO
