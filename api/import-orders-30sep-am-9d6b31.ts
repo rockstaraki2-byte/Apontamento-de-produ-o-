@@ -111,37 +111,6 @@ const orders: any[] = [
     ]
   },
   {
-    codigoPedido: "68049",
-    cliente: { codigo: 1749, nome: "VITOR DA SILVEIRA HENRIQUES" },
-    representante: "IMPERIO JOMARCI INDUSTRIA E COMERCIO LTD",
-    formaPagamento: "PIX A VISTA",
-    prazos: [],
-    comNotaFiscal: true,
-    promEntrega: "2026-10-07",
-    previsao: "2026-10-07",
-    observacoes: "STATUS NO PDF: PEDIDO DE VENDA - PROCESSADO",
-    itens: [
-      {
-        codigoOriginal: "3193.3",
-        codigoProduto: "3193",
-        descricao: "SAPATA GIRATORIA COMUM",
-        familia: "INDEFINIDA",
-        quantidade: 20,
-        precoUnitario: 50.00,
-        descontoPercentual: 0
-      },
-      {
-        codigoOriginal: "3128.3",
-        codigoProduto: "3128",
-        descricao: "ARGOLA 40 CM 4 FUROS EXTERNO",
-        familia: "INDEFINIDA",
-        quantidade: 20,
-        precoUnitario: 20.00,
-        descontoPercentual: 0
-      }
-    ]
-  },
-  {
     codigoPedido: "68052",
     cliente: { codigo: 307, nome: "JEFFERSON DA SILVA DELAZARI" },
     representante: "ANDRE MILLENIUM REPRESENTAÇÕES",
