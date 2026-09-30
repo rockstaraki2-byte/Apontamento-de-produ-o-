@@ -183,6 +183,12 @@ export function prepareOrder(
     if (!productMatch.product || !totalsResolution.totals) return;
     const identity = deriveProductIdentity(item);
     const t = totalsResolution.totals;
+    const explicitVariation = String(item.variacao ?? "").trim();
+    const itemNotes = String(item.observacoes ?? "").trim();
+    const variation =
+      explicitVariation && explicitVariation !== "-"
+        ? explicitVariation
+        : itemNotes || "-";
     lines.push({
       itemId: productMatch.product.id,
       itemCode: productMatch.product.code,
@@ -190,7 +196,7 @@ export function prepareOrder(
       codigoOriginal: identity.codigoOriginal,
       color: identity.cor,
       size: String(item.tamanho ?? "-").trim() || "-",
-      variation: String(item.variacao ?? "-").trim() || "-",
+      variation,
       totalQuantity: t.quantity,
       quantityScaled: t.quantityScaled,
       unitPrice: t.unitPrice,
@@ -201,7 +207,7 @@ export function prepareOrder(
       discountAmountScaled: t.discountAmountScaled,
       grossTotalScaled: t.grossTotalScaled,
       netTotalScaled: t.netTotalScaled,
-      itemNotes: String(item.observacoes ?? "").trim(),
+      itemNotes,
     });
   });
 
