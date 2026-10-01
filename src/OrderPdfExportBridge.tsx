@@ -109,6 +109,21 @@ function resolveRepresentative(group: any[], users: any[]) {
   return user?.name ? normalizeRepresentativeName(user.name) : "";
 }
 
+function resolveRepresentativeFolder(representative: string) {
+  const normalized = representative
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (normalized === "loja imperio" || normalized === "pedidos loja imperio") {
+    return "Pedidos LOJA";
+  }
+
+  return `Pedidos ${representative}`;
+}
+
 function closePrintModal() {
   const sheet = document.getElementById("print-order-sheet");
   const overlay = sheet?.closest(".fixed.inset-0") as HTMLElement | null;
@@ -192,7 +207,7 @@ function AutomationController({ currentUser }: { currentUser: User }) {
           eligible.push({
             pedido: code,
             representante: representative,
-            pastaRepresentante: `Pedidos ${representative}`,
+            pastaRepresentante: resolveRepresentativeFolder(representative),
             arquivo: buildSystemFilename(code, activeOrder, db.customers || []),
           });
         }
@@ -229,7 +244,7 @@ function AutomationController({ currentUser }: { currentUser: User }) {
         return {
           pedido: code,
           representante: representative,
-          pastaRepresentante: `Pedidos ${representative}`,
+          pastaRepresentante: resolveRepresentativeFolder(representative),
           arquivo: fileName,
         };
       },
