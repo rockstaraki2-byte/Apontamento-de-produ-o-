@@ -10,7 +10,8 @@ export default defineConfig(() => {
       react(), 
       tailwindcss(),
       VitePWA({
-        registerType: 'autoUpdate',
+        // Mantém a versão atual aberta até o usuário aceitar atualizar.
+        registerType: 'prompt',
         injectRegister: null,
         manifestFilename: 'manifest.json',
         includeAssets: ['apontapro-icon.svg', 'apontapro-logo.svg'],

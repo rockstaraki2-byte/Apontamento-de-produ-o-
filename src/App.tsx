@@ -101,6 +101,7 @@ import { ReportHeaderLogo } from "./components/ReportHeaderLogo";
 import { normalizeString, findCustomerForOrder, getCustomerLocationLabel } from "./searchUtils";
 import { RealTimeFactoryMonitoring } from "./components/RealTimeFactoryMonitoring";
 import { parsePositiveUnitPrice } from "./utils/orderPrice";
+import { isDynamicImportLoadError } from "./utils/chunkLoadRecovery";
 import {
   getLoginIdentifierCandidates,
   isImperioTornoWillianUser,
@@ -187,6 +188,8 @@ class ScreenErrorBoundary extends React.Component<
 
   render() {
     if (this.state.hasError) {
+      const isChunkLoadError = isDynamicImportLoadError(this.state.error);
+
       return (
         <div className="p-6 bg-red-50 border border-red-200 rounded-xl m-4 text-slate-800 flex flex-col items-center justify-center text-center">
           <div className="flex items-center gap-2 font-bold text-red-700 text-base mb-2">
@@ -194,13 +197,21 @@ class ScreenErrorBoundary extends React.Component<
             <span>Ocorreu um problema nesta tela ({(this as any).props.screenName || "Itens"})</span>
           </div>
           <p className="text-xs text-slate-600 mb-4 max-w-md">
-            {this.state.error?.message || "Erro inesperado ao renderizar."}
+            {isChunkLoadError
+              ? "Esta versão da tela não está mais disponível. Atualize o sistema para continuar."
+              : this.state.error?.message || "Erro inesperado ao renderizar."}
           </p>
           <button
-            onClick={() => (this as any).setState({ hasError: false, error: null })}
+            onClick={() => {
+              if (isChunkLoadError) {
+                window.location.reload();
+                return;
+              }
+              (this as any).setState({ hasError: false, error: null });
+            }}
             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-lg transition cursor-pointer"
           >
-            Tentar Novamente
+            {isChunkLoadError ? "Atualizar sistema" : "Tentar Novamente"}
           </button>
         </div>
       );

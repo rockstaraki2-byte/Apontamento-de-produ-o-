@@ -14,6 +14,9 @@ const updateSW = registerSW({
   onOfflineReady() {
     console.log("App pronto para uso offline");
   },
+  onRegisterError(error) {
+    console.error("Erro ao registrar atualização do aplicativo:", error);
+  },
   immediate: true,
 });
 
