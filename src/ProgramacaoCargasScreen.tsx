@@ -32,6 +32,10 @@ import { findCustomerForOrder, normalizeString } from "./searchUtils";
 import { LoadSuggestionsTab } from "./LoadSuggestionsTab";
 import { PdfPreviewModal } from "./PdfPreviewModal";
 import {
+  formatLoadOrderItemDescription,
+  LoadOrderItemDescription,
+} from "./components/LoadOrderItemDescription";
+import {
   createLoadMetrics,
   getOrderBillingSummary,
   ORDER_ALLOCATION_ALLOWED_STATUSES,
@@ -281,7 +285,7 @@ export function ProgramacaoCargasScreen({
     const matchingOrders = db.orders.filter((order) => {
       const item = itemsById.get(order.itemId);
       return normalizeString(
-        `${order.orderCode} ${order.customerName} ${order.customProductName || ""} ${item?.code || ""} ${item?.name || ""}`,
+        `${order.orderCode} ${order.customerName} ${order.customProductName || ""} ${item?.code || ""} ${item?.name || ""} ${order.color || ""} ${order.variation || ""}`,
       ).includes(normalizedLoadOrderSearch);
     });
 
@@ -487,7 +491,7 @@ export function ProgramacaoCargasScreen({
       .filter((row) => {
         if (!q) return true;
         return normalizeString(
-          `${row.order.orderCode} ${row.order.customerName} ${row.item?.code || ""} ${row.item?.name || row.order.customProductName || ""}`,
+          `${row.order.orderCode} ${row.order.customerName} ${row.item?.code || ""} ${row.item?.name || row.order.customProductName || ""} ${row.order.color || ""} ${row.order.variation || ""}`,
         ).includes(q);
       })
       .sort((a, b) => (a.order.deliveryDate || "9999").localeCompare(b.order.deliveryDate || "9999"));
@@ -1031,7 +1035,7 @@ export function ProgramacaoCargasScreen({
         order ? getOrderCustomerCityState(order) : "-",
         loteLabel,
         order?.orderCode || String(id),
-        order?.customProductName || item?.name || "Item",
+        formatLoadOrderItemDescription(order, item?.name),
         `${ordered} / ${invoiced}`,
         String(pending),
         String(packedForLoad(carga, id)),
@@ -1081,16 +1085,19 @@ export function ProgramacaoCargasScreen({
       ],
       body: rows,
       theme: "grid",
-      styles: { fontSize: 8, cellPadding: 2 },
+      styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak", valign: "top" },
+      rowPageBreak: "avoid",
       headStyles: { fillColor: [15, 23, 42] },
       columnStyles: includeRevenue
         ? {
+            4: { cellWidth: 74 },
             5: { halign: "right" },
             6: { halign: "right", fontStyle: "bold" },
             7: { halign: "right" },
             8: { halign: "right", fontStyle: "bold" },
           }
         : {
+            4: { cellWidth: 74 },
             5: { halign: "right" },
             6: { halign: "right", fontStyle: "bold" },
             7: { halign: "right" },
@@ -1245,7 +1252,7 @@ export function ProgramacaoCargasScreen({
                 <input
                   value={loadOrderSearch}
                   onChange={(e) => setLoadOrderSearch(e.target.value)}
-                  placeholder="Número do pedido, cliente ou produto..."
+                  placeholder="Pedido, cliente, produto, cor ou variação..."
                   aria-label="Buscar pedido nas cargas"
                   className="w-full h-10 pl-8 pr-9 border border-slate-300 rounded-lg text-xs"
                 />
@@ -1276,7 +1283,7 @@ export function ProgramacaoCargasScreen({
                       <div className="min-w-0">
                         <span className="text-xs font-mono font-extrabold text-slate-900">Pedido #{order.orderCode}</span>
                         <p className="mt-1 text-xs font-bold text-slate-700 truncate" title={order.customerName}>{order.customerName}</p>
-                        <p className="mt-0.5 text-[10px] text-slate-500 truncate" title={order.customProductName || item?.name || "Item"}>{order.customProductName || item?.name || "Item"}</p>
+                        <LoadOrderItemDescription order={order} itemName={item?.name} className="mt-0.5 text-[10px] text-slate-500" />
                       </div>
                       <div className="space-y-1.5">
                         {cargas.length > 0 ? cargas.map((carga) => (
@@ -1346,7 +1353,7 @@ export function ProgramacaoCargasScreen({
                     <label className="text-[9px] font-extrabold uppercase tracking-wide text-slate-500">Até<input type="date" value={loadDateEnd} onChange={(e) => setLoadDateEnd(e.target.value)} className="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700" /></label>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 min-w-0">
-                    <div className="relative flex-1"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" /><input value={orderSearch} onChange={(e) => setOrderSearch(e.target.value)} placeholder="Cliente, pedido ou produto..." className="w-full h-9 pl-8 pr-2 border border-slate-300 rounded-lg text-xs" /></div>
+                    <div className="relative flex-1"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" /><input value={orderSearch} onChange={(e) => setOrderSearch(e.target.value)} placeholder="Cliente, pedido, produto, cor ou variação..." className="w-full h-9 pl-8 pr-2 border border-slate-300 rounded-lg text-xs" /></div>
                     <div className="relative flex-1"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" /><input value={loadSearch} onChange={(e) => setLoadSearch(e.target.value)} placeholder="Filtrar carga, rota ou status..." aria-label="Filtrar cargas disponíveis" className="w-full h-9 pl-8 pr-2 border border-slate-300 rounded-lg text-xs" /></div>
                     <select value={targetCargaId} onChange={(e) => setTargetCargaId(e.target.value)} aria-label="Carga destino" className="h-9 border border-slate-300 rounded-lg px-2 text-xs bg-white sm:w-[260px]">
                       <option value="">Selecione a carga destino...</option>
@@ -1444,7 +1451,7 @@ export function ProgramacaoCargasScreen({
                       <tr key={row.order.id} className={`hover:bg-slate-50 ${row.isFullyInvoiced || row.billingDataIncomplete ? "bg-purple-50/30" : ""}`}>
                         <td className="p-3"><input type="checkbox" checked={selected} disabled={!selectable} aria-label={`Selecionar pedido ${row.order.orderCode}`} title={selectable ? "Selecionar saldo não faturado" : "Este item não está liberado para inclusão em carga"} onChange={(e) => setSelectedQuantities((prev) => { const n = { ...prev }; if (e.target.checked) n[row.order.id] = row.unallocated; else delete n[row.order.id]; return n; })} /></td>
                         <td className="p-3 text-xs font-mono font-bold text-slate-800">#{row.order.orderCode}</td>
-                        <td className="p-3"><span className="block text-xs font-bold text-slate-800">{row.order.customerName}</span><span className="block text-[10px] text-slate-500">{row.order.customProductName || row.item?.name || "Item"}</span></td>
+                        <td className="p-3"><span className="block text-xs font-bold text-slate-800">{row.order.customerName}</span><LoadOrderItemDescription order={row.order} itemName={row.item?.name} className="mt-1 text-[10px] text-slate-500" /></td>
                         <td className="p-3 text-xs font-bold text-slate-700 whitespace-nowrap">{getOrderCustomerCity(row.order)}</td>
                         <td className="p-3 text-xs text-slate-600 whitespace-nowrap">{formatTimestampDate(row.order.createdAt)}</td>
                         <td className="p-3 text-xs text-slate-600 whitespace-nowrap">{formatDate(row.order.deliveryDate)}</td>
@@ -1569,7 +1576,7 @@ export function ProgramacaoCargasScreen({
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">{(() => { const m = loadMetrics(selectedCarga); return <><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.customerCount}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Clientes</span></div><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.orderCount}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Pedidos</span></div><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.required}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Necessário</span></div><div className="p-3 rounded-xl bg-blue-50 border border-blue-100"><strong className="block text-xl text-blue-700">{m.packed}</strong><span className="text-[9px] uppercase text-blue-600 font-bold">Embalado</span></div><div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100"><strong className="block text-xl text-emerald-700">{m.separated}</strong><span className="text-[9px] uppercase text-emerald-600 font-bold">Separado</span></div></>; })()}</div>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="p-3">Cliente</th><th className="p-3">Pedido</th><th className="p-3">Produto</th><th className="p-3 text-right">Qtd. carga</th><th className="p-3 text-right">Faturado</th><th className="p-3 text-right">Embalado</th><th className="p-3 text-right">Separado</th><th className="p-3"></th></tr></thead><tbody className="divide-y divide-slate-100">{(selectedCarga.orderIds || []).map((id) => { const o = ordersById.get(id); const item = o ? itemsById.get(o.itemId) : undefined; const qty = Number(selectedCarga.orderQuantities?.[id] || 0); const invoiced = invoicedForLoad(selectedCarga, id); return <tr key={id}><td className="p-3 text-xs font-bold">{o?.customerName || "-"}</td><td className="p-3 text-xs font-mono">#{o?.orderCode || id}</td><td className="p-3 text-xs"><div className="flex flex-col items-start gap-1">{o?.customProductName || item?.name || "Item"}{invoiced > 0 && <span className={`inline-flex px-1.5 py-0.5 rounded-full border text-[9px] font-extrabold ${invoiced >= qty ? "bg-purple-50 border-purple-200 text-purple-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>{invoiced >= qty ? "Faturado" : "Faturado parcial"} · {invoiced} un</span>}</div></td><td className="p-3 text-xs font-bold text-right">{qty}</td><td className="p-3 text-xs text-purple-700 font-bold text-right">{invoiced}</td><td className="p-3 text-xs text-blue-700 font-bold text-right">{packedForLoad(selectedCarga, id)}</td><td className="p-3 text-xs text-emerald-700 font-black text-right">{Math.min(qty, Number(selectedCarga.separatedQuantities?.[id] || 0))}</td><td className="p-3 text-right">{EDITABLE_STATUSES.has(selectedCarga.status) && <button onClick={() => removeAllocation(selectedCarga, id)} className="text-[10px] font-bold text-rose-600 hover:underline">Remover</button>}</td></tr>; })}</tbody></table></div>{(selectedCarga.orderIds || []).length === 0 && <div className="p-8 text-center text-sm text-slate-500">Carga ainda sem itens vinculados.</div>}</div>
+              <div className="border border-slate-200 rounded-xl overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="p-3">Cliente</th><th className="p-3">Pedido</th><th className="p-3">Produto</th><th className="p-3 text-right">Qtd. carga</th><th className="p-3 text-right">Faturado</th><th className="p-3 text-right">Embalado</th><th className="p-3 text-right">Separado</th><th className="p-3"></th></tr></thead><tbody className="divide-y divide-slate-100">{(selectedCarga.orderIds || []).map((id) => { const o = ordersById.get(id); const item = o ? itemsById.get(o.itemId) : undefined; const qty = Number(selectedCarga.orderQuantities?.[id] || 0); const invoiced = invoicedForLoad(selectedCarga, id); return <tr key={id}><td className="p-3 text-xs font-bold">{o?.customerName || "-"}</td><td className="p-3 text-xs font-mono">#{o?.orderCode || id}</td><td className="p-3 text-xs"><div className="flex flex-col items-start gap-1"><LoadOrderItemDescription order={o} itemName={item?.name} />{invoiced > 0 && <span className={`inline-flex px-1.5 py-0.5 rounded-full border text-[9px] font-extrabold ${invoiced >= qty ? "bg-purple-50 border-purple-200 text-purple-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>{invoiced >= qty ? "Faturado" : "Faturado parcial"} · {invoiced} un</span>}</div></td><td className="p-3 text-xs font-bold text-right">{qty}</td><td className="p-3 text-xs text-purple-700 font-bold text-right">{invoiced}</td><td className="p-3 text-xs text-blue-700 font-bold text-right">{packedForLoad(selectedCarga, id)}</td><td className="p-3 text-xs text-emerald-700 font-black text-right">{Math.min(qty, Number(selectedCarga.separatedQuantities?.[id] || 0))}</td><td className="p-3 text-right">{EDITABLE_STATUSES.has(selectedCarga.status) && <button onClick={() => removeAllocation(selectedCarga, id)} className="text-[10px] font-bold text-rose-600 hover:underline">Remover</button>}</td></tr>; })}</tbody></table></div>{(selectedCarga.orderIds || []).length === 0 && <div className="p-8 text-center text-sm text-slate-500">Carga ainda sem itens vinculados.</div>}</div>
 
               {(selectedCarga.auditTrail || []).length > 0 && <div><h4 className="text-[10px] uppercase tracking-widest font-extrabold text-slate-500 mb-2">Histórico da carga</h4><div className="space-y-1">{[...(selectedCarga.auditTrail || [])].reverse().slice(0, 10).map((a, idx) => <div key={`${a.timestamp}-${idx}`} className="text-[10px] bg-slate-50 border border-slate-100 rounded-lg p-2 flex justify-between gap-2"><span><strong>{a.userName}</strong> • {a.action}{a.reason ? ` — ${a.reason}` : ""}</span><span className="text-slate-400 whitespace-nowrap">{new Date(a.timestamp).toLocaleString("pt-BR")}</span></div>)}</div></div>}
             </div>

@@ -13,6 +13,7 @@ import { useDatabase } from "./useDatabase";
 import type { ExpeditionRoute, Item, Order, User } from "./types";
 import { findCustomerForOrder } from "./searchUtils";
 import { getOrderBillingSummary } from "./expeditionMetrics";
+import { LoadOrderItemDescription } from "./components/LoadOrderItemDescription";
 
 const DAY_NAMES = [
   "Domingo",
@@ -961,11 +962,11 @@ export function LoadSuggestionsTab({
                               #{row.order.orderCode} •{" "}
                               {row.order.customerName}
                             </span>
-                            <span className="text-[10px] text-slate-500 block truncate">
-                              {row.order.customProductName ||
-                                row.item?.name ||
-                                "Item"}
-                            </span>
+                            <LoadOrderItemDescription
+                              order={row.order}
+                              itemName={row.item?.name}
+                              className="text-[10px] text-slate-500"
+                            />
                             {row.invoiced > 0 && (
                               <span className="inline-flex mt-1 px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[9px] font-extrabold">
                                 Faturado parcial · {row.invoiced}/{row.total}
