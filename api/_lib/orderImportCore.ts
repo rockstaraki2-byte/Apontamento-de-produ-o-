@@ -145,9 +145,12 @@ export function prepareOrder(
   const customerMatch = matchCustomer(order.cliente, catalog.customers);
   errors.push(...customerMatch.errors);
 
-  let representativeMatch = matchRepresentative(order.representante, catalog.users);
+  const representativeInput = String(customerMatch.customer?.id ?? "") === "856"
+    ? "PEDIDOS LOJA IMPERIO"
+    : order.representante;
+  let representativeMatch = matchRepresentative(representativeInput, catalog.users);
   if (!representativeMatch.representative && representativeMatch.errors.length > 0) {
-    const canonicalName = mapRepresentativeName(order.representante);
+    const canonicalName = mapRepresentativeName(representativeInput);
     const systemRepresentative = getSystemRepresentativeByCanonicalName(canonicalName);
     if (systemRepresentative) {
       representativeMatch = { representative: systemRepresentative, errors: [] };
