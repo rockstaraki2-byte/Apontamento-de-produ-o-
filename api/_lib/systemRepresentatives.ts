@@ -15,6 +15,7 @@ function normalizeRepresentativeName(value: unknown): string {
 
 const SYSTEM_REPRESENTATIVES_BY_NAME: Record<string, SystemRepresentative> = {
   "IMPERIO REPRESENTANTE": { id: "representante_imperio", name: "Império Representante" },
+  "PEDIDOS LOJA IMPERIO": { id: "representante_pedidos_loja_imperio", name: "Pedidos LOJA imperio" },
   "KESSE REPRESENTANTE": { id: "representante_kesse", name: "Kesse Representante" },
   "ANDRE REPRESENTANTE": { id: "representante_andre", name: "André Representante" },
   "DANILO REPRESENTANTE": { id: "representante_danilo", name: "Danilo Representante" },
