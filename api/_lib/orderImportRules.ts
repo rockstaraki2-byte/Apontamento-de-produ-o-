@@ -152,6 +152,7 @@ const COLOR_BY_SUFFIX: Record<string, string> = {
 
 const REPRESENTATIVE_MAP: Record<string, string> = {
   "IMPERIO JOMARCI INDUSTRIA E COMERCIO LTD": "Império Representante",
+  "PEDIDOS LOJA IMPERIO": "Pedidos LOJA imperio",
   "IMPERIO REPRESENTANTE": "Império Representante",
   KESSE: "Kesse Representante",
   "KESSE REPRESENTANTE": "Kesse Representante",
