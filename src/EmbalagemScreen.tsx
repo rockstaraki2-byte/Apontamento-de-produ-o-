@@ -22,9 +22,11 @@ import type {
   Role,
   Order,
   AppNotification,
+  PackageType,
 } from "./types";
 import { ScreenLayout, ScrollContainer } from "./components/Layout";
 import { isApprovedPackagingSource, isImperioPackagingUser } from "./utils/imperioPackagingUtils";
+import { PACKAGE_TYPE_OPTIONS } from "./utils/labelPackagingUtils";
 
 const getProductKey = (
   itemId: number,
@@ -81,7 +83,7 @@ export function EmbalagemScreen({
   const [itensPorCaixa, setItensPorCaixa] = useState<number | "">("");
   const [propriaEmbalagem, setPropriaEmbalagem] = useState(false);
   const [qtdDireta, setQtdDireta] = useState<number | "">("");
-  const [tipoEmbalagem, setTipoEmbalagem] = useState("Caixa");
+  const [tipoEmbalagem, setTipoEmbalagem] = useState<PackageType>("Caixa");
 
   // Visualização e Impressão da etiqueta gerada
   const [etiquetaLayout, setEtiquetaLayout] = useState<"THERMAL" | "A4">(
@@ -452,6 +454,7 @@ export function EmbalagemScreen({
     const targetQty =
       overrideQty !== undefined ? overrideQty : Number(packQuantity);
     if (!activePack || !targetQty) return;
+    const packageType: PackageType = propriaEmbalagem ? "Avulso" : tipoEmbalagem;
 
     let qtyToAllocate = targetQty;
     const endTime = Date.now();
@@ -475,6 +478,7 @@ export function EmbalagemScreen({
           durationMillis,
           thirdPartyName: activePack.thirdPartyName,
           customProductName: activePack.customProductName,
+          packageType,
           packagesConfig: config,
         },
       ]);
@@ -607,6 +611,7 @@ export function EmbalagemScreen({
           type: "EMBALAGEM",
           timestamp: endTime,
           durationMillis: 0,
+          packageType,
           packagesConfig: extractConfig(allocate),
         });
       }
@@ -621,6 +626,7 @@ export function EmbalagemScreen({
         type: "EMBALAGEM",
         timestamp: endTime,
         durationMillis: 0,
+        packageType,
         packagesConfig: extractConfig(qtyToAllocate),
       });
     }
@@ -784,15 +790,12 @@ export function EmbalagemScreen({
               </label>
               <select
                 value={tipoEmbalagem}
-                onChange={(e) => setTipoEmbalagem(e.target.value)}
+                onChange={(e) => setTipoEmbalagem(e.target.value as PackageType)}
                 className="border border-slate-300 p-2.5 rounded-lg font-bold text-sm bg-slate-50 text-slate-900 focus:outline-blue-500"
               >
-                <option value="Caixa">Caixa</option>
-                <option value="Saco">Saco</option>
-                <option value="Fardo">Fardo</option>
-                <option value="Palete">Palete</option>
-                <option value="Rolo">Rolo</option>
-                <option value="Outro">Outro</option>
+                {PACKAGE_TYPE_OPTIONS.filter((type) => type !== "Avulso").map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
               </select>
             </div>
 

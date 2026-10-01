@@ -23,6 +23,11 @@ import { ScrollContainer } from "./components/Layout";
 import { resolveCompanyInfo, CompanyLogo } from "./utils/companyUtils";
 import { imageToZPLHex } from "./utils/zplUtils";
 import {
+  buildLabelPackagePlans,
+  getRegisteredPackageType,
+  PACKAGE_TYPE_OPTIONS,
+} from "./utils/labelPackagingUtils";
+import {
   buildLinkedQuantityByOrderAndSource,
   getAlreadyLinkedQuantity as getAlreadyLinkedQuantityFromMap,
   getRemainingLinkQuantity,
@@ -353,64 +358,27 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     selectedLogs.forEach((log) => {
       const details = getLogDetails(log);
 
-      if (log.packagesConfig && log.packagesConfig.length > 0) {
-         let totalBoxesCounter = 0;
-         log.packagesConfig.forEach(config => {
-            totalBoxesCounter += config.boxes;
-         });
-
-         let currentBoxIdx = 1;
-         log.packagesConfig.forEach(config => {
-            for (let i = 0; i < config.boxes; i++) {
-                list.push({
-                  id: `label-${log.id}-${i}-${Date.now()}-${Math.random()}`,
-                  originalLogId: log.id,
-                  name: details.name,
-                  code: details.code,
-                  quantity: config.itemsPerBox,
-                  color: details.color,
-                  size: details.size,
-                  variation: details.variation,
-                  orderCode: details.orderCode,
-                  customer: details.customer,
-                  sectorLabel: details.sectorLabel,
-                  imageUrl: details.imageUrl,
-                  operatorId: log.operatorId,
-                  timestamp: log.timestamp,
-                  splitCount: 1,
-                  packageType: "Caixa",
-                  splitQuantityMode: "fixed",
-                  boxIndexOverride: currentBoxIdx,
-                  totalBoxesOverride: totalBoxesCounter,
-                  isFaturado: details.isFaturado,
-                  isFaturadoParcial: details.isFaturadoParcial,
-                });
-                currentBoxIdx++;
-            }
-         });
-      } else {
-         list.push({
-            id: `label-${log.id}-${Date.now()}-${Math.random()}`,
-            originalLogId: log.id,
-            name: details.name,
-            code: details.code,
-            quantity: details.quantity,
-            color: details.color,
-            size: details.size,
-            variation: details.variation,
-            orderCode: details.orderCode,
-            customer: details.customer,
-            sectorLabel: details.sectorLabel,
-            imageUrl: details.imageUrl,
-            operatorId: log.operatorId,
-            timestamp: log.timestamp,
-            splitCount: 1,
-            packageType: "Caixa",
-            splitQuantityMode: "divide",
-            isFaturado: details.isFaturado,
-            isFaturadoParcial: details.isFaturadoParcial,
-         });
-      }
+      buildLabelPackagePlans(log, details.quantity).forEach((plan, index) => {
+        list.push({
+          id: `label-${log.id}-${index}-${Date.now()}-${Math.random()}`,
+          originalLogId: log.id,
+          name: details.name,
+          code: details.code,
+          color: details.color,
+          size: details.size,
+          variation: details.variation,
+          orderCode: details.orderCode,
+          customer: details.customer,
+          sectorLabel: details.sectorLabel,
+          imageUrl: details.imageUrl,
+          operatorId: log.operatorId,
+          timestamp: log.timestamp,
+          splitCount: 1,
+          ...plan,
+          isFaturado: details.isFaturado,
+          isFaturadoParcial: details.isFaturadoParcial,
+        });
+      });
     });
     setPreviewLabels(list);
     setIsPreviewModalOpen(true);
@@ -1367,7 +1335,7 @@ ${barcodeBlock}
                         <span className="text-[10px] text-black font-mono">Código: {code}</span>
                         {log.packagesConfig && log.packagesConfig.length > 0 && (
                           <span className="block mt-1 text-[11px] bg-amber-50 text-amber-800 border border-amber-100 px-1.5 py-0.5 rounded font-semibold w-fit">
-                            📦 {log.packagesConfig.map((cnt: any) => `${cnt.boxes}cx de ${cnt.itemsPerBox}`).join(", ")}
+                            📦 {getRegisteredPackageType(log)} • {log.packagesConfig.map((cnt: any) => `${cnt.boxes} volume(s) de ${cnt.itemsPerBox}`).join(", ")}
                           </span>
                         )}
                       </td>
@@ -1803,11 +1771,10 @@ ${barcodeBlock}
                             onChange={(e) => updatePreviewLabel(p.id, "packageType", e.target.value)}
                             className="w-full text-xs font-black text-black bg-slate-50 border border-slate-200 rounded-lg p-2 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                           >
-                            <option value="Caixa">Caixa</option>
-                            <option value="Saco">Saco</option>
-                            <option value="Fardo">Fardo</option>
-                            <option value="Pacote">Pacote</option>
-                            <option value="Palete">Palete</option>
+                            <option value="Não informado">Não informado</option>
+                            {PACKAGE_TYPE_OPTIONS.map((type) => (
+                              <option key={type} value={type}>{type === "Avulso" ? "Avulso (própria embalagem)" : type}</option>
+                            ))}
                           </select>
                         </div>
 

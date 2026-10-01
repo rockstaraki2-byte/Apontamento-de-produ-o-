@@ -383,6 +383,8 @@ export interface Order {
   statusQualidade?: "AGUARDANDO" | "EM_INSPECAO" | "APROVADO" | "REPROVADO" | "RETRABALHO";
 }
 
+export type PackageType = "Caixa" | "Saco" | "Fardo" | "Pacote" | "Palete" | "Rolo" | "Outro" | "Avulso";
+
 export interface ProductionLog {
   id: number;
   processName?: string;
@@ -408,6 +410,7 @@ export interface ProductionLog {
   productionLotName?: string; // Lote informado em apontamentos importados
   nestedPartName?: string; // name of the part in nesting
   paintedColor?: string; // Pintura
+  packageType?: PackageType; // Tipo de embalagem registrado no apontamento
   packagesConfig?: { boxes: number; itemsPerBox: number }[]; // Embalagem automatic labels
   labelsPrintedQuantity?: number; // Total item quantity that has been printed
   labelsPrintedCount?: number;    // Number of physical labels printed
