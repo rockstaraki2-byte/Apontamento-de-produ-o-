@@ -17,6 +17,7 @@ export default defineConfig(() => {
         includeAssets: ['apontapro-icon.svg', 'apontapro-logo.svg'],
         strategies: 'generateSW',
         workbox: {
+          importScripts: ['/sw-client-refresh.js'],
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           globIgnores: [
@@ -27,8 +28,7 @@ export default defineConfig(() => {
             '**/CatalogImportModal*',
           ],
           navigateFallback: '/index.html',
-          // Removido importScripts — risco de quebrar o registro do SW principal.
-          // O firebase-messaging-sw.js agora é registrado separadamente (ver main.tsx).
+          // O Firebase Messaging continua com registro próprio em main.tsx.
           runtimeCaching: [
             {
               urlPattern: /\/assets\/(?:jspdf|html2canvas|CatalogImportModal|pdf\.worker)[^/]*\.(?:js|mjs)$/i,
