@@ -226,6 +226,25 @@ async function verifyOrders() {
   return rows;
 }
 
+function createResolvedRepository() {
+  const base = new FirestoreOrderImportRepository();
+  return {
+    loadCatalog: async (requestedTenantId: string) => {
+      const catalog = await base.loadCatalog(requestedTenantId);
+      return {
+        ...catalog,
+        items: catalog.items.filter((item: any) => {
+          if (String(item.code || "").trim() !== "5217") return true;
+          return Number(item.id) === 1784816535104;
+        }),
+      };
+    },
+    findExistingOrderIds: base.findExistingOrderIds.bind(base),
+    createOrderAtomically: base.createOrderAtomically.bind(base),
+    writeAudit: base.writeAudit.bind(base),
+  };
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
     return res.status(405).json({ sucesso: false, erro: "METHOD_NOT_ALLOWED" });
@@ -268,7 +287,7 @@ export default async function handler(req: any, res: any) {
     });
   }
 
-  const repo = new FirestoreOrderImportRepository();
+  const repo = createResolvedRepository();
   const meta = {
     tenantId,
     origem: "CHATGPT_GOOGLE_DRIVE_PDF_PEDIDOS_02_OUT_TARDE",
