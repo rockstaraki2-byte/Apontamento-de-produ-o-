@@ -231,6 +231,28 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ sucesso: false, erro: "METHOD_NOT_ALLOWED" });
   }
 
+  if (String(req.query?.catalog || "").toLowerCase() === "true") {
+    const repo = new FirestoreOrderImportRepository();
+    const catalog = await repo.loadCatalog(tenantId);
+    const matches = catalog.items.filter((item: any) => String(item.code || "").trim() === "5217");
+    return res.status(200).json({
+      sucesso: true,
+      items: matches.map((item: any) => ({
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        tenantId: item.tenantId,
+        recoveredAt: item.recoveredAt || null,
+        fields: Object.keys(item).sort(),
+        metadata: Object.fromEntries(
+          Object.entries(item).filter(([key]) =>
+            /^(family|familia|color|cor|size|tamanho|variation|active|status|createdAt|updatedAt|origin|source|recoveredAt)$/i.test(key),
+          ),
+        ),
+      })),
+    });
+  }
+
   if (String(req.query?.verify || "").toLowerCase() === "true") {
     const rows = await verifyOrders();
     return res.status(200).json({ sucesso: true, tenantId, targetCodes, rows });
