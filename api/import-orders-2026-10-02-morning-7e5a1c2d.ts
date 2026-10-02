@@ -250,6 +250,16 @@ export default async function handler(req: any, res: any) {
 
   const dryRun = String(req.query?.dryRun || "").toLowerCase() === "true";
   const repo = new FirestoreOrderImportRepository();
+  if (String(req.query?.catalog || "").toLowerCase() === "true") {
+    const catalog = await repo.loadCatalog(tenantId);
+    const matches = catalog.items.filter((item: any) => {
+      const base = String(item.code || "").trim().split(".")[0];
+      return base === "3108" || base === "2962";
+    });
+    return res.status(200).json({
+      items: matches.map((item: any) => ({ id: item.id, code: item.code, name: item.name })),
+    });
+  }
   const meta = {
     tenantId,
     origem: "CHATGPT_GOOGLE_DRIVE_PDF",
