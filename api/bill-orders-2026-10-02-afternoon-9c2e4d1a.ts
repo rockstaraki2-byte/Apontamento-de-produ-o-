@@ -2,8 +2,11 @@ import { createRequire } from "node:module";
 import { getApps, initializeApp } from "firebase/app";
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
   initializeFirestore,
+  setDoc,
 } from "firebase/firestore";
 import { processOrderImport } from "./_lib/orderImportCore.js";
 import { FirestoreOrderImportRepository } from "./_lib/orderImportFirestore.js";
@@ -108,6 +111,54 @@ const db = initializeFirestore(
   firebaseConfigFile.firestoreDatabaseId,
 );
 
+async function ensureMissingProductsFor68196() {
+  const definitions = [
+    { id: 1790968005598, code: "5598", name: 'CHAPA 1/8" - 200MM X 2000MM' },
+    { id: 1790968005599, code: "5599", name: 'CHAPA 1/8" - 200MM X 2700MM' },
+  ];
+  const itemsSnap = await getDocs(collection(db, "items"));
+  const existingItems = itemsSnap.docs.map((d) => ({ docId: d.id, ...d.data() } as any));
+  const created: any[] = [];
+  const existing: any[] = [];
+
+  for (const definition of definitions) {
+    const matches = existingItems.filter(
+      (item: any) =>
+        String(item.tenantId || "imperio") === tenantId &&
+        String(item.code || "").trim() === definition.code,
+    );
+    if (matches.length > 0) {
+      existing.push(matches.map((item: any) => ({
+        id: item.id ?? item.docId,
+        code: item.code,
+        name: item.name,
+      })));
+      continue;
+    }
+
+    const ref = doc(db, "items", String(definition.id));
+    const before = await getDoc(ref);
+    if (!before.exists()) {
+      await setDoc(ref, {
+        id: definition.id,
+        tenantId,
+        code: definition.code,
+        name: definition.name,
+        type: "PRODUTO",
+        notes:
+          "Cadastro criado a partir do documento Faturados 02-out tarde. Código e descrição confirmados no documento; preço-base não inferido.",
+        recoveredAt: Date.now(),
+        recoveredReason: "missing_catalog_item_from_verified_billing_document",
+      });
+    }
+    const after = await getDoc(ref);
+    if (!after.exists()) throw new Error(`Falha ao criar produto ${definition.code}.`);
+    created.push({ id: definition.id, code: definition.code, name: definition.name });
+  }
+
+  return { created, existing };
+}
+
 async function inspectState() {
   const repo = new FirestoreBillingRepository();
   const snapshot = await repo.loadSnapshot(tenantId);
@@ -200,16 +251,18 @@ export default async function handler(req: any, res: any) {
   }
 
   if (String(req.query?.prepare || "").toLowerCase() === "true") {
+    const productPrep = await ensureMissingProductsFor68196();
     const repo = new FirestoreOrderImportRepository();
     const meta = { tenantId, origem, solicitadoPor, now: new Date() };
     const dry = await processOrderImport(repo, ensureOrder68196, meta, true);
     if (dry.resumo.comErro > 0) {
-      return res.status(207).json({ sucesso: false, etapa: "PREPARE_DRY_RUN", dry });
+      return res.status(207).json({ sucesso: false, etapa: "PREPARE_DRY_RUN", productPrep, dry });
     }
     const result = await processOrderImport(repo, ensureOrder68196, meta, false);
     return res.status(result.resumo.comErro > 0 ? 207 : 200).json({
       sucesso: result.resumo.comErro === 0,
       etapa: "PREPARE",
+      productPrep,
       dry,
       result,
     });
