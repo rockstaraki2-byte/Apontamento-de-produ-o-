@@ -478,6 +478,22 @@ export function matchProduct(input: OrderItemImportInput, items: CatalogItem[]):
   const identity = deriveProductIdentity(input);
   const errors: ImportIssue[] = [];
   let matches: CatalogItem[] = [];
+  const exactCode = String(input.codigoOriginal ?? "").trim();
+  if (exactCode) {
+    matches = items.filter((item) => String(item.code || "").trim() === exactCode);
+    if (matches.length === 1) return { product: normalizeProduct(matches[0]), identity, errors };
+    if (matches.length > 1) {
+      return {
+        product: null,
+        identity,
+        errors: [{
+          code: "PRODUTO_NAO_ENCONTRADO",
+          message: `Código original ${exactCode} é ambíguo no cadastro.`,
+          details: { motivo: "AMBIGUO_EXATO", quantidadeResultados: matches.length },
+        }],
+      };
+    }
+  }
   if (identity.codigoProduto) {
     const baseNorm = normalizeText(identity.codigoProduto);
     matches = items.filter((item) => normalizeText(String(item.code || "").replace(/\..*$/, "")) === baseNorm);
