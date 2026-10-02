@@ -10,7 +10,7 @@ const orders: any[] = [
       "nome": "DANIEL DE PAIVA DE MAGALHAES & CIA LTDA"
     },
     "representante": "KESSE",
-    "formaPagamento": "DEPOSITO 10 DIAS",
+    "formaPagamento": "DEPOSITO",
     "prazos": [
       10
     ],
@@ -257,7 +257,18 @@ export default async function handler(req: any, res: any) {
       return base === "3108" || base === "2962";
     });
     return res.status(200).json({
-      items: matches.map((item: any) => ({ id: item.id, code: item.code, name: item.name })),
+      items: matches.map((item: any) => ({
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        tenantId: item.tenantId,
+        fields: Object.keys(item).sort(),
+        metadata: Object.fromEntries(
+          Object.entries(item).filter(([key]) =>
+            /^(family|familia|color|cor|size|tamanho|variation|active|status|createdAt|updatedAt|origin|source)$/i.test(key),
+          ),
+        ),
+      })),
     });
   }
   const meta = {
