@@ -253,7 +253,13 @@ export default async function handler(req: any, res: any) {
   if (String(req.query?.catalog || "").toLowerCase() === "true") {
     const repo = new FirestoreOrderImportRepository();
     const catalog = await repo.loadCatalog(tenantId);
-    const matches = catalog.items.filter((item: any) => String(item.code || "").trim() === "5217");
+    const catalogCode = String(req.query?.catalogCode || "5217").trim();
+    const catalogName = String(req.query?.catalogName || "").trim().toUpperCase();
+    const matches = catalog.items.filter((item: any) => {
+      const codeMatch = catalogCode ? String(item.code || "").trim() === catalogCode : false;
+      const nameMatch = catalogName ? String(item.name || "").toUpperCase().includes(catalogName) : false;
+      return codeMatch || nameMatch;
+    });
     return res.status(200).json({
       sucesso: true,
       items: matches.map((item: any) => ({
