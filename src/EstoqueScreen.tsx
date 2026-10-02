@@ -15,6 +15,8 @@ import {
   Printer,
   Download,
   FileText,
+  FileSpreadsheet,
+  Upload,
 } from "lucide-react";
 import { StockEntry, isSubTabAllowed } from "./types";
 import {
@@ -29,6 +31,13 @@ import { jsPDF } from "jspdf";
 import { RelatorioEpiPrintSheet, DistributionRecord, EmployeeReportData } from "./RelatorioEpiPrintSheet";
 import { resolveCompanyInfo } from "./utils/companyUtils";
 import { getDistributionTiming } from "./ppeMetrics";
+import autoTable from "jspdf-autotable";
+import {
+  buildStockCountImportPlan,
+  escapeCsvCell,
+  parseStockInventoryCsv,
+  type StockCountImportPlan,
+} from "./utils/stockInventoryCsv";
 
 export function EstoqueScreen({
   db,
@@ -276,6 +285,11 @@ export function EstoqueScreen({
   const [selectedStockHistory, setSelectedStockHistory] =
     useState<StockEntry | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isStockImportModalOpen, setIsStockImportModalOpen] = useState(false);
+  const [stockImportPlan, setStockImportPlan] = useState<StockCountImportPlan | null>(null);
+  const [stockImportFileName, setStockImportFileName] = useState("");
+  const [stockImportError, setStockImportError] = useState("");
+  const [isApplyingStockImport, setIsApplyingStockImport] = useState(false);
 
   // States for EPI Manual Registration and Excel Import
   const [newEpiCode, setNewEpiCode] = useState("");
@@ -783,6 +797,181 @@ export function EstoqueScreen({
     });
   }, [filteredStocks, sortBy, getMostRecentStockInTimestamp, db.items]);
 
+  const inventoryReportRows = React.useMemo(() => {
+    const recordedRows = db.stocks
+      .filter((stock) => itemsById.get(stock.itemId)?.type !== "EPI")
+      .map((stock) => ({
+        stock,
+        item: itemsById.get(stock.itemId),
+        code: itemsById.get(stock.itemId)?.code || "—",
+        description: itemsById.get(stock.itemId)?.name || "Produto sem cadastro",
+        unit: stock.measurementUnit || itemsById.get(stock.itemId)?.unit || "un",
+        reserved: Number(stock.reservedQuantity || 0),
+        available: Number(stock.quantity || 0) - Number(stock.reservedQuantity || 0),
+      }));
+    const itemIdsWithStock = new Set(recordedRows.map(({ stock }) => stock.itemId));
+    const zeroBalanceRows = db.items
+      .filter((item) => item.type !== "EPI" && !itemIdsWithStock.has(item.id))
+      .map((item) => {
+        const stock: StockEntry = {
+          id: `${item.id}|OUTROS|OUTROS|OUTROS|ACABADO`,
+          itemId: item.id,
+          color: "OUTROS",
+          size: "OUTROS",
+          variation: "OUTROS",
+          stage: "ACABADO",
+          quantity: 0,
+        };
+        return { stock, item, code: item.code, description: item.name, unit: item.unit || "un", reserved: 0, available: 0 };
+      });
+
+    return [...recordedRows, ...zeroBalanceRows].sort((a, b) =>
+      a.code.localeCompare(b.code, "pt-BR", { numeric: true }) ||
+      a.description.localeCompare(b.description, "pt-BR") ||
+      a.stock.color.localeCompare(b.stock.color, "pt-BR") ||
+      a.stock.size.localeCompare(b.stock.size, "pt-BR") ||
+      a.stock.variation.localeCompare(b.stock.variation, "pt-BR") ||
+      a.stock.stage.localeCompare(b.stock.stage, "pt-BR"),
+    );
+  }, [db.items, db.stocks, itemsById]);
+
+  const handleDownloadInventoryCsv = () => {
+    const headers = [
+      "ID_ESTOQUE", "ID_ITEM", "CODIGO", "DESCRICAO", "COR", "TAMANHO",
+      "VARIACAO", "ESTAGIO", "QUANTIDADE_ATUAL", "QUANTIDADE_CONTADA",
+      "RESERVADO", "DISPONIVEL", "UNIDADE", "PACOTES_DECLARADOS",
+    ];
+    const rows = inventoryReportRows.map(({ stock, code, description, unit, reserved, available }) => [
+      stock.id,
+      stock.itemId,
+      code,
+      description,
+      stock.color || "",
+      stock.size || "",
+      stock.variation || "",
+      stock.stage,
+      stock.quantity,
+      "",
+      reserved,
+      available,
+      unit,
+      stock.declaredPackages ?? "",
+    ]);
+    const csv = ["sep=;", headers.map(escapeCsvCell).join(";"), ...rows.map((row) => row.map(escapeCsvCell).join(";"))].join("\r\n");
+    const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.href = url;
+    link.download = `posicao_estoque_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleGenerateInventoryReport = () => {
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const generatedAt = new Date().toLocaleString("pt-BR");
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(14);
+    pdf.text("Relatório de Posição de Estoque", 12, 13);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+    pdf.text(`${companyName}  •  Gerado em ${generatedAt}  •  ${inventoryReportRows.length} variações`, 12, 19);
+
+    autoTable(pdf, {
+      startY: 24,
+      head: [["Código", "Descrição", "Cor", "Tamanho", "Variação", "Estágio", "Saldo", "Contagem", "Reservado", "Disponível", "Unid.", "Pacotes"]],
+      body: inventoryReportRows.map(({ stock, code, description, unit, reserved, available }) => [
+        code,
+        description,
+        stock.color || "—",
+        stock.size || "—",
+        stock.variation || "—",
+        stock.stage === "INTERMEDIARIO" ? "Intermediário" : "Acabado",
+        stock.quantity,
+        "",
+        reserved,
+        available,
+        unit,
+        stock.declaredPackages ?? "—",
+      ]),
+      theme: "grid",
+      styles: { font: "helvetica", fontSize: 7, cellPadding: 1.5, overflow: "linebreak" },
+      headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [245, 247, 250] },
+      margin: { left: 10, right: 10, top: 24, bottom: 12 },
+      columnStyles: {
+        0: { cellWidth: 19 },
+        1: { cellWidth: 52 },
+        2: { cellWidth: 22 },
+        3: { cellWidth: 13 },
+        4: { cellWidth: 22 },
+        5: { cellWidth: 21 },
+        6: { cellWidth: 16, halign: "right" },
+        7: { cellWidth: 17 },
+        8: { cellWidth: 16, halign: "right" },
+        9: { cellWidth: 17, halign: "right" },
+        10: { cellWidth: 13 },
+        11: { cellWidth: 16 },
+      },
+    });
+    const totalPages = pdf.getNumberOfPages();
+    for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+      pdf.setPage(pageNumber);
+      pdf.setFontSize(7);
+      pdf.setTextColor(100);
+      pdf.text(`Página ${pageNumber} de ${totalPages}`, 285, 203, { align: "right" });
+    }
+    pdf.save(`relatorio_posicao_estoque_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const handleStockInventoryCsvFile = (file?: File) => {
+    if (!file) return;
+    setStockImportFileName(file.name);
+    setStockImportError("");
+    setStockImportPlan(null);
+    const reader = new FileReader();
+    reader.onerror = () => setStockImportError("Não foi possível ler o arquivo selecionado.");
+    reader.onload = () => {
+      try {
+        const table = parseStockInventoryCsv(String(reader.result || ""));
+        setStockImportPlan(buildStockCountImportPlan(table, db.items, db.stocks));
+      } catch (error: any) {
+        setStockImportError(error?.message || "Não foi possível interpretar o CSV.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleApplyStockInventoryCsv = async () => {
+    if (!stockImportPlan || stockImportPlan.errors.length > 0 || stockImportPlan.adjustments.length === 0) return;
+    setIsApplyingStockImport(true);
+    try {
+      const adjustments = stockImportPlan.adjustments;
+      for (let offset = 0; offset < adjustments.length; offset += 400) {
+        const chunk = adjustments.slice(offset, offset + 400);
+        await db.updateStocks(chunk.map((adjustment) => adjustment.stock));
+        await Promise.all(chunk.map((adjustment) => db.addStockMovement({
+          itemId: adjustment.stock.itemId,
+          color: adjustment.stock.color,
+          size: adjustment.stock.size,
+          variation: adjustment.stock.variation,
+          quantity: Math.abs(adjustment.after - adjustment.before),
+          type: adjustment.after > adjustment.before ? "ENTRADA" as const : "SAIDA" as const,
+          description: `Ajuste por inventário CSV (${adjustment.stock.stage}; ${adjustment.before} -> ${adjustment.after}) — ${currentUser.name}`,
+        })));
+      }
+      alert(`Inventário aplicado: ${adjustments.length} variação(ões) atualizada(s). ${stockImportPlan.unchangedCount} sem alteração e ${stockImportPlan.blankCount} linha(s) sem contagem ficaram inalteradas.`);
+      setIsStockImportModalOpen(false);
+      setStockImportPlan(null);
+      setStockImportFileName("");
+      setStockImportError("");
+    } catch (error: any) {
+      alert(`Não foi possível concluir a importação do inventário: ${error?.message || error}`);
+    } finally {
+      setIsApplyingStockImport(false);
+    }
+  };
+
   const triggerSaveStock = () => {
     let matchedItemId: number | "" = itemId;
 
@@ -1144,27 +1333,165 @@ export function EstoqueScreen({
                   Gestão e Ajuste de Estoque
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Localize itens para ajustar saldos diretamente ou abra a janela de ajuste manual.
+                  Produtos acabados e intermediários. Itens sem saldo cadastrado aparecem com quantidade zero nos relatórios.
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  setEditingStockId(null);
-                  setItemId("");
-                  setProdutoBusca("");
-                  setColor("");
-                  setSize("");
-                  setVariation("");
-                  setQuantity("");
-                  setStage("ACABADO");
-                  setIsFormVisible(true);
-                }}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer shrink-0"
-              >
-                <Plus size={16} />
-                Ajuste Manual de Estoque
-              </button>
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                <button
+                  onClick={handleGenerateInventoryReport}
+                  className="bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs px-3 py-2.5 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
+                >
+                  <Printer size={15} />
+                  Relatório PDF
+                </button>
+                <button
+                  onClick={handleDownloadInventoryCsv}
+                  className="bg-blue-700 hover:bg-blue-800 text-white font-extrabold text-xs px-3 py-2.5 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
+                >
+                  <FileSpreadsheet size={15} />
+                  Planilha para contagem
+                </button>
+                <button
+                  onClick={() => {
+                    setStockImportPlan(null);
+                    setStockImportError("");
+                    setStockImportFileName("");
+                    setIsStockImportModalOpen(true);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-3 py-2.5 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
+                >
+                  <Upload size={15} />
+                  Importar contagem CSV
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingStockId(null);
+                    setItemId("");
+                    setProdutoBusca("");
+                    setColor("");
+                    setSize("");
+                    setVariation("");
+                    setQuantity("");
+                    setStage("ACABADO");
+                    setIsFormVisible(true);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-3 py-2.5 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
+                >
+                  <Plus size={15} />
+                  Ajuste manual
+                </button>
+              </div>
             </div>
+
+            {isStockImportModalOpen && (
+              <div className="fixed inset-0 z-[320] bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
+                <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
+                  <div className="bg-slate-900 text-white p-4 sm:px-6 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-xl bg-indigo-500/20 p-2 text-indigo-200"><Upload size={19} /></div>
+                      <div>
+                        <h3 className="font-extrabold text-base">Importar contagem do inventário</h3>
+                        <p className="text-xs text-slate-300 mt-0.5">Confira as linhas antes de atualizar os saldos.</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsStockImportModalOpen(false)}
+                      className="text-slate-300 hover:text-white p-2 rounded-lg hover:bg-slate-800"
+                      aria-label="Fechar importação"
+                    ><X size={20} /></button>
+                  </div>
+
+                  <div className="p-4 sm:p-6 overflow-y-auto space-y-4">
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 sm:p-4 text-sm text-blue-950">
+                      <p className="font-extrabold mb-1">Como preparar o arquivo</p>
+                      <ol className="list-decimal pl-5 space-y-1 text-xs sm:text-sm">
+                        <li>Baixe a <strong>Planilha para contagem</strong> na tela de estoque e preencha a coluna <strong>QUANTIDADE_CONTADA</strong>.</li>
+                        <li>Mantenha os identificadores e atributos. Para adicionar uma variação nova, informe ID_ITEM, código, cor, tamanho, variação e estágio e deixe ID_ESTOQUE vazio.</li>
+                        <li>O valor contado substitui o saldo atual. Linhas sem contagem ficam inalteradas; quantidade zero é aceita.</li>
+                      </ol>
+                    </div>
+
+                    <label className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 border-2 border-dashed border-slate-300 rounded-xl hover:border-indigo-400 cursor-pointer">
+                      <span className="shrink-0 rounded-lg bg-indigo-50 text-indigo-700 p-2"><FileSpreadsheet size={20} /></span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-bold text-slate-800">Selecionar arquivo CSV</span>
+                        <span className="block text-xs text-slate-500 mt-0.5 truncate">{stockImportFileName || "Compatível com o CSV modelo baixado nesta tela."}</span>
+                      </span>
+                      <input
+                        type="file"
+                        accept=".csv,text/csv,.txt,text/plain"
+                        className="text-xs text-slate-600 w-full sm:w-auto"
+                        onChange={(event) => {
+                          handleStockInventoryCsvFile(event.target.files?.[0]);
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
+
+                    {stockImportError && (
+                      <div role="alert" className="rounded-lg border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-sm font-semibold">{stockImportError}</div>
+                    )}
+
+                    {stockImportPlan && (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <div className="rounded-lg border bg-slate-50 p-3"><span className="block text-[10px] uppercase font-bold text-slate-500">Ajustes</span><strong className="text-xl text-indigo-700">{stockImportPlan.adjustments.length}</strong></div>
+                          <div className="rounded-lg border bg-slate-50 p-3"><span className="block text-[10px] uppercase font-bold text-slate-500">Sem alteração</span><strong className="text-xl text-slate-700">{stockImportPlan.unchangedCount}</strong></div>
+                          <div className="rounded-lg border bg-slate-50 p-3"><span className="block text-[10px] uppercase font-bold text-slate-500">Sem contagem</span><strong className="text-xl text-slate-700">{stockImportPlan.blankCount}</strong></div>
+                          <div className={`rounded-lg border p-3 ${stockImportPlan.errors.length ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-200"}`}><span className="block text-[10px] uppercase font-bold text-slate-500">Erros</span><strong className={`text-xl ${stockImportPlan.errors.length ? "text-red-700" : "text-emerald-700"}`}>{stockImportPlan.errors.length}</strong></div>
+                        </div>
+
+                        {stockImportPlan.errors.length > 0 && (
+                          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+                            <p className="font-extrabold mb-2">Corrija o arquivo e importe novamente:</p>
+                            <ul className="list-disc pl-5 space-y-1 text-xs max-h-36 overflow-y-auto">
+                              {stockImportPlan.errors.slice(0, 30).map((error, index) => <li key={`${index}-${error}`}>{error}</li>)}
+                            </ul>
+                            {stockImportPlan.errors.length > 30 && <p className="mt-2 text-xs font-bold">Mais {stockImportPlan.errors.length - 30} erro(s) não exibidos.</p>}
+                          </div>
+                        )}
+
+                        {stockImportPlan.adjustments.length > 0 && (
+                          <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <table className="w-full text-xs min-w-[780px]">
+                              <thead className="bg-slate-100 text-slate-600 uppercase text-[10px]">
+                                <tr><th className="text-left p-2">Código / produto</th><th className="text-left p-2">Cor / tamanho / variação</th><th className="text-left p-2">Estágio</th><th className="text-right p-2">Atual</th><th className="text-right p-2">Contado</th><th className="text-right p-2">Diferença</th></tr>
+                              </thead>
+                              <tbody>
+                                {stockImportPlan.adjustments.slice(0, 30).map((adjustment) => (
+                                  <tr key={adjustment.stock.id} className="border-t border-slate-100">
+                                    <td className="p-2"><span className="font-bold">{adjustment.item.code}</span><span className="block text-slate-500">{adjustment.item.name}</span></td>
+                                    <td className="p-2">{[adjustment.stock.color, adjustment.stock.size, adjustment.stock.variation].filter(Boolean).join(" / ") || "—"}</td>
+                                    <td className="p-2">{adjustment.stock.stage === "INTERMEDIARIO" ? "Intermediário" : "Acabado"}</td>
+                                    <td className="p-2 text-right">{adjustment.before}</td>
+                                    <td className="p-2 text-right font-extrabold">{adjustment.after}</td>
+                                    <td className={`p-2 text-right font-bold ${adjustment.after > adjustment.before ? "text-emerald-700" : "text-red-700"}`}>{adjustment.after - adjustment.before > 0 ? "+" : ""}{adjustment.after - adjustment.before}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {stockImportPlan.adjustments.length > 30 && <p className="p-2 text-center text-xs text-slate-500">Exibindo 30 de {stockImportPlan.adjustments.length} ajustes. Todos serão aplicados.</p>}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  <div className="border-t bg-slate-50 p-4 sm:px-6 flex flex-col-reverse sm:flex-row justify-end gap-2">
+                    <button type="button" onClick={() => setIsStockImportModalOpen(false)} className="px-4 py-2.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-sm">Cancelar</button>
+                    <button
+                      type="button"
+                      onClick={handleApplyStockInventoryCsv}
+                      disabled={!stockImportPlan || stockImportPlan.errors.length > 0 || stockImportPlan.adjustments.length === 0 || isApplyingStockImport}
+                      className="px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-extrabold text-sm"
+                    >
+                      {isApplyingStockImport ? "Aplicando inventário..." : `Aplicar ${stockImportPlan?.adjustments.length || 0} ajuste(s)`}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Modal Window Popup for Stock Editing */}
             {isFormVisible && (
