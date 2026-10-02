@@ -10,3 +10,15 @@ export function isDynamicImportLoadError(error: unknown): boolean {
     message,
   );
 }
+
+const CHUNK_RECOVERY_COOLDOWN_MS = 60_000;
+
+export function shouldAttemptDynamicImportReload(
+  lastAttemptAt: string | null,
+  now = Date.now(),
+): boolean {
+  if (!lastAttemptAt) return true;
+
+  const lastAttempt = Number(lastAttemptAt);
+  return !Number.isFinite(lastAttempt) || now - lastAttempt >= CHUNK_RECOVERY_COOLDOWN_MS;
+}

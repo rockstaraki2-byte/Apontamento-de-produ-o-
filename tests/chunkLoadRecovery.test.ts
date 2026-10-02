@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isDynamicImportLoadError } from "../src/utils/chunkLoadRecovery";
+import {
+  isDynamicImportLoadError,
+  shouldAttemptDynamicImportReload,
+} from "../src/utils/chunkLoadRecovery";
 
 test("identifica falhas de módulos carregados sob demanda nos navegadores comuns", () => {
   const errors = [
@@ -19,4 +22,10 @@ test("não trata erros de dados como falha de atualização do aplicativo", () =
   assert.equal(isDynamicImportLoadError(new Error("Firestore permission denied")), false);
   assert.equal(isDynamicImportLoadError(new Error("Erro inesperado ao renderizar.")), false);
   assert.equal(isDynamicImportLoadError(null), false);
+});
+
+test("permite recuperação automática sem criar um loop de recargas", () => {
+  assert.equal(shouldAttemptDynamicImportReload(null, 120_000), true);
+  assert.equal(shouldAttemptDynamicImportReload("60000", 120_000), true);
+  assert.equal(shouldAttemptDynamicImportReload("90000", 120_000), false);
 });
