@@ -79,6 +79,7 @@ export interface CatalogItem {
   code?: string;
   name?: string;
   tenantId?: string;
+  recoveredAt?: unknown;
 }
 
 export interface CatalogUser {
@@ -481,7 +482,8 @@ export function matchProduct(input: OrderItemImportInput, items: CatalogItem[]):
   const exactCode = String(input.codigoOriginal ?? "").trim();
   if (exactCode) {
     matches = items.filter((item) => String(item.code || "").trim() === exactCode);
-    if (matches.length === 1) return { product: normalizeProduct(matches[0]), identity, errors };
+    const preferredExactMatch = preferUniqueUnrecoveredProduct(matches);
+    if (preferredExactMatch) return { product: normalizeProduct(preferredExactMatch), identity, errors };
     if (matches.length > 1) {
       return {
         product: null,
@@ -497,7 +499,8 @@ export function matchProduct(input: OrderItemImportInput, items: CatalogItem[]):
   if (identity.codigoProduto) {
     const baseNorm = normalizeText(identity.codigoProduto);
     matches = items.filter((item) => normalizeText(String(item.code || "").replace(/\..*$/, "")) === baseNorm);
-    if (matches.length === 1) return { product: normalizeProduct(matches[0]), identity, errors };
+    const preferredBaseMatch = preferUniqueUnrecoveredProduct(matches);
+    if (preferredBaseMatch) return { product: normalizeProduct(preferredBaseMatch), identity, errors };
     if (matches.length > 1) return { product: null, identity, errors: [{ code: "PRODUTO_NAO_ENCONTRADO", message: `Código base ${identity.codigoProduto} é ambíguo no cadastro.`, details: { motivo: "AMBIGUO", quantidadeResultados: matches.length } }] };
   }
   const descriptionNorm = normalizeText(input.descricao);
@@ -512,6 +515,13 @@ export function matchProduct(input: OrderItemImportInput, items: CatalogItem[]):
 
 function normalizeProduct(item: CatalogItem): ResolvedProduct {
   return { id: item.id, code: String(item.code || ""), name: String(item.name || item.code || item.id) };
+}
+
+function preferUniqueUnrecoveredProduct(matches: CatalogItem[]): CatalogItem | null {
+  if (matches.length === 1) return matches[0];
+  if (matches.length < 2) return null;
+  const unrecovered = matches.filter((item) => !item.recoveredAt);
+  return unrecovered.length === 1 ? unrecovered[0] : null;
 }
 
 export function matchRepresentative(externalName: unknown, users: CatalogUser[]): { representative: ResolvedRepresentative | null; errors: ImportIssue[] } {
