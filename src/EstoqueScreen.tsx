@@ -38,6 +38,7 @@ import {
   parseStockInventoryCsv,
   type StockCountImportPlan,
 } from "./utils/stockInventoryCsv";
+import { compareSafeLocaleText } from "./utils/safeLocaleCompare";
 
 export function EstoqueScreen({
   db,
@@ -781,12 +782,12 @@ export function EstoqueScreen({
       if (sortBy === "NAME_ASC") {
         const nameA = db.items.find((i) => i.id === a.itemId)?.name || "";
         const nameB = db.items.find((i) => i.id === b.itemId)?.name || "";
-        return nameA.localeCompare(nameB);
+        return compareSafeLocaleText(nameA, nameB);
       }
       if (sortBy === "NAME_DESC") {
         const nameA = db.items.find((i) => i.id === a.itemId)?.name || "";
         const nameB = db.items.find((i) => i.id === b.itemId)?.name || "";
-        return nameB.localeCompare(nameA);
+        return compareSafeLocaleText(nameB, nameA);
       }
       if (sortBy === "QTY_DESC") {
         const qtyA = a.entries.reduce((sum, s) => sum + s.quantity, 0);
@@ -826,12 +827,12 @@ export function EstoqueScreen({
       });
 
     return [...recordedRows, ...zeroBalanceRows].sort((a, b) =>
-      a.code.localeCompare(b.code, "pt-BR", { numeric: true }) ||
-      a.description.localeCompare(b.description, "pt-BR") ||
-      a.stock.color.localeCompare(b.stock.color, "pt-BR") ||
-      a.stock.size.localeCompare(b.stock.size, "pt-BR") ||
-      a.stock.variation.localeCompare(b.stock.variation, "pt-BR") ||
-      a.stock.stage.localeCompare(b.stock.stage, "pt-BR"),
+      compareSafeLocaleText(a.code, b.code, { numeric: true }) ||
+      compareSafeLocaleText(a.description, b.description) ||
+      compareSafeLocaleText(a.stock.color, b.stock.color) ||
+      compareSafeLocaleText(a.stock.size, b.stock.size) ||
+      compareSafeLocaleText(a.stock.variation, b.stock.variation) ||
+      compareSafeLocaleText(a.stock.stage, b.stock.stage),
     );
   }, [db.items, db.stocks, itemsById]);
 
@@ -2922,7 +2923,7 @@ export function EstoqueScreen({
                       <option value="">Selecione um uniforme do estoque...</option>
                       {db.uniforms
                         .slice()
-                        .sort((a, b) => a.name.localeCompare(b.name) || a.size.localeCompare(b.size))
+                        .sort((a, b) => compareSafeLocaleText(a.name, b.name) || compareSafeLocaleText(a.size, b.size))
                         .map((uni) => (
                         <option key={uni.id} value={uni.id}>
                           {uni.name} (Tam: {uni.size}) - Saldo: {uni.stock}
@@ -3041,7 +3042,7 @@ export function EstoqueScreen({
                   ) : (
                     db.uniforms
                       .slice()
-                      .sort((a, b) => a.name.localeCompare(b.name) || a.size.localeCompare(b.size))
+                      .sort((a, b) => compareSafeLocaleText(a.name, b.name) || compareSafeLocaleText(a.size, b.size))
                       .map((uni) => {
                       const isLowStock = uni.stock <= uni.minStock;
                       return (
