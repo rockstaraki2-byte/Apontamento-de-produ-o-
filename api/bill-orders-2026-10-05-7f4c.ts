@@ -2,11 +2,33 @@ import { processOrderImport } from "./_lib/orderImportCore.js";
 import { FirestoreOrderImportRepository } from "./_lib/orderImportFirestore.js";
 import { buildBillingPlan, collectSourceKeys } from "./_lib/billingImportCore.js";
 import { FirestoreBillingRepository } from "./_lib/billingImportFirestore.js";
+import { createRequire } from "node:module";
+import { getApps, initializeApp } from "firebase/app";
+import { doc, getDoc, initializeFirestore, setDoc } from "firebase/firestore";
 
 const tenantId = "imperio";
 const origem = "CHATGPT_GOOGLE_DRIVE_CSV";
 const solicitadoPor = "raul";
 const documentKey = "FATURADOS-05-OUT-2026-10-05";
+
+const require = createRequire(import.meta.url);
+const cfg = require("../firebase-applet-config.json") as any;
+const REPAIR_APP_NAME = "ops-billing-repair-2026-10-05";
+const repairApp =
+  getApps().find((a) => a.name === REPAIR_APP_NAME) ||
+  initializeApp({
+    apiKey: cfg.apiKey,
+    authDomain: cfg.authDomain,
+    projectId: cfg.projectId,
+    storageBucket: cfg.storageBucket,
+    messagingSenderId: cfg.messagingSenderId,
+    appId: cfg.appId,
+  }, REPAIR_APP_NAME);
+const repairDb = initializeFirestore(
+  repairApp,
+  { experimentalForceLongPolling: true },
+  cfg.firestoreDatabaseId,
+);
 
 const missingOrdersPayload:any = {
   origem, tenantId, solicitadoPor,
@@ -42,7 +64,6 @@ const payload:any = {
   origem, tenantId, solicitadoPor, documentKey, allowBreakReservations:false,
   faturamentos:[
     {lineId:"e68201-67281-2594-225",codigoPedido:"67281",itemId:2594,quantidade:225},
-    {lineId:"e68201-68199-2594-2",codigoPedido:"68199",itemId:2594,quantidade:2},
     {lineId:"e68203-65909-2517-400",codigoPedido:"65909",itemId:1779765282668,quantidade:400},
     {lineId:"e68203-65909-2739-1000",codigoPedido:"65909",itemId:2739,quantidade:1000},
     {lineId:"e68204-68107-9-200",codigoPedido:"68107",itemId:9,quantidade:200,numeroNota:"6411"},
@@ -50,7 +71,6 @@ const payload:any = {
     {lineId:"e68206-67995-3794-700",codigoPedido:"67995",itemId:1780332371024,quantidade:700},
     {lineId:"e68211-68194-66-900",codigoPedido:"68194",itemId:66,quantidade:900},
     {lineId:"e68213-68193-9-200",codigoPedido:"68193",itemId:9,quantidade:200},
-    {lineId:"e68216-68214-2551-450",codigoPedido:"68214",itemId:2551,quantidade:450},
     {lineId:"e68229-68191-2517-200",codigoPedido:"68191",itemId:1779765282668,quantidade:200},
     {lineId:"e68229-68191-2739-250",codigoPedido:"68191",itemId:2739,quantidade:250},
     {lineId:"e68226-68220-5279-4",codigoPedido:"68220",itemId:1785867711845,quantidade:4,numeroNota:"6415"},
@@ -64,6 +84,86 @@ const payload:any = {
     {lineId:"e68247-68243-70-2_180",codigoPedido:"68243",codigoProduto:"70",descricao:"ZINCAGEM DE PEÇAS",quantidade:2.18},
   ]
 };
+
+async function ensure68191ConnectorLine() {
+  const existingRef = doc(repairDb, "orders", "7335792435680081");
+  const existingSnap = await getDoc(existingRef);
+  if (!existingSnap.exists()) throw new Error("Pedido 68191 base não encontrado.");
+  const base:any = existingSnap.data();
+  if (String(base.tenantId || "imperio") !== tenantId || String(base.orderCode || "") !== "68191") {
+    throw new Error("Registro base do pedido 68191 divergiu do esperado.");
+  }
+
+  // If the missing line was already repaired, do nothing.
+  const billingRepo = new FirestoreBillingRepository();
+  const snapshot = await billingRepo.loadSnapshot(tenantId);
+  const already = snapshot.orders.find((o:any) =>
+    String(o.orderCode || "") === "68191" && Number(o.itemId) === 2739
+  );
+  if (already) {
+    return { created:false, existingOrderId:already.id };
+  }
+
+  const now = Date.now();
+  const id = now;
+  const ref = doc(repairDb, "orders", String(id));
+  const collision = await getDoc(ref);
+  if (collision.exists()) throw new Error("Colisão de ID ao ajustar pedido 68191.");
+
+  await setDoc(ref, {
+    id,
+    tenantId,
+    orderCode:"68191",
+    itemId:2739,
+    color:"ZINCADO",
+    size:"-",
+    variation:"-",
+    customerName:base.customerName || "ESTOFARIA TEIXEIRA",
+    customerId:base.customerId ?? 1709,
+    representativeName:base.representativeName || "Kesse Representante",
+    representativeId:base.representativeId || "",
+    totalQuantity:250,
+    quantityScaled:2500000,
+    packedQuantity:0,
+    producedQuantity:0,
+    paintedQuantity:0,
+    cutQuantity:0,
+    invoicedQuantity:0,
+    isActive:true,
+    createdAt:now,
+    deliveryDate:base.deliveryDate || "2026-10-06",
+    paymentCondition:base.paymentCondition || "Boleto",
+    paymentTerms:base.paymentTerms || "15",
+    paymentTermsDays:Array.isArray(base.paymentTermsDays) ? base.paymentTermsDays : [15],
+    billingRule:base.billingRule || "cadastro",
+    fiscalType:base.fiscalType || "SEM_NF",
+    unitPrice:0.98,
+    unitPriceScaled:9800,
+    discountPercent:0,
+    discountPercentScaled:0,
+    discountAmount:0,
+    discountAmountScaled:0,
+    grossTotalScaled:2450000,
+    netTotalScaled:2450000,
+    hasRET:Boolean(base.hasRET),
+    status:"PENDENTE",
+    statusOriginalPdf:origem,
+    notes:"Ajuste criado a partir do arquivo Faturados 05-out.csv; Entrega 68229. Item não constava no pedido original 68191.",
+    itemNotes:"",
+    originalProductCode:"2739.1",
+    importOrigin:origem,
+    importedAt:now,
+    importedBy:solicitadoPor,
+    importPayloadHash:"FATURADOS-05-OUT-68191-2739-250",
+    orderAdjustmentReason:"billing_document_contains_item_absent_from_original_order"
+  });
+
+  const after = await getDoc(ref);
+  if (!after.exists() || Number(after.data()?.itemId) !== 2739 || Number(after.data()?.totalQuantity) !== 250) {
+    throw new Error("Falha na verificação do ajuste do pedido 68191.");
+  }
+  return { created:true, orderId:id };
+}
 
 async function makePlan(){
   const repository=new FirestoreBillingRepository();
@@ -88,6 +188,11 @@ export default async function handler(req:any,res:any){
     return res.status(result.resumo.comErro>0?207:200).json({
       sucesso:result.resumo.comErro===0,etapa:"PREPARE",dry,result
     });
+  }
+
+  if(String(req.query?.repair68191||"").toLowerCase()==="true"){
+    const result=await ensure68191ConnectorLine();
+    return res.status(200).json({sucesso:true,etapa:"REPAIR_68191",result});
   }
 
   if(String(req.query?.dryRun||"").toLowerCase()==="true"){
