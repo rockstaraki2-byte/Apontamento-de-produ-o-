@@ -13,6 +13,13 @@ function Read-SecretCredential([string]$Name, [string]$SecretName) {
   return [System.Management.Automation.PSCredential]::new($Name, $secure)
 }
 
+function Convert-PlainTextToSecureString([string]$Value) {
+  $secure = [System.Security.SecureString]::new()
+  foreach ($character in $Value.ToCharArray()) { $secure.AppendChar($character) }
+  $secure.MakeReadOnly()
+  return $secure
+}
+
 if (-not $env:LOCALAPPDATA) { throw "LOCALAPPDATA não está definido para este usuário Windows." }
 New-Item -ItemType Directory -Path $agentDirectory -Force | Out-Null
 
@@ -36,7 +43,7 @@ $firebird = [System.Management.Automation.PSCredential]::new(
 $apiToken = if ($env:ORDER_IMPORT_API_TOKEN) {
   [System.Management.Automation.PSCredential]::new(
     "ApontaPRO API",
-    (ConvertTo-SecureString $env:ORDER_IMPORT_API_TOKEN -AsPlainText -Force)
+    (Convert-PlainTextToSecureString $env:ORDER_IMPORT_API_TOKEN)
   )
 } else {
   Read-SecretCredential "ApontaPRO API" "Token Bearer da API do ApontaPRO"
