@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "syncId": "exemplo-2026-09-21-001",
+  "origem": "TEKSYSTEM_FIXTURE",
+  "tenantId": "imperio",
+  "solicitadoPor": "teksystem-sync-agent",
+  "modo": "snapshot",
+  "generatedAt": "2026-09-21T12:00:00.000Z",
+  "source": {
+    "host": "SERVIDOR",
+    "serverPort": 5700,
+    "databasePort": 3055,
+    "databasePath": "C:\\Tek-System\\Dados\\DadosMC.fdb",
+    "protocol": "tcp/ip",
+    "companyId": "1"
+  },
+  "entities": {
+    "clientes": [
+      {
+        "externalId": "CLIENTE-001",
+        "codigo": "501",
+        "nome": "CLIENTE EXEMPLO",
+        "cidade": "Ubá",
+        "uf": "MG",
+        "condicaoPagamento": "BOLETO"
+      }
+    ],
+    "produtos": [
+      {
+        "externalId": "PRODUTO-001",
+        "codigo": "P-001",
+        "descricao": "PRODUTO EXEMPLO",
+        "tipo": "PRODUTO_ACABADO",
+        "unidade": "UN"
+      }
+    ],
+    "pedidos": [
+      {
+        "externalId": "PEDIDO-000123",
+        "codigoPedido": "PED-000123",
+        "clienteCodigo": "501",
+        "itens": [
+          { "codigo": "P-001", "quantidade": 10, "descricao": "PRODUTO EXEMPLO" }
+        ]
+      }
+    ],
+    "faturamentos": [
+      {
+        "externalId": "NF-000987",
+        "numeroNota": "NF-000987",
+        "codigoPedido": "PED-000123",
+        "dataFaturamento": "2026-09-18",
+        "status": "FATURADO"
+      }
+    ]
+  }
+}
