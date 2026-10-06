@@ -100,7 +100,24 @@ function buildSystemFilename(orderCode: string, order: any, customers: any[]) {
   return `${sanitizeWindowsName(title, `Pedido ${orderCode}`)}.pdf`;
 }
 
-function resolveRepresentative(group: any[], users: any[]) {
+function isStoreCustomer(group: any[], customers: any[]) {
+  return group.some((order) => {
+    const customer = findCustomerForOrder(order, customers);
+    const codes = [
+      customer?.teksystemCode,
+      customer?.code,
+      customer?.id,
+      order?.customerCode,
+      order?.teksystemCustomerCode,
+    ];
+    if (codes.some((code) => String(code ?? "").trim() === "856")) return true;
+    return /^\s*(?:\[|\()?\s*856(?:\]|\))?\s*(?:[-–—]\s*|\s|$)/.test(String(order?.customerName || ""));
+  });
+}
+
+function resolveRepresentative(group: any[], users: any[], customers: any[]) {
+  if (isStoreCustomer(group, customers)) return "Pedidos LOJA";
+
   const byName = group.find((order) => order.representativeName)?.representativeName;
   if (byName) return normalizeRepresentativeName(byName);
 
@@ -117,7 +134,7 @@ function resolveRepresentativeFolder(representative: string) {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (normalized === "loja imperio" || normalized === "pedidos loja imperio") {
+  if (normalized === "loja" || normalized === "pedidos loja" || normalized === "loja imperio" || normalized === "pedidos loja imperio") {
     return "Pedidos LOJA";
   }
 
@@ -197,7 +214,7 @@ function AutomationController({ currentUser }: { currentUser: User }) {
             continue;
           }
 
-          const representative = resolveRepresentative(group, db.users || db.allUsers || []);
+          const representative = resolveRepresentative(group, db.users || db.allUsers || [], db.customers || []);
           if (!representative) {
             ignored.push({ pedido: code, motivo: "Representante não identificado" });
             continue;
@@ -224,7 +241,7 @@ function AutomationController({ currentUser }: { currentUser: User }) {
         const group = groupedOrders.get(code);
         if (!group?.length) throw new Error(`Pedido ${code} não encontrado.`);
 
-        const representative = resolveRepresentative(group, db.users || db.allUsers || []);
+        const representative = resolveRepresentative(group, db.users || db.allUsers || [], db.customers || []);
         if (!representative) throw new Error(`Representante do pedido ${code} não identificado.`);
 
         const activeOrder = group.find((order) => order.status !== "CANCELADO") || group[0];

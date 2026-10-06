@@ -3,7 +3,7 @@ import { prepareOrder, type AtomicCreateInput } from "./orderImportCore.js";
 import { buildImportedOrderDocument } from "./orderImportDocuments.js";
 import {
   deriveProductIdentity, mapPaymentMethod, matchProduct, normalizeText, normalizePaymentTerms, normalizeSystemPaymentCondition,
-  type CatalogSnapshot, type OrderImportInput,
+  matchRepresentative, type CatalogSnapshot, type OrderImportInput,
 } from "./orderImportRules.js";
 import { syncRecordKey, type NormalizedTekSystemSyncPayload } from "./teksystemSync.js";
 
@@ -236,8 +236,15 @@ export function orderInput(rows: WriterRow[], catalog: WriterCatalog, identityOn
   if (!customer) throw new WriterConflict("CLIENTE_NAO_ENCONTRADO", `Cliente ${customerCode} ainda não foi sincronizado.`, true);
   const payment = sourcePayment(head);
   const representatives: WriterRow[] = value(head, "representantes") || [];
-  const reps = [...new Set(representatives.map((rep) => text(value(rep, "nome"))).filter(Boolean))];
-  if (!identityOnly && reps.length > 1) throw new WriterConflict("REPRESENTANTE_AMBIGUO", `Pedido ${code} possui múltiplos representantes.`);
+  const salesConsultants: WriterRow[] = value(head, "consultoresVendas") || [];
+  const consultants = [...new Set(salesConsultants.map((rep) => text(value(rep, "nome"))).filter(Boolean))];
+  const legacyRepresentatives = [...new Set(representatives.map((rep) => text(value(rep, "nome"))).filter(Boolean))];
+  const reps = consultants.length ? consultants : legacyRepresentatives;
+  const storeCustomer = customerCode === "856";
+  if (!storeCustomer && (consultants.length > 1 || (!identityOnly && !consultants.length && legacyRepresentatives.length > 1))) {
+    throw new WriterConflict("REPRESENTANTE_AMBIGUO", `Pedido ${code} possui múltiplos consultores principais.`);
+  }
+  const representativeName = storeCustomer ? "PEDIDOS LOJA IMPERIO" : reps[0] || "";
   const sourceKeys = new Set<string>();
   const itens = rows.map((row) => {
     const key = sourceLineKey(row);
@@ -259,7 +266,7 @@ export function orderInput(rows: WriterRow[], catalog: WriterCatalog, identityOn
     };
   });
   return {
-    codigoPedido: code, cliente: { codigo: customer.id, nome: customer.name }, representante: reps[0] || "",
+    codigoPedido: code, cliente: { codigo: customer.id, nome: customer.name }, representante: representativeName,
     formaPagamento: payment.method, prazos: payment.terms,
     promEntrega: businessDate(value(head, "promessaEntrega")), previsao: businessDate(value(head, "previsaoFaturamento")),
     possuiRET: Boolean(customer.hasRET), transacaoVenda: value(head, "transacaoVenda"),
@@ -312,6 +319,15 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
     const missing: WriterRow[] = [];
     const matches = bindSourceLines(job.rows, input, orders, catalog, missing);
     const payment = sourcePayment(job.rows[0]);
+    const representativeMatch = input.representante
+      ? matchRepresentative(input.representante, catalog.users)
+      : null;
+    if (representativeMatch && !representativeMatch.representative) {
+      throw new WriterConflict("REPRESENTANTE_NAO_ENCONTRADO", representativeMatch.errors.map((error) => error.message).join("; "));
+    }
+    const representativePatch = representativeMatch?.representative
+      ? { representativeId: representativeMatch.representative.id, representativeName: representativeMatch.representative.name }
+      : {};
     const mutations = matches.map(({ row, order }) => patchMutation("orders", order.id, order, {
       teksystemLineId: sourceLineKey(row), teksystemOrderId: job.externalKey,
       teksystemCompanyId: value(row, "empresa"), teksystemCustomerCode: text(value(row, "cliente")),
@@ -319,6 +335,7 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
       paymentTerms: payment.terms.length ? `${payment.terms.join("/")} Dias` : "", paymentTermsDays: payment.terms,
       billingRule: "cadastro", teksystemPaymentDescription: payment.description,
       notes: withPaymentNote(order.notes, payment.note),
+      ...representativePatch,
     })).filter((m): m is WriterMutation => Boolean(m));
     const added: WriterRow[] = [];
     const warnings: string[] = [];
@@ -351,7 +368,7 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
       ...(missing.length ? { orderGuards: orders } : {}),
       details: { codigoPedido: job.externalKey, orderIds: [...matches.map(({ order }) => order.id), ...added.map((o) => o.id)],
         pdfNeedsRefresh: missing.length > 0 || mutations.some((m) => m.collection === "orders" &&
-          ["paymentCondition", "paymentTerms", "paymentTermsDays", "billingRule", "notes"].some((key) => Object.hasOwn(m.patch, key))),
+          ["paymentCondition", "paymentTerms", "paymentTermsDays", "billingRule", "notes", "representativeName", "representativeId"].some((key) => Object.hasOwn(m.patch, key))),
         quantidadeItensIncluidos: added.length, itensIncluidos: added, avisos: warnings } };
   }
   // The legacy manual importer may use exact descriptions as a fallback. The
