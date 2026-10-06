@@ -22,6 +22,7 @@ import {
   normalizeText,
   type CatalogSnapshot,
 } from "./orderImportRules.js";
+import { buildImportedOrderDocument } from "./orderImportDocuments.js";
 
 // Vercel transpiles these API files to native ESM. Loading the shared JSON config
 // through createRequire avoids Node's ESM JSON import-attribute requirement while
@@ -201,6 +202,12 @@ export class FirestoreOrderImportRepository implements OrderImportRepository {
       : "cadastro";
 
     return runTransaction(db, async (tx) => {
+      if (input.teksystem) {
+        const job = await tx.get(doc(db, "teksystemWriterJobs", input.teksystem.jobId));
+        if (!job.exists() || job.data().tenantId !== input.tenantId || job.data().hash !== input.teksystem.jobHash || job.data().state !== "PROCESSING") {
+          throw new Error("A revisão do pedido na fila mudou antes da criação; reprocesse o trabalho.");
+        }
+      }
       const markerSnap = await tx.get(markerRef);
       if (markerSnap.exists()) {
         const data = markerSnap.data() || {};
@@ -213,52 +220,7 @@ export class FirestoreOrderImportRepository implements OrderImportRepository {
       input.prepared.lines.forEach((line, index) => {
         const id = orderIds[index];
         const orderRef = doc(db, "orders", String(id));
-        tx.set(orderRef, {
-          id,
-          tenantId: input.tenantId,
-          orderCode: input.prepared.codigoPedido,
-          itemId: line.itemId,
-          color: line.color,
-          size: line.size,
-          variation: line.variation,
-          customerName: input.prepared.customerName,
-          customerId: input.prepared.customerId,
-          representativeName: input.prepared.representativeName || "",
-          representativeId: input.prepared.representativeId || "",
-          totalQuantity: line.totalQuantity,
-          quantityScaled: line.quantityScaled,
-          packedQuantity: 0,
-          producedQuantity: 0,
-          paintedQuantity: 0,
-          cutQuantity: 0,
-          invoicedQuantity: 0,
-          isActive: true,
-          createdAt: input.createdAt,
-          deliveryDate: input.prepared.deliveryDate,
-          paymentCondition: normalizedPaymentCondition,
-          paymentTerms: input.prepared.paymentTerms,
-          paymentTermsDays: input.prepared.paymentTermsDays,
-          billingRule,
-          fiscalType: input.prepared.fiscalType,
-          unitPrice: line.unitPrice,
-          unitPriceScaled: line.unitPriceScaled,
-          discountPercent: line.discountPercent,
-          discountPercentScaled: line.discountPercentScaled,
-          discountAmount: line.discountAmount,
-          discountAmountScaled: line.discountAmountScaled,
-          grossTotalScaled: line.grossTotalScaled,
-          netTotalScaled: line.netTotalScaled,
-          hasRET: input.prepared.hasRET,
-          status: "PENDENTE",
-          statusOriginalPdf: input.origem,
-          notes: input.prepared.orderNotes,
-          itemNotes: line.itemNotes,
-          originalProductCode: line.codigoOriginal,
-          importOrigin: input.origem,
-          importedAt: input.createdAt,
-          importedBy: input.solicitadoPor,
-          importPayloadHash: input.prepared.normalizedPayloadHash,
-        });
+        tx.set(orderRef, buildImportedOrderDocument(input, index, id, normalizedPaymentCondition, billingRule));
       });
 
       tx.set(markerRef, {

@@ -3,6 +3,7 @@ import process from "node:process";
 import * as Firebird from "node-firebird";
 import type { Database, Options } from "node-firebird";
 import { validateAndNormalizeTekSystemSync, type TekSystemSyncPayload } from "../api/_lib/teksystemSync.js";
+import { readCompleteEntities } from "./teksystem-firebird-v2.js";
 
 type EntityName = "clientes" | "produtos" | "pedidos" | "faturamentos" | "romaneios";
 
@@ -53,7 +54,7 @@ function databaseOptions(): Options {
     user,
     password,
     lowercase_keys: true,
-    encoding: "WIN1252",
+    encoding: "UTF8",
     connectTimeout: 10000,
   };
 }
@@ -126,335 +127,6 @@ function dateRange(value: string | undefined): { value: string } | undefined {
   return { value };
 }
 
-async function readEntities(
-  db: Database,
-  entities: EntityName[],
-  since: Date | undefined,
-  businessDate: { value: string } | undefined,
-) {
-  const source = sourceDefaults();
-  const result: Record<EntityName, Record<string, unknown>[]> = {
-    clientes: [],
-    produtos: [],
-    pedidos: [],
-    faturamentos: [],
-    romaneios: [],
-  };
-
-  if (entities.includes("clientes")) {
-    const changed = since
-      ? {
-          clause:
-            " AND (p.DATAHORAALTERACAO_PESSOA >= ? OR c.DATAHORAALTERACAO_PESSOA_CLI >= ? OR e.DATAHORAALTERACAO_PESSOA_END >= ?)",
-          params: [since, since, since],
-        }
-      : { clause: "", params: [] as unknown[] };
-    result.clientes = withExternalIds(
-      "clientes",
-      await queryRows(db, `
-        SELECT
-          p.CODIGO_PESSOA AS codigo,
-          p.RAZAOSOCIAL_PESSOA AS nome,
-          p.NOMEFANTASIA_PESSOA AS nomeFantasia,
-          p.DOCUMENTO_PESSOA AS documento,
-          c.CONDPAGTO_PESSOA_CLI AS condicaoPagamento,
-          e.ENDERECO_PESSOA_END AS endereco,
-          e.NUMERO_PESSOA_END AS numero,
-          e.COMPLEMENTO_PESSOA_END AS complemento,
-          e.BAIRRO_PESSOA_END AS bairro,
-          ci.DESCRICAO_CIDADE AS cidade,
-          uf.SIGLA_UF AS estado,
-          p.DATAHORAALTERACAO_PESSOA AS atualizadoEm,
-          c.DATAHORAALTERACAO_PESSOA_CLI AS clienteAtualizadoEm,
-          e.DATAHORAALTERACAO_PESSOA_END AS enderecoAtualizadoEm
-        FROM PESSOA p
-        INNER JOIN PESSOA_CLIENTE c ON c.PESSOA_PESSOA_CLI = p.CODIGO_PESSOA
-        LEFT JOIN PESSOA_ENDERECO e
-          ON e.PESSOA_PESSOA_END = p.CODIGO_PESSOA
-         AND e.AUTOINC_PESSOA_END = p.ENDERECO_PESSOA
-        LEFT JOIN CIDADE ci ON ci.CODIGO_CIDADE = e.CIDADE_PESSOA_END
-        LEFT JOIN UF uf ON uf.CODIGO_UF = ci.UF_CIDADE
-        WHERE p.CLIENTE_PESSOA = 'S'${changed.clause}
-      `, changed.params),
-    );
-  }
-
-  if (entities.includes("produtos")) {
-    const changed = changedSince("i", ["DATAHORAALTERACAO_ITEM"], since);
-    result.produtos = withExternalIds(
-      "produtos",
-      await queryRows(db, `
-        SELECT
-          i.CODIGO_ITEM AS codigo,
-          i.DESCRICAO_ITEM AS descricao,
-          i.REFERENCIA_ITEM AS referencia,
-          i.UNIDADEMEDIDA_ITEM AS unidade,
-          i.CONTROLAESTOQUE_ITEM AS controlaEstoque,
-          i.FABRICACAO_PROPRIA_ITEM AS fabricacaoPropria,
-          i.RASTREIOPRODUCAO_ITEM AS rastreioProducao,
-          i.GRUPO_ITEM AS grupo,
-          i.SUBGRUPO_ITEM AS subgrupo,
-          i.TIPOPRODUTO_ITEM AS tipoProduto,
-          i.EMPRESA_ITEM AS empresa,
-          i.DATAHORAALTERACAO_ITEM AS atualizadoEm
-        FROM ITEM i
-        WHERE (i.EMPRESA_ITEM IS NULL OR i.EMPRESA_ITEM IN (${source.companyIds.map(() => "?").join(", ")}))${changed.clause}
-      `, [...source.companyIds, ...changed.params]),
-    );
-  }
-
-  if (entities.includes("pedidos")) {
-    const changed = since
-      ? {
-          clause: ` AND (
-            d.DATAHORAALTERACAO_DOCFAT >= ? OR p.DATAHORAALTERACAO_DOCPED >= ?
-            OR i.DATAHORAALTERACAO_DOCITEM >= ? OR det.DATAHORAALTERACAO_DOCITEMDET >= ?
-            OR EXISTS (SELECT 1 FROM DOCUMENTO_PRAZOS prazo
-                        WHERE prazo.DOCUMENTO_DOCPRAZO = d.CODIGO_DOCFAT
-                          AND prazo.DATAHORAALTERACAO_DOCPRAZO >= ?)
-            OR EXISTS (SELECT 1 FROM DOCUMENTO_PEDREPRESENTANTE rep
-                        WHERE rep.DOCUMENTO_DOCPEDREP = d.CODIGO_DOCFAT
-                          AND rep.DATAHORAALTERACAO_DOCPEDREP >= ?)
-          )`,
-          params: [since, since, since, since, since, since],
-        }
-      : { clause: "", params: [] as unknown[] };
-    const businessDateFilter = businessDate
-      ? " AND CAST(d.DTEMISSAO_DOCFAT AS DATE) = CAST(? AS DATE)"
-      : "";
-    const orderParams = [
-      ...source.companyIds,
-      ...(businessDate ? [businessDate.value] : []),
-      ...changed.params,
-    ];
-    const orderRows = await queryRows(db, `
-        SELECT
-          d.CODIGO_DOCFAT AS codigoPedido,
-          d.EMPRESA_DOCFAT AS empresa,
-          d.CLIENTE_DOCFAT AS cliente,
-          cliente.RAZAOSOCIAL_PESSOA AS clienteNome,
-          cliente.NOMEFANTASIA_PESSOA AS clienteNomeFantasia,
-          d.DTEMISSAO_DOCFAT AS emitidoEm,
-          d.STATUS_DOCFAT AS status,
-          d.SITUACAO_DOCFAT AS situacao,
-          p.TABELACONDICAO_DOCPED AS tabelaCondicaoPagamento,
-          tc.DESCRICAO_TABELA_COND AS descricaoCondicaoPagamento,
-          p.DTVENDA_DOCPED AS dataVenda,
-          p.DTPROMESSAENTREGA_DOCPED AS promessaEntrega,
-          p.DTPREVISAOFATURAMENTO_DOCPED AS previsaoFaturamento,
-          p.CONDICAOPRAZO_DOCPED AS condicaoPrazo,
-          p.MULTIPLASFORMASPAGTO_DOCPED AS multiplasFormasPagamento,
-          p.PAGAMENTOANTECIPADO_DOCPED AS pagamentoAntecipado,
-          i.AUTOINC_DOCITEM AS itemId,
-          det.AUTOINC_DOCITEMDET AS detalheId,
-          COALESCE(det.ITEM_DOCITEMDET, i.ITEM_DOCITEM) AS codigoItem,
-          item.DESCRICAO_ITEM AS descricaoItem,
-          COALESCE(det.COR_DOCITEMDET, i.COR_DOCITEM) AS cor,
-          COALESCE(det.VARIACAO_DOCITEMDET, i.VARIACAO_DOCITEM) AS variacao,
-          COALESCE(det.GRADE_DOCITEMDET, i.GRADE_DOCITEM) AS grade,
-          COALESCE(det.ACABAMENTO_DOCITEMDET, i.ACABAMENTO_DOCITEM) AS acabamento,
-          cor.DESCRICAO_COR AS corDescricao,
-          variacao.DESCRICAO_VARIACAO AS variacaoDescricao,
-          acabamento.DESCRICAO_ACABAMENTO AS acabamentoDescricao,
-          COALESCE(det.QTDEPEDIDO_DOCITEMDET, i.QTDEPEDIDO_DOCITEM) AS quantidade,
-          COALESCE(det.QTDEFATURADO_DOCITEMDET, i.QTDEFATURADO_DOCITEM) AS quantidadeFaturada,
-          COALESCE(det.QTDEABERTA_DOCITEMDET, i.QTDEABERTA_DOCITEM) AS quantidadeAberta,
-          COALESCE(det.VLRUNITARIOBRUTO_DOCITEMDET, i.VLRUNITARIOBRUTO_DOCITEM) AS precoUnitarioBruto,
-          COALESCE(det.VLRUNITARIOLIQUIDO_DOCITEMDET, i.VLRUNITARIOLIQUIDO_DOCITEM) AS precoUnitario,
-          COALESCE(det.VLRTOTALBRUTO_DOCITEMDET, i.VLRTOTALBRUTO_DOCITEM) AS valorBruto,
-          COALESCE(det.VLRTOTALLIQUIDO_DOCITEMDET, i.VLRTOTALLIQUIDO_DOCITEM) AS valorLiquido,
-          i.FAMILIA_DOCITEM AS familiaCodigo,
-          familia.DESCRICAO_FAMILIA AS familiaDescricao,
-          det.NUMITEMPED_DOCITEMDET AS numeroItemPedido,
-          det.OBSERVACAO_DOCITEMDET AS observacoesItem,
-          i.LOTEFABRICACAO_DOCITEM AS loteFabricacao,
-          i.DATAHORAALTERACAO_DOCITEM AS itemAtualizadoEm,
-          det.DATAHORAALTERACAO_DOCITEMDET AS detalheAtualizadoEm,
-          d.DATAHORAINCLUSAO_DOCFAT AS cadastradoEm,
-          d.DATAHORAALTERACAO_DOCFAT AS atualizadoEm
-        FROM DOCUMENTO_FATURA d
-        INNER JOIN DOCUMENTO_PEDIDO p ON p.DOCUMENTO_DOCPED = d.CODIGO_DOCFAT
-        LEFT JOIN DOCUMENTO_ITEM i ON i.DOCUMENTO_DOCITEM = d.CODIGO_DOCFAT
-        LEFT JOIN DOCUMENTO_ITEM_DETALHE det
-          ON det.DOCUMENTO_DOCITEMDET = d.CODIGO_DOCFAT
-         AND det.AUTOINCITEM_DOCITEMDET = i.AUTOINC_DOCITEM
-        LEFT JOIN PESSOA cliente ON cliente.CODIGO_PESSOA = d.CLIENTE_DOCFAT
-        LEFT JOIN TABELA_CONDICAO tc ON tc.CODIGO_TABELA_COND = p.TABELACONDICAO_DOCPED
-        LEFT JOIN ITEM item ON item.CODIGO_ITEM = COALESCE(det.ITEM_DOCITEMDET, i.ITEM_DOCITEM)
-        LEFT JOIN FAMILIA familia ON familia.CODIGO_FAMILIA = i.FAMILIA_DOCITEM
-        LEFT JOIN COR cor ON cor.CODIGO_COR = COALESCE(det.COR_DOCITEMDET, i.COR_DOCITEM)
-        LEFT JOIN VARIACAO variacao ON variacao.CODIGO_VARIACAO = COALESCE(det.VARIACAO_DOCITEMDET, i.VARIACAO_DOCITEM)
-        LEFT JOIN ACABAMENTO acabamento ON acabamento.CODIGO_ACABAMENTO = COALESCE(det.ACABAMENTO_DOCITEMDET, i.ACABAMENTO_DOCITEM)
-        WHERE d.EMPRESA_DOCFAT IN (${source.companyIds.map(() => "?").join(", ")})${businessDateFilter}${changed.clause}
-      `, orderParams);
-
-    const orderCodes = [...new Set(orderRows.map((row) => String(rowValue(row, "codigoPedido") ?? "")).filter(Boolean))];
-    const paymentRows: Record<string, unknown>[] = [];
-    const representativeRows: Record<string, unknown>[] = [];
-    for (let offset = 0; offset < orderCodes.length; offset += 500) {
-      const codeBatch = orderCodes.slice(offset, offset + 500);
-      const placeholders = codeBatch.map(() => "?").join(", ");
-      paymentRows.push(...await queryRows(db, `
-        SELECT DOCUMENTO_DOCPRAZO AS codigoPedido,
-               FORMAPAGTO_DOCPRAZO AS formaPagamento,
-               fp.DESCRICAO_FPAG AS formaPagamentoDescricao,
-               QUALIFICACAO_DOCPRAZO AS qualificacao,
-               PRAZODIAS_DOCPRAZO AS dias,
-               VENCIMENTO_DOCPRAZO AS vencimento,
-               VALOR_DOCPRAZO AS valor,
-               PRINCIPAL_DOCPRAZO AS principal
-          FROM DOCUMENTO_PRAZOS prazo
-          LEFT JOIN FORMA_PAGAMENTO fp ON fp.CODIGO_FPAG = prazo.FORMAPAGTO_DOCPRAZO
-         WHERE DOCUMENTO_DOCPRAZO IN (${placeholders})
-      `, codeBatch));
-      representativeRows.push(...await queryRows(db, `
-        SELECT r.DOCUMENTO_DOCPEDREP AS codigoPedido,
-               r.PEDIDOREPRESENTANTE_DOCPEDREP AS representanteCodigo,
-               p.RAZAOSOCIAL_PESSOA AS representanteNome
-          FROM DOCUMENTO_PEDREPRESENTANTE r
-          LEFT JOIN PESSOA p ON p.CODIGO_PESSOA = r.PEDIDOREPRESENTANTE_DOCPEDREP
-         WHERE r.DOCUMENTO_DOCPEDREP IN (${placeholders})
-      `, codeBatch));
-    }
-    const paymentsByOrder = new Map<string, Record<string, unknown>[]>();
-    for (const row of paymentRows) {
-      const key = String(rowValue(row, "codigoPedido") ?? "");
-      paymentsByOrder.set(key, [...(paymentsByOrder.get(key) || []), {
-        formaPagamento: row.formapagamento,
-        formaPagamentoDescricao: row.formapagamentodescricao,
-        qualificacao: row.qualificacao,
-        dias: row.dias,
-        vencimento: row.vencimento,
-        valor: row.valor,
-        principal: row.principal,
-      }]);
-    }
-    const representativesByOrder = new Map<string, Record<string, unknown>[]>();
-    for (const row of representativeRows) {
-      const key = String(rowValue(row, "codigoPedido") ?? "");
-      representativesByOrder.set(key, [...(representativesByOrder.get(key) || []), {
-        codigo: row.representantecodigo,
-        nome: row.representantenome,
-      }]);
-    }
-    result.pedidos = withExternalIds("pedidos", orderRows.map((row) => ({
-      ...row,
-      prazos: paymentsByOrder.get(String(rowValue(row, "codigoPedido") ?? "")) || [],
-      representantes: representativesByOrder.get(String(rowValue(row, "codigoPedido") ?? "")) || [],
-    })));
-  }
-
-  if (entities.includes("faturamentos")) {
-    const changed = changedSince("nf", ["DATAHORAALTERACAO_NF"], since);
-    result.faturamentos = withExternalIds(
-      "faturamentos",
-      await queryRows(db, `
-        SELECT
-          nf.AUTOINC_NF AS id,
-          nf.EMPRESA_NF AS empresa,
-          nf.NUMERO_NF AS numeroNota,
-          nf.SERIE_NF AS serie,
-          nf.PESSOA_NF AS cliente,
-          nf.DATAEMISSAO_NF AS emitidoEm,
-          nf.SITUACAO_NF AS situacao,
-          nf.STATUS_NF AS status,
-          nf.VALORTOTAL_NF AS valorTotal,
-          nf.NFE_CHAVE_NF AS chaveNfe,
-          nfi.AUTOINC_NFITEM AS itemId,
-          nfi.ITEM_NFITEM AS codigoItem,
-          nfi.QUANTIDADE_NFITEM AS quantidade,
-          nfi.VLRTOTALBRUTO_NFITEM AS valorBruto,
-          nfi.VLRTOTALLIQUIDO_NFITEM AS valorLiquido,
-          nf.DATAHORAALTERACAO_NF AS atualizadoEm
-        FROM NOTA_FISCAL nf
-        LEFT JOIN NOTA_FISCAL_ITEM nfi ON nfi.AUTOINCNF_NFITEM = nf.AUTOINC_NF
-        WHERE nf.EMPRESA_NF IN (${source.companyIds.map(() => "?").join(", ")})${changed.clause}
-      `, [...source.companyIds, ...changed.params]),
-    );
-  }
-
-  if (entities.includes("romaneios")) {
-    const orderCodes = entities.includes("pedidos")
-      ? [...new Set(result.pedidos.map((row) => String(rowValue(row, "codigoPedido") ?? "")).filter(Boolean))]
-      : [];
-    const changedLoad = since
-      ? ` AND (ci.DATAHORAALTERACAO_CARITE >= ? OR cd.DATAHORAALTERACAO_CARDOC >= ?
-          OR c.DATAHORAALTERACAO_CARGA >= ? OR c.DATAHORALIB_FATURAMENTO_CARGA >= ?)`
-      : "";
-    const paramsForBatch = (codes: string[]) => [
-      ...source.companyIds,
-      ...source.companyIds,
-      ...codes,
-      ...(since ? [since, since, since, since] : []),
-    ];
-    const loadQuery = (codeFilter: string) => `
-      SELECT
-        c.CODIGO_CARGA AS cargaId,
-        c.EMPRESA_CARGA AS empresa,
-        c.DESCRICAO_CARGA AS cargaDescricao,
-        c.DTEMISSAO_CARGA AS emitidoEm,
-        c.DATAHORALIB_FATURAMENTO_CARGA AS liberadoFaturamentoEm,
-        c.USUARIOLIB_FATURAMENTO_CARGA AS liberadoFaturamentoPor,
-        cd.AUTOINC_CARDOC AS cargaDocumentoId,
-        d.CODIGO_DOCFAT AS codigoPedido,
-        d.CLIENTE_DOCFAT AS clienteCodigo,
-        cliente.RAZAOSOCIAL_PESSOA AS clienteNome,
-        di.AUTOINC_DOCITEM AS itemId,
-        det.AUTOINC_DOCITEMDET AS detalheId,
-        ci.AUTOINC_CARITE AS cargaItemId,
-        COALESCE(det.ITEM_DOCITEMDET, di.ITEM_DOCITEM) AS codigoItem,
-        item.DESCRICAO_ITEM AS descricaoItem,
-        COALESCE(det.COR_DOCITEMDET, di.COR_DOCITEM) AS cor,
-        COALESCE(det.VARIACAO_DOCITEMDET, di.VARIACAO_DOCITEM) AS variacao,
-        COALESCE(det.GRADE_DOCITEMDET, di.GRADE_DOCITEM) AS grade,
-        COALESCE(det.QTDEPEDIDO_DOCITEMDET, di.QTDEPEDIDO_DOCITEM) AS quantidadePedido,
-        ci.QTDECHAPAS_CARITE AS quantidadeNoRomaneio,
-        ci.QTDEFATURADO_CARITE AS quantidadeFaturada,
-        ci.QTDEABERTA_CARITE AS quantidadeAberta,
-        ci.FAMILIA_CARITE AS familiaCodigo,
-        familia.DESCRICAO_FAMILIA AS familia,
-        ci.DATAHORAALTERACAO_CARITE AS atualizadoEm
-      FROM CARGA_ITENS ci
-      INNER JOIN CARGA_DOCUMENTOS cd ON cd.AUTOINC_CARDOC = ci.AUTOINCCARDOC_CARITE
-      INNER JOIN CARGA c ON c.CODIGO_CARGA = cd.CARGA_CARDOC
-      INNER JOIN DOCUMENTO_ITEM_DETALHE det ON det.AUTOINC_DOCITEMDET = ci.AUTOINCITEMDETDOC_CARITE
-      INNER JOIN DOCUMENTO_ITEM di ON di.AUTOINC_DOCITEM = det.AUTOINCITEM_DOCITEMDET
-      INNER JOIN DOCUMENTO_FATURA d ON d.CODIGO_DOCFAT = di.DOCUMENTO_DOCITEM
-      LEFT JOIN PESSOA cliente ON cliente.CODIGO_PESSOA = d.CLIENTE_DOCFAT
-      LEFT JOIN ITEM item ON item.CODIGO_ITEM = COALESCE(det.ITEM_DOCITEMDET, di.ITEM_DOCITEM)
-      LEFT JOIN FAMILIA familia ON familia.CODIGO_FAMILIA = ci.FAMILIA_CARITE
-      WHERE c.EMPRESA_CARGA IN (${source.companyIds.map(() => "?").join(", ")})
-        AND d.EMPRESA_DOCFAT IN (${source.companyIds.map(() => "?").join(", ")})
-        ${codeFilter}${changedLoad}
-      ORDER BY c.DTEMISSAO_CARGA, c.CODIGO_CARGA, ci.AUTOINC_CARITE`;
-
-    const rows: Record<string, unknown>[] = [];
-    if (orderCodes.length) {
-      for (let offset = 0; offset < orderCodes.length; offset += 500) {
-        const batch = orderCodes.slice(offset, offset + 500);
-        rows.push(...await queryRows(db, loadQuery(` AND d.CODIGO_DOCFAT IN (${batch.map(() => "?").join(", ")})`), paramsForBatch(batch)));
-      }
-    } else if (businessDate) {
-      rows.push(...await queryRows(db, loadQuery(
-        " AND CAST(c.DTEMISSAO_CARGA AS DATE) = CAST(? AS DATE)",
-      ), [
-        ...source.companyIds,
-        ...source.companyIds,
-        businessDate.value,
-        ...(since ? [since, since, since, since] : []),
-      ]));
-    } else {
-      rows.push(...await queryRows(db, loadQuery(""), [
-        ...source.companyIds,
-        ...source.companyIds,
-        ...(since ? [since, since, since, since] : []),
-      ]));
-    }
-    result.romaneios = withExternalIds("romaneios", rows);
-  }
-
-  return result;
-}
 
 function printHelp() {
   console.log(`Uso:
@@ -496,17 +168,20 @@ async function runExport(args: string[]) {
 
   const db = await attach();
   try {
-    const rows = await readEntities(
+    const rows = await readCompleteEntities(
       db,
       entities,
+      sourceDefaults().companyIds,
       sinceValue(argumentValue(args, "--since")),
       dateRange(argumentValue(args, "--date")),
+      args.includes("--catalog-snapshot"),
+      args.includes("--customer-snapshot"),
     );
     const payload: TekSystemSyncPayload = {
       syncId: `teksystem-firebird-${Date.now()}`,
       tenantId: process.env.TEKSYSTEM_ALLOWED_TENANT_ID || "imperio",
       generatedAt: new Date().toISOString(),
-      source: sourceDefaults(),
+      source: { ...sourceDefaults(), readerVersion: 2, completeOrderSnapshots: entities.includes("pedidos") && entities.includes("romaneios") },
       entities: rows,
     };
     const validation = validateAndNormalizeTekSystemSync(payload);

@@ -39,11 +39,12 @@ const firebaseApp =
     APP_NAME,
   );
 
-const db = initializeFirestore(
+export const teksystemDb = initializeFirestore(
   firebaseApp,
   { experimentalForceLongPolling: true },
   firebaseConfigFile.firestoreDatabaseId,
 );
+const db = teksystemDb;
 
 const FIRESTORE_BATCH_LIMIT = 400;
 

@@ -1,9 +1,11 @@
 import crypto from "node:crypto";
 import { stageTekSystemSync } from "../../_lib/teksystemSyncFirestore.js";
+import { enqueueTekSystemWriter } from "../../_lib/teksystemWriterFirestore.js";
 import {
   validateAndNormalizeTekSystemSync,
   type NormalizedTekSystemSyncPayload,
 } from "../../_lib/teksystemSync.js";
+export const maxDuration = 60;
 
 function bearerToken(req: any): string {
   const header = String(req.headers?.authorization || "");
@@ -77,7 +79,13 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    if (payload.source.readerVersion === 2 && process.env.TEKSYSTEM_WRITER_ENABLED !== "true") {
+      return res.status(503).json({ sucesso: false, erro: "WRITER_DISABLED", mensagem: "Escritor desativado; cursor do leitor deve permanecer inalterado." });
+    }
     const result = await stageTekSystemSync(payload);
+    const writer = payload.source.readerVersion === 2 && payload.source.completeOrderSnapshots === true
+      ? await enqueueTekSystemWriter(payload)
+      : { jobs: 0, enqueued: 0 };
     return res.status(200).json({
       sucesso: true,
       dryRun: false,
@@ -85,7 +93,8 @@ export default async function handler(req: any, res: any) {
       tenantId: payload.tenantId,
       payloadHash: payload.payloadHash,
       counts: validation.counts,
-      mensagem: "Sincronização recebida na área de staging; dados operacionais não foram alterados.",
+      writer,
+      mensagem: "Sincronização recebida em staging; fila do agente de escrita preparada.",
     });
   } catch (error: any) {
     console.error("[TekSystem Sync API] Falha ao gravar staging:", error?.message || error);

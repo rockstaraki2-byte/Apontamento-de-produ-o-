@@ -76,6 +76,14 @@ export interface AtomicCreateInput {
   solicitadoPor: string;
   prepared: PreparedOrder;
   createdAt: number;
+  importedAt?: number;
+  teksystem?: {
+    jobId: string;
+    jobHash: string;
+    companyId: number;
+    customerCode: string;
+    lineIds: string[];
+  };
 }
 
 export interface AtomicCreateResult {
