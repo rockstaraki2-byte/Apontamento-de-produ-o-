@@ -151,6 +151,83 @@ test("pedido existente atualiza pagamento da origem preservando notas e sem dupl
   assert.equal((order.notes.match(/\[Pagamento Tek-System\]/g) || []).length, 1);
   assert.equal(planWriterJob(jobs()[0], catalog(), [order], now).mutations.length, 0);
 });
+function appendFixture() {
+  const cat = catalog(); cat.items.push({ id: 200, code: "3730", name: "BARRA NOVA", tenantId: "imperio" });
+  const order: any = existing(); order.packedQuantity = 7; order.producedQuantity = 8;
+  const orderJob = jobs()[0]; orderJob.rows.push({ ...sourceRow(), detalheid: 901, codigoitem: "3730", quantidade: 50, precounitariobruto: 2.4, precounitario: 2.4 });
+  return { cat, order, orderJob };
+}
+test("complementa somente linhas ausentes, com ID determinístico e apontamentos zerados", () => {
+  const { cat, order, orderJob } = appendFixture();
+  const plan = planWriterJob(orderJob, cat, [order], now);
+  assert.equal(plan.action, "COMPLEMENTADO"); assert.equal(plan.details.quantidadeItensIncluidos, 1);
+  const added = plan.mutations.filter((m) => !m.before);
+  assert.equal(added.length, 1); assert.equal(added[0].patch.itemId, 200);
+  assert.equal(added[0].patch.totalQuantity, 50); assert.equal(added[0].patch.unitPrice, 2.4);
+  assert.equal(added[0].patch.packedQuantity, 0); assert.equal(added[0].patch.invoicedQuantity, 0);
+  assert.equal(added[0].patch.teksystemLineId, "pedido:77:901");
+  assert.equal(plan.orderGuards![0].id, order.id);
+  const existingMutation = plan.mutations.find((m) => m.before)!;
+  for (const field of ["totalQuantity", "packedQuantity", "producedQuantity", "itemId", "unitPrice", "status", "invoicedQuantity"]) assert.equal(existingMutation.patch[field], undefined);
+  const again = planWriterJob(orderJob, cat, [order], new Date(now.getTime() + 60_000));
+  assert.equal(again.mutations.find((m) => !m.before)!.docId, added[0].docId);
+  const completed: any[] = [order];
+  for (const m of plan.mutations) {
+    if (m.before) Object.assign(order, m.patch); else completed.push({ ...m.patch, docId: m.docId });
+  }
+  assert.equal(planWriterJob(orderJob, cat, completed, now).action, "JA_EXISTE");
+  assert.equal(planWriterJob(orderJob, cat, completed, now).mutations.length, 0);
+});
+test("linha nova de código repetido só é incluída quando as linhas antigas têm chave inequívoca", () => {
+  const order = existing(); const orderJob = jobs()[0];
+  orderJob.rows.push({ ...sourceRow(), detalheid: 901, quantidade: 5 });
+  assert.equal(planWriterJob(orderJob, catalog(), [order], now).details.quantidadeItensIncluidos, 1);
+  order.teksystemLineId = "";
+  assert.throws(() => planWriterJob(orderJob, catalog(), [order], now), (e: any) => e.code === "ITEM_PEDIDO_AMBIGUO");
+});
+test("não transforma troca/remoção de item antigo em nova linha nem altera quantidade existente", () => {
+  const { cat, order, orderJob } = appendFixture();
+  orderJob.rows = [orderJob.rows[1]];
+  assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "ITENS_PEDIDO_DIVERGENTES");
+  orderJob.rows.unshift(sourceRow()); order.totalQuantity = 9;
+  assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "QUANTIDADE_PEDIDO_DIVERGENTE");
+});
+test("código ausente no catálogo e preço inválido da linha nova impedem qualquer complementação", () => {
+  const { cat, order, orderJob } = appendFixture();
+  orderJob.rows[1].codigoitem = "9999";
+  assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "PRODUTO_NAO_ENCONTRADO");
+  orderJob.rows[1].codigoitem = "3730"; orderJob.rows[1].precounitariobruto = 0; orderJob.rows[1].precounitario = 0;
+  assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "PEDIDO_INVALIDO");
+});
+test("complementação preserva decisão fiscal existente e registra divergência sem corrigi-la silenciosamente", () => {
+  const { cat, order, orderJob } = appendFixture(); orderJob.rows[1].familiadescricao = "INDEFINIDA";
+  const plan = planWriterJob(orderJob, cat, [order], now);
+  const added = plan.mutations.find((m) => !m.before)!;
+  assert.equal(added.patch.fiscalType, "SEM_NF"); assert.equal(added.patch.teksystemSourceFiscalType, "COM_NF");
+  assert.match(plan.details.avisos[0], /SEM_NF.*COM_NF/);
+  assert.equal(plan.mutations.find((m) => m.before)!.patch.fiscalType, undefined);
+});
+test("pedido cancelado, cliente divergente e chaves repetidas não permitem adicionar itens", () => {
+  const { cat, order, orderJob } = appendFixture(); order.status = "CANCELADO";
+  assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "PEDIDO_CANCELADO");
+  order.status = "PENDENTE"; order.customerId = 6;
+  assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "CLIENTE_PEDIDO_DIVERGENTE");
+  order.customerId = 5; orderJob.rows[1].detalheid = 900;
+  assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "ITEM_DUPLICADO");
+});
+test("romaneio só fatura linhas novas depois de o pedido ter sido complementado", () => {
+  const { cat, order, orderJob } = appendFixture();
+  const billing: WriterJob = { ...jobs()[1], orderRows: orderJob.rows, rows: [{ ...orderJob.rows[1], externalId: "romaneio:1:2", quantidadefaturada: 50 }] };
+  assert.throws(() => planWriterJob(billing, cat, [order], now), (e: any) => e.code === "ITEM_PEDIDO_AUSENTE");
+  const complement = planWriterJob(orderJob, cat, [order], now);
+  const completed: any[] = [order];
+  for (const m of complement.mutations) { if (m.before) Object.assign(order, m.patch); else completed.push({ ...m.patch, docId: m.docId }); }
+  const invoice = planWriterJob(billing, cat, completed, now);
+  assert.equal(invoice.action, "FATURADO"); assert.equal(invoice.details.itens[0].quantidadeFaturada, 50);
+  assert.equal(invoice.mutations.find((m) => m.collection === "logs")!.patch.skipInventoryUpdate, true);
+  for (const m of invoice.mutations.filter((m) => m.collection === "orders")) Object.assign(completed.find((o) => String(o.id) === m.docId), m.patch);
+  assert.equal(planWriterJob(billing, cat, completed, now).mutations.length, 0);
+});
 test("catálogo/pedidos de outra empresa são recusados", () => {
   const other = catalog(); other.customers[0].tenantId = "outra";
   assert.throws(() => planWriterJob(jobs()[0], other, [], now), (e: any) => e.code === "TENANT_INVALIDO");

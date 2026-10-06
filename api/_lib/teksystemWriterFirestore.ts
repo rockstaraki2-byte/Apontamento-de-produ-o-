@@ -125,6 +125,15 @@ async function applyPlan(job: WriterJob, owner: string, plan: WriterPlan) {
     const snapshot = await tx.get(ref);
     if (!snapshot.exists() || snapshot.data().tenantId !== job.tenantId || snapshot.data().hash !== job.hash || snapshot.data().state !== "PROCESSING" || snapshot.data().leaseOwner !== owner) throw new WriterConflict("REVISAO_ALTERADA", "A fonte foi atualizada durante o processamento.", true);
     const targets = await Promise.all(plan.mutations.map((m) => tx.get(doc(db, m.collection, m.docId))));
+    // Guard even unchanged parent lines: no new lines are committed if an
+    // existing line was removed or changed after planning the complement.
+    const guards = await Promise.all((plan.orderGuards || []).map((o) => tx.get(doc(db, "orders", text(o.docId || o.id)))));
+    guards.forEach((snapshot, index) => {
+      const previous = plan.orderGuards![index];
+      const current = snapshot.exists() ? snapshot.data() : null;
+      const keys = ["id", "tenantId", "itemId", "customerId", "totalQuantity", "color", "size", "teksystemLineId", "fiscalType", "status"];
+      if (!current || keys.some((key) => signature(current[key] ?? null) !== signature(previous[key] ?? null))) throw new WriterConflict("CADASTRO_ALTERADO", "Item existente mudou durante a complementação; será reavaliado.", true);
+    });
     const changes: WriterRow[] = [];
     plan.mutations.forEach((mutation, index) => {
       const target = targets[index]; const current = target.exists() ? target.data() : null;
@@ -171,6 +180,7 @@ export async function previewWriterPayload(payload: NormalizedTekSystemSyncPaylo
         for (const m of plan.mutations.filter((m) => m.collection === "orders")) {
           const order = orders.find((o) => text(o.docId || o.id) === m.docId);
           if (order) Object.assign(order, m.patch);
+          else if (!m.before) orders.push({ ...m.patch, docId: m.docId });
         }
       }
       results.push({ kind: job.kind, codigo: job.externalKey, action: plan.action, ...plan.details,

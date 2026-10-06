@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { prepareOrder, type AtomicCreateInput } from "./orderImportCore.js";
+import { buildImportedOrderDocument } from "./orderImportDocuments.js";
 import {
   deriveProductIdentity, mapPaymentMethod, matchProduct, normalizeText, normalizePaymentTerms, normalizeSystemPaymentCondition,
   type CatalogSnapshot, type OrderImportInput,
@@ -33,8 +34,9 @@ export interface WriterMutation {
   patch: WriterRow;
 }
 export interface WriterPlan {
-  action: "CRIADO" | "ATUALIZADO" | "JA_EXISTE" | "SEM_ALTERACAO" | "FATURADO";
+  action: "CRIADO" | "ATUALIZADO" | "JA_EXISTE" | "COMPLEMENTADO" | "SEM_ALTERACAO" | "FATURADO";
   mutations: WriterMutation[];
+  orderGuards?: WriterRow[];
   createOrder?: AtomicCreateInput;
   details: WriterRow;
 }
@@ -270,7 +272,7 @@ function definedDimension(v: unknown): string {
 }
 function dimension(v: unknown): string { return normalizeText(definedDimension(v)) || "-"; }
 function productCode(v: unknown): string { return deriveProductIdentity({ codigoOriginal: text(v) }).codigoProduto.toUpperCase(); }
-export function bindSourceLines(rows: WriterRow[], input: OrderImportInput, orders: WriterRow[], catalog: WriterCatalog): Array<{ row: WriterRow; order: WriterRow }> {
+export function bindSourceLines(rows: WriterRow[], input: OrderImportInput, orders: WriterRow[], catalog: WriterCatalog, missing?: WriterRow[]): Array<{ row: WriterRow; order: WriterRow }> {
   const matches: Array<{ row: WriterRow; order: WriterRow }> = [];
   const used = new Set<string>();
   rows.forEach((row, index) => {
@@ -291,7 +293,10 @@ export function bindSourceLines(rows: WriterRow[], input: OrderImportInput, orde
     let candidates = orders.filter((o) => o.teksystemLineId === key);
     if (candidates.some((o) => !sameIdentity(o))) throw new WriterConflict("IDENTIDADE_ITEM_DIVERGENTE", `Código/cor/medida de ${key} mudou entre os sistemas.`);
     if (!candidates.length) candidates = orders.filter((o) => !o.teksystemLineId && sameIdentity(o));
-    if (!candidates.length) throw new WriterConflict("ITEM_PEDIDO_AUSENTE", `Item ${key}, código ${text(item.codigoOriginal)}, não está no pedido do ApontaPRO ou possui código/cor/medida divergente.`);
+    if (!candidates.length) {
+      if (missing) { missing.push(row); return; }
+      throw new WriterConflict("ITEM_PEDIDO_AUSENTE", `Item ${key}, código ${text(item.codigoOriginal)}, não está no pedido do ApontaPRO ou possui código/cor/medida divergente.`);
+    }
     if (candidates.length !== 1 || used.has(text(candidates[0].id))) throw new WriterConflict("ITEM_PEDIDO_AMBIGUO", `Não foi possível associar unicamente ${key}, código ${text(item.codigoOriginal)}, aos itens do ApontaPRO.`);
     const order = candidates[0];
     if (Math.abs(number(order.totalQuantity, key) - number(item.quantidade, key)) > 0.0001) throw new WriterConflict("QUANTIDADE_PEDIDO_DIVERGENTE", `A quantidade de ${key} diverge entre os sistemas.`);
@@ -304,7 +309,8 @@ export function bindSourceLines(rows: WriterRow[], input: OrderImportInput, orde
 export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: WriterRow[], now: Date): WriterPlan {
   const input = orderInput(job.rows, catalog, Boolean(orders.length));
   if (orders.length) {
-    const matches = bindSourceLines(job.rows, input, orders, catalog);
+    const missing: WriterRow[] = [];
+    const matches = bindSourceLines(job.rows, input, orders, catalog, missing);
     const payment = sourcePayment(job.rows[0]);
     const mutations = matches.map(({ row, order }) => patchMutation("orders", order.id, order, {
       teksystemLineId: sourceLineKey(row), teksystemOrderId: job.externalKey,
@@ -314,7 +320,37 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
       billingRule: "cadastro", teksystemPaymentDescription: payment.description,
       notes: withPaymentNote(order.notes, payment.note),
     })).filter((m): m is WriterMutation => Boolean(m));
-    return { action: "JA_EXISTE", mutations, details: { codigoPedido: job.externalKey, orderIds: matches.map(({ order }) => order.id) } };
+    const added: WriterRow[] = [];
+    const warnings: string[] = [];
+    if (missing.length) {
+      if (orders.some((o) => o.status === "CANCELADO")) throw new WriterConflict("PEDIDO_CANCELADO", "Pedido cancelado requer revisão antes de acrescentar itens.");
+      if (job.rows.length > 180) throw new WriterConflict("PEDIDO_MUITO_GRANDE", "Pedido excede 180 itens para complementação atômica.");
+      // Reuse the existing creation path to validate codes, money, customer,
+      // representatives and source dates ONLY for genuinely new source lines.
+      const creation = planOrder({ ...job, rows: missing }, catalog, [], now).createOrder!;
+      const sourceFiscalType = creation.prepared.fiscalType;
+      const fiscalTypes = [...new Set(orders.map((o) => text(o.fiscalType)).filter(Boolean))];
+      if (fiscalTypes.length > 1 || fiscalTypes.some((f) => !["COM_NF", "SEM_NF"].includes(f))) throw new WriterConflict("FISCAL_PEDIDO_DIVERGENTE", "Itens existentes possuem classificações fiscais inconsistentes.");
+      if (fiscalTypes.length) {
+        // Appending a line must not change an existing order's fiscal decision.
+        creation.prepared.fiscalType = fiscalTypes[0] as "COM_NF" | "SEM_NF";
+        if (sourceFiscalType !== creation.prepared.fiscalType) warnings.push(`Classificação fiscal ${creation.prepared.fiscalType} do pedido preservada; origem dos novos itens indica ${sourceFiscalType}.`);
+      }
+      creation.prepared.normalizedPayloadHash = signature({ ...creation.prepared, normalizedPayloadHash: undefined });
+      missing.forEach((row, index) => {
+        const key = sourceLineKey(row);
+        const id = stableNumericId(job.tenantId, "pedido-linha", key);
+        if (orders.some((o) => text(o.id) === text(id)) || added.some((o) => o.id === id)) throw new WriterConflict("ID_LINHA_OCUPADO", "Identificador determinístico de linha ocupado; requer revisão.");
+        const document = buildImportedOrderDocument(creation, index, id, normalizeSystemPaymentCondition(payment.method), "cadastro");
+        mutations.push({ collection: "orders", docId: text(id), before: null,
+          patch: { ...document, teksystemPaymentDescription: payment.description, teksystemSourceFiscalType: sourceFiscalType } });
+        added.push({ id, codigo: text(value(row, "codigoItem")), quantidade: document.totalQuantity, sourceLineId: key });
+      });
+    }
+    return { action: missing.length ? "COMPLEMENTADO" : "JA_EXISTE", mutations,
+      ...(missing.length ? { orderGuards: orders } : {}),
+      details: { codigoPedido: job.externalKey, orderIds: [...matches.map(({ order }) => order.id), ...added.map((o) => o.id)],
+        quantidadeItensIncluidos: added.length, itensIncluidos: added, avisos: warnings } };
   }
   // The legacy manual importer may use exact descriptions as a fallback. The
   // integration must validate every product by code BEFORE invoking that importer.
