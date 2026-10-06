@@ -350,6 +350,8 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
     return { action: missing.length ? "COMPLEMENTADO" : "JA_EXISTE", mutations,
       ...(missing.length ? { orderGuards: orders } : {}),
       details: { codigoPedido: job.externalKey, orderIds: [...matches.map(({ order }) => order.id), ...added.map((o) => o.id)],
+        pdfNeedsRefresh: missing.length > 0 || mutations.some((m) => m.collection === "orders" &&
+          ["paymentCondition", "paymentTerms", "paymentTermsDays", "billingRule", "notes"].some((key) => Object.hasOwn(m.patch, key))),
         quantidadeItensIncluidos: added.length, itensIncluidos: added, avisos: warnings } };
   }
   // The legacy manual importer may use exact descriptions as a fallback. The
@@ -362,7 +364,7 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
   if (prepared.prepared.lines.length > 180) throw new WriterConflict("PEDIDO_MUITO_GRANDE", "Pedido excede 180 itens para criação atômica.");
   const date = new Date(text(value(job.rows[0], "cadastradoEm") || value(job.rows[0], "emitidoEm"))).getTime();
   return {
-    action: "CRIADO", mutations: [], details: { codigoPedido: job.externalKey, quantidadeItens: prepared.prepared.lines.length, avisos: prepared.warnings },
+    action: "CRIADO", mutations: [], details: { codigoPedido: job.externalKey, quantidadeItens: prepared.prepared.lines.length, avisos: prepared.warnings, pdfNeedsRefresh: true },
     createOrder: {
       tenantId: job.tenantId, origem: "TEKSYSTEM", solicitadoPor: "teksystem-writer-agent",
       prepared: prepared.prepared, createdAt: Number.isFinite(date) ? date : now.getTime(), importedAt: now.getTime(),

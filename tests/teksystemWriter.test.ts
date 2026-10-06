@@ -60,6 +60,22 @@ test("pedido novo usa regras existentes, id da fonte e valores financeiros", () 
   assert.equal(order.fiscalType, "SEM_NF"); assert.equal(order.variation, "-");
 });
 function existing() { const plan = planWriterJob(jobs()[0], catalog(), [], now); return buildImportedOrderDocument(plan.createOrder!, 0, 123, "boleto", "cadastro"); }
+test("PDF é atualizado quando pagamento muda; vínculo técnico isolado não dispara exportação", () => {
+  const order: any = existing();
+  const currentJob = jobs()[0];
+  for (const mutation of planWriterJob(currentJob, catalog(), [order], now).mutations) Object.assign(order, mutation.patch);
+  assert.equal(planWriterJob(currentJob, catalog(), [order], now).details.pdfNeedsRefresh, false);
+  delete order.teksystemLineId;
+  const technical = planWriterJob(currentJob, catalog(), [order], now);
+  assert.equal(technical.action, "JA_EXISTE");
+  assert.equal(technical.details.pdfNeedsRefresh, false);
+  for (const mutation of technical.mutations) Object.assign(order, mutation.patch);
+  currentJob.rows[0].prazos[0].dias = 45;
+  const changed = planWriterJob(currentJob, catalog(), [order], now);
+  assert.equal(changed.action, "JA_EXISTE");
+  assert.equal(changed.details.pdfNeedsRefresh, true);
+  assert.equal(changed.mutations[0].patch.totalQuantity, undefined);
+});
 test("romaneio aplica total cumulativo e repetição não duplica faturamento", () => {
   const order = existing(); const billing = jobs()[1];
   const first = planWriterJob(billing, catalog(), [order], now);

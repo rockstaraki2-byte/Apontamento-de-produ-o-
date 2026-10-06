@@ -11,6 +11,7 @@ import {
 } from "../api/_lib/teksystemSync.js";
 import { makeSince, splitPayload, type SyncState } from "./teksystem-sync-cycle-utils.js";
 import { callWriter, drainWriter, previewWriter } from "./teksystem-writer-client.js";
+import { checkpointFollowups, finishFollowups } from "./teksystem-followups.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -254,7 +255,8 @@ async function runSync(args: string[]) {
   const statePath = path.join(appDirectory, "sync-state.json");
   const tempExport = path.join(os.tmpdir(), `${runId}-${process.pid}.json`);
   const logPath = path.join(appDirectory, `sync-${startedAt.toISOString().slice(0, 10)}.jsonl`);
-  let outcome: Record<string, unknown> = { runId, startedAt: startedAt.toISOString(), ok: false };
+  let outcome: Record<string, unknown> = { runId, startedAt: startedAt.toISOString(), ok: false,
+    mode: args.includes("--dry-run") ? "dry-run" : "collect-and-process" };
   try {
     let state: SyncState = {};
     try { state = JSON.parse(await fs.readFile(statePath, "utf8")) as SyncState; }
@@ -291,6 +293,8 @@ async function runSync(args: string[]) {
       const result = await postStagingPayload(apiUrl, apiToken, bypassSecret, payload, args.includes("--dry-run"));
       stagedRecords += result.count;
       stagedBatches += 1;
+      outcome.stagedRecords = stagedRecords;
+      outcome.stagedBatches = stagedBatches;
     }
 
     if (!args.includes("--dry-run")) {
@@ -305,9 +309,13 @@ async function runSync(args: string[]) {
     }
     const writer = args.includes("--dry-run")
       ? { enabled: (await callWriter("GET")).enabled, note: "Simulação: nenhum trabalho enfileirado/aplicado; cursor preservado." }
-      : await drainWriter();
+      : await drainWriter(async (page, progress) => {
+        outcome.writerProgress = { ...progress, status: page.status };
+        await checkpointFollowups(runId, startedAt.toISOString(), page.results || []);
+      });
     outcome = {
       runId,
+      startedAt: startedAt.toISOString(),
       ok: true,
       mode: args.includes("--dry-run") ? "dry-run" : "collect-and-process",
       since: since.toISOString(),
@@ -322,6 +330,8 @@ async function runSync(args: string[]) {
     console.error(JSON.stringify(outcome));
     process.exitCode = 1;
   } finally {
+    try { outcome.followups = await finishFollowups(outcome); }
+    catch { outcome.followups = { error: "Falha ao salvar fila de PDFs/relatório; consulte o log local." }; process.exitCode = 1; }
     await fs.rm(tempExport, { force: true }).catch(() => undefined);
     await lockHandle.close().catch(() => undefined);
     await fs.rm(lockPath, { force: true }).catch(() => undefined);

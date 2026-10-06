@@ -2,8 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
+import { pathToFileURL } from 'node:url';
 import puppeteer from "puppeteer";
 import { jsPDF } from "jspdf";
+import { processFollowups, safeMessage } from './teksystem-followups.mjs';
 
 const DEFAULTS = {
   appUrl: "https://apontamento-de-producao.vercel.app/",
@@ -19,8 +21,8 @@ const DEFAULTS = {
   ),
 };
 
-const CONFIG_PATH = path.resolve("tools", "order-pdf-agent.config.json");
-const STATE_PATH = path.resolve("tools", ".order-pdf-agent-state.json");
+const CONFIG_PATH = process.env.IMPERIO_PDF_AGENT_CONFIG_PATH || path.resolve("tools", "order-pdf-agent.config.json");
+const STATE_PATH = process.env.IMPERIO_PDF_AGENT_STATE_PATH || path.resolve("tools", ".order-pdf-agent-state.json");
 const SETUP_MODE = process.argv.includes("--setup");
 const ONCE_MODE = process.argv.includes("--once");
 
@@ -57,7 +59,7 @@ function normalizeForCompare(value) {
     .trim();
 }
 
-function resolveExistingRepresentativeFolder(rootFolder, representative, suggestedFolder) {
+export function resolveExistingRepresentativeFolder(rootFolder, representative, suggestedFolder) {
   if (!fs.existsSync(rootFolder)) {
     throw new Error(`Pasta principal não encontrada: ${rootFolder}`);
   }
@@ -249,11 +251,10 @@ function pngToA4Pdf(pngBuffer) {
   return Buffer.from(doc.output("arraybuffer"));
 }
 
-async function processIssue(page, config, issue) {
-  const command = parseCommand(issue.body);
+async function processCommand(page, config, command, issueNumber, exactCode) {
   const result = {
     sucesso: true,
-    issue: issue.number,
+    issue: issueNumber,
     comando: command,
     processados: [],
     ignorados: [],
@@ -264,10 +265,11 @@ async function processIssue(page, config, issue) {
     (cmd) => window.__imperioPdfAutomation.getBatch(cmd),
     command,
   );
-  result.ignorados.push(...(batch.ignored || []));
+  result.ignorados.push(...(batch.ignored || []).filter(item => !exactCode || String(item.pedido) === exactCode));
 
   for (const item of batch.eligible || []) {
     const code = String(item.pedido);
+    if (exactCode && code !== exactCode) continue;
     try {
       const repFolder = resolveExistingRepresentativeFolder(
         config.rootFolder,
@@ -300,6 +302,7 @@ async function processIssue(page, config, issue) {
       const png = await card.screenshot({ type: "png" });
       const pdfBuffer = pngToA4Pdf(Buffer.from(png));
       const destination = path.join(repFolder, metadata.arquivo);
+      if (metadata.pedido !== code || path.basename(metadata.arquivo) !== metadata.arquivo || path.extname(metadata.arquivo).toLowerCase() !== '.pdf') throw new Error('Código ou nome do arquivo PDF inválido.');
 
       // writeFileSync sobrescreve o arquivo existente, mas nunca cria a pasta.
       fs.writeFileSync(destination, pdfBuffer);
@@ -332,6 +335,26 @@ async function processIssue(page, config, issue) {
   return result;
 }
 
+async function processIssue(page, config, issue) {
+  return processCommand(page, config, parseCommand(issue.body), issue.number);
+}
+
+export async function exportQueuedOrder(page, config, code, runner = processCommand) {
+  // Refresh subscriptions before rendering; no second Chrome/profile instance.
+  await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+  await waitForAutomation(page);
+  const command = { pedidoInicial: code, pedidoFinal: code, statusImpressao: 'Todos',
+    layoutPdf: 'folha_inteira', umPedidoPorArquivo: true, imprimirFisicamente: false };
+  await page.waitForFunction((cmd, exact) => {
+    const bridge = window.__imperioPdfAutomation;
+    if (!bridge) return false;
+    return bridge.getBatch(cmd).then(batch => [...(batch.eligible || []), ...(batch.ignored || [])].some(item => String(item.pedido) === exact));
+  }, { timeout: 30000 }, command, code);
+  const result = await runner(page, config, command, undefined, code);
+  if (!result.sucesso || result.processados.length !== 1) throw new Error(result.erros[0]?.erro || result.ignorados[0]?.motivo || `Pedido ${code} não foi exportado.`);
+  return result.processados[0];
+}
+
 async function runAgent(config) {
   fs.mkdirSync(config.userDataDir, { recursive: true });
   const state = loadState();
@@ -346,8 +369,13 @@ async function runAgent(config) {
     console.log("Agente de PDFs conectado ao Apontamento.");
     console.log(`Monitorando comandos [PDF-EXPORT] em ${config.githubRepo}.`);
     console.log(`Pasta principal: ${config.rootFolder}`);
+    console.log('Fila de PDFs Tek-System ativa; relatórios: ' + (process.env.TEKSYSTEM_REPORT_ENDPOINT ? 'envio configurado' : 'aguardando publicação/autorização Google'));
 
     do {
+      try {
+        const followups = await processFollowups(code => exportQueuedOrder(page, config, code));
+        if (followups.exported || followups.errors || followups.delivered) console.log(JSON.stringify({ teksystemFollowups: followups }));
+      } catch (error) { console.error('Falha na fila Tek-System:', safeMessage(error.message)); }
       try {
         const issues = await listPendingIssues(config, state);
         for (const issue of issues) {
@@ -391,9 +419,8 @@ async function runAgent(config) {
   }
 }
 
-const config = loadConfig();
-if (SETUP_MODE) {
-  await runSetup(config);
-} else {
-  await runAgent(config);
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+  const config = loadConfig();
+  if (SETUP_MODE) await runSetup(config);
+  else await runAgent(config);
 }

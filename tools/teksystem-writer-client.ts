@@ -33,7 +33,7 @@ export async function callWriter(method: "GET" | "POST", body?: unknown) {
   }
   throw lastError || new Error("Falha no agente de escrita.");
 }
-export async function drainWriter() {
+export async function drainWriter(onPage?: (result: any, progress: { pages: number; summary: Record<string, number> }) => Promise<void>) {
   const deadline = Date.now() + 20 * 60_000;
   const summary: Record<string, number> = {};
   let pages = 0;
@@ -44,6 +44,7 @@ export async function drainWriter() {
       const key = `${row.kind}:${row.state}:${row.action || ""}`;
       summary[key] = (summary[key] || 0) + 1;
     }
+    await onPage?.(result, { pages, summary: { ...summary } });
     console.log(JSON.stringify({ writerPage: pages, kind: result.kind, processed: result.results?.length || 0, busy: result.busy, hasMore: result.hasMore }));
     if (!result.hasMore) return { pages, summary, status: result.status || await callWriter("GET") };
     if (result.busy) await new Promise((resolve) => setTimeout(resolve, 2000));
