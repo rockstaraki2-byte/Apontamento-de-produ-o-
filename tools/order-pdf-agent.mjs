@@ -128,7 +128,8 @@ async function githubRequest(url, options = {}) {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(url, { ...options, headers });
+  // A stalled legacy GitHub command must not block the local Tek-System queue.
+  const response = await fetch(url, { ...options, headers, signal: options.signal || AbortSignal.timeout(20000) });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`GitHub ${response.status}: ${text.slice(0, 500)}`);
