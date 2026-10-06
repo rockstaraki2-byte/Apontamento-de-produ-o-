@@ -115,6 +115,16 @@ test('representative folder lookup never creates a missing folder', async t => {
   assert.equal(resolveExistingRepresentativeFolder(root,'Cyrne','Pedidos Cyrne'), null);
   assert.deepEqual(await fs.readdir(root), []);
 });
+test('subsequent PDFs reuse the same loaded page and allow slower Firestore startup', async () => {
+  let reloads = 0;
+  const page = { reload: async () => { reloads++; }, waitForFunction: async (_, options, command) => {
+    if (command) assert.equal(options.timeout, 90000);
+  } };
+  const runner = async (_, __, ___, ____, code) => ({ sucesso: true, processados: [await exportOk(code)], erros: [], ignorados: [] });
+  await exportQueuedOrder(page, {}, '68260', runner, true);
+  await exportQueuedOrder(page, {}, '68261', runner, false);
+  assert.equal(reloads, 1);
+});
 test('Google sender signs envelope and validates root/run/date/response, not just HTTP success', async t => {
   const root = await tempRoot(t);
   await finishFollowups(outcome, root); const batch = await batchAt(root);

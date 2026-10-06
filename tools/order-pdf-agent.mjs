@@ -339,9 +339,9 @@ async function processIssue(page, config, issue) {
   return processCommand(page, config, parseCommand(issue.body), issue.number);
 }
 
-export async function exportQueuedOrder(page, config, code, runner = processCommand) {
+export async function exportQueuedOrder(page, config, code, runner = processCommand, refresh = true) {
   // Refresh subscriptions before rendering; no second Chrome/profile instance.
-  await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+  if (refresh) await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
   await waitForAutomation(page);
   const command = { pedidoInicial: code, pedidoFinal: code, statusImpressao: 'Todos',
     layoutPdf: 'folha_inteira', umPedidoPorArquivo: true, imprimirFisicamente: false };
@@ -349,7 +349,7 @@ export async function exportQueuedOrder(page, config, code, runner = processComm
     const bridge = window.__imperioPdfAutomation;
     if (!bridge) return false;
     return bridge.getBatch(cmd).then(batch => [...(batch.eligible || []), ...(batch.ignored || [])].some(item => String(item.pedido) === exact));
-  }, { timeout: 30000 }, command, code);
+  }, { timeout: 90000 }, command, code);
   const result = await runner(page, config, command, undefined, code);
   if (!result.sucesso || result.processados.length !== 1) throw new Error(result.erros[0]?.erro || result.ignorados[0]?.motivo || `Pedido ${code} não foi exportado.`);
   return result.processados[0];
@@ -373,7 +373,12 @@ async function runAgent(config) {
 
     do {
       try {
-        const followups = await processFollowups(code => exportQueuedOrder(page, config, code));
+        let refreshForCycle = true;
+        const followups = await processFollowups(code => {
+          const refresh = refreshForCycle;
+          refreshForCycle = false;
+          return exportQueuedOrder(page, config, code, processCommand, refresh);
+        });
         if (followups.exported || followups.errors || followups.delivered) console.log(JSON.stringify({ teksystemFollowups: followups }));
       } catch (error) { console.error('Falha na fila Tek-System:', safeMessage(error.message)); }
       try {
