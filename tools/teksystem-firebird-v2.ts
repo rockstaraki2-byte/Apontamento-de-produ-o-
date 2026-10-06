@@ -64,6 +64,7 @@ export async function readCompleteEntities(
         { join: "JOIN DOCUMENTO_ITEM_DETALHE det ON det.DOCUMENTO_DOCITEMDET = d.CODIGO_DOCFAT", condition: "det.DATAHORAALTERACAO_DOCITEMDET >= ?", params: [since] },
         { join: "JOIN DOCUMENTO_PRAZOS prazo ON prazo.DOCUMENTO_DOCPRAZO = d.CODIGO_DOCFAT", condition: "prazo.DATAHORAALTERACAO_DOCPRAZO >= ?", params: [since] },
         { join: "JOIN DOCUMENTO_PEDREPRESENTANTE rep ON rep.DOCUMENTO_DOCPEDREP = d.CODIGO_DOCFAT", condition: "rep.DATAHORAALTERACAO_DOCPEDREP >= ?", params: [since] },
+        { join: "JOIN DOCUMENTO_COMISSAO com ON com.DOCUMENTO_DOCCOM = d.CODIGO_DOCFAT", condition: "com.DATAHORAALTERACAO_DOCCOM >= ?", params: [since] },
         { join: `JOIN DOCUMENTO_ITEM_DETALHE det ON det.DOCUMENTO_DOCITEMDET = d.CODIGO_DOCFAT
                  JOIN CARGA_ITENS ci ON ci.AUTOINCITEMDETDOC_CARITE = det.AUTOINC_DOCITEMDET
                  JOIN CARGA_DOCUMENTOS cd ON cd.AUTOINC_CARDOC = ci.AUTOINCCARDOC_CARITE
@@ -77,6 +78,7 @@ export async function readCompleteEntities(
     const orderRows: Row[] = [];
     const paymentRows: Row[] = [];
     const representativeRows: Row[] = [];
+    const salesConsultantRows: Row[] = [];
     for (const codes of batches(orderCodes)) {
       orderRows.push(...await readOnlyRows(db, `
         SELECT d.CODIGO_DOCFAT AS codigopedido, d.EMPRESA_DOCFAT AS empresa,
@@ -136,10 +138,16 @@ export async function readCompleteEntities(
         r.PEDIDOREPRESENTANTE_DOCPEDREP AS codigo, p.RAZAOSOCIAL_PESSOA AS nome
         FROM DOCUMENTO_PEDREPRESENTANTE r LEFT JOIN PESSOA p ON p.CODIGO_PESSOA = r.PEDIDOREPRESENTANTE_DOCPEDREP
         WHERE r.DOCUMENTO_DOCPEDREP IN (${placeholders(codes)})`, codes));
+      salesConsultantRows.push(...await readOnlyRows(db, `SELECT c.DOCUMENTO_DOCCOM AS codigopedido,
+        c.PESSOA_DOCCOM AS codigo, p.RAZAOSOCIAL_PESSOA AS nome
+        FROM DOCUMENTO_COMISSAO c LEFT JOIN PESSOA p ON p.CODIGO_PESSOA = c.PESSOA_DOCCOM
+        WHERE c.DOCUMENTO_DOCCOM IN (${placeholders(codes)})
+          AND c.PRINCIPAL_DOCCOM = 'S'`, codes));
     }
     result.pedidos = orderRows.map((r) => ({ ...r,
       prazos: paymentRows.filter((p) => key(p.codigopedido) === key(r.codigopedido)),
       representantes: representativeRows.filter((p) => key(p.codigopedido) === key(r.codigopedido)),
+      consultoresVendas: salesConsultantRows.filter((p) => key(p.codigopedido) === key(r.codigopedido)),
       externalId: `pedido:${r.codigopedido}:${r.detalheid || r.itemid || "cabecalho"}`,
     }));
   }
