@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported } from "firebase/messaging";
 import config from "../firebase-applet-config.json";
@@ -23,7 +23,10 @@ export const db = initializeFirestore(
     ? { experimentalForceLongPolling: true }
     : {
         localCache: persistentLocalCache({
-          tabManager: persistentMultipleTabManager(),
+          // Evita manter estado de listeners de várias abas no localStorage,
+          // que pode atingir a cota e travar toda a fila do Firestore.
+          // O cache de documentos continua persistido no IndexedDB.
+          tabManager: persistentSingleTabManager(undefined),
         }),
         experimentalForceLongPolling: true,
       },
