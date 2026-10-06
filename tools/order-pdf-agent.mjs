@@ -309,10 +309,17 @@ async function processCommand(page, config, command, issueNumber, exactCode) {
       fs.writeFileSync(destination, pdfBuffer);
 
       // Só atualiza o status de impressão depois do arquivo estar efetivamente gravado.
-      await page.evaluate(
-        (orderCode) => window.__imperioPdfAutomation.markSaved(orderCode),
-        code,
-      );
+      await page.evaluate(async (orderCode) => {
+        let timer;
+        try {
+          await Promise.race([
+            window.__imperioPdfAutomation.markSaved(orderCode),
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(new Error('PDF salvo, mas a confirmação de impressão no ApontaPRO não respondeu em 20 segundos.')), 20000);
+            }),
+          ]);
+        } finally { clearTimeout(timer); }
+      }, code);
 
       result.processados.push({
         pedido: code,
