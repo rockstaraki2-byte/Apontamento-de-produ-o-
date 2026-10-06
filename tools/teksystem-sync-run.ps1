@@ -5,7 +5,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $agentDirectory = Join-Path $env:LOCALAPPDATA "ApontaPRO\TekSystem"
 $secretsPath = Join-Path $agentDirectory "secrets.xml"
 $configPath = Join-Path $agentDirectory "agent-config.json"
-$logPath = Join-Path $agentDirectory ("task-{0}.log" -f (Get-Date -Format "yyyy-MM-dd"))
+$logPath = Join-Path $agentDirectory ("task-v2-{0}.log" -f (Get-Date -Format "yyyy-MM-dd"))
 New-Item -ItemType Directory -Path $agentDirectory -Force | Out-Null
 
 function Convert-SecureStringToPlainText([System.Security.SecureString]$Value) {
@@ -43,7 +43,7 @@ try {
   "[$(Get-Date -Format o)] Início da verificação; dryRun=$DryRun" | Add-Content -LiteralPath $logPath -Encoding UTF8
   Push-Location $projectRoot
   try {
-    & $npm @npmArgs *>> $logPath
+    & $npm @npmArgs *>&1 | Out-File -LiteralPath $logPath -Append -Encoding UTF8
     $runExitCode = $LASTEXITCODE
   }
   finally { Pop-Location }

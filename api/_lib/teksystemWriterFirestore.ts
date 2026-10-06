@@ -65,9 +65,9 @@ export async function writerStatus(tenantId: string) {
   const states: JobState[] = ["READY", "PROCESSING", "APPLIED", "REVIEW", "RETRY"];
   const entries = await Promise.all(WRITER_KINDS.map(async (kind) => {
     const counts = await Promise.all(states.map(async (state) => [state, (await getCountFromServer(query(collection(db, "teksystemWriterJobs"), where("queueScope", "==", scope(tenantId, kind, state))))).data().count]));
-    const review = rows(await getDocs(query(collection(db, "teksystemWriterJobs"), where("queueScope", "==", scope(tenantId, kind, "REVIEW")), limit(10))))
+    const reviewJobs = rows(await getDocs(query(collection(db, "teksystemWriterJobs"), where("queueScope", "==", scope(tenantId, kind, "REVIEW")), limit(10))))
       .map((job) => ({ id: job.id, codigo: job.externalKey, issues: job.issues }));
-    return [kind, { ...Object.fromEntries(counts), review }] as const;
+    return [kind, { ...Object.fromEntries(counts), reviewJobs }] as const;
   }));
   return { tenantId, kinds: Object.fromEntries(entries) };
 }

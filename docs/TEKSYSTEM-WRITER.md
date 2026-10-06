@@ -31,7 +31,7 @@ Nesta etapa o faturamento é uma **marcação**: não movimenta estoque físico 
 - Hash de conteúdo, chave de importação, transações, bloqueio global por empresa e reservas de trabalho impedem repetição/concorrência. Reenvio do mesmo conteúdo não reaplica faturamento.
 - Estados: READY, PROCESSING (reserva de 90s), APPLIED, RETRY (falha transitória, 3min) e REVIEW (divergência de negócio). Alteração de conteúdo enfileira nova revisão; auditorias por hash preservam histórico anterior.
 - Estorno, excesso de quantidade, item/cliente divergente, identificação ambígua, pedido vazio e forma de pagamento sem mapeamento não são corrigidos automaticamente.
-- `GET /api/integration/teksystem/process` autenticado retorna contagens e até dez revisões por tipo. Após correção, `POST` com `{ "action": "requeue", "jobIds": ["<id>"] }` reavalia de 1 a 50 trabalhos REVIEW/RETRY.
+- `GET /api/integration/teksystem/process` autenticado retorna contagens e até dez revisões por tipo em `reviewJobs` (sem colisão de nomes com o contador `REVIEW` em clientes JSON case-insensitive). Após correção, `POST` com `{ "action": "requeue", "jobIds": ["<id>"] }` reavalia de 1 a 50 trabalhos REVIEW/RETRY.
 - `POST` com `{ "dryRun": true, "payload": <exportação v2> }` simula sem escrever staging, fila, auditorias ou registros operacionais. Não avança cursor local.
 
 ## Agendamento Windows
@@ -54,6 +54,6 @@ npm.cmd run teksystem:writer:preview -- --input C:\caminho\exportacao.json
 
 `sync --dry-run` valida extração/recebimento e consulta o estado do escritor, sem aplicar. Para simulação de mapeamento, usar `writer:preview`. O script de comparação local `teksystem-writer-preview.ts` aceita exportação e relatório de saída, lê somente Firestore e permite simular um catálogo maior que uma requisição HTTP.
 
-Logs/cursor: `%LOCALAPPDATA%\ApontaPRO\TekSystem\sync-<data>.jsonl`, `task-<data>.log` e `sync-state.json`. Falha de escrita após recebimento não perde dados: cursor já pode avançar porque a fila foi persistida; próxima rodada retoma os trabalhos pendentes. O checkpoint anterior a v2 não é usado como prova de aplicação operacional.
+Logs/cursor: `%LOCALAPPDATA%\ApontaPRO\TekSystem\sync-<data>.jsonl`, `task-v2-<data>.log` (UTF8) e `sync-state.json`. Logs antigos são preservados. Falha de escrita após recebimento não perde dados: cursor já pode avançar porque a fila foi persistida; próxima rodada retoma os trabalhos pendentes. O checkpoint anterior a v2 não é usado como prova de aplicação operacional.
 
 Testes: `npm.cmd run test:order-import`, `npm.cmd run test:teksystem-sync`, `npm.cmd run test:teksystem-writer`, `npm.cmd run lint`, `npm.cmd run build`. O guard de produção atual permanece intacto.
