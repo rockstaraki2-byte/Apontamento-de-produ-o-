@@ -1,6 +1,8 @@
 param([switch]$DryRun)
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding = [Console]::OutputEncoding
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $agentDirectory = Join-Path $env:LOCALAPPDATA "ApontaPRO\TekSystem"
 $secretsPath = Join-Path $agentDirectory "secrets.xml"
@@ -16,7 +18,7 @@ function Convert-SecureStringToPlainText([System.Security.SecureString]$Value) {
 
 try {
   if (-not (Test-Path -LiteralPath $secretsPath) -or -not (Test-Path -LiteralPath $configPath)) {
-    throw "Configuração local incompleta. Execute tools/teksystem-sync-setup.ps1 primeiro."
+    throw "Configuracao local incompleta. Execute tools/teksystem-sync-setup.ps1 primeiro."
   }
   $secrets = Import-Clixml -LiteralPath $secretsPath
   $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
@@ -40,14 +42,14 @@ try {
   $npmArgs = @("run", "teksystem:sync")
   if ($DryRun) { $npmArgs += @("--", "--dry-run") }
 
-  "[$(Get-Date -Format o)] Início da verificação; dryRun=$DryRun" | Add-Content -LiteralPath $logPath -Encoding UTF8
+  "[$(Get-Date -Format o)] Inicio da verificacao; dryRun=$DryRun" | Add-Content -LiteralPath $logPath -Encoding UTF8
   Push-Location $projectRoot
   try {
     & $npm @npmArgs *>&1 | Out-File -LiteralPath $logPath -Append -Encoding UTF8
     $runExitCode = $LASTEXITCODE
   }
   finally { Pop-Location }
-  "[$(Get-Date -Format o)] Fim da verificação; exitCode=$runExitCode" | Add-Content -LiteralPath $logPath -Encoding UTF8
+  "[$(Get-Date -Format o)] Fim da verificacao; exitCode=$runExitCode" | Add-Content -LiteralPath $logPath -Encoding UTF8
   if ($runExitCode -ne 0) { exit $runExitCode }
 }
 catch {

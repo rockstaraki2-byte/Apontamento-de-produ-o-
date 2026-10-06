@@ -327,7 +327,22 @@ export function mapPaymentMethod(value: unknown): string | null {
   if (normalized.startsWith("PIX")) return "PIX";
   if (normalized === "CARTEIRA") return "Carteira";
   if (normalized === "DEPOSITO" || normalized === "DEPOSITO EM CONTA") return "Depósito em Conta";
+  if (normalized.startsWith("CARTAO DE CREDITO")) return "Cartão de Crédito";
+  if (normalized === "CHEQUE") return "Cheque";
+  if (["A PRAZO", "PRAZO"].includes(normalized)) return "A Prazo";
+  if (["OUTRO", "OUTROS", "OUTRA FORMA", "OUTRA FORMA DE PAGAMENTO"].includes(normalized)) return "Outra forma";
   return null;
+}
+
+/** Same persisted labels as the order editor; unknown forms stay custom. */
+export function normalizeSystemPaymentCondition(value: unknown): string {
+  const normalized = normalizeText(value);
+  if (!normalized) return "";
+  if (normalized.startsWith("BOLETO")) return "BOLETO";
+  if (normalized.startsWith("PIX")) return "PIX";
+  if (normalized === "CARTEIRA") return "CARTEIRA";
+  if (normalized === "DEPOSITO" || normalized === "DEPOSITO EM CONTA") return "DEPÓSITO";
+  return String(value ?? "").trim();
 }
 
 export function normalizePaymentTerms(value: OrderImportInput["prazos"]): number[] {

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { prepareOrder, type AtomicCreateInput } from "./orderImportCore.js";
 import {
-  deriveProductIdentity, mapPaymentMethod, matchProduct, normalizeText,
+  deriveProductIdentity, mapPaymentMethod, matchProduct, normalizeText, normalizePaymentTerms, normalizeSystemPaymentCondition,
   type CatalogSnapshot, type OrderImportInput,
 } from "./orderImportRules.js";
 import { syncRecordKey, type NormalizedTekSystemSyncPayload } from "./teksystemSync.js";
@@ -188,6 +188,41 @@ function number(v: unknown, code: string): number {
   if (!Number.isFinite(n) || n < 0) throw new WriterConflict("NUMERO_INVALIDO", `${code}: quantidade ou valor inválido.`);
   return n;
 }
+const PAYMENT_START = "[Pagamento Tek-System]";
+const PAYMENT_END = "[/Pagamento Tek-System]";
+function tekPaymentMethod(label: unknown): string | null {
+  // Legacy Tek-System label for PIX; do not classify debit as credit.
+  const normalized = normalizeText(label);
+  if (/^PAGAMENTO (?:INSTANTANEO|INSTATANEO) PIX$/.test(normalized)) return "PIX";
+  return mapPaymentMethod(label);
+}
+export function sourcePayment(head: WriterRow) {
+  const payments: WriterRow[] = value(head, "prazos") || [];
+  const condition = text(value(head, "descricaoCondicaoPagamento"));
+  const headerMethod = tekPaymentMethod(condition);
+  const methods = payments.map((p) => tekPaymentMethod(value(p, "formaPagamentoDescricao")));
+  const unique = [...new Set(methods)];
+  // A generic OUTROS in installments can be qualified by the actual commercial table.
+  const method = unique.length === 1 && unique[0] && unique[0] !== "Outra forma" ? unique[0]
+    : (!unique.length || (unique.length === 1 && unique[0] === "Outra forma")) && headerMethod ? headerMethod
+    : "Outra forma";
+  const terms = normalizePaymentTerms(payments.map((p) => value(p, "dias"))).sort((a, b) => a - b);
+  const description = [
+    `Condição: ${condition || "Não informada na origem"}`,
+    ...payments.map((p) => [
+      `Forma: ${text(value(p, "formaPagamentoDescricao")) || `Código ${text(value(p, "formaPagamento")) || "não informado"}`}`,
+      value(p, "dias") != null ? `Prazo: ${value(p, "dias")} dias` : "",
+      value(p, "vencimento") ? `Vencimento: ${businessDate(value(p, "vencimento"))}` : "",
+      value(p, "valor") != null ? `Valor: ${value(p, "valor")}` : "",
+    ].filter(Boolean).join("; ")),
+    ...(payments.length ? [] : ["Parcelas/prazos não informados na origem."]),
+  ].join("\n");
+  return { method, terms, description, note: `${PAYMENT_START}\n${description}\n${PAYMENT_END}` };
+}
+function withPaymentNote(notes: unknown, note: string): string {
+  const preserved = text(notes).replace(/\[Pagamento Tek-System\][\s\S]*?\[\/Pagamento Tek-System\]/g, "").trim();
+  return [preserved, note].filter(Boolean).join("\n\n");
+}
 export function orderInput(rows: WriterRow[], catalog: WriterCatalog, identityOnly = false): OrderImportInput {
   if (!rows.length) throw new WriterConflict("PEDIDO_INCOMPLETO", "O processamento exige o snapshot completo do pedido.", true);
   const head = rows[0];
@@ -197,9 +232,7 @@ export function orderInput(rows: WriterRow[], catalog: WriterCatalog, identityOn
   const customerCode = text(value(head, "cliente"));
   const customer = sourceCustomer(customerCode, catalog);
   if (!customer) throw new WriterConflict("CLIENTE_NAO_ENCONTRADO", `Cliente ${customerCode} ainda não foi sincronizado.`, true);
-  const payments: WriterRow[] = value(head, "prazos") || [];
-  const methods = [...new Set(payments.map((p) => mapPaymentMethod(value(p, "formaPagamentoDescricao"))).filter(Boolean))];
-  if (!identityOnly && (methods.length > 1 || payments.some((p) => !mapPaymentMethod(value(p, "formaPagamentoDescricao"))))) throw new WriterConflict("FORMA_PAGAMENTO_INVALIDA", `Pedido ${code} possui forma de pagamento sem mapeamento ou múltiplas formas.`);
+  const payment = sourcePayment(head);
   const representatives: WriterRow[] = value(head, "representantes") || [];
   const reps = [...new Set(representatives.map((rep) => text(value(rep, "nome"))).filter(Boolean))];
   if (!identityOnly && reps.length > 1) throw new WriterConflict("REPRESENTANTE_AMBIGUO", `Pedido ${code} possui múltiplos representantes.`);
@@ -217,7 +250,7 @@ export function orderInput(rows: WriterRow[], catalog: WriterCatalog, identityOn
     return {
       codigoOriginal: text(value(row, "codigoItem")), descricao: text(value(row, "descricaoItem")),
       familia: text(value(row, "familiaDescricao")) || (Number(familyCode) === 1 ? "GERENCIAL" : ""),
-      cor: text(value(row, "corDescricao")), tamanho: text(value(row, "gradeDescricao")) || "-",
+      cor: definedDimension(value(row, "corDescricao")), tamanho: definedDimension(value(row, "gradeDescricao")),
       variacao: Number(value(row, "variacao") ?? 0) === 0 ? "-" : text(value(row, "variacaoDescricao")) || "-",
       observacoes: text(value(row, "observacoesItem")), quantidade: qty, precoUnitario: gross,
       descontoPercentual: gross ? Number(((gross - net) / gross * 100).toFixed(4)) : 0,
@@ -225,30 +258,41 @@ export function orderInput(rows: WriterRow[], catalog: WriterCatalog, identityOn
   });
   return {
     codigoPedido: code, cliente: { codigo: customer.id, nome: customer.name }, representante: reps[0] || "",
-    formaPagamento: methods[0] || text(value(head, "descricaoCondicaoPagamento")),
-    prazos: payments.map((p) => value(p, "dias")).filter((d) => d !== undefined),
+    formaPagamento: payment.method, prazos: payment.terms,
     promEntrega: businessDate(value(head, "promessaEntrega")), previsao: businessDate(value(head, "previsaoFaturamento")),
     possuiRET: Boolean(customer.hasRET), transacaoVenda: value(head, "transacaoVenda"),
-    observacoes: text(value(head, "observacoes")), itens,
+    observacoes: withPaymentNote(value(head, "observacoes"), payment.note), itens,
   };
 }
-function dimension(v: unknown): string { return normalizeText(text(v) || "-"); }
+function definedDimension(v: unknown): string {
+  const normalized = normalizeText(v);
+  return !normalized || normalized === "INDEFINIDA" || normalized === "INDEFINIDO" ? "-" : text(v);
+}
+function dimension(v: unknown): string { return normalizeText(definedDimension(v)) || "-"; }
+function productCode(v: unknown): string { return deriveProductIdentity({ codigoOriginal: text(v) }).codigoProduto.toUpperCase(); }
 export function bindSourceLines(rows: WriterRow[], input: OrderImportInput, orders: WriterRow[], catalog: WriterCatalog): Array<{ row: WriterRow; order: WriterRow }> {
   const matches: Array<{ row: WriterRow; order: WriterRow }> = [];
   const used = new Set<string>();
   rows.forEach((row, index) => {
     const key = sourceLineKey(row);
     const item = input.itens![index];
-    const product = matchProduct(item, catalog.items as any).product;
-    if (!product) throw new WriterConflict("PRODUTO_NAO_ENCONTRADO", `Produto ${text(item.codigoOriginal)} ainda não foi sincronizado.`, true);
     const identity = deriveProductIdentity(item);
-    const variation = text(item.variacao) && text(item.variacao) !== "-" ? item.variacao : text(item.observacoes) || "-";
-    const sameIdentity = (o: WriterRow) => String(o.itemId) === String(product.id) && dimension(o.color) === dimension(identity.cor) && dimension(o.size) === dimension(item.tamanho) && dimension(o.variation) === dimension(variation);
+    if (!catalog.items.some((p) => productCode(p.code) === productCode(item.codigoOriginal))) throw new WriterConflict("PRODUTO_NAO_ENCONTRADO", `Código ${text(item.codigoOriginal)} ainda não foi sincronizado.`, true);
+    // Compare catalog CODE, not the internal numeric ID or product/variation text.
+    // Color suffixes identify the same base product; an explicit color/size still
+    // disambiguates variants. An undefined source dimension adds no constraint.
+    const sameIdentity = (o: WriterRow) => {
+      const products = catalog.items.filter((p) => String(p.id) === String(o.itemId));
+      return products.length === 1 && productCode(products[0].code) === productCode(item.codigoOriginal)
+        && (!o.originalProductCode || productCode(o.originalProductCode) === productCode(item.codigoOriginal))
+        && (dimension(identity.cor) === "-" || dimension(o.color) === dimension(identity.cor))
+        && (dimension(item.tamanho) === "-" || dimension(o.size) === dimension(item.tamanho));
+    };
     let candidates = orders.filter((o) => o.teksystemLineId === key);
-    if (candidates.some((o) => !sameIdentity(o))) throw new WriterConflict("IDENTIDADE_ITEM_DIVERGENTE", `Produto/cor/medida/variação de ${key} mudou entre os sistemas.`);
+    if (candidates.some((o) => !sameIdentity(o))) throw new WriterConflict("IDENTIDADE_ITEM_DIVERGENTE", `Código/cor/medida de ${key} mudou entre os sistemas.`);
     if (!candidates.length) candidates = orders.filter((o) => !o.teksystemLineId && sameIdentity(o));
-    candidates = candidates.filter((o) => !used.has(text(o.id)));
-    if (candidates.length !== 1) throw new WriterConflict("ITEM_PEDIDO_AMBIGUO", `Não foi possível associar unicamente ${key} aos itens do ApontaPRO.`);
+    if (!candidates.length) throw new WriterConflict("ITEM_PEDIDO_AUSENTE", `Item ${key}, código ${text(item.codigoOriginal)}, não está no pedido do ApontaPRO ou possui código/cor/medida divergente.`);
+    if (candidates.length !== 1 || used.has(text(candidates[0].id))) throw new WriterConflict("ITEM_PEDIDO_AMBIGUO", `Não foi possível associar unicamente ${key}, código ${text(item.codigoOriginal)}, aos itens do ApontaPRO.`);
     const order = candidates[0];
     if (Math.abs(number(order.totalQuantity, key) - number(item.quantidade, key)) > 0.0001) throw new WriterConflict("QUANTIDADE_PEDIDO_DIVERGENTE", `A quantidade de ${key} diverge entre os sistemas.`);
     if (String(order.customerId || "") && String(order.customerId) !== String(input.cliente!.codigo)) throw new WriterConflict("CLIENTE_PEDIDO_DIVERGENTE", `Cliente do item ${key} diverge entre os sistemas.`);
@@ -261,11 +305,21 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
   const input = orderInput(job.rows, catalog, Boolean(orders.length));
   if (orders.length) {
     const matches = bindSourceLines(job.rows, input, orders, catalog);
+    const payment = sourcePayment(job.rows[0]);
     const mutations = matches.map(({ row, order }) => patchMutation("orders", order.id, order, {
       teksystemLineId: sourceLineKey(row), teksystemOrderId: job.externalKey,
       teksystemCompanyId: value(row, "empresa"), teksystemCustomerCode: text(value(row, "cliente")),
+      paymentCondition: normalizeSystemPaymentCondition(payment.method),
+      paymentTerms: payment.terms.length ? `${payment.terms.join("/")} Dias` : "", paymentTermsDays: payment.terms,
+      billingRule: "cadastro", teksystemPaymentDescription: payment.description,
+      notes: withPaymentNote(order.notes, payment.note),
     })).filter((m): m is WriterMutation => Boolean(m));
     return { action: "JA_EXISTE", mutations, details: { codigoPedido: job.externalKey, orderIds: matches.map(({ order }) => order.id) } };
+  }
+  // The legacy manual importer may use exact descriptions as a fallback. The
+  // integration must validate every product by code BEFORE invoking that importer.
+  for (const item of input.itens!) {
+    if (!matchProduct({ ...item, descricao: undefined }, catalog.items as any).product) throw new WriterConflict("PRODUTO_NAO_ENCONTRADO", `Código ${text(item.codigoOriginal)} não foi encontrado de forma única.`, true);
   }
   const prepared = prepareOrder(input, catalog, now);
   if (!prepared.prepared) throw new WriterConflict("PEDIDO_INVALIDO", prepared.errors.map((e) => e.message).join("; "), prepared.errors.some((e) => /NAO_ENCONTRADO/.test(e.code)));
