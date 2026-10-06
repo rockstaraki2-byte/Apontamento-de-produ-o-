@@ -1033,7 +1033,7 @@ export function UploadNestScreen({
           onClick={() => setViewTab("PENDENTES")}
           className={`flex-1 py-2 text-xs sm:text-sm font-semibold transition ${viewTab === "PENDENTES" ? "bg-indigo-600 text-white" : "bg-white text-indigo-600"}`}
         >
-          Filas Pendentes
+          Nest enviado p/ laser
         </button>
         <button
           onClick={() => setViewTab("PRODUCAO")}
@@ -1127,9 +1127,13 @@ export function UploadNestScreen({
                         </h4>
                         <p className="text-xs text-indigo-700 mt-1">
                           {items.length} itens{" "}
-                          {viewTab === "PENDENTES" || viewTab === "PLANEJAMENTO"
-                            ? "pendentes"
-                            : "concluídos"}
+                          {viewTab === "PENDENTES"
+                            ? "· Nest enviado p/ laser"
+                            : viewTab === "PLANEJAMENTO"
+                              ? "· Em planejamento"
+                              : viewTab === "PRODUCAO"
+                                ? "· Em corte"
+                                : "· Cortados"}
                         </p>
                       </div>
                       <div className="flex items-center gap-4 mt-2 sm:mt-0">
@@ -1139,7 +1143,7 @@ export function UploadNestScreen({
                               e.stopPropagation();
                               if (
                                 confirm(
-                                  `Deseja liberar o Nesting "${nestName}" para a fila do laser?`,
+                                  `Deseja liberar o Nesting "${nestName}" para o laser?`,
                                 )
                               ) {
                                 const updated = items.map((t) => ({
@@ -1148,17 +1152,17 @@ export function UploadNestScreen({
                                 }));
                                 db.updateNestTasks(updated);
                                 db.addNotification({
-                                  message: `Nesting: ${nestName} | Status: Fila Pendente | Data/Hora: ${new Date().toLocaleString("pt-BR")} | Responsável: Marcos (Projetista)`,
+                                  message: `Nesting: ${nestName} | Status: Nest enviado p/ laser | Data/Hora: ${new Date().toLocaleString("pt-BR")} | Responsável: Marcos (Projetista)`,
                                   read: false,
                                 });
                                 alert(
-                                  `Nesting "${nestName}" liberado com sucesso para a fila pendente!`,
+                                  `Nesting "${nestName}" enviado com sucesso para o laser!`,
                                 );
                               }
                             }}
                             className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm cursor-pointer whitespace-nowrap"
                           >
-                            Liberar Fila
+                            Enviar p/ laser
                           </button>
                         )}
                         {canEditNesting() && (
@@ -1970,7 +1974,7 @@ export function UploadNestScreen({
                       await db.addNestTasks(validTasks);
                       setPreviewTasks(null);
                       alert(
-                        `Sucesso! Foram enfileiradas ${validTasks.length} tarefas de Nesting na produção.`,
+                        `Sucesso! Foram enfileiradas ${validTasks.length} tarefas de Nesting para o laser.`,
                       );
                       setViewTab("PENDENTES");
                     } catch (err: any) {
@@ -1982,7 +1986,7 @@ export function UploadNestScreen({
                   className="flex-1 sm:flex-none px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl transition text-xs shadow-md cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Check size={14} />
-                  Confirmar e Criar Fila (
+                  Confirmar e Enviar p/ laser (
                   {previewTasks.filter((t) => t.partName.trim() !== "").length})
                 </button>
               </div>

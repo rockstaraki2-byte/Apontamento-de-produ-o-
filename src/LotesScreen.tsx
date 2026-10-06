@@ -62,6 +62,8 @@ export function LotesScreen({
   currentUser: User;
 }) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [savingBatchItems, setSavingBatchItems] = useState<Record<string, boolean>>({});
+  const savingBatchItemsRef = useRef(new Set<string>());
   const [statusFilter, setStatusFilter] = useState<"ALL" | "PENDING" | "IN_PRODUCTION" | "COMPLETED">("ALL");
   const [laserProductsOnly, setLaserProductsOnly] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -554,72 +556,57 @@ export function LotesScreen({
     };
   }, [batches, getVisibleBatchOrderIds]);
 
-  const handleToggleCheck = async (batch: ProductionBatch, orderId: number) => {
-    const checked = batch.checkedOrderIds || [];
-    const isAlreadyChecked = checked.includes(orderId);
-    const newChecked = isAlreadyChecked
-      ? checked.filter((id) => id !== orderId)
-      : [...checked, orderId];
+  const handleToggleBatchItem = async (
+    batch: ProductionBatch,
+    orderId: number,
+    field: "checkedOrderIds" | "liberatedOrderIds",
+  ) => {
+    const key = `${batch.id}:${orderId}`;
+    if (savingBatchItemsRef.current.has(key)) return;
+    savingBatchItemsRef.current.add(key);
+    setSavingBatchItems((previous) => ({ ...previous, [key]: true }));
+    const latestBatch = db.productionBatches.find((candidate) => candidate.id === batch.id) || batch;
+    const wasMarked = (latestBatch[field] || []).includes(orderId);
+    const isRelease = field === "liberatedOrderIds";
 
-    await db.updateProductionBatch({
-      ...batch,
-      checkedOrderIds: newChecked,
-    });
-
-    // Notify/Log this action
-    await db.addLogs([
-      {
-        id: Date.now(),
-        orderId: orderId,
-        operatorId: currentUser.id || "OPERADOR",
-        processName: "CHECK LOTE DE GERÊNCIA",
-        customProductName: isAlreadyChecked
-          ? `Item desmarcado como checado no lote ${batch.name} por ${currentUser.name}`
-          : `Item checado com sucesso no lote ${batch.name} por ${currentUser.name}`,
-        timestamp: Date.now(),
-        durationMillis: 0,
-        type: "PRODUCAO" as any,
-      },
-    ]);
-  };
-
-  const handleToggleLiberate = async (batch: ProductionBatch, orderId: number) => {
-    const liberated = batch.liberatedOrderIds || [];
-    const isAlreadyLiberated = liberated.includes(orderId);
-    const newLiberated = isAlreadyLiberated
-      ? liberated.filter((id) => id !== orderId)
-      : [...liberated, orderId];
-
-    await db.updateProductionBatch({
-      ...batch,
-      liberatedOrderIds: newLiberated,
-    });
-
-    // If we are liberating, transition the order status to EM_PRODUCAO
-    const o = db.orders.find((x) => x.id === orderId);
-    if (o && !isAlreadyLiberated && o.status === "PENDENTE") {
-      await db.updateOrders([
-        {
-          ...o,
-          status: "EM_PRODUCAO",
-        },
-      ]);
+    try {
+      await db.setProductionBatchOrderFlag(batch.id, orderId, field, !wasMarked);
+    } catch (error: any) {
+      console.error("[Lotes] Falha ao salvar marcação do item:", error);
+      alert(`Não foi possível ${isRelease ? "salvar a liberação" : "salvar a checagem"} do item. ${error?.message || "Verifique a conexão e tente novamente."}`);
+      return;
+    } finally {
+      savingBatchItemsRef.current.delete(key);
+      setSavingBatchItems((previous) => ({ ...previous, [key]: false }));
     }
 
-    await db.addLogs([
-      {
+    // A marcação já foi confirmada. Uma falha secundária não deve sugerir que
+    // ela falhou nem fazer o usuário clicar novamente e cancelar a liberação.
+    try {
+      const order = db.orders.find((candidate) => candidate.id === orderId);
+      if (isRelease && !wasMarked && order?.status === "PENDENTE") {
+        await db.updateOrders([{ ...order, status: "EM_PRODUCAO" }]);
+      }
+      await db.addLogs([{
         id: Date.now(),
-        orderId: orderId,
+        orderId,
         operatorId: currentUser.id || "OPERADOR",
-        processName: "LIBERAÇÃO LOTE DE GERÊNCIA",
-        customProductName: isAlreadyLiberated
-          ? `Liberação para produção cancelada no lote ${batch.name} por ${currentUser.name}`
-          : `Item liberado para produção e enviado à fábrica no lote ${batch.name} por ${currentUser.name}`,
+        processName: isRelease ? "LIBERAÇÃO LOTE DE GERÊNCIA" : "CHECK LOTE DE GERÊNCIA",
+        customProductName: isRelease
+          ? (wasMarked
+              ? `Liberação para produção cancelada no lote ${batch.name} por ${currentUser.name}`
+              : `Item liberado para produção e enviado à fábrica no lote ${batch.name} por ${currentUser.name}`)
+          : (wasMarked
+              ? `Item desmarcado como checado no lote ${batch.name} por ${currentUser.name}`
+              : `Item checado com sucesso no lote ${batch.name} por ${currentUser.name}`),
         timestamp: Date.now(),
         durationMillis: 0,
         type: "PRODUCAO" as any,
-      },
-    ]);
+      }]);
+    } catch (error) {
+      console.error("[Lotes] Marcação salva; falha na atualização complementar:", error);
+      alert("A marcação do item foi salva, mas houve uma falha ao atualizar o pedido ou o histórico. Atualize a tela para conferir.");
+    }
   };
 
   const handleExportBatchExcel = (batch: ProductionBatch, selectedOrderIds?: number[]) => {
@@ -1542,17 +1529,23 @@ export function LotesScreen({
                               <td className="p-3.5 text-right pr-5">
                                 <div className="flex gap-2 justify-end">
                                   <button
-                                    onClick={() => handleToggleCheck(b, oid)}
+                                    onClick={() => handleToggleBatchItem(b, oid, "checkedOrderIds")}
+                                    disabled={savingBatchItems[`${b.id}:${oid}`]}
+                                    aria-busy={!!savingBatchItems[`${b.id}:${oid}`]}
+                                    aria-pressed={isChecked}
                                     className={`px-2.5 py-1 text-[10px] font-extrabold rounded-lg cursor-pointer transition active:scale-95 border flex items-center gap-1 ${isChecked ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"}`}
                                   >
-                                    {isChecked ? "Desmarcar" : "Checar Item"}
+                                    {savingBatchItems[`${b.id}:${oid}`] ? "Salvando..." : isChecked ? "Desmarcar" : "Checar Item"}
                                   </button>
 
                                   <button
-                                    onClick={() => handleToggleLiberate(b, oid)}
+                                    onClick={() => handleToggleBatchItem(b, oid, "liberatedOrderIds")}
+                                    disabled={savingBatchItems[`${b.id}:${oid}`]}
+                                    aria-busy={!!savingBatchItems[`${b.id}:${oid}`]}
+                                    aria-pressed={isLiberated}
                                     className={`px-3 py-1.5 text-[10px] font-black rounded-lg cursor-pointer transition active:scale-95 flex items-center gap-1 shadow-xs ${isLiberated ? "bg-[#00b14f] text-white hover:bg-[#009d44]" : "bg-emerald-50 text-[#00b14f] border border-emerald-100 hover:bg-emerald-100/50"}`}
                                   >
-                                    {isLiberated ? "🟢 Liberado" : "🚀 Liberar p/ Prod."}
+                                    {savingBatchItems[`${b.id}:${oid}`] ? "Salvando..." : isLiberated ? "🟢 Liberado" : "🚀 Liberar p/ Prod."}
                                   </button>
                                 </div>
                               </td>

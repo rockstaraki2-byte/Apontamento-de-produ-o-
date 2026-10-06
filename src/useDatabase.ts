@@ -48,6 +48,8 @@ import {
   onSnapshot,
   setDoc as firestoreSetDoc,
   deleteField,
+  arrayUnion,
+  arrayRemove,
   doc,
   deleteDoc as firestoreDeleteDoc,
   writeBatch,
@@ -1776,15 +1778,12 @@ export function useDatabase(currentUser?: User | null) {
         );
         const updatedStatus = allChecked ? "CONCLUIDO" : b.status;
 
-        const updatedBatch = {
-          ...b,
-          checkedOrderIds: updatedChecked,
-          status: updatedStatus,
-        };
-
         await setDoc(
           doc(db, "productionBatches", b.id.toString()),
-          cleanUndefined(updatedBatch),
+          {
+            checkedOrderIds: arrayUnion(...matchingOrders.map((order) => order.id)),
+            ...(allChecked ? { status: updatedStatus } : {}),
+          },
           { merge: true },
         );
         console.log(
@@ -3327,6 +3326,34 @@ export function useDatabase(currentUser?: User | null) {
     },
 
     productionBatches: filteredProductionBatches,
+    setProductionBatchOrderFlag: async (
+      batchId: number,
+      orderId: number,
+      field: "checkedOrderIds" | "liberatedOrderIds",
+      enabled: boolean,
+    ) => {
+      const batch = filteredProductionBatches.find((candidate) => candidate.id === batchId);
+      if (!batch || !batch.orderIds.includes(orderId)) {
+        throw new Error("O item não está disponível neste lote. Atualize a tela e tente novamente.");
+      }
+      if (!isDemoMode) {
+        // Atualiza somente a marcação: cliques rápidos e operadores diferentes
+        // não podem sobrescrever as outras marcações ou os dados do lote.
+        await updateDocFirebase(doc(db, "productionBatches", String(batchId)), {
+          [field]: enabled ? arrayUnion(orderId) : arrayRemove(orderId),
+        });
+      }
+      setProductionBatches((previous) => previous.map((candidate) => {
+        if (candidate.id !== batchId) return candidate;
+        const ids = candidate[field] || [];
+        return {
+          ...candidate,
+          [field]: enabled
+            ? Array.from(new Set([...ids, orderId]))
+            : ids.filter((id) => id !== orderId),
+        };
+      }));
+    },
     addProductionBatch: async (batch: Omit<ProductionBatch, "id">) => {
       const id = getUniqueNumericId();
       await setDoc(
