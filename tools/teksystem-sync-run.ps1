@@ -26,6 +26,9 @@ try {
   $env:TEKSYSTEM_SYNC_API_TOKEN = Convert-SecureStringToPlainText $secrets.Api.Password
   $env:TEKSYSTEM_VERCEL_BYPASS_SECRET = Convert-SecureStringToPlainText $secrets.VercelBypass.Password
   $env:TEKSYSTEM_SYNC_API_URL = [string]$config.ApiUrl
+  if (-not $secrets.Writer) { throw "Token dedicado do escritor ausente. Execute teksystem-writer-setup.ps1." }
+  $env:TEKSYSTEM_WRITER_API_TOKEN = Convert-SecureStringToPlainText $secrets.Writer.Password
+  $env:TEKSYSTEM_WRITER_API_URL = ([string]$config.ApiUrl) -replace '/sync$', '/process'
   $env:TEKSYSTEM_HOST = [string]$config.Host
   $env:TEKSYSTEM_SERVER_PORT = [string]$config.ServerPort
   $env:TEKSYSTEM_DATABASE_PORT = [string]$config.DatabasePort
@@ -58,5 +61,6 @@ finally {
     "TEKSYSTEM_VERCEL_BYPASS_SECRET", "TEKSYSTEM_SYNC_API_URL", "TEKSYSTEM_HOST",
     "TEKSYSTEM_SERVER_PORT", "TEKSYSTEM_DATABASE_PORT", "TEKSYSTEM_DATABASE_PATH",
     "TEKSYSTEM_COMPANY_IDS", "TEKSYSTEM_ALLOWED_TENANT_ID"
+    "TEKSYSTEM_WRITER_API_TOKEN", "TEKSYSTEM_WRITER_API_URL"
   ) | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
 }

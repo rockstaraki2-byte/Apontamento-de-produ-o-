@@ -49,6 +49,7 @@ $apiToken = if ($env:ORDER_IMPORT_API_TOKEN) {
   Read-SecretCredential "ApontaPRO API" "Token Bearer da API do ApontaPRO"
 }
 $vercelBypass = Read-SecretCredential "Vercel protection bypass" "Segredo de bypass do Vercel"
+$writerToken = Read-SecretCredential "TekSystem writer" "Token dedicado do agente escritor"
 
 $apiUrlDefault = "https://apontamento-de-producao.vercel.app/api/integration/teksystem/sync"
 $apiUrlInput = Read-Host "URL HTTPS do endpoint de staging [$apiUrlDefault]"
@@ -65,6 +66,7 @@ $secrets = [pscustomobject]@{
   Firebird = $firebird
   Api = $apiToken
   VercelBypass = $vercelBypass
+  Writer = $writerToken
 }
 $secrets | Export-Clixml -LiteralPath $secretsPath -Depth 5 -Force
 

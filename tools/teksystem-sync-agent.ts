@@ -10,6 +10,7 @@ import {
   type TekSystemSyncPayload,
 } from "../api/_lib/teksystemSync.js";
 import { makeSince, splitPayload, type SyncState } from "./teksystem-sync-cycle-utils.js";
+import { callWriter, drainWriter, previewWriter } from "./teksystem-writer-client.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -259,11 +260,12 @@ async function runSync(args: string[]) {
     try { state = JSON.parse(await fs.readFile(statePath, "utf8")) as SyncState; }
     catch (error: any) { if (error?.code !== "ENOENT") throw new Error("Arquivo de estado inválido; não avanço o cursor."); }
 
-    const since = makeSince(state, startedAt, lookbackHours, overlapMinutes);
+    const bootstrap = state.pipelineVersion !== 2;
+    const since = makeSince(bootstrap ? {} : state, startedAt, lookbackHours, overlapMinutes);
     const projectRoot = path.resolve(import.meta.dirname || path.dirname(new URL(import.meta.url).pathname), "..");
     const tsxCli = path.join(projectRoot, "node_modules", "tsx", "dist", "cli.mjs");
     const reader = path.join(projectRoot, "tools", "teksystem-firebird-reader.ts");
-    await execFileAsync(process.execPath, [tsxCli, reader, "export", "--output", tempExport, "--since", since.toISOString()], {
+    await execFileAsync(process.execPath, [tsxCli, reader, "export", "--output", tempExport, "--since", since.toISOString(), ...(bootstrap ? ["--customer-snapshot"] : [])], {
       cwd: projectRoot,
       windowsHide: true,
       timeout: 20 * 60 * 1000,
@@ -295,19 +297,24 @@ async function runSync(args: string[]) {
       const nextState: SyncState = {
         lastSuccessfulWatermark: startedAt.toISOString(),
         lastSuccessfulRunId: runId,
+        pipelineVersion: 2,
       };
       const stateTemp = `${statePath}.${process.pid}.tmp`;
       await fs.writeFile(stateTemp, `${JSON.stringify(nextState, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
       await fs.rename(stateTemp, statePath);
     }
+    const writer = args.includes("--dry-run")
+      ? { enabled: (await callWriter("GET")).enabled, note: "Simulação: nenhum trabalho enfileirado/aplicado; cursor preservado." }
+      : await drainWriter();
     outcome = {
       runId,
       ok: true,
-      mode: args.includes("--dry-run") ? "dry-run" : "staging",
+      mode: args.includes("--dry-run") ? "dry-run" : "collect-and-process",
       since: since.toISOString(),
       finishedAt: new Date().toISOString(),
       stagedBatches,
       stagedRecords,
+      bootstrap, writer,
     };
     console.log(JSON.stringify(outcome));
   } catch (error: any) {
@@ -329,6 +336,13 @@ async function main() {
   if (command === "validate") return runValidate(args);
   if (command === "push") return runPush(args);
   if (command === "sync") return runSync(args);
+  if (command === "writer-status") return console.log(JSON.stringify(await callWriter("GET"), null, 2));
+  if (command === "writer-process") return console.log(JSON.stringify(await drainWriter(), null, 2));
+  if (command === "writer-preview") {
+    const input = argumentValue(args, "--input");
+    if (!input) throw new Error("Informe --input arquivo.json.");
+    return console.log(JSON.stringify(await previewWriter(await readPayload(input)), null, 2));
+  }
   throw new Error(`Comando desconhecido: ${command}`);
 }
 

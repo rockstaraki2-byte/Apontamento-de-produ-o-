@@ -6,6 +6,8 @@ export const DEFAULT_TEKSYSTEM_TENANT_ID = "imperio";
 export type TekSystemEntityType = "clientes" | "produtos" | "pedidos" | "faturamentos" | "romaneios";
 
 export interface TekSystemSourceInfo {
+  readerVersion?: number;
+  completeOrderSnapshots?: boolean;
   host?: string;
   serverPort?: number;
   databasePort?: number;
@@ -65,6 +67,7 @@ function cleanText(value: unknown, fallback = ""): string {
 }
 
 function stableValue(value: unknown): unknown {
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.toISOString() : null;
   if (Array.isArray(value)) return value.map(stableValue);
   if (value && typeof value === "object") {
     return Object.fromEntries(
