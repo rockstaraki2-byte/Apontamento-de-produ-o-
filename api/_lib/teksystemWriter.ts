@@ -141,7 +141,8 @@ export function planCustomer(job: WriterJob, catalog: WriterCatalog): WriterPlan
   const city = text(value(row, "cidade"));
   const state = text(value(row, "estado")).toUpperCase();
   const terms = (value(row, "prazosPadrao") || []).map(Number).filter((n: number) => Number.isFinite(n) && n >= 0).sort((a: number, b: number) => a - b);
-  const payment = terms.length ? `${[...new Set(terms)].join("/")} Dias` : ({ 0: "", 1: "À vista", 2: "Outros", 3: "A prazo" } as Record<string, string>)[text(value(row, "condicaoPagamento"))] || "";
+  const defaultCondition = text(value(row, "descricaoCondicaoPadrao"));
+  const payment = defaultCondition || (terms.length ? `${[...new Set(terms)].join("/")} Dias` : ({ 0: "", 1: "À vista", 2: "Outros", 3: "A prazo" } as Record<string, string>)[text(value(row, "condicaoPagamento"))] || "");
   const patch = {
     id, tenantId: job.tenantId, name, tradeName: text(value(row, "nomeFantasia")),
     city, state, uf: state, address: [city, state].filter(Boolean).join(" - "),

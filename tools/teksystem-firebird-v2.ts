@@ -175,10 +175,16 @@ export async function readCompleteEntities(
       OR EXISTS (SELECT 1 FROM PESSOA_TELEFONE t WHERE t.PESSOA_PESSOA_TEL = p.CODIGO_PESSOA AND t.DATAHORAALTERACAO_PESSOA_TEL >= ?)
       OR EXISTS (SELECT 1 FROM PESSOA_EMAIL mail WHERE mail.PESSOA_PESSOA_EMAIL = p.CODIGO_PESSOA AND mail.DATAHORAALTERACAO_PESSOA_EMAIL >= ?)
       OR EXISTS (SELECT 1 FROM PESSOA_PRAZOS pp WHERE pp.PESSOA_PESSOAPRAZO = p.CODIGO_PESSOA AND pp.DATAHORAALTERACAO_PESSOAPRAZO >= ?)
+      OR EXISTS (SELECT 1 FROM PESSOA_TABELA pt LEFT JOIN TABELA_CONDICAO tc ON tc.CODIGO_TABELA_COND = pt.CONDICAOPAGTO_PESSOA_TAB
+        WHERE pt.PESSOA_PESSOA_TAB = p.CODIGO_PESSOA AND (pt.DATAHORAALTERACAO_PESSOA_TAB >= ? OR tc.DATAHORAALTERACAO_TABELA_COND >= ?))
       ${dependencies.length ? `OR p.CODIGO_PESSOA IN (${placeholders(dependencies)})` : ""})` : "";
     const customerRows = await readOnlyRows(db, `SELECT p.CODIGO_PESSOA AS codigo,
       p.RAZAOSOCIAL_PESSOA AS nome, p.NOMEFANTASIA_PESSOA AS nomefantasia, p.DOCUMENTO_PESSOA AS documento,
       c.CONDPAGTO_PESSOA_CLI AS condicaopagamento,
+      (SELECT FIRST 1 tc.DESCRICAO_TABELA_COND FROM PESSOA_TABELA pt
+        JOIN TABELA_CONDICAO tc ON tc.CODIGO_TABELA_COND = pt.CONDICAOPAGTO_PESSOA_TAB
+        WHERE pt.PESSOA_PESSOA_TAB = p.CODIGO_PESSOA AND pt.PADRAO_PESSOA_TAB = 'S'
+        ORDER BY pt.AUTOINC_PESSOA_TAB) AS descricaocondicaopadrao,
       c.OBSERVACAOVENDA_PESSOA_CLI AS observacoescompravenda,
       e.ENDERECO_PESSOA_END AS endereco, e.NUMERO_PESSOA_END AS numero, e.COMPLEMENTO_PESSOA_END AS complemento,
       e.BAIRRO_PESSOA_END AS bairro, ci.DESCRICAO_CIDADE AS cidade, uf.SIGLA_UF AS estado,
@@ -193,7 +199,7 @@ export async function readCompleteEntities(
       FROM PESSOA p JOIN PESSOA_CLIENTE c ON c.PESSOA_PESSOA_CLI = p.CODIGO_PESSOA
       LEFT JOIN PESSOA_ENDERECO e ON e.PESSOA_PESSOA_END = p.CODIGO_PESSOA AND e.AUTOINC_PESSOA_END = p.ENDERECO_PESSOA
       LEFT JOIN CIDADE ci ON ci.CODIGO_CIDADE = e.CIDADE_PESSOA_END LEFT JOIN UF uf ON uf.CODIGO_UF = ci.UF_CIDADE
-      WHERE p.CLIENTE_PESSOA = 'S'${changed}`, changed ? [since, since, since, since, since, since, ...dependencies] : []);
+      WHERE p.CLIENTE_PESSOA = 'S'${changed}`, changed ? [since, since, since, since, since, since, since, since, ...dependencies] : []);
     const terms: Row[] = [];
     for (const codes of batches(ids(customerRows, "codigo"))) terms.push(...await readOnlyRows(db, `SELECT PESSOA_PESSOAPRAZO AS codigo, PRAZODIAS_PESSOAPRAZO AS dias FROM PESSOA_PRAZOS WHERE TIPO_PESSOAPRAZO = 1 AND PESSOA_PESSOAPRAZO IN (${placeholders(codes)})`, codes));
     result.clientes = customerRows.map((r) => ({ ...r, prazosPadrao: terms.filter((t) => key(t.codigo) === key(r.codigo)).map((t) => t.dias), externalId: `cliente:${r.codigo}` }));

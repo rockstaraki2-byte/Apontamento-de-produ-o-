@@ -181,7 +181,7 @@ async function runExport(args: string[]) {
       syncId: `teksystem-firebird-${Date.now()}`,
       tenantId: process.env.TEKSYSTEM_ALLOWED_TENANT_ID || "imperio",
       generatedAt: new Date().toISOString(),
-      source: { ...sourceDefaults(), readerVersion: 2, completeOrderSnapshots: entities.includes("pedidos") && entities.includes("romaneios") },
+      source: { ...sourceDefaults(), readerVersion: 2, completeOrderSnapshots: (entities.includes("pedidos") && entities.includes("romaneios")) || (!entities.includes("pedidos") && !entities.includes("romaneios")) },
       entities: rows,
     };
     const validation = validateAndNormalizeTekSystemSync(payload);

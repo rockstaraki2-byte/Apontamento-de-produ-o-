@@ -44,6 +44,13 @@ test("item preserva composição e tipo interno existentes", () => {
   assert.equal(plan.mutations[0].patch.name, "BARRA NOVA"); assert.equal(plan.mutations[0].patch.components, undefined);
   assert.equal(plan.mutations[0].patch.type, undefined);
 });
+test("condição padrão da tabela comercial tem prioridade sobre o campo genérico e prazos", () => {
+  const plan = planWriterJob(job("clientes", [{ codigo: 5, nome: "CLIENTE", condicaopagamento: 0,
+    descricaocondicaopadrao: "BOLETO 30/60/90", prazosPadrao: [30] }]), catalog(), []);
+  assert.equal(plan.mutations[0].patch.defaultPaymentTerms, "BOLETO 30/60/90");
+  const undefinedCondition = planWriterJob(job("clientes", [{ codigo: 5, nome: "CLIENTE", condicaopagamento: 0 }]), catalog(), []);
+  assert.equal(undefinedCondition.mutations[0].patch.defaultPaymentTerms, "");
+});
 test("pedido novo usa regras existentes, id da fonte e valores financeiros", () => {
   const plan = planWriterJob(jobs()[0], catalog(), [], now);
   assert.equal(plan.action, "CRIADO"); assert.equal(plan.createOrder!.prepared.lines[0].unitPrice, 20);

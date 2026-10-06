@@ -14,7 +14,7 @@ O leitor consulta as empresas 0 e 1, cujos cadastros são compartilhados. O dest
 
 | Tek-System | ApontaPRO | Regra |
 |---|---|---|
-| PESSOA / PESSOA_CLIENTE / endereço / contatos / prazos | `customers` | ID interno preservado; `teksystemCode` vincula o código original. Razão social, fantasia, cidade, UF, bairro, telefone, e-mail e prazo padrão são atualizados. Observações com “Transação [de venda] 74” marcam `hasRET`. |
+| PESSOA / PESSOA_CLIENTE / endereço / contatos / PESSOA_TABELA / TABELA_CONDICAO / prazos | `customers` | ID interno preservado; `teksystemCode` vincula o código original. Razão social, fantasia, cidade, UF, bairro, telefone, e-mail e condição padrão da tabela comercial (`PADRAO_PESSOA_TAB = S`) são atualizados. Na ausência da tabela padrão, usa prazos e por último o campo genérico. Observações com “Transação [de venda] 74” marcam `hasRET`. |
 | ITEM / variantes / ITEM_PECA | `items` | Código base; preserva composição, processos e tipo existentes. Descrição e unidade sincronizadas; variantes armazenadas como metadados. Identidade ambígua vai para revisão. |
 | DOCUMENTO_FATURA / PEDIDO / ITEM / DETALHE / PRAZOS / representante | `orders` e importador existente | Novo pedido usa as regras atuais de preços, descontos, família fiscal, RET, pagamento e representante. Pedido existente não é recriado nem tem quantidades/preços sobrescritos: vincula linhas somente quando identidade e quantidade conferem. |
 | CARGA / DOCUMENTOS / ITENS | `orders` e `logs` | Soma cumulativa de `QTDEFATURADO_CARITE`, pela chave do detalhe de pedido. Marca `FATURADO_PARCIAL` ou `FATURADO`; mantém log canônico `faturamento_<id>`. |
