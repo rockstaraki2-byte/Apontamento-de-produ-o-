@@ -32,8 +32,7 @@ export function safeMessage(value) {
 export function selectChangedOrders(rows) {
   const blocked = new Set(rows.filter(r => r.kind === 'pedidos' && ['REVIEW', 'RETRY'].includes(r.state)).map(r => String(r.codigoPedido || r.codigo)));
   return [...new Set(rows.filter(r => r.state === 'APPLIED' && (
-    (r.kind === 'pedidos' && (['CRIADO', 'ATUALIZADO', 'COMPLEMENTADO'].includes(r.action) || r.pdfNeedsRefresh === true)) ||
-    (r.kind === 'romaneios' && r.action === 'FATURADO')
+    r.kind === 'pedidos' && (['CRIADO', 'ATUALIZADO', 'COMPLEMENTADO'].includes(r.action) || r.pdfNeedsRefresh === true)
   )).map(r => String(r.codigoPedido || r.codigo)).filter(code => /^\d{1,15}$/.test(code) && !blocked.has(code)))].sort((a, b) => Number(a) - Number(b));
 }
 function cleanRows(rows) {
@@ -170,6 +169,12 @@ export async function processFollowups(exportOrder, options = {}) {
         await finishFollowups({ runId: batch.runId, startedAt: batch.startedAt, finishedAt: new Date().toISOString(),
           ok: false, mode: 'collect-and-process', error: 'Coletor interrompido; recuperadas somente páginas confirmadas.' }, root);
         batch = await readJson(file);
+      }
+      const eligibleOrders = new Set(selectChangedOrders(batch.rows || []));
+      const eligiblePdf = batch.pdf.filter(p => eligibleOrders.has(String(p.codigo)));
+      if (eligiblePdf.length !== batch.pdf.length) {
+        batch.pdf = eligiblePdf;
+        await atomicJson(file, batch);
       }
       for (const p of batch.pdf) {
         if (p.state === 'DONE' || p.nextAttemptAt > now || remaining <= 0) continue;
