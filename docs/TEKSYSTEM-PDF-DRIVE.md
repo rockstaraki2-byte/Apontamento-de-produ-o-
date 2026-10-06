@@ -10,6 +10,7 @@ O coletor Windows mantém o Tek-System em READ ONLY. Cada página confirmada pel
 - Filtro `Todos` somente para os códigos selecionados: pedidos já impressos são reexportados quando alterados.
 - Não imprime fisicamente e não cria pastas de representantes. Nome/representante seguem o espelho do ApontaPRO. Só marca impressão após salvar.
 - Erros ficam em `RETRY` com espera de 5, 10, 20, 40 e até 60 minutos. Um pedido com erro não impede os demais.
+- A confirmação de impressão na nuvem tem limite de 20 segundos. Se o arquivo já foi salvo mas a confirmação não responder, o pedido permanece em tentativa; os outros PDFs continuam. A tentativa seguinte pode reexportar o mesmo arquivo, pois não houve confirmação completa. Consultas GitHub antigas também têm limite de 20 segundos.
 - Não abre uma segunda instância do perfil do Chrome. A fila tem trava de processo e reconhece execuções já entregues.
 - Recarrega o navegador uma vez por ciclo da fila, não por pedido; aguarda até 90 segundos pelo carregamento inicial do Firestore. Os demais pedidos usam as assinaturas de atualização já abertas.
 - Os comandos GitHub antigos continuam disponíveis; a nova ligação não cria Issues.

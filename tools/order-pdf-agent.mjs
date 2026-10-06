@@ -128,7 +128,8 @@ async function githubRequest(url, options = {}) {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(url, { ...options, headers });
+  // A stalled legacy GitHub command must not block the local Tek-System queue.
+  const response = await fetch(url, { ...options, headers, signal: options.signal || AbortSignal.timeout(20000) });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`GitHub ${response.status}: ${text.slice(0, 500)}`);
@@ -308,10 +309,17 @@ async function processCommand(page, config, command, issueNumber, exactCode) {
       fs.writeFileSync(destination, pdfBuffer);
 
       // Só atualiza o status de impressão depois do arquivo estar efetivamente gravado.
-      await page.evaluate(
-        (orderCode) => window.__imperioPdfAutomation.markSaved(orderCode),
-        code,
-      );
+      await page.evaluate(async (orderCode) => {
+        let timer;
+        try {
+          await Promise.race([
+            window.__imperioPdfAutomation.markSaved(orderCode),
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(new Error('PDF salvo, mas a confirmação de impressão no ApontaPRO não respondeu em 20 segundos.')), 20000);
+            }),
+          ]);
+        } finally { clearTimeout(timer); }
+      }, code);
 
       result.processados.push({
         pedido: code,
