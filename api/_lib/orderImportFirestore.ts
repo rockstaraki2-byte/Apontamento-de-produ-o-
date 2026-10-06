@@ -19,7 +19,7 @@ import type {
 } from "./orderImportCore.js";
 import {
   normalizePaymentTerms,
-  normalizeText,
+  normalizeSystemPaymentCondition,
   type CatalogSnapshot,
 } from "./orderImportRules.js";
 import { buildImportedOrderDocument } from "./orderImportDocuments.js";
@@ -77,24 +77,6 @@ function nextOrderLineIds(count: number, seed = Date.now()): number[] {
     ids.push(n);
   }
   return ids;
-}
-
-/**
- * Converte os rótulos vindos da API/Tek-System para os mesmos valores que a
- * tela de pedidos usa nas opções padrão. Assim, por exemplo, "Boleto
- * Bancário" não é persistido como uma forma personalizada quando já existe a
- * opção BOLETO no sistema.
- */
-function normalizeSystemPaymentCondition(value: unknown): string {
-  const normalized = normalizeText(value);
-  if (!normalized) return "";
-  if (normalized.startsWith("BOLETO")) return "BOLETO";
-  if (normalized.startsWith("PIX")) return "PIX";
-  if (normalized === "CARTEIRA") return "CARTEIRA";
-  if (normalized === "DEPOSITO" || normalized === "DEPOSITO EM CONTA") {
-    return "DEPÓSITO";
-  }
-  return String(value ?? "").trim();
 }
 
 function samePaymentTerms(current: number[], previous: number[]): boolean {
@@ -186,12 +168,12 @@ export class FirestoreOrderImportRepository implements OrderImportRepository {
     const normalizedPaymentCondition = normalizeSystemPaymentCondition(
       input.prepared.paymentCondition,
     );
-    const previousPayment = await this.findLatestCustomerPayment(
+    const previousPayment = input.teksystem ? null : await this.findLatestCustomerPayment(
       input.tenantId,
       input.prepared.customerName,
     );
     const shouldReuseLastPayment =
-      !!previousPayment &&
+      !input.teksystem && !!previousPayment &&
       previousPayment.paymentCondition === normalizedPaymentCondition &&
       samePaymentTerms(
         input.prepared.paymentTermsDays,
