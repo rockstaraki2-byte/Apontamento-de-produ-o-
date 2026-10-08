@@ -6,6 +6,12 @@ O agente lê o Firebird em modo somente leitura, envia os dados para staging e, 
 
 O comando `teksystem:sync` executa um ciclo incremental: na primeira execução consulta as últimas 24 horas; nas seguintes, usa a marca d'água do último ciclo bem-sucedido e reconsulta cinco minutos anteriores para cobrir atrasos. Divide os envios em lotes de até 1.000 registros. A marca d'água só avança se todos os lotes forem aceitos; registros repetidos no staging são atualizados por chave determinística.
 
+## Precedência e conciliação de pedidos
+
+Quando o mesmo cadastro ou pedido tem valores diferentes, o Tek-System é a fonte dos dados que podem ser sincronizados. Para localizar linhas antigas do ApontaPRO sem chave de origem, o writer começa pelo código do produto e usa cor, medida, variação explícita e valor líquido unitário cobrado para desempatar. O relatório registra o critério usado em `vinculosItens`. Se os sinais apontarem para linhas diferentes, o pedido continua em `REVIEW`; o agente não escolhe a primeira linha nem usa quantidade/nome como palpite.
+
+Uma linha localizada pode receber do Tek-System correções de cliente, produto, cor, medida, variação, quantidade, preço, desconto, pagamento, entrega e observações. Mudanças de identidade/cliente após início de operação, mudanças de quantidade após embalagem/produção/faturamento e alterações comerciais depois de faturado continuam em revisão para preservar o histórico operacional. Se o consultor não tiver vínculo único no ApontaPRO, os demais campos do pedido existente ainda podem ser atualizados e o representante atual é preservado com aviso; pedidos novos continuam exigindo o cadastro do representante.
+
 ## Agendamento e segredos no Windows
 
 `tools/teksystem-sync-setup.ps1` solicita credenciais em prompts seguros e grava-as como `PSCredential` em XML protegido pelo DPAPI do usuário Windows atual, em `%LOCALAPPDATA%\ApontaPRO\TekSystem`. Prefira uma conta Firebird dedicada de somente leitura. Se usar `SYSDBA` temporariamente, todas as consultas do leitor usam transações Firebird `READ ONLY`; ainda assim, a senha administrativa exige proteção extra. O token Bearer e o bypass do Vercel também ficam protegidos localmente, não em `.env.local` ou no repositório.

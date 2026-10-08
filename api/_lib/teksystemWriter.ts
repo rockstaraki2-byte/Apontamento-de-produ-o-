@@ -3,7 +3,7 @@ import { prepareOrder, type AtomicCreateInput } from "./orderImportCore.js";
 import { buildImportedOrderDocument } from "./orderImportDocuments.js";
 import {
   deriveProductIdentity, mapPaymentMethod, matchProduct, normalizeText, normalizePaymentTerms, normalizeSystemPaymentCondition,
-  matchRepresentative, type CatalogSnapshot, type OrderImportInput,
+  matchRepresentative, type CatalogSnapshot, type OrderImportInput, type OrderItemImportInput,
 } from "./orderImportRules.js";
 import { syncRecordKey, type NormalizedTekSystemSyncPayload } from "./teksystemSync.js";
 
@@ -297,39 +297,113 @@ function definedDimension(v: unknown): string {
 }
 function dimension(v: unknown): string { return normalizeText(definedDimension(v)) || "-"; }
 function productCode(v: unknown): string { return deriveProductIdentity({ codigoOriginal: text(v) }).codigoProduto.toUpperCase(); }
+function sourceChargedPriceCents(row: WriterRow): number | null {
+  const amount = Number(value(row, "precoUnitario") ?? value(row, "precoUnitarioBruto"));
+  return Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) : null;
+}
+function orderChargedPriceCents(order: WriterRow): number | null {
+  const unitPrice = Number(order.unitPrice);
+  const discount = Number(order.discountPercent ?? 0);
+  if (!Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(discount) || discount < 0 || discount > 100) return null;
+  return Math.round(unitPrice * (1 - discount / 100) * 100);
+}
+function lineMatchEvidence(row: WriterRow, item: OrderItemImportInput, identity: ReturnType<typeof deriveProductIdentity>) {
+  const evidence: Array<{ label: string; matches: (order: WriterRow) => boolean }> = [];
+  const sourceColor = dimension(identity.cor);
+  const sourceSize = dimension(item.tamanho);
+  const sourceVariation = normalizeText(item.variacao);
+  const sourcePrice = sourceChargedPriceCents(row);
+  if (sourceColor !== "-") evidence.push({ label: "cor", matches: (order) => dimension(order.color) === sourceColor });
+  if (sourceSize !== "-") evidence.push({ label: "medida", matches: (order) => dimension(order.size) === sourceSize });
+  if (sourceVariation && !["-", "INDEFINIDA", "INDEFINIDO"].includes(sourceVariation)) {
+    evidence.push({ label: "variação", matches: (order) => normalizeText(order.variation) === sourceVariation });
+  }
+  if (sourcePrice !== null) evidence.push({ label: "valor líquido unitário", matches: (order) => {
+    const current = orderChargedPriceCents(order);
+    return current !== null && Math.abs(current - sourcePrice) <= 1;
+  } });
+  return evidence;
+}
 export function bindSourceLines(
   rows: WriterRow[], input: OrderImportInput, orders: WriterRow[], catalog: WriterCatalog,
-  missing?: WriterRow[], allowQuantityMismatch = false,
-): Array<{ row: WriterRow; order: WriterRow }> {
-  const matches: Array<{ row: WriterRow; order: WriterRow }> = [];
+  missing?: WriterRow[], allowQuantityMismatch = false, allowSourceIdentityUpdate = false,
+): Array<{ row: WriterRow; order: WriterRow; matchBasis: string[] }> {
+  const matches: Array<{ row: WriterRow; order: WriterRow; matchBasis: string[] }> = [];
   const used = new Set<string>();
   rows.forEach((row, index) => {
     const key = sourceLineKey(row);
     const item = input.itens![index];
     const identity = deriveProductIdentity(item);
     if (!catalog.items.some((p) => productCode(p.code) === productCode(item.codigoOriginal))) throw new WriterConflict("PRODUTO_NAO_ENCONTRADO", `Código ${text(item.codigoOriginal)} ainda não foi sincronizado.`, true);
-    // Compare catalog CODE, not the internal numeric ID or product/variation text.
-    // Color suffixes identify the same base product; an explicit color/size still
-    // disambiguates variants. An undefined source dimension adds no constraint.
-    const sameIdentity = (o: WriterRow) => {
+    // A stable Tek-System line ID wins for an already-linked row. Legacy rows are
+    // first scoped by product code, then disambiguated by source dimensions and
+    // the net unit price charged (not the gross list price).
+    const sameProductCode = (o: WriterRow) => {
       const products = catalog.items.filter((p) => String(p.id) === String(o.itemId));
       return products.length === 1 && productCode(products[0].code) === productCode(item.codigoOriginal)
-        && (!o.originalProductCode || productCode(o.originalProductCode) === productCode(item.codigoOriginal))
-        && (dimension(identity.cor) === "-" || dimension(o.color) === dimension(identity.cor))
-        && (dimension(item.tamanho) === "-" || dimension(o.size) === dimension(item.tamanho));
+        && (!o.originalProductCode || productCode(o.originalProductCode) === productCode(item.codigoOriginal));
     };
-    let candidates = orders.filter((o) => o.teksystemLineId === key);
-    if (candidates.some((o) => !sameIdentity(o))) throw new WriterConflict("IDENTIDADE_ITEM_DIVERGENTE", `Código/cor/medida de ${key} mudou entre os sistemas.`);
-    if (!candidates.length) candidates = orders.filter((o) => !o.teksystemLineId && sameIdentity(o));
-    if (!candidates.length) {
-      if (missing) { missing.push(row); return; }
-      throw new WriterConflict("ITEM_PEDIDO_AUSENTE", `Item ${key}, código ${text(item.codigoOriginal)}, não está no pedido do ApontaPRO ou possui código/cor/medida divergente.`);
+    const evidence = lineMatchEvidence(row, item, identity);
+    const sameIdentity = (order: WriterRow) => sameProductCode(order) && evidence.every((criterion) => criterion.matches(order));
+    const linked = orders.filter((order) => order.teksystemLineId === key);
+    let order: WriterRow | undefined;
+    let matchBasis: string[] = [];
+    if (linked.length > 1) throw new WriterConflict("ITEM_PEDIDO_AMBIGUO", `A chave de origem ${key} está associada a mais de um item no ApontaPRO.`);
+    if (linked.length === 1) {
+      order = linked[0];
+      if (!allowSourceIdentityUpdate && !sameIdentity(order)) {
+        throw new WriterConflict("IDENTIDADE_ITEM_DIVERGENTE", `Código, cor, variação ou valor líquido de ${key} diverge entre os sistemas.`);
+      }
+      matchBasis = ["chave da linha Tek-System"];
+      if (sameProductCode(order)) matchBasis.push("código do item");
+      matchBasis.push(...evidence.filter((criterion) => criterion.matches(order!)).map((criterion) => criterion.label));
+    } else {
+      const pool = orders.filter((candidate) => !candidate.teksystemLineId && !used.has(text(candidate.id)) && sameProductCode(candidate));
+      if (allowSourceIdentityUpdate) {
+        if (pool.length === 1) {
+          order = pool[0];
+          matchBasis = ["código do item (candidato único)", ...evidence.filter((criterion) => criterion.matches(order!)).map((criterion) => criterion.label)];
+        } else if (pool.length > 1) {
+          const exact = pool.filter((candidate) => evidence.every((criterion) => criterion.matches(candidate)));
+          if (exact.length === 1) order = exact[0];
+          else {
+            const uniqueSignals = evidence.map((criterion) => ({ criterion, candidates: pool.filter(criterion.matches) }))
+              .filter((entry) => entry.candidates.length === 1);
+            const uniqueIds = [...new Set(uniqueSignals.map((entry) => text(entry.candidates[0].id)))];
+            if (uniqueIds.length === 1) order = uniqueSignals[0].candidates[0];
+            else if (uniqueIds.length > 1) throw new WriterConflict("ITEM_PEDIDO_AMBIGUO", `Cor, variação e valor apontam para linhas diferentes no item ${key}; requer revisão.`);
+          }
+          if (order) matchBasis = ["código do item", ...evidence.filter((criterion) => criterion.matches(order!)).map((criterion) => criterion.label)];
+        }
+      } else {
+        const exact = pool.filter(sameIdentity);
+        if (exact.length === 1) order = exact[0];
+        if (order) matchBasis = ["código do item", ...evidence.map((criterion) => criterion.label)];
+      }
+      if (order && allowSourceIdentityUpdate) {
+        const competing = rows.some((otherRow, otherIndex) => {
+          if (sourceLineKey(otherRow) === key) return false;
+          const otherItem = input.itens![otherIndex];
+          const otherIdentity = deriveProductIdentity(otherItem);
+          if (productCode(otherItem.codigoOriginal) !== productCode(item.codigoOriginal)) return false;
+          return lineMatchEvidence(otherRow, otherItem, otherIdentity).every((criterion) => criterion.matches(order!));
+        });
+        if (competing) throw new WriterConflict("ITEM_PEDIDO_AMBIGUO", `Mais de uma linha Tek-System pode corresponder ao item ${text(order.id)}; requer revisão da chave de origem.`);
+      }
     }
-    if (candidates.length !== 1 || used.has(text(candidates[0].id))) throw new WriterConflict("ITEM_PEDIDO_AMBIGUO", `Não foi possível associar unicamente ${key}, código ${text(item.codigoOriginal)}, aos itens do ApontaPRO.`);
-    const order = candidates[0];
+    if (!order) {
+      const codeCandidates = orders.filter((candidate) => !candidate.teksystemLineId && sameProductCode(candidate));
+      if (allowSourceIdentityUpdate && codeCandidates.length > 1) {
+        throw new WriterConflict("ITEM_PEDIDO_AMBIGUO", `Não foi possível associar ${key} por código, cor, variação e valor líquido sem escolher uma linha arbitrariamente.`);
+      }
+      if (missing) { missing.push(row); return; }
+      if (codeCandidates.length > 1) throw new WriterConflict("ITEM_PEDIDO_AMBIGUO", `Não foi possível associar ${key} por código, cor, variação e valor líquido sem escolher uma linha arbitrariamente.`);
+      throw new WriterConflict("ITEM_PEDIDO_AUSENTE", `Item ${key}, código ${text(item.codigoOriginal)}, não está no pedido do ApontaPRO ou diverge dos dados de origem.`);
+    }
+    if (used.has(text(order.id))) throw new WriterConflict("ITEM_PEDIDO_AMBIGUO", `A linha ${text(order.id)} seria associada a mais de um item Tek-System.`);
     if (Math.abs(number(order.totalQuantity, key) - number(item.quantidade, key)) > 0.0001 && !allowQuantityMismatch) throw new WriterConflict("QUANTIDADE_PEDIDO_DIVERGENTE", `A quantidade de ${key} diverge entre os sistemas.`);
-    if (String(order.customerId || "") && String(order.customerId) !== String(input.cliente!.codigo)) throw new WriterConflict("CLIENTE_PEDIDO_DIVERGENTE", `Cliente do item ${key} diverge entre os sistemas.`);
-    used.add(text(order.id)); matches.push({ row, order });
+    if (!allowSourceIdentityUpdate && String(order.customerId || "") && String(order.customerId) !== String(input.cliente!.codigo)) throw new WriterConflict("CLIENTE_PEDIDO_DIVERGENTE", `Cliente do item ${key} diverge entre os sistemas.`);
+    used.add(text(order.id)); matches.push({ row, order, matchBasis });
   });
   if (used.size !== orders.length) throw new WriterConflict("ITENS_PEDIDO_DIVERGENTES", "O ApontaPRO contém itens adicionais para este pedido.");
   return matches;
@@ -341,7 +415,7 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
       throw new WriterConflict("PEDIDO_CANCELADO", "Pedido cancelado no ApontaPRO requer revisão antes de sincronizar alterações.");
     }
     const missing: WriterRow[] = [];
-    const matches = bindSourceLines(job.rows, input, orders, catalog, missing, true);
+    const matches = bindSourceLines(job.rows, input, orders, catalog, missing, true, true);
     const currentFiscalTypes = [...new Set(orders.map((order) => text(order.fiscalType)).filter(Boolean))];
     if (currentFiscalTypes.length > 1 || currentFiscalTypes.some((type) => !["COM_NF", "SEM_NF"].includes(type))) {
       throw new WriterConflict("FISCAL_PEDIDO_DIVERGENTE", "Itens existentes possuem classificações fiscais inconsistentes.");
@@ -359,9 +433,16 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
     const preparedByLine = new Map<string, NonNullable<ReturnType<typeof prepareOrder>["prepared"]>["lines"][number]>();
     const validationWarnings: string[] = [];
     let sourceHasRET = false;
+    const representativeMatch = input.representante
+      ? matchRepresentative(input.representante, catalog.users)
+      : null;
+    if (representativeMatch && !representativeMatch.representative) {
+      validationWarnings.push(`Consultor Tek-System "${input.representante}" sem correspondência única no ApontaPRO; representante existente preservado até o cadastro ser associado.`);
+    }
     job.rows.forEach((row, index) => {
       const validation = prepareOrder({
-        ...input, itens: [input.itens![index]], comNotaFiscal: sourceFiscalType === "COM_NF",
+        ...input, representante: representativeMatch?.representative ? input.representante : "",
+        itens: [input.itens![index]], comNotaFiscal: sourceFiscalType === "COM_NF",
       }, catalog, now);
       if (!validation.prepared) throw new WriterConflict("PEDIDO_INVALIDO", validation.errors.map((e) => e.message).join("; "), validation.errors.some((e) => /NAO_ENCONTRADO/.test(e.code)));
       preparedByLine.set(sourceLineKey(row), validation.prepared.lines[0]);
@@ -373,12 +454,6 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
     const sourceDeliveryDate = businessDate(rawDeliveryDate);
     const deliveryDate = /^\d{4}-\d{2}-\d{2}$/.test(sourceDeliveryDate || "") ? sourceDeliveryDate : undefined;
     const payment = sourcePayment(job.rows[0]);
-    const representativeMatch = input.representante
-      ? matchRepresentative(input.representante, catalog.users)
-      : null;
-    if (representativeMatch && !representativeMatch.representative) {
-      throw new WriterConflict("REPRESENTANTE_NAO_ENCONTRADO", representativeMatch.errors.map((error) => error.message).join("; "));
-    }
     const representativePatch = representativeMatch?.representative
       ? { representativeId: representativeMatch.representative.id, representativeName: representativeMatch.representative.name }
       : {};
@@ -388,6 +463,18 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
       if (!line) throw new WriterConflict("PEDIDO_INCOMPLETO", `Não foi possível calcular os dados da linha ${key}.`);
       const quantityChanged = Math.abs(number(order.totalQuantity, key) - line.totalQuantity) > 0.0001;
       const currentInvoiced = number(order.invoicedQuantity || (order.status === "FATURADO" ? order.totalQuantity : 0), key);
+      const identityChanged = String(order.itemId ?? "") !== String(line.itemId)
+        || dimension(order.color) !== dimension(line.color)
+        || dimension(order.size) !== dimension(line.size)
+        || normalizeText(order.variation) !== normalizeText(line.variation)
+        || (order.originalProductCode && productCode(order.originalProductCode) !== productCode(line.codigoOriginal));
+      const customerChanged = String(order.customerId ?? "") !== String(input.cliente!.codigo);
+      const operationStarted = currentInvoiced > 0 || number(order.packedQuantity || 0, key) > 0 || number(order.producedQuantity || 0, key) > 0
+        || number(order.paintedQuantity || 0, key) > 0 || number(order.cutQuantity || 0, key) > 0
+        || Boolean(text(order.status) && !["PENDENTE", "AGUARDANDO_APROVACAO"].includes(text(order.status)));
+      if ((identityChanged || customerChanged) && operationStarted) {
+        throw new WriterConflict("IDENTIDADE_COM_OPERACAO_INICIADA", `Código, variação ou cliente de ${key} divergiu, mas o item já tem operação iniciada; requer revisão para preservar o histórico.`);
+      }
       if (quantityChanged && (
         currentInvoiced > 0 || number(order.packedQuantity, key) > 0 || number(order.producedQuantity, key) > 0 ||
         number(order.paintedQuantity, key) > 0 || number(order.cutQuantity, key) > 0 ||
@@ -409,11 +496,14 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
       const patch = {
         teksystemLineId: key, teksystemOrderId: job.externalKey,
         teksystemCompanyId: value(row, "empresa"), teksystemCustomerCode: text(value(row, "cliente")),
+        customerId: input.cliente!.codigo, customerName: input.cliente!.nome,
         paymentCondition: normalizeSystemPaymentCondition(payment.method),
         paymentTerms: payment.terms.length ? `${payment.terms.join("/")} Dias` : "", paymentTermsDays: payment.terms,
         billingRule: "cadastro", teksystemPaymentDescription: payment.description,
         teksystemOrderObservations: sourceObservations, notes,
         totalQuantity: line.totalQuantity, quantityScaled: line.quantityScaled,
+        itemId: line.itemId, color: line.color, size: line.size, variation: line.variation,
+        originalProductCode: line.codigoOriginal,
         unitPrice: line.unitPrice, unitPriceScaled: line.unitPriceScaled,
         discountPercent: line.discountPercent, discountPercentScaled: line.discountPercentScaled,
         discountAmount: line.discountAmount, discountAmountScaled: line.discountAmountScaled,
@@ -453,6 +543,7 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
       });
     }
     const pdfFields = new Set([
+      "customerId", "customerName", "itemId", "originalProductCode", "color", "size", "variation",
       "paymentCondition", "paymentTerms", "paymentTermsDays", "billingRule", "notes", "representativeName", "representativeId",
       "deliveryDate", "totalQuantity", "unitPrice", "discountPercent", "discountAmount", "fiscalType", "hasRET", "itemNotes",
     ]);
@@ -462,6 +553,7 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
       details: { codigoPedido: job.externalKey, orderIds: [...matches.map(({ order }) => order.id), ...added.map((o) => o.id)],
         pdfNeedsRefresh: missing.length > 0 || updatedFields.length > 0,
         camposAtualizados: updatedFields, quantidadeItensIncluidos: added.length, itensIncluidos: added,
+        vinculosItens: matches.map(({ row, order, matchBasis }) => ({ linhaTekSystem: sourceLineKey(row), itemApontaPRO: order.id, criterio: matchBasis })),
         avisos: [...new Set([...warnings, ...fiscalWarnings, ...validationWarnings])] } };
   }
   // The legacy manual importer may use exact descriptions as a fallback. The
