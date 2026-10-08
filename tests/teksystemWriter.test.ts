@@ -107,7 +107,7 @@ test("pedido existente associa pelo código, mesmo com id interno e texto de var
   assert.equal(plan.mutations[0].patch.teksystemLineId, "pedido:77:900");
   assert.equal(plan.mutations[0].patch.itemId, undefined);
   assert.equal(plan.mutations[0].patch.totalQuantity, undefined);
-  assert.equal(plan.mutations[0].patch.variation, undefined);
+  assert.equal(plan.mutations[0].patch.variation, "GIRATORIA");
   assert.match(plan.mutations[0].patch.notes, /^Observação humana/);
 });
 test("cor indefinida da origem não impede associação única por código", () => {
@@ -115,17 +115,77 @@ test("cor indefinida da origem não impede associação única por código", () 
   orderJob.rows[0].codigoitem = "2517"; orderJob.rows[0].cordescricao = "INDEFINIDA";
   assert.doesNotThrow(() => planWriterJob(orderJob, catalog(), [order], now));
 });
-test("cor e medida explícitas divergentes continuam bloqueadas", () => {
+test("Tek-System corrige cor e medida divergentes em pedido ainda sem operação", () => {
   const order = existing(); order.color = "ZINCADO";
-  assert.throws(() => planWriterJob(jobs()[0], catalog(), [order], now), (e: any) => e.code === "IDENTIDADE_ITEM_DIVERGENTE");
+  const colorPlan = planWriterJob(jobs()[0], catalog(), [order], now);
+  assert.equal(colorPlan.mutations[0].patch.color, "CINZA");
   const other = existing(); other.size = "40";
   const orderJob = jobs()[0]; orderJob.rows[0].gradedescricao = "50";
-  assert.throws(() => planWriterJob(orderJob, catalog(), [other], now), (e: any) => e.code === "IDENTIDADE_ITEM_DIVERGENTE");
+  const sizePlan = planWriterJob(orderJob, catalog(), [other], now);
+  assert.equal(sizePlan.mutations[0].patch.size, "50");
 });
 test("código repetido sem chave não usa nome, quantidade nem primeiro candidato para adivinhar", () => {
   const first: any = existing(); first.teksystemLineId = "";
   const second = { ...first, id: 124, totalQuantity: 20, variation: "OUTRO" };
   assert.throws(() => planWriterJob(jobs()[0], catalog(), [first, second], now), (e: any) => e.code === "ITEM_PEDIDO_AMBIGUO");
+});
+test("pedido 68052: cor, variação e valor líquido identificam as linhas legadas sem chave", () => {
+  const first: any = existing();
+  Object.assign(first, { id: 123, docId: "123", teksystemLineId: "", originalProductCode: "2517.1",
+    color: "ZINCADO", variation: "VAR-B", totalQuantity: 10, unitPrice: 40, discountPercent: 25 });
+  const second: any = { ...first, id: 124, docId: "124", originalProductCode: "2517.11",
+    color: "CINZA", variation: "VAR-A", totalQuantity: 5, unitPrice: 50, discountPercent: 20 };
+  const orderJob = jobs()[0];
+  Object.assign(orderJob.rows[0], { detalheid: 900, codigoitem: "2517.11", variacao: 1, variacaodescricao: "VAR-A",
+    quantidade: 5, precounitariobruto: 50, precounitario: 40 });
+  orderJob.rows[0].externalId = "pedido:77:900";
+  orderJob.rows.push({ ...orderJob.rows[0], externalId: "pedido:77:901", detalheid: 901, codigoitem: "2517.1",
+    variacao: 2, variacaodescricao: "VAR-B", quantidade: 10, precounitariobruto: 40, precounitario: 30 });
+  const plan = planWriterJob(orderJob, catalog(), [first, second], now);
+  const firstLink = plan.details.vinculosItens.find((link: any) => link.itemApontaPRO === 123);
+  const secondLink = plan.details.vinculosItens.find((link: any) => link.itemApontaPRO === 124);
+  assert.equal(firstLink.linhaTekSystem, "pedido:77:901");
+  assert.equal(secondLink.linhaTekSystem, "pedido:77:900");
+  assert.match(firstLink.criterio.join(" "), /cor.*variação.*valor líquido unitário/);
+  assert.match(secondLink.criterio.join(" "), /cor.*variação.*valor líquido unitário/);
+});
+test("atributos de identificação conflitantes não escolhem uma linha automaticamente", () => {
+  const first: any = existing();
+  Object.assign(first, { id: 123, docId: "123", teksystemLineId: "", color: "CINZA", variation: "VAR-B", unitPrice: 40, discountPercent: 25 });
+  const second: any = { ...first, id: 124, docId: "124", color: "ZINCADO", variation: "VAR-A", unitPrice: 50, discountPercent: 20 };
+  const orderJob = jobs()[0];
+  Object.assign(orderJob.rows[0], { variacao: 1, variacaodescricao: "VAR-A", precounitariobruto: 50, precounitario: 40 });
+  assert.throws(() => planWriterJob(orderJob, catalog(), [first, second], now), (error: any) => error.code === "ITEM_PEDIDO_AMBIGUO");
+});
+test("Tek-System sobrescreve identidade e preço divergentes quando a linha já está vinculada e livre", () => {
+  const order: any = existing();
+  Object.assign(order, { color: "ZINCADO", variation: "ANTIGA", unitPrice: 99, discountPercent: 0 });
+  const plan = planWriterJob(jobs()[0], catalog(), [order], now);
+  const patch = plan.mutations[0].patch;
+  assert.equal(patch.color, "CINZA"); assert.equal(patch.variation, "-");
+  assert.equal(patch.unitPrice, 20); assert.equal(patch.discountPercent, 10);
+});
+test("Tek-System corrige o produto vinculado e o cliente do pedido ainda pendente", () => {
+  const cat = catalog(); cat.items.push({ id: 200, code: "3730", name: "BARRA NOVA", tenantId: "imperio" });
+  const order: any = existing(); Object.assign(order, { itemId: 100, customerId: 99, customerName: "CLIENTE INCORRETO" });
+  const orderJob = jobs()[0]; orderJob.rows[0].codigoitem = "3730";
+  const plan = planWriterJob(orderJob, cat, [order], now);
+  assert.equal(plan.mutations[0].patch.itemId, 200);
+  assert.equal(plan.mutations[0].patch.customerId, 5);
+  assert.equal(plan.mutations[0].patch.customerName, "CLIENTE");
+});
+test("identidade divergente não é reescrita depois que há operação registrada", () => {
+  const order: any = existing(); order.color = "ZINCADO"; order.packedQuantity = 1;
+  assert.throws(() => planWriterJob(jobs()[0], catalog(), [order], now), (error: any) => error.code === "IDENTIDADE_COM_OPERACAO_INICIADA");
+});
+test("consultor sem correspondência não bloqueia a atualização de linhas existentes", () => {
+  const order = existing();
+  const orderJob = jobs()[0];
+  orderJob.rows[0].consultoresvendas = [{ nome: "NOVO CONSULTOR" }];
+  orderJob.rows[0].prazos[0].dias = 45;
+  const plan = planWriterJob(orderJob, catalog(), [order], now);
+  assert.equal(plan.mutations[0].patch.representativeId, undefined);
+  assert.match(plan.details.avisos.join(" "), /representante existente preservado/);
 });
 test("quantidade alterada é atualizada antes da operação; item ausente continua em revisão", () => {
   const order = existing(); order.totalQuantity = 11;
@@ -278,7 +338,7 @@ test("pedido cancelado, cliente divergente e chaves repetidas não permitem adic
   const { cat, order, orderJob } = appendFixture(); order.status = "CANCELADO";
   assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "PEDIDO_CANCELADO");
   order.status = "PENDENTE"; order.customerId = 6;
-  assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "CLIENTE_PEDIDO_DIVERGENTE");
+  assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "IDENTIDADE_COM_OPERACAO_INICIADA");
   order.customerId = 5; orderJob.rows[1].detalheid = 900;
   assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "ITEM_DUPLICADO");
 });
