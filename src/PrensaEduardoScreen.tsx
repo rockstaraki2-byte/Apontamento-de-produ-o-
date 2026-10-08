@@ -366,6 +366,12 @@ export function PrensaEduardoScreen({
     const mParent = options.parentItemId || manualParentItemId;
     const mProcess = options.processPerformed || processPerformed;
     const updateOS = options.updateOS === true; // ONLY update OS when explicitly finalized!
+    const logItemId = Number(activePack.itemId);
+    const logProductName = isManual
+      ? mTitle
+      : activePack.partName && activePack.partName !== "Produto"
+        ? activePack.partName
+        : undefined;
 
     db.addLogs([
       {
@@ -376,7 +382,8 @@ export function PrensaEduardoScreen({
         timestamp: Date.now(),
         durationMillis,
         customOperatorName: finalOperatorName,
-        customProductName: isManual ? mTitle : undefined,
+        customProductName: logProductName,
+        itemId: !isManual && logItemId > 0 ? logItemId : undefined,
         parentItemId: isManual && mParent ? mParent : undefined,
         processPerformed: mProcess,
         associatedBatchId: activePack.associatedBatchId,

@@ -1148,6 +1148,14 @@ export function HistoricoProducaoScreen({
         ? batchOrders.filter((candidate) => String(candidate.itemId) === String(item?.id))
         : [];
       const possibleOrders = itemMatches.length > 0 ? itemMatches : batchOrders;
+      const sharedItemId = batchOrders[0]?.itemId;
+      const allBatchOrdersShareItem =
+        batchOrders.length > 0 &&
+        Number(sharedItemId) > 0 &&
+        batchOrders.every((candidate) => String(candidate.itemId) === String(sharedItemId));
+      if (!item && allBatchOrdersShareItem) {
+        item = db.items.find((candidate) => String(candidate.id) === String(sharedItemId));
+      }
       if (possibleOrders.length === 1) {
         order = possibleOrders[0];
       }
