@@ -10,7 +10,7 @@ import { EventEmitter } from "node:events";
 
 const now = new Date("2026-10-06T12:00:00-03:00");
 function catalog(): WriterCatalog { return {
-  customers: [{ id: 5, tenantId: "imperio", name: "CLIENTE", hasRET: true }],
+  customers: [{ id: 5, tenantId: "imperio", name: "CLIENTE", city: "Ubá", hasRET: true }],
   items: [{ id: 100, code: "2517", name: "BARRA", tenantId: "imperio", type: "PRODUTO", components: [{ itemId: 101, quantity: 2 }] }],
   users: [{ id: "representante_imperio", name: "Império Representante", tenantId: "imperio", role: "REPRESENTANTE" }],
 }; }
@@ -54,6 +54,7 @@ test("condição padrão da tabela comercial tem prioridade sobre o campo genér
 test("pedido novo usa regras existentes, id da fonte e valores financeiros", () => {
   const plan = planWriterJob(jobs()[0], catalog(), [], now);
   assert.equal(plan.action, "CRIADO"); assert.equal(plan.createOrder!.prepared.lines[0].unitPrice, 20);
+  assert.equal(plan.createOrder!.prepared.customerCity, "Ubá");
   assert.equal(plan.createOrder!.prepared.lines[0].discountPercent, 10);
   const order = buildImportedOrderDocument(plan.createOrder!, 0, 123, "boleto", "cadastro");
   assert.equal(order.teksystemLineId, "pedido:77:900"); assert.equal(order.hasRET, true);

@@ -94,10 +94,10 @@ if ($InstallTask) {
 
   Write-Host "Validando Firebird e endpoint em dry-run; nenhuma informação será gravada no ApontaPRO nesta prova..."
   & $powershellPath -NoProfile -ExecutionPolicy Bypass -File $runner -DryRun
-  if ($LASTEXITCODE -ne 0) { throw "A validação não passou. A tarefa horária não foi criada." }
+  if ($LASTEXITCODE -ne 0) { throw "A validação não passou. A tarefa não foi criada." }
 
   $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) `
-    -RepetitionInterval (New-TimeSpan -Hours 1) `
+    -RepetitionInterval (New-TimeSpan -Minutes 5) `
     -RepetitionDuration (New-TimeSpan -Days 3650)
   $principal = New-ScheduledTaskPrincipal `
     -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) `
@@ -107,8 +107,8 @@ if ($InstallTask) {
     -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
   $scheduledTask = New-ScheduledTask -Action $taskAction -Trigger $trigger -Principal $principal -Settings $settings
   Register-ScheduledTask -TaskName $taskName -InputObject $scheduledTask | Out-Null
-  Write-Host "Tarefa criada: executa a cada hora enquanto este usuário estiver conectado ao Windows."
+  Write-Host "Tarefa criada: executa a cada 5 minutos enquanto este usuário estiver conectado ao Windows."
 } else {
-  Write-Host "Para validar e instalar a tarefa horária após a rota estar publicada, execute:"
+  Write-Host "Para validar e instalar a tarefa a cada 5 minutos após a rota estar publicada, execute:"
   Write-Host "  powershell -ExecutionPolicy Bypass -File `"$PSScriptRoot\teksystem-sync-setup.ps1`" -InstallTask"
 }

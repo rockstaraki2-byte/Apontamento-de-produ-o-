@@ -18,6 +18,11 @@ import type {
   OrderImportRepository,
 } from "./orderImportCore.js";
 import {
+  selectOrderLoad,
+  type ExpeditionCargaForOrderLoad,
+  type ExpeditionRouteForOrderLoad,
+} from "./orderImportLoads.js";
+import {
   normalizePaymentTerms,
   normalizeSystemPaymentCondition,
   type CatalogSnapshot,
@@ -67,6 +72,16 @@ function keyForOrder(tenantId: string, orderCode: string): string {
   return crypto.createHash("sha256").update(`${tenantId}:${orderCode}`).digest("hex");
 }
 
+function automaticCargaDocumentId(tenantId: string, routeId: string, scheduledDate: string): string {
+  const key = crypto.createHash("sha256").update(`${tenantId}:${routeId}:${scheduledDate}`).digest("hex");
+  return `teksystem-${key.slice(0, 40)}`;
+}
+
+function dayNameForDate(dateKey: string): string {
+  const dayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+  return dayNames[new Date(`${dateKey}T12:00:00.000Z`).getUTCDay()] || "";
+}
+
 function nextOrderLineIds(count: number, seed = Date.now()): number[] {
   const base = BigInt(seed) * 4096n + BigInt(crypto.randomInt(0, 2048));
   const ids: number[] = [];
@@ -92,6 +107,77 @@ interface PreviousCustomerPayment {
 }
 
 export class FirestoreOrderImportRepository implements OrderImportRepository {
+  private routeCache = new Map<string, Promise<ExpeditionRouteForOrderLoad[]>>();
+  private cargaCache = new Map<string, Promise<ExpeditionCargaForOrderLoad[]>>();
+
+  private routesForTenant(tenantId: string): Promise<ExpeditionRouteForOrderLoad[]> {
+    let pending = this.routeCache.get(tenantId);
+    if (!pending) {
+      pending = getDocs(query(
+        collection(db, "expeditionRoutes"),
+        where("tenantId", "==", tenantId),
+      )).then((snapshot) => snapshot.docs.map((routeDoc) => ({
+        ...routeDoc.data(), id: routeDoc.id,
+      })) as ExpeditionRouteForOrderLoad[]);
+      this.routeCache.set(tenantId, pending);
+    }
+    return pending;
+  }
+
+  private cargasForTenant(tenantId: string): Promise<ExpeditionCargaForOrderLoad[]> {
+    let pending = this.cargaCache.get(tenantId);
+    if (!pending) {
+      pending = getDocs(query(
+        collection(db, "cargas"),
+        where("tenantId", "==", tenantId),
+      )).then((snapshot) => snapshot.docs.map((cargaDoc) => ({
+        ...cargaDoc.data(), id: cargaDoc.id,
+      })) as ExpeditionCargaForOrderLoad[]);
+      this.cargaCache.set(tenantId, pending);
+    }
+    return pending;
+  }
+
+  private async selectCargaForOrder(input: AtomicCreateInput) {
+    const routes = await this.routesForTenant(input.tenantId);
+    const routeSelection = selectOrderLoad(
+      input.tenantId,
+      input.prepared.customerId,
+      input.prepared.customerCity || "",
+      input.prepared.deliveryDate,
+      routes,
+      [],
+    );
+    if (!routeSelection.plan) return routeSelection;
+    return selectOrderLoad(
+      input.tenantId,
+      input.prepared.customerId,
+      input.prepared.customerCity || "",
+      input.prepared.deliveryDate,
+      routes,
+      await this.cargasForTenant(input.tenantId),
+    );
+  }
+
+  async previewCargaForOrder(input: AtomicCreateInput) {
+    const selection = await this.selectCargaForOrder(input);
+    if (!selection.plan) return { cargaAviso: selection.warning };
+    const plan = selection.plan;
+    const id = plan.cargaId || automaticCargaDocumentId(input.tenantId, plan.routeId, plan.scheduledDate);
+    const existing = plan.cargaId
+      ? (await this.cargasForTenant(input.tenantId)).find((carga) => carga.id === plan.cargaId)
+      : undefined;
+    return {
+      cargaAssociada: {
+        id,
+        nome: existing?.name || plan.routeName || "Carga",
+        rota: plan.routeName,
+        data: plan.scheduledDate,
+      },
+      cargaCriada: plan.createCarga,
+    };
+  }
+
   async loadCatalog(tenantId: string): Promise<CatalogSnapshot> {
     const [customersSnap, itemsSnap, usersSnap] = await Promise.all([
       getDocs(collection(db, "customers")),
@@ -183,6 +269,14 @@ export class FirestoreOrderImportRepository implements OrderImportRepository {
       ? "ultimo_pedido"
       : "cadastro";
 
+    const loadSelection = await this.selectCargaForOrder(input);
+    const loadPlan = loadSelection.plan;
+    const selectedCargaId = loadPlan
+      ? loadPlan.cargaId || automaticCargaDocumentId(input.tenantId, loadPlan.routeId, loadPlan.scheduledDate)
+      : "";
+    const selectedCargaRef = selectedCargaId ? doc(db, "cargas", selectedCargaId) : null;
+    const selectedRouteRef = loadPlan ? doc(db, "expeditionRoutes", loadPlan.routeId) : null;
+
     return runTransaction(db, async (tx) => {
       if (input.teksystem) {
         const job = await tx.get(doc(db, "teksystemWriterJobs", input.teksystem.jobId));
@@ -196,7 +290,114 @@ export class FirestoreOrderImportRepository implements OrderImportRepository {
         const existingOrderIds = Array.isArray(data.orderIds)
           ? data.orderIds.map(Number).filter(Number.isFinite)
           : [];
-        return { created: false, orderIds: [], existingOrderIds };
+        return {
+          created: false,
+          orderIds: [],
+          existingOrderIds,
+          cargaAssociada: data.cargaAssociada || undefined,
+          cargaCriada: Boolean(data.cargaCriada),
+          cargaAviso: data.cargaAviso || undefined,
+        };
+      }
+
+      let cargaAssociada: AtomicCreateResult["cargaAssociada"];
+      let cargaCriada = false;
+      let cargaAviso = loadSelection.warning;
+      if (loadPlan && selectedCargaRef && selectedRouteRef) {
+        const [routeSnap, cargaSnap] = await Promise.all([
+          tx.get(selectedRouteRef),
+          tx.get(selectedCargaRef),
+        ]);
+        const route = routeSnap.data() || {};
+        const routePlan = routeSnap.exists()
+          ? selectOrderLoad(
+              input.tenantId,
+              input.prepared.customerId,
+              input.prepared.customerCity || "",
+              input.prepared.deliveryDate,
+              [{ ...route, id: loadPlan.routeId }],
+              [],
+            ).plan
+          : undefined;
+        const routeStillEligible = route.tenantId === input.tenantId &&
+          !!routePlan &&
+          routePlan.routeId === loadPlan.routeId &&
+          routePlan.scheduledDate === loadPlan.scheduledDate;
+        const carga = cargaSnap.data() || {};
+        const cargaDate = String(carga.scheduledDate || carga.departureDate || "").split("T")[0];
+        const existingCargaStillEligible = cargaSnap.exists() &&
+          carga.tenantId === input.tenantId &&
+          String(carga.routeId || "") === loadPlan.routeId &&
+          cargaDate === loadPlan.scheduledDate &&
+          (carga.status === "ABERTA" || carga.status === "PLANEJADA");
+        const canCreateCarga = !cargaSnap.exists() && loadPlan.createCarga && routeStillEligible;
+
+        if (routeStillEligible && (existingCargaStillEligible || canCreateCarga)) {
+          const routeName = String(route.name || loadPlan.routeName || "");
+          const cargaName = String(carga.name || routeName || "Carga");
+          const existingOrderIds = Array.isArray(carga.orderIds)
+            ? carga.orderIds.map(Number).filter(Number.isSafeInteger)
+            : [];
+          const linkedOrderIds = Array.from(new Set([...existingOrderIds, ...orderIds]));
+          const existingQuantities = carga.orderQuantities &&
+            typeof carga.orderQuantities === "object" && !Array.isArray(carga.orderQuantities)
+            ? carga.orderQuantities
+            : {};
+          const orderQuantities = { ...existingQuantities } as Record<string, number>;
+          input.prepared.lines.forEach((line, index) => {
+            orderQuantities[String(orderIds[index])] = line.totalQuantity;
+          });
+          const existingAuditTrail = Array.isArray(carga.auditTrail) ? carga.auditTrail : [];
+          const actionUser = input.solicitadoPor || "teksystem-sync-agent";
+          const linkedQuantity = input.prepared.lines.reduce((sum, line) => sum + line.totalQuantity, 0);
+          const linkedAt = Date.now();
+          const auditEntry = {
+            timestamp: linkedAt,
+            userId: actionUser,
+            userName: actionUser,
+            action: canCreateCarga
+              ? `Carga criada automaticamente e pedido ${input.prepared.codigoPedido} vinculado (${linkedQuantity} un em ${input.prepared.lines.length} item(ns))`
+              : `Pedido ${input.prepared.codigoPedido} vinculado na importação (${linkedQuantity} un em ${input.prepared.lines.length} item(ns))`,
+          };
+
+          if (canCreateCarga) {
+            tx.set(selectedCargaRef, {
+              id: selectedCargaId,
+              tenantId: input.tenantId,
+              name: cargaName,
+              routeId: loadPlan.routeId,
+              routeName,
+              route: [routeName],
+              shift: route.shift,
+              scheduledDate: loadPlan.scheduledDate,
+              departureDate: loadPlan.scheduledDate,
+              dayOfWeek: dayNameForDate(loadPlan.scheduledDate),
+              orderIds: linkedOrderIds,
+              orderQuantities,
+              separatedQuantities: {},
+              status: "ABERTA",
+              createdAt: linkedAt,
+              notes: `Carga criada automaticamente para a data elegível do pedido ${input.prepared.codigoPedido}.`,
+              auditTrail: [auditEntry],
+            });
+          } else {
+            tx.set(selectedCargaRef, {
+              orderIds: linkedOrderIds,
+              orderQuantities,
+              auditTrail: [...existingAuditTrail, auditEntry],
+            }, { merge: true });
+          }
+
+          cargaAssociada = { id: selectedCargaId, nome: cargaName, rota: routeName, data: loadPlan.scheduledDate };
+          cargaCriada = canCreateCarga;
+          cargaAviso = undefined;
+        } else if (!routeStillEligible) {
+          cargaAviso = "Pedido criado sem carga: a rota ou o dia elegível mudou durante a gravação.";
+        } else if (cargaSnap.exists()) {
+          cargaAviso = "Pedido criado sem carga: a carga da rota/data deixou de estar aberta, planejada ou pertencer ao tenant durante a gravação.";
+        } else {
+          cargaAviso = "Pedido criado sem carga: a carga elegível selecionada deixou de existir antes da gravação.";
+        }
       }
 
       input.prepared.lines.forEach((line, index) => {
@@ -209,6 +410,9 @@ export class FirestoreOrderImportRepository implements OrderImportRepository {
         tenantId: input.tenantId,
         orderCode: input.prepared.codigoPedido,
         orderIds,
+        cargaAssociada: cargaAssociada || null,
+        cargaCriada,
+        cargaAviso: cargaAviso || null,
         createdAt: input.createdAt,
         origem: input.origem,
         payloadHash: input.prepared.normalizedPayloadHash,
@@ -223,10 +427,13 @@ export class FirestoreOrderImportRepository implements OrderImportRepository {
         result: "CRIADO",
         warnings: input.prepared.warnings,
         orderIds,
+        cargaId: cargaAssociada?.id || null,
+        cargaCriada,
+        cargaAviso: cargaAviso || null,
         timestamp: input.createdAt,
       });
 
-      return { created: true, orderIds };
+      return { created: true, orderIds, cargaAssociada, cargaCriada, cargaAviso };
     });
   }
 
