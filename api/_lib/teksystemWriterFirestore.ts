@@ -161,6 +161,7 @@ export async function previewWriterPayload(payload: NormalizedTekSystemSyncPaylo
   assertTenant(payload.tenantId);
   const jobs = buildWriterJobs(payload);
   const catalog = await loadCatalog(payload.tenantId);
+  const orderRepository = new ScopedOrderRepository();
   const ordersByCode = new Map<string, WriterRow[]>();
   const results: WriterRow[] = [];
   for (const job of jobs) {
@@ -173,6 +174,14 @@ export async function previewWriterPayload(payload: NormalizedTekSystemSyncPaylo
       const plan = planWriterJob(job, catalog, orders);
       updateCatalog(catalog, plan);
       if (plan.createOrder) {
+        const cargaPreview = await orderRepository.previewCargaForOrder(plan.createOrder);
+        if (cargaPreview.cargaAssociada) {
+          plan.details.cargaAssociada = cargaPreview.cargaAssociada;
+          plan.details.cargaCriada = cargaPreview.cargaCriada;
+        }
+        if (cargaPreview.cargaAviso) {
+          plan.details.avisos = [...(Array.isArray(plan.details.avisos) ? plan.details.avisos : []), cargaPreview.cargaAviso];
+        }
         orders = plan.createOrder.prepared.lines.map((_, index) => buildImportedOrderDocument(plan.createOrder!, index,
           stableNumericId(job.tenantId, "preview-pedido", `${job.externalKey}:${index}`), plan.createOrder!.prepared.paymentCondition, "cadastro"));
         ordersByCode.set(job.externalKey, orders);
@@ -231,6 +240,11 @@ export async function processWriterQueue(tenantId: string, requestedLimit = 80) 
           const result = await repository.createOrderAtomically(plan.createOrder);
           plan.details.orderIds = result.created ? result.orderIds : result.existingOrderIds || [];
           if (!result.created) throw new WriterConflict("PEDIDO_CRIADO_CONCORRENTEMENTE", "Pedido foi criado simultaneamente e será conferido no próximo processamento.", true);
+          plan.details.cargaAssociada = result.cargaAssociada || null;
+          plan.details.cargaCriada = Boolean(result.cargaCriada);
+          if (result.cargaAviso) {
+            plan.details.avisos = [...(Array.isArray(plan.details.avisos) ? plan.details.avisos : []), result.cargaAviso];
+          }
         }
         results.push(await applyPlan(job, owner, plan));
         updateCatalog(catalog, plan);

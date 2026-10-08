@@ -2,7 +2,7 @@
 
 ## Objetivo atual
 
-O agente começa em modo seguro: lê alterações no Firebird e envia clientes, produtos, pedidos, faturamentos e romaneios para a área de staging do Apontador. Pedidos incluem cabeçalho, detalhe/variação, prazos e representantes. Romaneios incluem o vínculo com o item original e quantidades carregada/faturada/em aberto. Ele não grava nas coleções operacionais (`customers`, `items`, `orders`, `logs`) e não altera estoque ou produção.
+O agente lê o Firebird em modo somente leitura, envia os dados para staging e, no ciclo normal, processa a fila de gravação do ApontaPRO. O writer atualiza cadastros de clientes e produtos, lança/atualiza pedidos e aplica faturamentos a partir dos romaneios, com validação de códigos, quantidades e tenant. Faturamento não gera baixa automática de estoque nem apontamento de produção. `dryRun` valida sem enfileirar ou aplicar alterações.
 
 O comando `teksystem:sync` executa um ciclo incremental: na primeira execução consulta as últimas 24 horas; nas seguintes, usa a marca d'água do último ciclo bem-sucedido e reconsulta cinco minutos anteriores para cobrir atrasos. Divide os envios em lotes de até 1.000 registros. A marca d'água só avança se todos os lotes forem aceitos; registros repetidos no staging são atualizados por chave determinística.
 
@@ -10,19 +10,25 @@ O comando `teksystem:sync` executa um ciclo incremental: na primeira execução 
 
 `tools/teksystem-sync-setup.ps1` solicita credenciais em prompts seguros e grava-as como `PSCredential` em XML protegido pelo DPAPI do usuário Windows atual, em `%LOCALAPPDATA%\ApontaPRO\TekSystem`. Prefira uma conta Firebird dedicada de somente leitura. Se usar `SYSDBA` temporariamente, todas as consultas do leitor usam transações Firebird `READ ONLY`; ainda assim, a senha administrativa exige proteção extra. O token Bearer e o bypass do Vercel também ficam protegidos localmente, não em `.env.local` ou no repositório.
 
-O setup sem parâmetro apenas provisiona segredos/configuração. Para validar Firebird e endpoint com uma requisição `dryRun` e instalar a tarefa horária:
+O setup sem parâmetro apenas provisiona segredos/configuração. Para validar Firebird e endpoint com uma requisição `dryRun` e instalar a tarefa a cada cinco minutos:
 
 ```powershell
 npm.cmd run teksystem:sync:install
 ```
 
-A tarefa usa o usuário Windows atual, com privilégio limitado, evita execuções concorrentes e roda a cada hora enquanto esse usuário estiver conectado. Se uma execução falhar, o cursor não avança. Logs operacionais e cursor ficam em `%LOCALAPPDATA%\ApontaPRO\TekSystem`; o JSON temporário da extração é removido ao final.
+A tarefa usa o usuário Windows atual, com privilégio limitado, evita execuções concorrentes e roda a cada cinco minutos enquanto esse usuário estiver conectado. Se uma execução falhar, o cursor não avança. Logs operacionais e cursor ficam em `%LOCALAPPDATA%\ApontaPRO\TekSystem`; o JSON temporário da extração é removido ao final.
 
 Para uma validação manual sem gravação no Firestore:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/teksystem-sync-run.ps1 -DryRun
 ```
+
+## Carga automática no lançamento do pedido
+
+Ao criar um pedido novo, o writer procura uma rota ativa do cliente (ou compatível com a cidade cadastrada) e calcula a próxima ocorrência elegível no mesmo calendário usado pelas sugestões de cargas do ApontaPRO. Se já houver carga `ABERTA` ou `PLANEJADA` para aquela rota/data, o pedido é associado a ela; se não houver, cria uma carga `ABERTA` para essa rota/data e associa todas as linhas e quantidades do pedido. Pedido, carga e vínculo são gravados na mesma transação.
+
+Para evitar duplicidades, uma carga já existente e fechada não é recriada: o pedido é lançado sem vínculo automático e o resultado registra um aviso. Se não houver rota ativa, cidade/cliente compatível ou data válida, o pedido também pode ser criado sem carga e o motivo aparece no resultado da execução. O `dryRun` prevê a rota/carga sem gravar dados.
 
 ## Rota de staging
 

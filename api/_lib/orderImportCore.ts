@@ -51,6 +51,7 @@ export interface PreparedOrder {
   codigoPedido: string;
   customerId: string | number;
   customerName: string;
+  customerCity?: string;
   representativeId?: string;
   representativeName?: string;
   paymentCondition: string;
@@ -90,6 +91,9 @@ export interface AtomicCreateResult {
   created: boolean;
   orderIds: number[];
   existingOrderIds?: number[];
+  cargaAssociada?: { id: string; nome: string; rota: string; data: string };
+  cargaCriada?: boolean;
+  cargaAviso?: string;
 }
 
 export interface ImportAuditInput {
@@ -125,6 +129,8 @@ export interface ImportResultItem {
   fiscalType?: "COM_NF" | "SEM_NF";
   dataLimite?: string;
   possuiRET?: boolean;
+  cargaAssociada?: AtomicCreateResult["cargaAssociada"];
+  cargaCriada?: boolean;
   totais?: PreparedOrder["totals"];
   avisos: string[];
   erros: ImportIssue[];
@@ -249,6 +255,7 @@ export function prepareOrder(
     codigoPedido,
     customerId: customerMatch.customer.id,
     customerName: customerMatch.customer.tradeName || customerMatch.customer.name,
+    customerCity: customerMatch.customer.city || "",
     representativeId: representativeMatch.representative?.id,
     representativeName: representativeMatch.representative?.name,
     paymentCondition,
@@ -386,8 +393,12 @@ export async function processOrderImport(
         pedidoId: createResult.orderIds[0],
         pedidoIds: createResult.orderIds,
         quantidadeItens: preparedResult.prepared.lines.length,
-        avisos: preparedResult.warnings,
+        avisos: createResult.cargaAviso
+          ? [...preparedResult.warnings, createResult.cargaAviso]
+          : preparedResult.warnings,
         erros: [],
+        cargaAssociada: createResult.cargaAssociada,
+        cargaCriada: createResult.cargaCriada,
         ...preparedResult.preview,
       });
     } catch (error: any) {

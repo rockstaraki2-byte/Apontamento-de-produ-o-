@@ -71,6 +71,7 @@ export interface CatalogCustomer {
   id: string | number;
   name?: string;
   tradeName?: string;
+  city?: string;
   tenantId?: string;
 }
 
@@ -99,6 +100,7 @@ export interface ResolvedCustomer {
   id: string | number;
   name: string;
   tradeName?: string;
+  city?: string;
 }
 
 export interface ResolvedProduct {
@@ -487,7 +489,12 @@ export function matchCustomer(input: ExternalCustomerInput | null | undefined, c
 }
 
 function normalizeCustomer(customer: CatalogCustomer): ResolvedCustomer {
-  return { id: customer.id, name: String(customer.name || customer.tradeName || customer.id), tradeName: customer.tradeName };
+  return {
+    id: customer.id,
+    name: String(customer.name || customer.tradeName || customer.id),
+    tradeName: customer.tradeName,
+    city: String(customer.city || ""),
+  };
 }
 
 export function matchProduct(input: OrderItemImportInput, items: CatalogItem[]): { product: ResolvedProduct | null; identity: ProductIdentity; errors: ImportIssue[] } {
