@@ -27,6 +27,16 @@ import {
 import { useDatabase } from "./useDatabase";
 import type { User, ProductionLog, Item } from "./types";
 import { normalizeString } from "./searchUtils";
+
+// Match generic history labels using the same normalization applied to each title.
+const GENERIC_LOG_TITLES = [
+  "apontamento de producao",
+  "corte avulso especial",
+  "item especial avulso",
+  "item desconhecido",
+  "registro desconhecido",
+  "peca desconhecida",
+].map(normalizeString);
 import { getQueue, removeFromQueue, processQueueItem } from "./syncQueue";
 import { isImperioPackagingUser } from "./utils/imperioPackagingUtils";
 
@@ -2347,14 +2357,7 @@ export function HistoricoProducaoScreen({
               }
 
               const logContext = resolveLogContext(l);
-              const genericTitles = [
-                "apontamento de producao",
-                "corte avulso especial",
-                "item especial avulso",
-                "item desconhecido",
-                "registro desconhecido",
-                "peca desconhecida",
-              ];
+              const genericTitles = GENERIC_LOG_TITLES;
               if (
                 logContext.item?.name &&
                 (genericTitles.includes(normalizeString(title)) ||
@@ -2653,14 +2656,7 @@ export function HistoricoProducaoScreen({
 
           const logContext = resolveLogContext(selectedLog);
           orderInfo = logContext.order || orderInfo;
-          const genericTitles = [
-            "apontamento de producao",
-            "corte avulso especial",
-            "item especial avulso",
-            "item desconhecido",
-            "registro desconhecido",
-            "peca desconhecida",
-          ];
+          const genericTitles = GENERIC_LOG_TITLES;
           if (
             logContext.item?.name &&
             (genericTitles.includes(normalizeString(itemTitle)) ||
