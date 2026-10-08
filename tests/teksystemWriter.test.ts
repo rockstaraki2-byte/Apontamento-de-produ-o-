@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validateAndNormalizeTekSystemSync } from "../api/_lib/teksystemSync.js";
-import { buildWriterJobs, hasTransaction74, planWriterJob, sourcePayment, type WriterCatalog, type WriterJob } from "../api/_lib/teksystemWriter.js";
+import { buildWriterJobs, hasTransaction74, planCargaQuantityMutations, planWriterJob, sourcePayment, type WriterCatalog, type WriterJob } from "../api/_lib/teksystemWriter.js";
 import { buildImportedOrderDocument } from "../api/_lib/orderImportDocuments.js";
 import { splitPayload } from "../tools/teksystem-sync-cycle-utils.js";
 import { readOnlyRows } from "../tools/teksystem-firebird-v2.js";
@@ -73,7 +73,7 @@ test("PDF é atualizado quando pagamento muda; vínculo técnico isolado não di
   for (const mutation of technical.mutations) Object.assign(order, mutation.patch);
   currentJob.rows[0].prazos[0].dias = 45;
   const changed = planWriterJob(currentJob, catalog(), [order], now);
-  assert.equal(changed.action, "JA_EXISTE");
+  assert.equal(changed.action, "ATUALIZADO");
   assert.equal(changed.details.pdfNeedsRefresh, true);
   assert.equal(changed.mutations[0].patch.totalQuantity, undefined);
 });
@@ -113,7 +113,7 @@ test("pedido existente associa pelo código, mesmo com id interno e texto de var
 test("cor indefinida da origem não impede associação única por código", () => {
   const order = existing(); const orderJob = jobs()[0];
   orderJob.rows[0].codigoitem = "2517"; orderJob.rows[0].cordescricao = "INDEFINIDA";
-  assert.equal(planWriterJob(orderJob, catalog(), [order], now).action, "JA_EXISTE");
+  assert.doesNotThrow(() => planWriterJob(orderJob, catalog(), [order], now));
 });
 test("cor e medida explícitas divergentes continuam bloqueadas", () => {
   const order = existing(); order.color = "ZINCADO";
@@ -127,11 +127,26 @@ test("código repetido sem chave não usa nome, quantidade nem primeiro candidat
   const second = { ...first, id: 124, totalQuantity: 20, variation: "OUTRO" };
   assert.throws(() => planWriterJob(jobs()[0], catalog(), [first, second], now), (e: any) => e.code === "ITEM_PEDIDO_AMBIGUO");
 });
-test("quantidades diferentes e itens ausentes continuam em revisão", () => {
+test("quantidade alterada é atualizada antes da operação; item ausente continua em revisão", () => {
   const order = existing(); order.totalQuantity = 11;
-  assert.throws(() => planWriterJob(jobs()[0], catalog(), [order], now), (e: any) => e.code === "QUANTIDADE_PEDIDO_DIVERGENTE");
+  const updated = planWriterJob(jobs()[0], catalog(), [order], now);
+  assert.equal(updated.action, "ATUALIZADO");
+  assert.equal(updated.mutations[0].patch.totalQuantity, 10);
+  assert.equal(updated.details.pdfNeedsRefresh, true);
   const orderJob = jobs()[0]; orderJob.rows.push({ ...orderJob.rows[0], detalheid: 901, codigoitem: "9999" });
   assert.throws(() => planWriterJob(orderJob, catalog(), [existing()], now), (e: any) => e.code === "PRODUTO_NAO_ENCONTRADO");
+});
+test("mudança de quantidade depois de produção/embalagem/faturamento exige revisão", () => {
+  for (const field of ["packedQuantity", "producedQuantity", "paintedQuantity", "cutQuantity", "invoicedQuantity"]) {
+    const order: any = existing(); order[field] = 1;
+    const changedJob = jobs()[0]; changedJob.rows[0].quantidade = 11;
+    assert.throws(() => planWriterJob(changedJob, catalog(), [order], now), (e: any) => e.code === "QUANTIDADE_COM_OPERACAO_INICIADA");
+  }
+});
+test("pedido já faturado não recebe alteração comercial automática", () => {
+  const order: any = existing(); order.invoicedQuantity = 1; order.status = "FATURADO_PARCIAL";
+  const changedJob = jobs()[0]; changedJob.rows[0].precounitariobruto = 22;
+  assert.throws(() => planWriterJob(changedJob, catalog(), [order], now), (e: any) => e.code === "PEDIDO_FATURADO_REQUER_REVISAO");
 });
 test("pedido novo nunca usa descrição para compensar código incorreto", () => {
   const orderJob = jobs()[0]; orderJob.rows[0].codigoitem = "9999"; orderJob.rows[0].descricaoitem = "BARRA";
@@ -167,6 +182,41 @@ test("pedido existente atualiza pagamento da origem preservando notas e sem dupl
   Object.assign(order, first.mutations[0].patch);
   assert.equal((order.notes.match(/\[Pagamento Tek-System\]/g) || []).length, 1);
   assert.equal(planWriterJob(jobs()[0], catalog(), [order], now).mutations.length, 0);
+});
+test("pedido existente sincroniza quantidade, preço, desconto, entrega e observações sem apagar nota local", () => {
+  const order: any = existing();
+  order.notes = `Anotação local\n\n${order.notes}`;
+  const changedJob = jobs()[0];
+  Object.assign(changedJob.rows[0], {
+    quantidade: 12, precounitariobruto: 22, precounitario: 20,
+    promessaentrega: "2026-10-12T03:00:00Z", observacoes: "Entregar no período da manhã",
+    observacoesitem: "Separar com cuidado", transacaovenda: 73,
+  });
+  const plan = planWriterJob(changedJob, catalog(), [order], now);
+  const patch = plan.mutations[0].patch;
+  assert.equal(plan.action, "ATUALIZADO");
+  assert.equal(patch.totalQuantity, 12); assert.equal(patch.unitPrice, 22);
+  assert.equal(patch.deliveryDate, "2026-10-12"); assert.equal(patch.hasRET, false);
+  assert.equal(patch.itemNotes, "Separar com cuidado");
+  assert.match(patch.notes, /Anotação local/);
+  assert.match(patch.notes, /\[Observações Tek-System\][\s\S]*Entregar no período da manhã/);
+  assert.ok(Number(patch.discountPercent) > 9 && Number(patch.discountPercent) < 10);
+  Object.assign(order, patch);
+  assert.equal(planWriterJob(changedJob, catalog(), [order], now).mutations.length, 0);
+});
+test("mudança de quantidade atualiza a carga aberta sem perder auditoria ou outras alocações", () => {
+  const changedJob = jobs()[0]; changedJob.rows[0].quantidade = 12;
+  const order = existing();
+  const plan = planWriterJob(changedJob, catalog(), [order], now);
+  const carga: any = { id: "carga-1", docId: "carga-1", tenantId: "imperio", status: "ABERTA",
+    orderIds: [123, 456], orderQuantities: { "123": 10, "456": 5 }, auditTrail: [] };
+  const mutations = planCargaQuantityMutations(changedJob, plan, [carga], now);
+  assert.equal(mutations.length, 1); assert.equal(mutations[0].collection, "cargas");
+  assert.equal(mutations[0].patch.orderQuantities["123"], 12);
+  assert.equal(mutations[0].patch.orderQuantities["456"], 5);
+  assert.match(mutations[0].patch.auditTrail[0].action, /atualizada para 12/);
+  carga.separatedQuantities = { "123": 1 };
+  assert.throws(() => planCargaQuantityMutations(changedJob, plan, [carga], now), (e: any) => e.code === "CARGA_SEPARADA_REQUER_REVISAO");
 });
 function appendFixture() {
   const cat = catalog(); cat.items.push({ id: 200, code: "3730", name: "BARRA NOVA", tenantId: "imperio" });
@@ -207,7 +257,7 @@ test("não transforma troca/remoção de item antigo em nova linha nem altera qu
   orderJob.rows = [orderJob.rows[1]];
   assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "ITENS_PEDIDO_DIVERGENTES");
   orderJob.rows.unshift(sourceRow()); order.totalQuantity = 9;
-  assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "QUANTIDADE_PEDIDO_DIVERGENTE");
+  assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "QUANTIDADE_COM_OPERACAO_INICIADA");
 });
 test("código ausente no catálogo e preço inválido da linha nova impedem qualquer complementação", () => {
   const { cat, order, orderJob } = appendFixture();

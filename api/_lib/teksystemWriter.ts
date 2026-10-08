@@ -28,7 +28,7 @@ export interface WriterCatalog extends CatalogSnapshot {
   users: WriterCatalogEntry[];
 }
 export interface WriterMutation {
-  collection: "customers" | "items" | "orders" | "logs";
+  collection: "customers" | "items" | "orders" | "cargas" | "logs";
   docId: string;
   before: WriterRow | null;
   patch: WriterRow;
@@ -225,6 +225,24 @@ function withPaymentNote(notes: unknown, note: string): string {
   const preserved = text(notes).replace(/\[Pagamento Tek-System\][\s\S]*?\[\/Pagamento Tek-System\]/g, "").trim();
   return [preserved, note].filter(Boolean).join("\n\n");
 }
+const SOURCE_NOTES_START = "[Observações Tek-System]";
+const SOURCE_NOTES_END = "[/Observações Tek-System]";
+function withSourceNotes(notes: unknown, sourceNotes: unknown, previousSourceNotes: unknown): string {
+  const source = text(sourceNotes);
+  const previous = text(previousSourceNotes);
+  let preserved = text(notes)
+    .replace(/\[Pagamento Tek-System\][\s\S]*?\[\/Pagamento Tek-System\]/g, "")
+    .replace(/\[Observações Tek-System\][\s\S]*?\[\/Observações Tek-System\]/g, "")
+    .trim();
+  if (previous && normalizeText(preserved) === normalizeText(previous) && normalizeText(source) === normalizeText(previous)) {
+    return preserved;
+  }
+  if (!previous && source && normalizeText(preserved) === normalizeText(source)) return preserved;
+  if (previous && preserved.includes(previous)) preserved = preserved.replace(previous, "").trim();
+  const managed = source ? `${SOURCE_NOTES_START}\n${source}\n${SOURCE_NOTES_END}` : "";
+  return [preserved, managed].filter(Boolean).join("\n\n");
+}
+
 export function orderInput(rows: WriterRow[], catalog: WriterCatalog, identityOnly = false): OrderImportInput {
   if (!rows.length) throw new WriterConflict("PEDIDO_INCOMPLETO", "O processamento exige o snapshot completo do pedido.", true);
   const head = rows[0];
@@ -279,7 +297,10 @@ function definedDimension(v: unknown): string {
 }
 function dimension(v: unknown): string { return normalizeText(definedDimension(v)) || "-"; }
 function productCode(v: unknown): string { return deriveProductIdentity({ codigoOriginal: text(v) }).codigoProduto.toUpperCase(); }
-export function bindSourceLines(rows: WriterRow[], input: OrderImportInput, orders: WriterRow[], catalog: WriterCatalog, missing?: WriterRow[]): Array<{ row: WriterRow; order: WriterRow }> {
+export function bindSourceLines(
+  rows: WriterRow[], input: OrderImportInput, orders: WriterRow[], catalog: WriterCatalog,
+  missing?: WriterRow[], allowQuantityMismatch = false,
+): Array<{ row: WriterRow; order: WriterRow }> {
   const matches: Array<{ row: WriterRow; order: WriterRow }> = [];
   const used = new Set<string>();
   rows.forEach((row, index) => {
@@ -306,7 +327,7 @@ export function bindSourceLines(rows: WriterRow[], input: OrderImportInput, orde
     }
     if (candidates.length !== 1 || used.has(text(candidates[0].id))) throw new WriterConflict("ITEM_PEDIDO_AMBIGUO", `Não foi possível associar unicamente ${key}, código ${text(item.codigoOriginal)}, aos itens do ApontaPRO.`);
     const order = candidates[0];
-    if (Math.abs(number(order.totalQuantity, key) - number(item.quantidade, key)) > 0.0001) throw new WriterConflict("QUANTIDADE_PEDIDO_DIVERGENTE", `A quantidade de ${key} diverge entre os sistemas.`);
+    if (Math.abs(number(order.totalQuantity, key) - number(item.quantidade, key)) > 0.0001 && !allowQuantityMismatch) throw new WriterConflict("QUANTIDADE_PEDIDO_DIVERGENTE", `A quantidade de ${key} diverge entre os sistemas.`);
     if (String(order.customerId || "") && String(order.customerId) !== String(input.cliente!.codigo)) throw new WriterConflict("CLIENTE_PEDIDO_DIVERGENTE", `Cliente do item ${key} diverge entre os sistemas.`);
     used.add(text(order.id)); matches.push({ row, order });
   });
@@ -314,10 +335,43 @@ export function bindSourceLines(rows: WriterRow[], input: OrderImportInput, orde
   return matches;
 }
 export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: WriterRow[], now: Date): WriterPlan {
-  const input = orderInput(job.rows, catalog, Boolean(orders.length));
+  const input = orderInput(job.rows, catalog);
   if (orders.length) {
+    if (orders.some((order) => order.status === "CANCELADO")) {
+      throw new WriterConflict("PEDIDO_CANCELADO", "Pedido cancelado no ApontaPRO requer revisão antes de sincronizar alterações.");
+    }
     const missing: WriterRow[] = [];
-    const matches = bindSourceLines(job.rows, input, orders, catalog, missing);
+    const matches = bindSourceLines(job.rows, input, orders, catalog, missing, true);
+    const currentFiscalTypes = [...new Set(orders.map((order) => text(order.fiscalType)).filter(Boolean))];
+    if (currentFiscalTypes.length > 1 || currentFiscalTypes.some((type) => !["COM_NF", "SEM_NF"].includes(type))) {
+      throw new WriterConflict("FISCAL_PEDIDO_DIVERGENTE", "Itens existentes possuem classificações fiscais inconsistentes.");
+    }
+    const families = new Set((input.itens || []).map((item) => normalizeText(item.familia)).filter(Boolean));
+    const hasGerencial = families.has("GERENCIAL");
+    const hasIndefinida = families.has("INDEFINIDA");
+    const fiscalWarnings: string[] = [];
+    let sourceFiscalType = currentFiscalTypes[0] as "COM_NF" | "SEM_NF" | undefined;
+    if (hasGerencial && hasIndefinida) {
+      fiscalWarnings.push(`O pedido contém famílias GERENCIAL e INDEFINIDA; classificação ${sourceFiscalType || "atual"} preservada e requer conferência.`);
+    } else if (hasGerencial) sourceFiscalType = "SEM_NF";
+    else if (hasIndefinida) sourceFiscalType = "COM_NF";
+    if (!sourceFiscalType) throw new WriterConflict("FISCAL_PEDIDO_DIVERGENTE", "Não foi possível determinar a classificação fiscal do pedido existente.");
+    const preparedByLine = new Map<string, NonNullable<ReturnType<typeof prepareOrder>["prepared"]>["lines"][number]>();
+    const validationWarnings: string[] = [];
+    let sourceHasRET = false;
+    job.rows.forEach((row, index) => {
+      const validation = prepareOrder({
+        ...input, itens: [input.itens![index]], comNotaFiscal: sourceFiscalType === "COM_NF",
+      }, catalog, now);
+      if (!validation.prepared) throw new WriterConflict("PEDIDO_INVALIDO", validation.errors.map((e) => e.message).join("; "), validation.errors.some((e) => /NAO_ENCONTRADO/.test(e.code)));
+      preparedByLine.set(sourceLineKey(row), validation.prepared.lines[0]);
+      sourceHasRET = validation.prepared.hasRET;
+      validationWarnings.push(...validation.warnings);
+    });
+    const sourceHead = job.rows[0];
+    const rawDeliveryDate = value(sourceHead, "promessaEntrega") || value(sourceHead, "previsaoFaturamento");
+    const sourceDeliveryDate = businessDate(rawDeliveryDate);
+    const deliveryDate = /^\d{4}-\d{2}-\d{2}$/.test(sourceDeliveryDate || "") ? sourceDeliveryDate : undefined;
     const payment = sourcePayment(job.rows[0]);
     const representativeMatch = input.representante
       ? matchRepresentative(input.representante, catalog.users)
@@ -328,15 +382,49 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
     const representativePatch = representativeMatch?.representative
       ? { representativeId: representativeMatch.representative.id, representativeName: representativeMatch.representative.name }
       : {};
-    const mutations = matches.map(({ row, order }) => patchMutation("orders", order.id, order, {
-      teksystemLineId: sourceLineKey(row), teksystemOrderId: job.externalKey,
-      teksystemCompanyId: value(row, "empresa"), teksystemCustomerCode: text(value(row, "cliente")),
-      paymentCondition: normalizeSystemPaymentCondition(payment.method),
-      paymentTerms: payment.terms.length ? `${payment.terms.join("/")} Dias` : "", paymentTermsDays: payment.terms,
-      billingRule: "cadastro", teksystemPaymentDescription: payment.description,
-      notes: withPaymentNote(order.notes, payment.note),
-      ...representativePatch,
-    })).filter((m): m is WriterMutation => Boolean(m));
+    const mutations = matches.map(({ row, order }) => {
+      const key = sourceLineKey(row);
+      const line = preparedByLine.get(key);
+      if (!line) throw new WriterConflict("PEDIDO_INCOMPLETO", `Não foi possível calcular os dados da linha ${key}.`);
+      const quantityChanged = Math.abs(number(order.totalQuantity, key) - line.totalQuantity) > 0.0001;
+      const currentInvoiced = number(order.invoicedQuantity || (order.status === "FATURADO" ? order.totalQuantity : 0), key);
+      if (quantityChanged && (
+        currentInvoiced > 0 || number(order.packedQuantity, key) > 0 || number(order.producedQuantity, key) > 0 ||
+        number(order.paintedQuantity, key) > 0 || number(order.cutQuantity, key) > 0 ||
+        !["PENDENTE", "AGUARDANDO_APROVACAO"].includes(text(order.status))
+      )) {
+        throw new WriterConflict("QUANTIDADE_COM_OPERACAO_INICIADA", `A quantidade de ${key} mudou, mas o item já tem operação/faturamento ou saiu de PENDENTE. Requer revisão antes de ajustar.`);
+      }
+      const commercialFieldsChanged = [
+        ["unitPrice", line.unitPrice], ["discountPercent", line.discountPercent],
+        ["discountAmount", line.discountAmount], ["fiscalType", sourceFiscalType],
+      ].some(([field, next]) => signature(order[field as string] ?? null) !== signature(next ?? null));
+      if (commercialFieldsChanged && currentInvoiced > 0) {
+        throw new WriterConflict("PEDIDO_FATURADO_REQUER_REVISAO", `Dados comerciais da linha ${key} mudaram após faturamento. Requer revisão.`);
+      }
+      const sourceObservations = text(value(sourceHead, "observacoes"));
+      const notes = withPaymentNote(
+        withSourceNotes(order.notes, sourceObservations, order.teksystemOrderObservations), payment.note,
+      );
+      const patch = {
+        teksystemLineId: key, teksystemOrderId: job.externalKey,
+        teksystemCompanyId: value(row, "empresa"), teksystemCustomerCode: text(value(row, "cliente")),
+        paymentCondition: normalizeSystemPaymentCondition(payment.method),
+        paymentTerms: payment.terms.length ? `${payment.terms.join("/")} Dias` : "", paymentTermsDays: payment.terms,
+        billingRule: "cadastro", teksystemPaymentDescription: payment.description,
+        teksystemOrderObservations: sourceObservations, notes,
+        totalQuantity: line.totalQuantity, quantityScaled: line.quantityScaled,
+        unitPrice: line.unitPrice, unitPriceScaled: line.unitPriceScaled,
+        discountPercent: line.discountPercent, discountPercentScaled: line.discountPercentScaled,
+        discountAmount: line.discountAmount, discountAmountScaled: line.discountAmountScaled,
+        grossTotalScaled: line.grossTotalScaled, netTotalScaled: line.netTotalScaled,
+        itemNotes: line.itemNotes, fiscalType: sourceFiscalType,
+        hasRET: sourceHasRET,
+        ...(deliveryDate ? { deliveryDate } : {}),
+        ...representativePatch,
+      };
+      return patchMutation("orders", order.id, order, patch);
+    }).filter((m): m is WriterMutation => Boolean(m));
     const added: WriterRow[] = [];
     const warnings: string[] = [];
     if (missing.length) {
@@ -364,12 +452,17 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
         added.push({ id, codigo: text(value(row, "codigoItem")), quantidade: document.totalQuantity, sourceLineId: key });
       });
     }
-    return { action: missing.length ? "COMPLEMENTADO" : "JA_EXISTE", mutations,
+    const pdfFields = new Set([
+      "paymentCondition", "paymentTerms", "paymentTermsDays", "billingRule", "notes", "representativeName", "representativeId",
+      "deliveryDate", "totalQuantity", "unitPrice", "discountPercent", "discountAmount", "fiscalType", "hasRET", "itemNotes",
+    ]);
+    const updatedFields = [...new Set(mutations.flatMap((m) => Object.keys(m.patch)).filter((field) => pdfFields.has(field)))].sort();
+    return { action: missing.length ? "COMPLEMENTADO" : updatedFields.length ? "ATUALIZADO" : "JA_EXISTE", mutations,
       ...(missing.length ? { orderGuards: orders } : {}),
       details: { codigoPedido: job.externalKey, orderIds: [...matches.map(({ order }) => order.id), ...added.map((o) => o.id)],
-        pdfNeedsRefresh: missing.length > 0 || mutations.some((m) => m.collection === "orders" &&
-          ["paymentCondition", "paymentTerms", "paymentTermsDays", "billingRule", "notes", "representativeName", "representativeId"].some((key) => Object.hasOwn(m.patch, key))),
-        quantidadeItensIncluidos: added.length, itensIncluidos: added, avisos: warnings } };
+        pdfNeedsRefresh: missing.length > 0 || updatedFields.length > 0,
+        camposAtualizados: updatedFields, quantidadeItensIncluidos: added.length, itensIncluidos: added,
+        avisos: [...new Set([...warnings, ...fiscalWarnings, ...validationWarnings])] } };
   }
   // The legacy manual importer may use exact descriptions as a fallback. The
   // integration must validate every product by code BEFORE invoking that importer.
@@ -389,6 +482,58 @@ export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: Writer
         customerCode: text(value(job.rows[0], "cliente")), lineIds: job.rows.map(sourceLineKey) },
     },
   };
+}
+export function planCargaQuantityMutations(
+  job: WriterJob, plan: WriterPlan, cargas: WriterRow[], now = new Date(),
+): WriterMutation[] {
+  if (job.kind !== "pedidos") return [];
+  const linked = (orderId: number) => cargas.filter((carga) =>
+    carga.tenantId === job.tenantId && Array.isArray(carga.orderIds) &&
+    carga.orderIds.some((id: unknown) => Number(id) === orderId),
+  );
+  const targets = new Map<string, { before: WriterRow; quantities: Record<string, number>; auditTrail: WriterRow[] }>();
+  const warnings = new Set<string>();
+  for (const mutation of plan.mutations.filter((entry) => entry.collection === "orders" && entry.before)) {
+    const orderId = Number(mutation.docId);
+    if (!Number.isSafeInteger(orderId)) continue;
+    const loads = linked(orderId);
+    if (Object.hasOwn(mutation.patch, "deliveryDate") && loads.length) {
+      warnings.add(`Pedido ${job.externalKey}: data de entrega atualizada; vínculo existente com carga preservado. Confira a programação da expedição.`);
+    }
+    if (!Object.hasOwn(mutation.patch, "totalQuantity") || !loads.length) continue;
+    if (loads.length > 1) throw new WriterConflict("PEDIDO_EM_MULTIPLAS_CARGAS", `A quantidade do item ${orderId} mudou, mas ele está distribuído em mais de uma carga. Requer revisão para preservar a alocação.`);
+    const carga = loads[0];
+    if (!["ABERTA", "PLANEJADA"].includes(text(carga.status))) {
+      throw new WriterConflict("CARGA_OPERACIONAL_REQUER_REVISAO", `A quantidade do item ${orderId} mudou, mas a carga ${text(carga.name || carga.id)} já avançou na operação.`);
+    }
+    if (number(carga.separatedQuantities?.[orderId] || 0, String(orderId)) > 0) {
+      throw new WriterConflict("CARGA_SEPARADA_REQUER_REVISAO", `A quantidade do item ${orderId} mudou, mas já há separação registrada na carga ${text(carga.name || carga.id)}.`);
+    }
+    const key = text(carga.docId || carga.id);
+    let target = targets.get(key);
+    if (!target) {
+      target = {
+        before: carga,
+        quantities: { ...(carga.orderQuantities || {}) },
+        auditTrail: Array.isArray(carga.auditTrail) ? [...carga.auditTrail] : [],
+      };
+      targets.set(key, target);
+    }
+    target.quantities[String(orderId)] = number(mutation.patch.totalQuantity, String(orderId));
+    target.auditTrail.push({
+      timestamp: now.getTime(), userId: "teksystem-writer-agent", userName: "Tek-System",
+      action: `Quantidade do item ${orderId} atualizada para ${mutation.patch.totalQuantity} un conforme o pedido ${job.externalKey}`,
+    });
+  }
+  if (warnings.size) plan.details.avisos = [...new Set([...(Array.isArray(plan.details.avisos) ? plan.details.avisos : []), ...warnings])];
+  const mutations: WriterMutation[] = [];
+  for (const [docId, target] of targets) {
+    const patch = { orderQuantities: target.quantities, auditTrail: target.auditTrail };
+    if (signature(target.before.orderQuantities || {}) === signature(patch.orderQuantities) &&
+        signature(target.before.auditTrail || []) === signature(patch.auditTrail)) continue;
+    mutations.push({ collection: "cargas", docId, before: target.before, patch });
+  }
+  return mutations;
 }
 export function planBilling(job: WriterJob, catalog: WriterCatalog, orders: WriterRow[], now: Date): WriterPlan {
   if (!orders.length) throw new WriterConflict("PEDIDO_NAO_ENCONTRADO", `Pedido ${job.externalKey} ainda não foi lançado.`, true);
