@@ -39,6 +39,8 @@ function cleanRows(rows) {
   return rows.map(r => ({ kind: r.kind, codigo: String(r.codigoPedido || r.codigo || ''), state: r.state,
     action: r.action || '', issues: (r.issues || []).map(i => ({ code: i.code, message: safeMessage(i.message) })),
     pdfNeedsRefresh: r.pdfNeedsRefresh === true,
+    camposAtualizados: Array.isArray(r.camposAtualizados) ? r.camposAtualizados.map(x => safeMessage(x)) : [],
+    avisos: Array.isArray(r.avisos) ? r.avisos.map(safeMessage) : [],
     quantidadeItens: r.quantidadeItens, itensAdicionados: r.itensAdicionados,
     itens: Array.isArray(r.itens) ? r.itens.map(i => ({ codigo: i.codigo, quantidade: i.quantidade, quantidadeFaturada: i.quantidadeFaturada })) : undefined }));
 }
@@ -98,7 +100,11 @@ export function renderReport(batch) {
     lines.push(`${labels[kind] || kind}: ${count} — ${action || state} (${state}).`);
   }
   lines.push('', 'ALTERAÇÕES E REVISÕES DESTA RODADA');
-  for (const row of batch.rows) lines.push(`${labels[row.kind] || row.kind} ${row.codigo}: ${row.action || row.state}${row.issues?.length ? ' — ' + row.issues.map(i => `${i.code}: ${i.message}`).join('; ') : ''}`);
+  for (const row of batch.rows) {
+    lines.push(`${labels[row.kind] || row.kind} ${row.codigo}: ${row.action || row.state}${row.issues?.length ? ' — ' + row.issues.map(i => `${i.code}: ${i.message}`).join('; ') : ''}`);
+    if (row.camposAtualizados?.length) lines.push(`  Campos atualizados: ${row.camposAtualizados.join(', ')}.`);
+    for (const warning of row.avisos || []) lines.push(`  Aviso: ${warning}`);
+  }
   lines.push('', 'SITUAÇÃO DA FILA NO APONTAPRO');
   for (const [kind, s] of Object.entries(out.writer?.status?.kinds || {})) lines.push(`${labels[kind] || kind}: aplicados ${s.APPLIED || 0}; revisão ${s.REVIEW || 0}; pendentes ${s.READY || 0}; processando ${s.PROCESSING || 0}; nova tentativa ${s.RETRY || 0}.`);
   lines.push('Revisões de pedidos e faturamento podem se referir aos mesmos pedidos; não somar como pedidos distintos.',

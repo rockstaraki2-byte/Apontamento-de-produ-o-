@@ -27,6 +27,8 @@ export function buildImportedOrderDocument(
     ...(input.teksystem ? {
       teksystemLineId: input.teksystem.lineIds[index], teksystemOrderId: input.prepared.codigoPedido,
       teksystemCompanyId: input.teksystem.companyId, teksystemCustomerCode: input.teksystem.customerCode,
+      teksystemOrderObservations: String(input.prepared.orderNotes || "")
+        .replace(/\[Pagamento Tek-System\][\s\S]*?\[\/Pagamento Tek-System\]/g, "").trim(),
     } : {}),
   };
 }

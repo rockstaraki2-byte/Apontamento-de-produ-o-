@@ -8,7 +8,7 @@ import { buildImportedOrderDocument } from "./orderImportDocuments.js";
 import type { NormalizedTekSystemSyncPayload } from "./teksystemSync.js";
 import { syncRecordKey } from "./teksystemSync.js";
 import {
-  buildWriterJobs, planWriterJob, signature, stableNumericId, text, WRITER_KINDS, WriterConflict,
+  buildWriterJobs, planCargaQuantityMutations, planWriterJob, signature, stableNumericId, text, WRITER_KINDS, WriterConflict,
   type WriterCatalog, type WriterCatalogEntry, type WriterJob, type WriterKind, type WriterPlan, type WriterRow,
 } from "./teksystemWriter.js";
 
@@ -37,6 +37,12 @@ async function loadCatalog(tenantId: string, kind?: WriterKind): Promise<WriterC
 async function loadOrders(tenantId: string, code: string): Promise<WriterRow[]> {
   assertTenant(tenantId);
   return rows(await getDocs(query(collection(db, "orders"), where("tenantId", "==", tenantId), where("orderCode", "==", code))));
+}
+async function attachCargaMutations(job: WriterJob, plan: WriterPlan) {
+  if (job.kind !== "pedidos" || !plan.mutations.some((mutation) => mutation.collection === "orders" &&
+      (Object.hasOwn(mutation.patch, "totalQuantity") || Object.hasOwn(mutation.patch, "deliveryDate")))) return;
+  const tenantCargas = rows(await getDocs(query(collection(db, "cargas"), where("tenantId", "==", job.tenantId))));
+  plan.mutations.push(...planCargaQuantityMutations(job, plan, tenantCargas));
 }
 
 export async function enqueueTekSystemWriter(payload: NormalizedTekSystemSyncPayload) {
@@ -142,7 +148,11 @@ async function applyPlan(job: WriterJob, owner: string, plan: WriterPlan) {
       if (mutation.collection !== "logs") {
         if (!mutation.before && current) throw new WriterConflict("CADASTRO_ALTERADO", "Cadastro criado por outra operação; será verificado novamente.", true);
         if (mutation.before && !current) throw new WriterConflict("CADASTRO_REMOVIDO", "Cadastro removido por outra operação; será verificado novamente.", true);
-        const checkKeys = [...new Set([...Object.keys(mutation.patch), "id", "tenantId", ...(mutation.collection === "orders" ? ["totalQuantity", "invoicedQuantity", "itemId", "status", "customerId"] : [])])];
+        const checkKeys = [...new Set([
+          ...Object.keys(mutation.patch), "id", "tenantId",
+          ...(mutation.collection === "orders" ? ["totalQuantity", "invoicedQuantity", "itemId", "status", "customerId", "packedQuantity", "producedQuantity", "paintedQuantity", "cutQuantity"] : []),
+          ...(mutation.collection === "cargas" ? ["status", "separatedQuantities", "orderIds"] : []),
+        ])];
         if (current && mutation.before && checkKeys.some((key) => signature(current[key] ?? null) !== signature(mutation.before![key] ?? null))) throw new WriterConflict("CADASTRO_ALTERADO", "O registro mudou durante o processamento; será verificado novamente.", true);
       }
       const before = Object.fromEntries(Object.keys(mutation.patch).map((key) => [key, current?.[key] ?? null]));
@@ -172,6 +182,7 @@ export async function previewWriterPayload(payload: NormalizedTekSystemSyncPaylo
         orders = ordersByCode.get(job.externalKey)!;
       }
       const plan = planWriterJob(job, catalog, orders);
+      await attachCargaMutations(job, plan);
       updateCatalog(catalog, plan);
       if (plan.createOrder) {
         const cargaPreview = await orderRepository.previewCargaForOrder(plan.createOrder);
@@ -236,6 +247,7 @@ export async function processWriterQueue(tenantId: string, requestedLimit = 80) 
           if (parent.exists() && parent.data().tenantId === tenantId && parent.data().state === "REVIEW") throw new WriterConflict("PEDIDO_REQUER_REVISAO", "O lançamento do pedido precisa de revisão antes do faturamento.");
         }
         const plan = planWriterJob(job, catalog, orders);
+        await attachCargaMutations(job, plan);
         if (plan.createOrder) {
           const result = await repository.createOrderAtomically(plan.createOrder);
           plan.details.orderIds = result.created ? result.orderIds : result.existingOrderIds || [];
