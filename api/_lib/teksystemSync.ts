@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 export const TEKSYSTEM_SYNC_SCHEMA_VERSION = 1;
 export const DEFAULT_TEKSYSTEM_TENANT_ID = "imperio";
 
-export type TekSystemEntityType = "clientes" | "produtos" | "pedidos" | "faturamentos" | "romaneios" | "faturamentoDiario";
+export type TekSystemEntityType = "clientes" | "produtos" | "pedidos" | "faturamentos" | "romaneios" | "faturamentoDiario" | "faturamentoPorRepresentante";
 
 export interface TekSystemSourceInfo {
   readerVersion?: number;
@@ -61,6 +61,7 @@ const ENTITY_TYPES: TekSystemEntityType[] = [
   "faturamentos",
   "romaneios",
   "faturamentoDiario",
+  "faturamentoPorRepresentante",
 ];
 
 function cleanText(value: unknown, fallback = ""): string {
@@ -158,6 +159,123 @@ function validateDailyBillingRows(rows: Record<string, unknown>[], issues: TekSy
   }
 }
 
+function validateRepresentativeBillingRows(
+  rows: Record<string, unknown>[],
+  dailyRows: Record<string, unknown>[],
+  issues: TekSystemSyncValidationIssue[],
+) {
+  const seenMonths = new Set<string>();
+  const dailyByMonth = new Map<string, Map<string, Record<string, unknown>>>();
+  for (const row of dailyRows) {
+    const monthKey = String(row.monthKey || "");
+    const date = String(row.date || "");
+    const month = dailyByMonth.get(monthKey) || new Map<string, Record<string, unknown>>();
+    month.set(date, row);
+    dailyByMonth.set(monthKey, month);
+  }
+
+  rows.forEach((row, index) => {
+    const field = "entities.faturamentoPorRepresentante[" + index + "]";
+    const monthKey = row.monthKey;
+    const throughDate = row.completeThroughDate;
+    if (typeof monthKey !== "string" || !/^\d{4}-\d{2}$/.test(monthKey)) {
+      issues.push({ field: field + ".monthKey", message: "Informe o mês no formato YYYY-MM." });
+      return;
+    }
+    if (seenMonths.has(monthKey)) issues.push({ field: field + ".monthKey", message: "Mês duplicado no resumo por representante." });
+    seenMonths.add(monthKey);
+    if (!isDateOnly(throughDate) || throughDate.slice(0, 7) !== monthKey) {
+      issues.push({ field: field + ".completeThroughDate", message: "Informe a data de cobertura dentro do mesmo mês." });
+      return;
+    }
+    if (!Number.isSafeInteger(row.amountCents) || !Number.isSafeInteger(row.invoiceCount) || Number(row.invoiceCount) < 0) {
+      issues.push({ field, message: "O total e a quantidade de notas devem ser inteiros válidos." });
+      return;
+    }
+    const daysCovered = Number(throughDate.slice(8, 10));
+    const dailyTotals = row.dailyTotals && typeof row.dailyTotals === "object" && !Array.isArray(row.dailyTotals)
+      ? row.dailyTotals as Record<string, unknown>
+      : {};
+    const representatives = row.representatives && typeof row.representatives === "object" && !Array.isArray(row.representatives)
+      ? row.representatives as Record<string, unknown>
+      : {};
+    let overallAmount = 0;
+    let overallInvoices = 0;
+    for (let day = 1; day <= daysCovered; day += 1) {
+      const date = monthKey + "-" + String(day).padStart(2, "0");
+      const daily = dailyTotals[date] as Record<string, unknown> | undefined;
+      if (!daily || !Number.isSafeInteger(daily.amountCents) || !Number.isSafeInteger(daily.invoiceCount) || Number(daily.invoiceCount) < 0) {
+        issues.push({ field: field + ".dailyTotals." + date, message: "Falta um total diário válido para a data coberta." });
+        continue;
+      }
+      overallAmount += Number(daily.amountCents);
+      overallInvoices += Number(daily.invoiceCount);
+      const totalDayAmount = { amount: 0 };
+      const totalDayInvoices = { count: 0 };
+      for (const [repId, rawRep] of Object.entries(representatives)) {
+        const rep = rawRep && typeof rawRep === "object" && !Array.isArray(rawRep)
+          ? rawRep as Record<string, unknown>
+          : {};
+        const repDailyTotals = rep.dailyTotals && typeof rep.dailyTotals === "object" && !Array.isArray(rep.dailyTotals)
+          ? rep.dailyTotals as Record<string, unknown>
+          : {};
+        const repDaily = repDailyTotals[date] as Record<string, unknown> | undefined;
+        if (!repId || typeof rep.name !== "string" || !rep.name.trim()) {
+          issues.push({ field: field + ".representatives." + repId, message: "Informe o identificador e o nome do representante." });
+        }
+        if (!repDaily || !Number.isSafeInteger(repDaily.amountCents) || !Number.isSafeInteger(repDaily.invoiceCount) || Number(repDaily.invoiceCount) < 0) {
+          issues.push({ field: field + ".representatives." + repId + ".dailyTotals." + date, message: "Falta o total diário do representante." });
+          continue;
+        }
+        totalDayAmount.amount += Number(repDaily.amountCents);
+        totalDayInvoices.count += Number(repDaily.invoiceCount);
+      }
+      if (totalDayAmount.amount !== daily.amountCents || totalDayInvoices.count !== daily.invoiceCount) {
+        issues.push({ field: field + ".representatives", message: "A soma por representante do dia " + date + " não corresponde ao total diário." });
+      }
+      const overallForDay = dailyByMonth.get(monthKey)?.get(date);
+      if (dailyByMonth.has(monthKey) && (
+        !overallForDay ||
+        overallForDay.completeThroughDate !== throughDate ||
+        overallForDay.amountCents !== daily.amountCents ||
+        overallForDay.invoiceCount !== daily.invoiceCount
+      )) {
+        issues.push({ field: field + ".dailyTotals." + date, message: "O resumo precisa reconciliar com o faturamento diário do TekSystem." });
+      }
+    }
+    let repAmountSum = 0;
+    let repInvoiceSum = 0;
+    for (const rawRep of Object.values(representatives)) {
+      const rep = rawRep && typeof rawRep === "object" && !Array.isArray(rawRep)
+        ? rawRep as Record<string, unknown>
+        : {};
+      const repDailyTotals = rep.dailyTotals && typeof rep.dailyTotals === "object" && !Array.isArray(rep.dailyTotals)
+        ? rep.dailyTotals as Record<string, unknown>
+        : {};
+      let amount = 0;
+      let invoices = 0;
+      for (let day = 1; day <= daysCovered; day += 1) {
+        const date = monthKey + "-" + String(day).padStart(2, "0");
+        const value = repDailyTotals[date] as Record<string, unknown> | undefined;
+        if (value && Number.isSafeInteger(value.amountCents) && Number.isSafeInteger(value.invoiceCount) && Number(value.invoiceCount) >= 0) {
+          amount += Number(value.amountCents);
+          invoices += Number(value.invoiceCount);
+        }
+      }
+      if (!Number.isSafeInteger(rep.amountCents) || !Number.isSafeInteger(rep.invoiceCount) || Number(rep.invoiceCount) < 0 ||
+        amount !== rep.amountCents || invoices !== rep.invoiceCount) {
+        issues.push({ field: field + ".representatives", message: "Os totais dos representantes devem reconciliar com seus dias." });
+      }
+      repAmountSum += amount;
+      repInvoiceSum += invoices;
+    }
+    if (!Object.keys(representatives).length || overallAmount !== row.amountCents || overallInvoices !== row.invoiceCount ||
+      repAmountSum !== row.amountCents || repInvoiceSum !== row.invoiceCount) {
+      issues.push({ field, message: "A soma por representante deve corresponder ao total geral do TekSystem." });
+    }
+  });
+}
+
 function normalizeEntityRows(
   value: unknown,
   entity: TekSystemEntityType,
@@ -235,6 +353,7 @@ export function validateAndNormalizeTekSystemSync(
   ) as Record<TekSystemEntityType, Record<string, unknown>[]>;
 
   validateDailyBillingRows(entities.faturamentoDiario, issues);
+  validateRepresentativeBillingRows(entities.faturamentoPorRepresentante, entities.faturamentoDiario, issues);
 
   for (const entity of ENTITY_TYPES) {
     const seen = new Set<string>();

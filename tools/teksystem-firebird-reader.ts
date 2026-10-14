@@ -5,9 +5,9 @@ import type { Database, Options } from "node-firebird";
 import { validateAndNormalizeTekSystemSync, type TekSystemSyncPayload } from "../api/_lib/teksystemSync.js";
 import { readCompleteEntities } from "./teksystem-firebird-v2.js";
 
-type EntityName = "clientes" | "produtos" | "pedidos" | "faturamentos" | "romaneios" | "faturamentoDiario";
+type EntityName = "clientes" | "produtos" | "pedidos" | "faturamentos" | "romaneios" | "faturamentoDiario" | "faturamentoPorRepresentante";
 
-const ALL_ENTITIES: EntityName[] = ["clientes", "produtos", "pedidos", "faturamentos", "romaneios", "faturamentoDiario"];
+const ALL_ENTITIES: EntityName[] = ["clientes", "produtos", "pedidos", "faturamentos", "romaneios", "faturamentoDiario", "faturamentoPorRepresentante"];
 
 function envNumber(name: string, fallback: number): number {
   const value = Number(process.env[name]);
@@ -96,6 +96,9 @@ function rowValue(row: Record<string, unknown>, key: string) {
 
 function withExternalIds(entity: EntityName, rows: Record<string, unknown>[]) {
   return rows.map((row) => {
+    if (entity === "faturamentoPorRepresentante") {
+      return { ...row, externalId: "faturamento-representante:" + String(rowValue(row, "monthKey") ?? "") };
+    }
     const codigo = String(rowValue(row, "codigo") ?? rowValue(row, "codigoPedido") ?? rowValue(row, "numeroNota") ?? rowValue(row, "id") ?? "");
     const item = entity === "pedidos"
       ? rowValue(row, "detalheId") ?? rowValue(row, "itemId")
@@ -134,6 +137,7 @@ function printHelp() {
   npm run teksystem:firebird -- export --output caminho/lote.json --since 2026-01-01T00:00:00.000Z
   npm run teksystem:firebird -- export --output caminho/lote.json --entities pedidos,romaneios --date 2026-10-05
   npm run teksystem:firebird -- export --output caminho/lote.json --entities faturamentoDiario --billing-history-snapshot
+  npm run teksystem:firebird -- export --output caminho/lote.json --entities faturamentoDiario,faturamentoPorRepresentante --representative-billing-history-snapshot
 
 Variáveis obrigatórias (somente locais):
   TEKSYSTEM_DB_USER, TEKSYSTEM_DB_PASSWORD
@@ -178,6 +182,7 @@ async function runExport(args: string[]) {
       args.includes("--catalog-snapshot"),
       args.includes("--customer-snapshot"),
       args.includes("--billing-history-snapshot"),
+      args.includes("--representative-billing-history-snapshot"),
     );
     const payload: TekSystemSyncPayload = {
       syncId: `teksystem-firebird-${Date.now()}`,

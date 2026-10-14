@@ -1,6 +1,8 @@
 import * as Firebird from "node-firebird";
 import type { Database } from "node-firebird";
 import type { TekSystemEntityType } from "../api/_lib/teksystemSync.js";
+import { mapRepresentativeName } from "../api/_lib/orderImportRules.js";
+import { getSystemRepresentativeByCanonicalName } from "../api/_lib/systemRepresentatives.js";
 
 type Row = Record<string, any>;
 export async function readOnlyRows(db: Database, sql: string, params: unknown[] = []): Promise<Row[]> {
@@ -52,9 +54,9 @@ function daysInMonth(year: number, month: number): number {
 export async function readCompleteEntities(
   db: Database, entities: TekSystemEntityType[], companies: number[], since?: Date,
   businessDate?: { value: string }, catalogSnapshot = false, customerSnapshot = false,
-  billingHistorySnapshot = false,
+  billingHistorySnapshot = false, representativeBillingHistorySnapshot = false,
 ) {
-  const result: Record<TekSystemEntityType, Row[]> = { clientes: [], produtos: [], pedidos: [], faturamentos: [], romaneios: [], faturamentoDiario: [] };
+  const result: Record<TekSystemEntityType, Row[]> = { clientes: [], produtos: [], pedidos: [], faturamentos: [], romaneios: [], faturamentoDiario: [], faturamentoPorRepresentante: [] };
   let orderCodes: string[] = [];
   if (entities.includes("pedidos") || entities.includes("romaneios")) {
     const companyClause = `d.EMPRESA_DOCFAT IN (${placeholders(companies)})`;
@@ -405,6 +407,205 @@ export async function readCompleteEntities(
           });
         }
       }
+    }
+  }
+  if (entities.includes("faturamentoPorRepresentante")) {
+    const today = dateInBillingTimeZone(new Date());
+    const currentMonth = today.slice(0, 7);
+    const dateFields = "CAST(nf.DATAEMISSAO_NF AS DATE)";
+    const monthPeriods = new Map<string, { year: number; month: number }>();
+    const [currentYear, currentMonthNumber] = currentMonth.split("-").map(Number);
+    monthPeriods.set(currentMonth, { year: currentYear, month: currentMonthNumber });
+
+    if (representativeBillingHistorySnapshot || !since) {
+      const firstFiscalDate = await readOnlyRows(db,
+        "SELECT FIRST 1 EXTRACT(YEAR FROM " + dateFields + ") AS ano, EXTRACT(MONTH FROM " + dateFields + ") AS mes "
+        + "FROM NOTA_FISCAL nf WHERE nf.EMPRESA_NF IN (" + placeholders(companies) + ") "
+        + "AND " + dateFields + " <= CAST(? AS DATE) ORDER BY " + dateFields + " ASC",
+        [...companies, today]);
+      const firstMonth = firstFiscalDate[0]
+        ? String(Number(firstFiscalDate[0].ano)).padStart(4, "0") + "-" + String(Number(firstFiscalDate[0].mes)).padStart(2, "0")
+        : currentMonth;
+      const [firstYear, firstMonthNumber] = firstMonth.split("-").map(Number);
+      for (let year = firstYear; year <= currentYear; year += 1) {
+        const first = year === firstYear ? firstMonthNumber : 1;
+        const last = year === currentYear ? currentMonthNumber : 12;
+        for (let month = first; month <= last; month += 1) {
+          const monthKey = String(year).padStart(4, "0") + "-" + String(month).padStart(2, "0");
+          monthPeriods.set(monthKey, { year, month });
+        }
+      }
+    } else {
+      for (const row of result.faturamentoDiario) {
+        const monthKey = key(row.monthKey);
+        if (/^\d{4}-\d{2}$/.test(monthKey)) {
+          const [year, month] = monthKey.split("-").map(Number);
+          monthPeriods.set(monthKey, { year, month });
+        }
+      }
+      const repChangedMonths = await readOnlyRows(db, [
+        "SELECT DISTINCT EXTRACT(YEAR FROM " + dateFields + ") AS ano, EXTRACT(MONTH FROM " + dateFields + ") AS mes",
+        "FROM NOTA_FISCAL nf WHERE nf.EMPRESA_NF IN (" + placeholders(companies) + ")",
+        "AND " + dateFields + " <= CAST(? AS DATE) AND (nf.DATAHORAALTERACAO_NF >= ? OR EXISTS (",
+        "SELECT FIRST 1 1 FROM CARGA c",
+        "JOIN CARGA_DOCUMENTOS cd ON cd.CARGA_CARDOC = c.CODIGO_CARGA",
+        "JOIN CARGA_ITENS ci ON ci.AUTOINCCARDOC_CARITE = cd.AUTOINC_CARDOC",
+        "JOIN DOCUMENTO_ITEM_DETALHE det ON det.AUTOINC_DOCITEMDET = ci.AUTOINCITEMDETDOC_CARITE",
+        "LEFT JOIN DOCUMENTO_COMISSAO com ON com.DOCUMENTO_DOCCOM = det.DOCUMENTO_DOCITEMDET",
+        "WHERE c.CODIGO_CARGA = nf.CARGA_NF AND c.EMPRESA_CARGA IN (" + placeholders(companies) + ")",
+        "AND (c.DATAHORAALTERACAO_CARGA >= ? OR cd.DATAHORAALTERACAO_CARDOC >= ? OR ci.DATAHORAALTERACAO_CARITE >= ?",
+        "OR det.DATAHORAALTERACAO_DOCITEMDET >= ? OR com.DATAHORAALTERACAO_DOCCOM >= ?)))",
+      ].join(" "), [...companies, today, since, ...companies, since, since, since, since, since]);
+      for (const row of repChangedMonths) {
+        const year = Number(row.ano);
+        const month = Number(row.mes);
+        monthPeriods.set(String(year).padStart(4, "0") + "-" + String(month).padStart(2, "0"), { year, month });
+      }
+      if (today.slice(8, 10) === "01") {
+        const previous = new Date(Date.UTC(currentYear, currentMonthNumber - 2, 1));
+        const year = previous.getUTCFullYear();
+        const month = previous.getUTCMonth() + 1;
+        monthPeriods.set(String(year).padStart(4, "0") + "-" + String(month).padStart(2, "0"), { year, month });
+      }
+    }
+
+    const periods = [...monthPeriods].sort(([a], [b]) => a.localeCompare(b));
+    const monthConditions = periods.map(() => "(EXTRACT(YEAR FROM " + dateFields + ") = ? AND EXTRACT(MONTH FROM " + dateFields + ") = ?)").join(" OR ");
+    const periodParams = periods.flatMap(([, period]) => [period.year, period.month]);
+    const invoiceRows = await readOnlyRows(db, [
+      "SELECT DISTINCT nf.AUTOINC_NF AS notaid, EXTRACT(YEAR FROM " + dateFields + ") AS ano,",
+      "EXTRACT(MONTH FROM " + dateFields + ") AS mes, EXTRACT(DAY FROM " + dateFields + ") AS dia,",
+      "nf.VALORTOTAL_NF AS valortotal, d.CODIGO_DOCFAT AS codigopedido,",
+      "rep.PESSOA_DOCCOM AS representantecodigo, p.RAZAOSOCIAL_PESSOA AS representantenome",
+      "FROM NOTA_FISCAL nf",
+      "LEFT JOIN CARGA c ON c.CODIGO_CARGA = nf.CARGA_NF AND c.EMPRESA_CARGA IN (" + placeholders(companies) + ")",
+      "LEFT JOIN CARGA_DOCUMENTOS cd ON cd.CARGA_CARDOC = c.CODIGO_CARGA",
+      "LEFT JOIN CARGA_ITENS ci ON ci.AUTOINCCARDOC_CARITE = cd.AUTOINC_CARDOC",
+      "LEFT JOIN DOCUMENTO_ITEM_DETALHE det ON det.AUTOINC_DOCITEMDET = ci.AUTOINCITEMDETDOC_CARITE",
+      "LEFT JOIN DOCUMENTO_FATURA d ON d.CODIGO_DOCFAT = det.DOCUMENTO_DOCITEMDET",
+      "AND d.CLIENTE_DOCFAT = nf.PESSOA_NF AND d.EMPRESA_DOCFAT IN (" + placeholders(companies) + ")",
+      "LEFT JOIN DOCUMENTO_COMISSAO rep ON rep.DOCUMENTO_DOCCOM = d.CODIGO_DOCFAT AND rep.PRINCIPAL_DOCCOM = 'S'",
+      "LEFT JOIN PESSOA p ON p.CODIGO_PESSOA = rep.PESSOA_DOCCOM",
+      "WHERE nf.EMPRESA_NF IN (" + placeholders(companies) + ")",
+      "AND nf.SITUACAO_NF IN ('N', 'E', '6', '7', '8') AND " + dateFields + " <= CAST(? AS DATE)",
+      "AND (" + monthConditions + ")",
+    ].join(" "), [...companies, ...companies, ...companies, today, ...periodParams]);
+
+    const overallRows = await readOnlyRows(db, [
+      "SELECT EXTRACT(YEAR FROM " + dateFields + ") AS ano, EXTRACT(MONTH FROM " + dateFields + ") AS mes,",
+      "EXTRACT(DAY FROM " + dateFields + ") AS dia, SUM(COALESCE(nf.VALORTOTAL_NF, 0)) AS valortotal,",
+      "COUNT(nf.AUTOINC_NF) AS quantidade FROM NOTA_FISCAL nf",
+      "WHERE nf.EMPRESA_NF IN (" + placeholders(companies) + ")",
+      "AND nf.SITUACAO_NF IN ('N', 'E', '6', '7', '8') AND " + dateFields + " <= CAST(? AS DATE)",
+      "AND (" + monthConditions + ")",
+      "GROUP BY EXTRACT(YEAR FROM " + dateFields + "), EXTRACT(MONTH FROM " + dateFields + "), EXTRACT(DAY FROM " + dateFields + ")",
+    ].join(" "), [...companies, today, ...periodParams]);
+    const officialTotalsByDate = new Map<string, { amountCents: number; invoiceCount: number }>();
+    for (const row of overallRows) {
+      const date = String(Number(row.ano)).padStart(4, "0") + "-" + String(Number(row.mes)).padStart(2, "0") + "-" + String(Number(row.dia)).padStart(2, "0");
+      const total = Number(row.valortotal || 0);
+      if (!Number.isFinite(total)) throw new Error("Valor fiscal inválido no resumo por representante " + date + ".");
+      officialTotalsByDate.set(date, { amountCents: Math.round(total * 100), invoiceCount: Number(row.quantidade || 0) });
+    }
+
+    const invoices = new Map<string, {
+      date: string;
+      amountCents: number;
+      orders: Map<string, { representatives: Map<string, string>; unresolved: boolean }>;
+    }>();
+    for (const row of invoiceRows) {
+      const date = String(Number(row.ano)).padStart(4, "0") + "-" + String(Number(row.mes)).padStart(2, "0") + "-" + String(Number(row.dia)).padStart(2, "0");
+      const invoiceId = key(row.notaid);
+      const rawTotal = Number(row.valortotal || 0);
+      if (!Number.isFinite(rawTotal)) throw new Error("Valor fiscal inválido no resumo por representante " + date + ".");
+      const invoice = invoices.get(invoiceId) || { date, amountCents: Math.round(rawTotal * 100), orders: new Map() };
+      invoices.set(invoiceId, invoice);
+      const orderId = key(row.codigopedido);
+      if (!orderId) continue;
+      const order = invoice.orders.get(orderId) || { representatives: new Map<string, string>(), unresolved: false };
+      const canonicalName = mapRepresentativeName(row.representantenome);
+      const representative = canonicalName ? getSystemRepresentativeByCanonicalName(canonicalName) : null;
+      if (representative) order.representatives.set(representative.id, representative.name);
+      else order.unresolved = true;
+      invoice.orders.set(orderId, order);
+    }
+
+    const unassignedId = "sem_representante";
+    const unassignedName = "Sem representante identificado";
+    for (const [monthKey, period] of periods) {
+      const lastDay = monthKey === currentMonth ? Number(today.slice(8, 10)) : daysInMonth(period.year, period.month);
+      const completeThroughDate = monthKey + "-" + String(lastDay).padStart(2, "0");
+      const dailyTotals: Record<string, { amountCents: number; invoiceCount: number }> = {};
+      const representatives: Record<string, {
+        name: string;
+        amountCents: number;
+        invoiceCount: number;
+        dailyTotals: Record<string, { amountCents: number; invoiceCount: number }>;
+      }> = {};
+      const ensureRepresentative = (id: string, name: string) => {
+        if (!representatives[id]) representatives[id] = { name, amountCents: 0, invoiceCount: 0, dailyTotals: {} };
+        return representatives[id];
+      };
+      ensureRepresentative(unassignedId, unassignedName);
+      for (let day = 1; day <= lastDay; day += 1) {
+        const date = monthKey + "-" + String(day).padStart(2, "0");
+        dailyTotals[date] = officialTotalsByDate.get(date) || { amountCents: 0, invoiceCount: 0 };
+      }
+
+      for (const invoice of invoices.values()) {
+        if (invoice.date.slice(0, 7) !== monthKey) continue;
+        const invoiceRepresentatives = new Map<string, string>();
+        let allOrdersResolved = invoice.orders.size > 0;
+        for (const order of invoice.orders.values()) {
+          if (order.unresolved || order.representatives.size !== 1) allOrdersResolved = false;
+          for (const [id, name] of order.representatives) invoiceRepresentatives.set(id, name);
+        }
+        const representativeId = allOrdersResolved && invoiceRepresentatives.size === 1
+          ? [...invoiceRepresentatives.keys()][0]
+          : unassignedId;
+        const representativeName = representativeId === unassignedId
+          ? unassignedName
+          : invoiceRepresentatives.get(representativeId) || unassignedName;
+        const representative = ensureRepresentative(representativeId, representativeName);
+        const daily = representative.dailyTotals[invoice.date] || { amountCents: 0, invoiceCount: 0 };
+        representative.dailyTotals[invoice.date] = {
+          amountCents: daily.amountCents + invoice.amountCents,
+          invoiceCount: daily.invoiceCount + 1,
+        };
+      }
+
+      for (const representative of Object.values(representatives)) {
+        for (let day = 1; day <= lastDay; day += 1) {
+          const date = monthKey + "-" + String(day).padStart(2, "0");
+          representative.dailyTotals[date] ||= { amountCents: 0, invoiceCount: 0 };
+        }
+      }
+      let monthAmountCents = 0;
+      let monthInvoiceCount = 0;
+      for (let day = 1; day <= lastDay; day += 1) {
+        const date = monthKey + "-" + String(day).padStart(2, "0");
+        const official = dailyTotals[date];
+        const assignedAmount = Object.values(representatives).reduce((sum, rep) => sum + rep.dailyTotals[date].amountCents, 0);
+        const assignedInvoices = Object.values(representatives).reduce((sum, rep) => sum + rep.dailyTotals[date].invoiceCount, 0);
+        const unassigned = representatives[unassignedId];
+        unassigned.dailyTotals[date].amountCents += official.amountCents - assignedAmount;
+        unassigned.dailyTotals[date].invoiceCount += official.invoiceCount - assignedInvoices;
+        for (const representative of Object.values(representatives)) {
+          representative.amountCents += representative.dailyTotals[date].amountCents;
+          representative.invoiceCount += representative.dailyTotals[date].invoiceCount;
+        }
+        monthAmountCents += official.amountCents;
+        monthInvoiceCount += official.invoiceCount;
+      }
+      result.faturamentoPorRepresentante.push({
+        externalId: "faturamento-representante:" + monthKey,
+        monthKey,
+        completeThroughDate,
+        amountCents: monthAmountCents,
+        invoiceCount: monthInvoiceCount,
+        dailyTotals,
+        representatives,
+      });
     }
   }
   return result;

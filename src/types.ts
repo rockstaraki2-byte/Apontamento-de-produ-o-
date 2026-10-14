@@ -453,6 +453,33 @@ export interface TekSystemBillingMonthlyTotal {
   updatedAt: string;
 }
 
+export interface TekSystemRepresentativeBillingDailyValue {
+  amountCents: number;
+  invoiceCount: number;
+}
+
+export interface TekSystemRepresentativeBillingTotal {
+  name: string;
+  amountCents: number;
+  invoiceCount: number;
+  dailyTotals: Record<string, TekSystemRepresentativeBillingDailyValue>;
+}
+
+export interface TekSystemRepresentativeBillingMonthlyTotal {
+  id: string;
+  tenantId: string;
+  monthKey: string;
+  completeThroughDate: string;
+  dailyTotals: Record<string, TekSystemRepresentativeBillingDailyValue>;
+  representatives: Record<string, TekSystemRepresentativeBillingTotal>;
+  amountCents: number;
+  invoiceCount: number;
+  snapshotGeneratedAt: string;
+  snapshotSyncId: string;
+  source: "TEKSYSTEM";
+  updatedAt: string;
+}
+
 export interface SheetStockEntry {
   id: string;
   invoiceNumber: string;         // Número da Nota Fiscal (NF)

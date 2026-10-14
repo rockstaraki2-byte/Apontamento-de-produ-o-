@@ -99,6 +99,35 @@ export async function upsertTekSystemBillingMonthTotals(payload: NormalizedTekSy
   return months.size;
 }
 
+/** Atualiza os fechamentos mensais de faturamento por representante. */
+export async function upsertTekSystemRepresentativeBillingMonthTotals(
+  payload: NormalizedTekSystemSyncPayload,
+): Promise<number> {
+  const rows = payload.entities.faturamentoPorRepresentante;
+  if (!rows.length) return 0;
+  const collectionRef = collection(db, "teksystemBillingRepresentativeMonthlyTotals");
+  const receivedAt = new Date().toISOString();
+  const batch = writeBatch(db);
+  rows.forEach((row) => {
+    const monthKey = String(row.monthKey);
+    batch.set(doc(collectionRef, payload.tenantId + "_" + monthKey), {
+      tenantId: payload.tenantId,
+      monthKey,
+      completeThroughDate: String(row.completeThroughDate),
+      dailyTotals: row.dailyTotals,
+      representatives: row.representatives,
+      amountCents: Number(row.amountCents),
+      invoiceCount: Number(row.invoiceCount),
+      snapshotGeneratedAt: payload.generatedAt,
+      snapshotSyncId: payload.syncId,
+      source: "TEKSYSTEM",
+      updatedAt: receivedAt,
+    });
+  });
+  await batch.commit();
+  return rows.length;
+}
+
 /**
  * Persiste somente uma área de staging. Esta função não altera customers,
  * items, orders, logs ou qualquer outra coleção operacional do Apontador.

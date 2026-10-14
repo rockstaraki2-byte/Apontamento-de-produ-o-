@@ -5,7 +5,10 @@ import { motion, AnimatePresence } from "motion/react";
 import { X, Trash2, Phone, Copy, Printer, Loader2, Edit2 } from "lucide-react";
 import { normalizeString } from "./searchUtils";
 import { OrderEditModal } from "./components/OrderEditModal";
-import { getCompleteTekSystemBillingMonth } from "./teksystemBilling";
+import {
+  getCompleteTekSystemBillingMonth,
+  getCompleteTekSystemRepresentativeBillingMonth,
+} from "./teksystemBilling";
 
 export function StatusScreen({
   db,
@@ -28,6 +31,14 @@ export function StatusScreen({
   const tekSystemBillingMonth = useMemo(
     () => getCompleteTekSystemBillingMonth(db.teksystemBillingMonthlyTotals, billingTodayKey.slice(0, 7), new Date(`${billingTodayKey}T12:00:00`)),
     [db.teksystemBillingMonthlyTotals, billingTodayKey],
+  );
+  const tekSystemRepresentativeBillingMonth = useMemo(
+    () => getCompleteTekSystemRepresentativeBillingMonth(
+      db.teksystemRepresentativeBillingMonthlyTotals,
+      billingTodayKey.slice(0, 7),
+      new Date(billingTodayKey + "T12:00:00"),
+    ),
+    [db.teksystemRepresentativeBillingMonthlyTotals, billingTodayKey],
   );
 
   React.useEffect(() => {
@@ -962,19 +973,23 @@ export function StatusScreen({
     if (!isRep && tekSystemBillingMonth) {
       billedAmount = tekSystemBillingMonth.amountCents / 100;
     }
+    if (isRep && tekSystemRepresentativeBillingMonth) {
+      myBilledAmount = (tekSystemRepresentativeBillingMonth.representatives[myId]?.amountCents || 0) / 100;
+      myManualAdjustment = 0;
+    }
 
     return { 
        billedAmount: isRep ? myBilledAmount : billedAmount, 
        myManualAdjustment,
        goal,
        isRep,
-       isTekSystemSource: !isRep && Boolean(tekSystemBillingMonth),
-       tekSystemUpdatedAt: tekSystemBillingMonth?.snapshotGeneratedAt,
+       isTekSystemSource: isRep ? Boolean(tekSystemRepresentativeBillingMonth) : Boolean(tekSystemBillingMonth),
+       tekSystemUpdatedAt: isRep ? tekSystemRepresentativeBillingMonth?.snapshotGeneratedAt : tekSystemBillingMonth?.snapshotGeneratedAt,
        myLaunchedVolume,
        avgMonthlyLaunched,
        performanceStatus
     };
-  }, [db.logs, db.systemSettings, db.orders, db.items, currentUser, tekSystemBillingMonth]);
+  }, [db.logs, db.systemSettings, db.orders, db.items, currentUser, tekSystemBillingMonth, tekSystemRepresentativeBillingMonth]);
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg shadow-sm w-full mx-auto border overflow-hidden p-4">
@@ -1046,13 +1061,18 @@ export function StatusScreen({
             <span className="text-xs text-emerald-700/80 font-semibold mt-1">
               Média Mensal: R$ {monthlyBillingData.avgMonthlyLaunched.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
+            <span className="text-[10px] text-emerald-700/70 mt-1">
+              Baseado nos pedidos lançados no ApontaPRO.
+            </span>
           </div>
 
           <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/50 shadow-sm flex flex-col justify-center">
             <div className="flex items-center justify-between gap-2 mb-2">
               <div className="flex items-center gap-2">
                 <span className="text-lg">💰</span>
-                <h3 className="text-sm font-bold text-blue-900">Seus Pedidos Faturados (Mês)</h3>
+                <h3 className="text-sm font-bold text-blue-900">
+                  {monthlyBillingData.isTekSystemSource ? "Faturamento TEKSYSTEM (Mês)" : "Seus Pedidos Faturados (Mês)"}
+                </h3>
               </div>
               {monthlyBillingData.myManualAdjustment !== 0 && (
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 shrink-0">
@@ -1068,6 +1088,12 @@ export function StatusScreen({
                 ? `Volume faturado no mês (incluindo ajuste financeiro de R$ ${monthlyBillingData.myManualAdjustment.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} aplicado pela gerência).`
                 : "Volume que já foi expedido e faturado neste mês."}
             </span>
+            {monthlyBillingData.isTekSystemSource && monthlyBillingData.tekSystemUpdatedAt && (
+              <span className="text-[10px] text-blue-700/60 mt-1">
+                Valor das notas do TekSystem; pedidos e quantidades do ApontaPRO. Atualizado em{" "}
+                {new Date(monthlyBillingData.tekSystemUpdatedAt).toLocaleString("pt-BR")}
+              </span>
+            )}
           </div>
         </div>
       )}

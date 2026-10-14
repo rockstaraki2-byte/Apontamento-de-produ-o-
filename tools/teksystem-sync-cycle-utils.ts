@@ -5,9 +5,10 @@ export interface SyncState {
   lastSuccessfulRunId?: string;
   pipelineVersion?: number;
   billingHistorySnapshotVersion?: number;
+  billingRepresentativeHistorySnapshotVersion?: number;
 }
 
-export const ENTITY_NAMES: TekSystemEntityType[] = ["clientes", "produtos", "pedidos", "faturamentos", "romaneios", "faturamentoDiario"];
+export const ENTITY_NAMES: TekSystemEntityType[] = ["clientes", "produtos", "pedidos", "faturamentos", "romaneios", "faturamentoDiario", "faturamentoPorRepresentante"];
 export const MAX_RECORDS_PER_REQUEST = 250;
 
 export function splitPayload(
