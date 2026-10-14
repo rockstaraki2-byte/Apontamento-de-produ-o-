@@ -1,21 +1,4 @@
 import { timingSafeEqual } from "node:crypto";
-import { initializeApp } from "firebase/app";
-import { collection, getDocs, initializeFirestore, query, where } from "firebase/firestore";
-import firebaseConfig from "../../firebase-applet-config.json";
-
-const app = initializeApp({
-  apiKey: firebaseConfig.apiKey,
-  authDomain: firebaseConfig.authDomain,
-  projectId: firebaseConfig.projectId,
-  storageBucket: firebaseConfig.storageBucket,
-  messagingSenderId: firebaseConfig.messagingSenderId,
-  appId: firebaseConfig.appId,
-});
-const db = initializeFirestore(
-  app,
-  { experimentalForceLongPolling: true },
-  firebaseConfig.firestoreDatabaseId,
-);
 
 type FinanceOrder = {
   deliveryDate?: number | string | Date | null;
@@ -176,9 +159,28 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   try {
+    const [{ initializeApp }, firestore, configModule] = await Promise.all([
+      import("firebase/app"),
+      import("firebase/firestore"),
+      import("../../firebase-applet-config.json", { with: { type: "json" } }),
+    ]);
+    const firebaseConfig = configModule.default;
+    const app = initializeApp({
+      apiKey: firebaseConfig.apiKey,
+      authDomain: firebaseConfig.authDomain,
+      projectId: firebaseConfig.projectId,
+      storageBucket: firebaseConfig.storageBucket,
+      messagingSenderId: firebaseConfig.messagingSenderId,
+      appId: firebaseConfig.appId,
+    });
+    const db = firestore.initializeFirestore(
+      app,
+      { experimentalForceLongPolling: true },
+      firebaseConfig.firestoreDatabaseId,
+    );
     const [ordersSnapshot, settingsSnapshot] = await Promise.all([
-      getDocs(query(collection(db, "orders"), where("tenantId", "==", "imperio"))),
-      getDocs(query(collection(db, "systemSettings"), where("tenantId", "==", "imperio"))),
+      firestore.getDocs(firestore.query(firestore.collection(db, "orders"), firestore.where("tenantId", "==", "imperio"))),
+      firestore.getDocs(firestore.query(firestore.collection(db, "systemSettings"), firestore.where("tenantId", "==", "imperio"))),
     ]);
 
     const financeOrders = ordersSnapshot.docs.map((document) => document.data() as FinanceOrder);
