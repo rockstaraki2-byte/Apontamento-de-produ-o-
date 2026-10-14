@@ -1,6 +1,4 @@
 import { timingSafeEqual } from "node:crypto";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "../../src/firebase";
 
 type FinanceOrder = {
   deliveryDate?: number | string | Date | null;
@@ -125,7 +123,7 @@ function csvResponse(rows: string[][]): Response {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Cache-Control": "public, max-age=0, s-maxage=300, stale-while-revalidate=60",
+      "Cache-Control": "private, no-store, max-age=0",
       "X-Content-Type-Options": "nosniff",
       "X-Robots-Tag": "noindex, nofollow",
       "Referrer-Policy": "no-referrer",
@@ -161,6 +159,10 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   try {
+    const [{ collection, getDocs, query, where }, { db }] = await Promise.all([
+      import("firebase/firestore"),
+      import("../../src/firebase"),
+    ]);
     const [ordersSnapshot, settingsSnapshot] = await Promise.all([
       getDocs(query(collection(db, "orders"), where("tenantId", "==", "imperio"))),
       getDocs(query(collection(db, "systemSettings"), where("tenantId", "==", "imperio"))),
