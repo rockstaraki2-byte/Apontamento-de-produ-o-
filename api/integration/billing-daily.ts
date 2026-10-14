@@ -123,10 +123,10 @@ export async function GET(request: Request): Promise<Response> {
       firestore.query(
         firestore.collection(db, "teksystemBillingMonthlyTotals"),
         firestore.where("tenantId", "==", "imperio"),
-        firestore.where("monthKey", "==", monthKey),
       ),
     );
-    const snapshot = snapshots.docs[0]?.data() as MonthlySnapshot | undefined;
+    const snapshotDocument = snapshots.docs.find((document) => document.data().monthKey === monthKey);
+    const snapshot = snapshotDocument?.data() as MonthlySnapshot | undefined;
     const dailyTotals = snapshot?.dailyTotals as Record<string, DailyTotal> | undefined;
 
     if (
