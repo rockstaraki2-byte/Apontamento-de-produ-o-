@@ -1,9 +1,21 @@
-import type { TekSystemBillingMonthlyTotal } from "./types";
+import type {
+  TekSystemBillingMonthlyTotal,
+  TekSystemRepresentativeBillingMonthlyTotal,
+} from "./types";
 
 export interface CompleteTekSystemBillingMonth {
   monthKey: string;
   amountCents: number;
   dailyAmountsCents: Record<string, number>;
+  snapshotGeneratedAt: string;
+}
+
+export interface CompleteTekSystemRepresentativeBillingRange {
+  startDate: string;
+  endDate: string;
+  amountCents: number;
+  invoiceCount: number;
+  representatives: Record<string, { name: string; amountCents: number; invoiceCount: number }>;
   snapshotGeneratedAt: string;
 }
 
@@ -15,6 +27,85 @@ function dayCount(monthKey: string): number {
   const [year, month] = monthKey.split("-").map(Number);
   if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return 0;
   return new Date(year, month, 0).getDate();
+}
+
+function isValidDateKey(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(value + "T00:00:00.000Z");
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+export function getCompleteTekSystemRepresentativeBillingRange(
+  snapshots: TekSystemRepresentativeBillingMonthlyTotal[],
+  startDate: string,
+  endDate: string,
+  now = new Date(),
+): CompleteTekSystemRepresentativeBillingRange | null {
+  if (!isValidDateKey(startDate) || !isValidDateKey(endDate) || startDate > endDate) return null;
+  const today = formatLocalDate(now);
+  if (endDate > today) return null;
+
+  const monthlySnapshots = new Map(snapshots.map((snapshot) => [snapshot.monthKey, snapshot]));
+  const representatives: CompleteTekSystemRepresentativeBillingRange["representatives"] = {};
+  let amountCents = 0;
+  let invoiceCount = 0;
+  let latestSnapshotAt = "";
+  let cursor = startDate;
+  while (cursor <= endDate) {
+    const monthKey = cursor.slice(0, 7);
+    const month = monthlySnapshots.get(monthKey);
+    if (!month || !month.snapshotGeneratedAt || !month.snapshotSyncId || !month.dailyTotals || !month.representatives) return null;
+    const requiredThroughDate = monthKey + "-" + String(
+      monthKey === endDate.slice(0, 7) ? Number(endDate.slice(8, 10)) : dayCount(monthKey),
+    ).padStart(2, "0");
+    if (month.completeThroughDate < requiredThroughDate || month.completeThroughDate.slice(0, 7) !== monthKey) return null;
+
+    const daily = month.dailyTotals[cursor];
+    if (!daily || !Number.isSafeInteger(daily.amountCents) || !Number.isSafeInteger(daily.invoiceCount) || daily.invoiceCount < 0) return null;
+    let dailyAmountSum = 0;
+    let dailyInvoiceSum = 0;
+    for (const [representativeId, representative] of Object.entries(month.representatives)) {
+      const repDaily = representative.dailyTotals?.[cursor];
+      if (!representative.name || !repDaily || !Number.isSafeInteger(repDaily.amountCents) ||
+        !Number.isSafeInteger(repDaily.invoiceCount) || repDaily.invoiceCount < 0) return null;
+      dailyAmountSum += repDaily.amountCents;
+      dailyInvoiceSum += repDaily.invoiceCount;
+      const target = representatives[representativeId] || {
+        name: representative.name,
+        amountCents: 0,
+        invoiceCount: 0,
+      };
+      target.amountCents += repDaily.amountCents;
+      target.invoiceCount += repDaily.invoiceCount;
+      representatives[representativeId] = target;
+    }
+    if (dailyAmountSum !== daily.amountCents || dailyInvoiceSum !== daily.invoiceCount) return null;
+    amountCents += daily.amountCents;
+    invoiceCount += daily.invoiceCount;
+    if (month.snapshotGeneratedAt > latestSnapshotAt) latestSnapshotAt = month.snapshotGeneratedAt;
+
+    const [year, monthNumber, day] = cursor.split("-").map(Number);
+    cursor = new Date(Date.UTC(year, monthNumber - 1, day + 1)).toISOString().slice(0, 10);
+  }
+
+  const representativeAmount = Object.values(representatives).reduce((sum, item) => sum + item.amountCents, 0);
+  const representativeInvoices = Object.values(representatives).reduce((sum, item) => sum + item.invoiceCount, 0);
+  if (representativeAmount !== amountCents || representativeInvoices !== invoiceCount) return null;
+  return { startDate, endDate, amountCents, invoiceCount, representatives, snapshotGeneratedAt: latestSnapshotAt };
+}
+
+export function getCompleteTekSystemRepresentativeBillingMonth(
+  snapshots: TekSystemRepresentativeBillingMonthlyTotal[],
+  monthKey: string,
+  now = new Date(),
+): CompleteTekSystemRepresentativeBillingRange | null {
+  if (!/^\d{4}-\d{2}$/.test(monthKey) || dayCount(monthKey) < 1) return null;
+  const today = formatLocalDate(now);
+  const currentMonth = today.slice(0, 7);
+  if (monthKey > currentMonth) return null;
+  const throughDay = monthKey === currentMonth ? Number(today.slice(8, 10)) : dayCount(monthKey);
+  const endDate = monthKey + "-" + String(throughDay).padStart(2, "0");
+  return getCompleteTekSystemRepresentativeBillingRange(snapshots, monthKey + "-01", endDate, now);
 }
 
 export function getCompleteTekSystemBillingMonth(

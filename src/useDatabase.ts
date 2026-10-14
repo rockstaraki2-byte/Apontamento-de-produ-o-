@@ -34,6 +34,7 @@ import type {
   SheetStockEntry,
   SheetStockMovement,
   TekSystemBillingMonthlyTotal,
+  TekSystemRepresentativeBillingMonthlyTotal,
 } from "./types";
 import { db } from "./firebase";
 import {
@@ -756,6 +757,7 @@ export function useDatabase(currentUser?: User | null) {
   const [priceHistories, setPriceHistories] = useState<ItemPriceHistory[]>([]);
   const [systemSettings, setSystemSettings] = useState<SystemSettings[]>([]);
   const [teksystemBillingMonthlyTotals, setTekSystemBillingMonthlyTotals] = useState<TekSystemBillingMonthlyTotal[]>([]);
+  const [teksystemRepresentativeBillingMonthlyTotals, setTekSystemRepresentativeBillingMonthlyTotals] = useState<TekSystemRepresentativeBillingMonthlyTotal[]>([]);
   const [agentReports, setAgentReports] = useState<any[]>([]);
 
   // New collections for CNC Torno, Machine stops, and performance evaluations
@@ -1203,6 +1205,16 @@ export function useDatabase(currentUser?: User | null) {
       setTekSystemBillingMonthlyTotals([]);
     }
 
+    let unsubTekSystemRepresentativeBillingMonthlyTotals = () => {};
+    if (currentUser && ["ADMIN", "GERENCIA", "REPRESENTANTE"].includes(currentUser.role)) {
+      unsubTekSystemRepresentativeBillingMonthlyTotals = listenTenantCollection("teksystemBillingRepresentativeMonthlyTotals",
+        (snap) => setTekSystemRepresentativeBillingMonthlyTotals(snap.docs.map((d) => ({ id: d.id, ...d.data() } as TekSystemRepresentativeBillingMonthlyTotal))),
+        (err) => handleSnapshotError("teksystemBillingRepresentativeMonthlyTotals", err),
+      );
+    } else {
+      setTekSystemRepresentativeBillingMonthlyTotals([]);
+    }
+
     const unsubAgentReports = listenTenantCollection("agentReports",
       (snap) => {
         const list = snap.docs.map((d) => d.data());
@@ -1329,6 +1341,7 @@ export function useDatabase(currentUser?: User | null) {
       unsubExtraHours,
       unsubSystemSettings,
       unsubTekSystemBillingMonthlyTotals,
+      unsubTekSystemRepresentativeBillingMonthlyTotals,
       unsubAgentReports,
       unsubPriceHistories,
       unsubTornoEvents,
@@ -1379,6 +1392,7 @@ export function useDatabase(currentUser?: User | null) {
       unsubExtraHours();
       unsubSystemSettings();
       unsubTekSystemBillingMonthlyTotals();
+      unsubTekSystemRepresentativeBillingMonthlyTotals();
       unsubAgentReports();
       unsubPriceHistories();
       unsubTornoEvents();
@@ -2583,6 +2597,12 @@ export function useDatabase(currentUser?: User | null) {
       : [],
     [teksystemBillingMonthlyTotals, activeTenantId, matchesTenant, currentUser],
   );
+  const filteredTekSystemRepresentativeBillingMonthlyTotals = useMemo(
+    () => currentUser && ["ADMIN", "GERENCIA", "REPRESENTANTE"].includes(currentUser.role)
+      ? teksystemRepresentativeBillingMonthlyTotals.filter((x) => x.tenantId === activeTenantId && matchesTenant(x.tenantId))
+      : [],
+    [teksystemRepresentativeBillingMonthlyTotals, activeTenantId, matchesTenant, currentUser],
+  );
   const filteredTornoEvents = useMemo(() => tornoEvents.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [tornoEvents, matchesTenant]);
   const filteredMachineStops = useMemo(() => machineStops.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [machineStops, matchesTenant]);
   const filteredPerformanceQuestions = useMemo(() => performanceQuestions.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [performanceQuestions, matchesTenant]);
@@ -3770,6 +3790,7 @@ export function useDatabase(currentUser?: User | null) {
     agentReports,
     systemSettings: filteredSystemSettings,
     teksystemBillingMonthlyTotals: filteredTekSystemBillingMonthlyTotals,
+    teksystemRepresentativeBillingMonthlyTotals: filteredTekSystemRepresentativeBillingMonthlyTotals,
     saveSystemSettings: async (settings: SystemSettings) => {
       const id = settings.id || "default";
       await setDoc(

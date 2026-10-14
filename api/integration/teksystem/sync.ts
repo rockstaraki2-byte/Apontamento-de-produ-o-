@@ -1,5 +1,9 @@
 import crypto from "node:crypto";
-import { stageTekSystemSync, upsertTekSystemBillingMonthTotals } from "../../_lib/teksystemSyncFirestore.js";
+import {
+  stageTekSystemSync,
+  upsertTekSystemBillingMonthTotals,
+  upsertTekSystemRepresentativeBillingMonthTotals,
+} from "../../_lib/teksystemSyncFirestore.js";
 import { enqueueTekSystemWriter } from "../../_lib/teksystemWriterFirestore.js";
 import {
   validateAndNormalizeTekSystemSync,
@@ -84,6 +88,7 @@ export default async function handler(req: any, res: any) {
     }
     const result = await stageTekSystemSync(payload);
     const billingMonthsUpdated = await upsertTekSystemBillingMonthTotals(payload);
+    const representativeBillingMonthsUpdated = await upsertTekSystemRepresentativeBillingMonthTotals(payload);
     const hasOrderOrRomaneioRows = payload.entities.pedidos.length > 0 || payload.entities.romaneios.length > 0;
     const writer = payload.source.readerVersion === 2 && payload.source.completeOrderSnapshots === true && hasOrderOrRomaneioRows
       ? await enqueueTekSystemWriter(payload)
@@ -96,6 +101,7 @@ export default async function handler(req: any, res: any) {
       payloadHash: payload.payloadHash,
       counts: validation.counts,
       billingMonthsUpdated,
+      representativeBillingMonthsUpdated,
       writer,
       mensagem: "Sincronização recebida em staging; fila do agente de escrita preparada.",
     });

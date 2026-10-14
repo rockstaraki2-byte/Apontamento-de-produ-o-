@@ -62,7 +62,11 @@ import {
 } from "recharts";
 import { User, Order } from "./types";
 import { ScreenLayout, ScrollContainer, ScreenHeader, SectionBlock, ResponsiveCardGrid } from "./components/Layout";
-import { getCompleteTekSystemBillingAllTime, getCompleteTekSystemBillingMonth } from "./teksystemBilling";
+import {
+  getCompleteTekSystemBillingAllTime,
+  getCompleteTekSystemBillingMonth,
+  getCompleteTekSystemRepresentativeBillingRange,
+} from "./teksystemBilling";
 
 interface FinanceiroScreenProps {
   db: ReturnType<typeof useDatabase>;
@@ -70,6 +74,8 @@ interface FinanceiroScreenProps {
 }
 
 const COLORS = ["#00b14f", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#ef4444", "#06b6d4"];
+const normalizeRepresentativeLabel = (value: string) =>
+  value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, " ").trim().replace(/\s+/g, " ").toUpperCase();
 
 const localDateOnly = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -183,6 +189,16 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
     return d.toISOString().split("T")[0]; // YYYY-MM-DD
   });
   const [filterByDate, setFilterByDate] = useState(true);
+  const tekSystemRepresentativeBillingRange = useMemo(
+    () => filterByDate
+      ? getCompleteTekSystemRepresentativeBillingRange(
+        db.teksystemRepresentativeBillingMonthlyTotals,
+        summaryStartDate,
+        summaryEndDate,
+      )
+      : null,
+    [db.teksystemRepresentativeBillingMonthlyTotals, summaryStartDate, summaryEndDate, filterByDate],
+  );
   const [selectedRepName, setSelectedRepName] = useState<string | null>(null);
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [showWaModal, setShowWaModal] = useState(false);
@@ -426,7 +442,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
     });
 
     // Apply manual representative adjustments
-    Object.entries(manualRepAdjustments).forEach(([repName, adjValue]) => {
+    if (!tekSystemRepresentativeBillingRange) Object.entries(manualRepAdjustments).forEach(([repName, adjValue]) => {
       if (typeof adjValue === "number" && adjValue !== 0) {
         if (!groups[repName]) {
           groups[repName] = {
@@ -442,8 +458,59 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       }
     });
 
-    return Object.values(groups).sort((a, b) => b.totalValue - a.totalValue);
-  }, [dailyFaturadosOrders, db.logs, summaryStartDate, summaryEndDate, filterByDate, manualRepAdjustments]);
+    type RepresentativeSummaryGroup = {
+      representativeName: string;
+      representativeId?: string;
+      orders: Order[];
+      totalValue: number;
+      totalItems: number;
+      hasManualAdjustment?: boolean;
+    };
+    const existingGroups = Object.values(groups) as RepresentativeSummaryGroup[];
+    if (tekSystemRepresentativeBillingRange) {
+      const consumed = new Set<typeof existingGroups[number]>();
+      const representativeEntries = Object.entries(tekSystemRepresentativeBillingRange.representatives) as Array<[
+        string,
+        { name: string; amountCents: number; invoiceCount: number },
+      ]>;
+      const authoritativeGroups: Array<RepresentativeSummaryGroup & { representativeId: string }> = representativeEntries
+        .filter(([representativeId, representative]) =>
+          representativeId !== "sem_representante" || representative.amountCents !== 0 || representative.invoiceCount !== 0,
+        )
+        .map(([representativeId, representative]) => {
+          const normalizedName = normalizeRepresentativeLabel(representative.name);
+          const existing = existingGroups.find((group) =>
+            !consumed.has(group) &&
+            (group.representativeId === representativeId ||
+              normalizeRepresentativeLabel(group.representativeName) === normalizedName),
+          );
+          if (existing) consumed.add(existing);
+          return {
+            ...(existing || {
+              representativeName: representative.name,
+              orders: [],
+              totalValue: 0,
+              totalItems: 0,
+            }),
+            representativeName: representative.name,
+            representativeId,
+            totalValue: representative.amountCents / 100,
+            hasManualAdjustment: false,
+          };
+        });
+      for (const group of existingGroups) {
+        if (consumed.has(group) || group.orders.length === 0) continue;
+        authoritativeGroups.push({
+          ...group,
+          representativeId: group.representativeId || `apontapro:${normalizeRepresentativeLabel(group.representativeName)}`,
+          totalValue: 0,
+          hasManualAdjustment: false,
+        });
+      }
+      return authoritativeGroups.sort((a, b) => b.totalValue - a.totalValue);
+    }
+    return existingGroups.sort((a, b) => b.totalValue - a.totalValue);
+  }, [dailyFaturadosOrders, db.logs, summaryStartDate, summaryEndDate, filterByDate, manualRepAdjustments, tekSystemRepresentativeBillingRange]);
 
   // Overall Financial stats
   const stats = useMemo(() => {
@@ -2443,13 +2510,20 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                   </button>
 
                   <div className="text-xs text-gray-500 font-bold bg-slate-50 px-3 py-2 rounded-lg border border-slate-200/50">
-                    Total Pedidos:{" "}
+                    {tekSystemRepresentativeBillingRange ? "Pedidos no ApontaPRO:" : "Total Pedidos:"}{" "}
                     <span className="text-slate-800 font-black">
                       {dailyFaturadosOrders.length}
                     </span>
                   </div>
                 </div>
               </div>
+
+              {tekSystemRepresentativeBillingRange && (
+                <div className="mb-3 rounded-lg bg-sky-50 border border-sky-100 px-3 py-2 text-[11px] text-sky-800">
+                  Faturamento e data das notas vêm do TekSystem; pedidos, produtos e quantidades exibidos vêm do ApontaPRO.
+                  Atualizado em {new Date(tekSystemRepresentativeBillingRange.snapshotGeneratedAt).toLocaleString("pt-BR")}.
+                </div>
+              )}
 
               {representativeSummary.length === 0 ? (
                 <div className="bg-white border text-center p-12 rounded-xl text-gray-400 flex flex-col items-center justify-center gap-2.5">
