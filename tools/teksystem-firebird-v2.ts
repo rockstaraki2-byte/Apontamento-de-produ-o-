@@ -32,12 +32,29 @@ const placeholders = (values: unknown[]) => values.map(() => "?").join(", ");
 const key = (v: unknown) => String(v ?? "").trim();
 const ids = (rows: Row[], field: string) => [...new Set(rows.map((r) => key(r[field])).filter(Boolean))];
 const baseCode = (code: string) => code.replace(/\..*$/, "");
+const billingTimeZone = "America/Sao_Paulo";
+
+function dateInBillingTimeZone(value: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: billingTimeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value || "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
 
 export async function readCompleteEntities(
   db: Database, entities: TekSystemEntityType[], companies: number[], since?: Date,
   businessDate?: { value: string }, catalogSnapshot = false, customerSnapshot = false,
+  billingHistorySnapshot = false,
 ) {
-  const result: Record<TekSystemEntityType, Row[]> = { clientes: [], produtos: [], pedidos: [], faturamentos: [], romaneios: [] };
+  const result: Record<TekSystemEntityType, Row[]> = { clientes: [], produtos: [], pedidos: [], faturamentos: [], romaneios: [], faturamentoDiario: [] };
   let orderCodes: string[] = [];
   if (entities.includes("pedidos") || entities.includes("romaneios")) {
     const companyClause = `d.EMPRESA_DOCFAT IN (${placeholders(companies)})`;
@@ -244,6 +261,151 @@ export async function readCompleteEntities(
       FROM NOTA_FISCAL nf LEFT JOIN NOTA_FISCAL_ITEM nfi ON nfi.AUTOINCNF_NFITEM = nf.AUTOINC_NF
       WHERE nf.EMPRESA_NF IN (${placeholders(companies)})${since ? " AND nf.DATAHORAALTERACAO_NF >= ?" : ""}`, [...companies, ...(since ? [since] : [])]))
       .map((r) => ({ ...r, externalId: `faturamento:${r.empresa}:${r.id}:${r.itemid || "cabecalho"}` }));
+  }
+  if (entities.includes("faturamentoDiario")) {
+    const today = dateInBillingTimeZone(new Date());
+    const currentMonth = today.slice(0, 7);
+    const monthPeriods = new Map<string, { year: number; month: number }>();
+    const [currentYear, currentMonthNumber] = currentMonth.split("-").map(Number);
+    monthPeriods.set(currentMonth, { year: currentYear, month: currentMonthNumber });
+
+    if (billingHistorySnapshot || !since) {
+      const dateFields = `CAST(nf.DATAEMISSAO_NF AS DATE)`;
+      const rows = await readOnlyRows(db, `SELECT
+          EXTRACT(YEAR FROM ${dateFields}) AS ano,
+          EXTRACT(MONTH FROM ${dateFields}) AS mes,
+          EXTRACT(DAY FROM ${dateFields}) AS dia,
+          SUM(COALESCE(nf.VALORTOTAL_NF, 0)) AS valortotal,
+          COUNT(nf.AUTOINC_NF) AS quantidade
+        FROM NOTA_FISCAL nf
+        WHERE nf.EMPRESA_NF IN (${placeholders(companies)})
+          AND nf.SITUACAO_NF IN ('N', 'E', '6', '7', '8')
+          AND ${dateFields} <= CAST(? AS DATE)
+        GROUP BY EXTRACT(YEAR FROM ${dateFields}), EXTRACT(MONTH FROM ${dateFields}), EXTRACT(DAY FROM ${dateFields})
+        ORDER BY EXTRACT(YEAR FROM ${dateFields}), EXTRACT(MONTH FROM ${dateFields}), EXTRACT(DAY FROM ${dateFields})`,
+      [...companies, today]);
+
+      const firstFiscalDate = await readOnlyRows(db, `SELECT FIRST 1
+          EXTRACT(YEAR FROM ${dateFields}) AS ano,
+          EXTRACT(MONTH FROM ${dateFields}) AS mes
+        FROM NOTA_FISCAL nf
+        WHERE nf.EMPRESA_NF IN (${placeholders(companies)})
+          AND ${dateFields} <= CAST(? AS DATE)
+        ORDER BY ${dateFields} ASC`, [...companies, today]);
+      const historyStartMonth = firstFiscalDate[0]
+        ? `${String(Number(firstFiscalDate[0].ano)).padStart(4, "0")}-${String(Number(firstFiscalDate[0].mes)).padStart(2, "0")}`
+        : currentMonth;
+      for (const row of rows) {
+        const monthKey = `${String(Number(row.ano)).padStart(4, "0")}-${String(Number(row.mes)).padStart(2, "0")}`;
+        monthPeriods.set(monthKey, { year: Number(row.ano), month: Number(row.mes) });
+      }
+      if (billingHistorySnapshot || !since) {
+        const firstMonth = historyStartMonth;
+        const [firstYear, firstMonthNumber] = firstMonth.split("-").map(Number);
+        for (let year = firstYear; year <= currentYear; year += 1) {
+          const first = year === firstYear ? firstMonthNumber : 1;
+          const last = year === currentYear ? currentMonthNumber : 12;
+          for (let month = first; month <= last; month += 1) {
+            const monthKey = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}`;
+            monthPeriods.set(monthKey, { year, month });
+          }
+        }
+      }
+
+      const totalsByDate = new Map<string, { amountCents: number; invoiceCount: number }>();
+      for (const row of rows) {
+        const date = `${String(Number(row.ano)).padStart(4, "0")}-${String(Number(row.mes)).padStart(2, "0")}-${String(Number(row.dia)).padStart(2, "0")}`;
+        const total = Number(row.valortotal || 0);
+        if (!Number.isFinite(total)) throw new Error(`Valor fiscal inválido no resumo diário ${date}.`);
+        totalsByDate.set(date, {
+          amountCents: Math.round(total * 100),
+          invoiceCount: Number(row.quantidade || 0),
+        });
+      }
+
+      for (const [monthKey, period] of [...monthPeriods].sort(([a], [b]) => a.localeCompare(b))) {
+        const lastDay = monthKey === currentMonth ? Number(today.slice(8, 10)) : daysInMonth(period.year, period.month);
+        const completeThroughDate = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
+        for (let day = 1; day <= lastDay; day += 1) {
+          const date = `${monthKey}-${String(day).padStart(2, "0")}`;
+          const total = totalsByDate.get(date) || { amountCents: 0, invoiceCount: 0 };
+          result.faturamentoDiario.push({
+            externalId: `faturamento-diario:${date}`,
+            date,
+            monthKey,
+            completeThroughDate,
+            amountCents: total.amountCents,
+            invoiceCount: total.invoiceCount,
+          });
+        }
+      }
+    } else {
+      const dateFields = `CAST(nf.DATAEMISSAO_NF AS DATE)`;
+      const changedMonths = await readOnlyRows(db, `SELECT DISTINCT
+          EXTRACT(YEAR FROM ${dateFields}) AS ano,
+          EXTRACT(MONTH FROM ${dateFields}) AS mes
+        FROM NOTA_FISCAL nf
+        WHERE nf.EMPRESA_NF IN (${placeholders(companies)})
+          AND nf.DATAHORAALTERACAO_NF >= ?
+          AND ${dateFields} <= CAST(? AS DATE)`, [...companies, since, today]);
+      for (const row of changedMonths) {
+        const year = Number(row.ano);
+        const month = Number(row.mes);
+        monthPeriods.set(`${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}`, { year, month });
+      }
+      if (today.slice(8, 10) === "01") {
+        const previous = new Date(Date.UTC(currentYear, currentMonthNumber - 2, 1));
+        const year = previous.getUTCFullYear();
+        const month = previous.getUTCMonth() + 1;
+        monthPeriods.set(`${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}`, { year, month });
+      }
+
+      const periods = [...monthPeriods].sort(([a], [b]) => a.localeCompare(b));
+      const monthConditions = periods.map(() => `(EXTRACT(YEAR FROM ${dateFields}) = ? AND EXTRACT(MONTH FROM ${dateFields}) = ?)`).join(" OR ");
+      const periodParams = periods.flatMap(([, period]) => [period.year, period.month]);
+      const rows = await readOnlyRows(db, `SELECT
+          EXTRACT(YEAR FROM ${dateFields}) AS ano,
+          EXTRACT(MONTH FROM ${dateFields}) AS mes,
+          EXTRACT(DAY FROM ${dateFields}) AS dia,
+          SUM(COALESCE(nf.VALORTOTAL_NF, 0)) AS valortotal,
+          COUNT(nf.AUTOINC_NF) AS quantidade
+        FROM NOTA_FISCAL nf
+        WHERE nf.EMPRESA_NF IN (${placeholders(companies)})
+          AND nf.SITUACAO_NF IN ('N', 'E', '6', '7', '8')
+          AND ${dateFields} <= CAST(? AS DATE)
+          AND (${monthConditions})
+        GROUP BY EXTRACT(YEAR FROM ${dateFields}), EXTRACT(MONTH FROM ${dateFields}), EXTRACT(DAY FROM ${dateFields})
+        ORDER BY EXTRACT(YEAR FROM ${dateFields}), EXTRACT(MONTH FROM ${dateFields}), EXTRACT(DAY FROM ${dateFields})`,
+      [...companies, today, ...periodParams]);
+
+      const totalsByDate = new Map<string, { amountCents: number; invoiceCount: number }>();
+      for (const row of rows) {
+        const date = `${String(Number(row.ano)).padStart(4, "0")}-${String(Number(row.mes)).padStart(2, "0")}-${String(Number(row.dia)).padStart(2, "0")}`;
+        const total = Number(row.valortotal || 0);
+        if (!Number.isFinite(total)) throw new Error(`Valor fiscal inválido no resumo diário ${date}.`);
+        totalsByDate.set(date, {
+          amountCents: Math.round(total * 100),
+          invoiceCount: Number(row.quantidade || 0),
+        });
+      }
+
+      for (const [monthKey, period] of periods) {
+        const lastDay = monthKey === currentMonth ? Number(today.slice(8, 10)) : daysInMonth(period.year, period.month);
+        const completeThroughDate = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
+        for (let day = 1; day <= lastDay; day += 1) {
+          const date = `${monthKey}-${String(day).padStart(2, "0")}`;
+          const total = totalsByDate.get(date) || { amountCents: 0, invoiceCount: 0 };
+          result.faturamentoDiario.push({
+            externalId: `faturamento-diario:${date}`,
+            date,
+            monthKey,
+            completeThroughDate,
+            amountCents: total.amountCents,
+            invoiceCount: total.invoiceCount,
+          });
+        }
+      }
+    }
   }
   return result;
 }

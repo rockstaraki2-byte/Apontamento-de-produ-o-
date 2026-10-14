@@ -62,6 +62,7 @@ import {
 } from "recharts";
 import { User, Order } from "./types";
 import { ScreenLayout, ScrollContainer, ScreenHeader, SectionBlock, ResponsiveCardGrid } from "./components/Layout";
+import { getCompleteTekSystemBillingAllTime, getCompleteTekSystemBillingMonth } from "./teksystemBilling";
 
 interface FinanceiroScreenProps {
   db: ReturnType<typeof useDatabase>;
@@ -69,6 +70,9 @@ interface FinanceiroScreenProps {
 }
 
 const COLORS = ["#00b14f", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#ef4444", "#06b6d4"];
+
+const localDateOnly = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 export const getLocalDateString = (timestamp: number | string | Date | null | undefined): string => {
   if (!timestamp) return "";
@@ -143,6 +147,17 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
     | "SECTOR_GOALS_CONFIG"
   >("OVERVIEW");
   const [selectedMonth, setSelectedMonth] = useState<string>("ALL");
+  const billingTodayKey = localDateOnly(new Date());
+  const billingCurrentMonthKey = billingTodayKey.slice(0, 7);
+  const billingMonthKey = selectedMonth === "ALL" ? billingCurrentMonthKey : selectedMonth;
+  const selectedBillingSnapshot = useMemo(
+    () => getCompleteTekSystemBillingMonth(db.teksystemBillingMonthlyTotals, billingMonthKey, new Date(`${billingTodayKey}T12:00:00`)),
+    [db.teksystemBillingMonthlyTotals, billingMonthKey, billingTodayKey],
+  );
+  const allTimeBillingSnapshot = useMemo(
+    () => getCompleteTekSystemBillingAllTime(db.teksystemBillingMonthlyTotals, new Date(`${billingTodayKey}T12:00:00`)),
+    [db.teksystemBillingMonthlyTotals, billingTodayKey],
+  );
   const [passwordRequirements, setPasswordRequirements] = useState(true);
 
   // Ideal Batch & Sector Financial States
@@ -478,6 +493,13 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
     totalInvoiced += manualTotalAdjustment;
     totalExpected += manualTotalAdjustment;
 
+    const authoritativeAmountCents = selectedMonth === "ALL"
+      ? allTimeBillingSnapshot?.amountCents
+      : selectedBillingSnapshot?.amountCents;
+    if (authoritativeAmountCents !== undefined) {
+      totalInvoiced = authoritativeAmountCents / 100;
+    }
+
     const averageOrderValue = orderCount > 0 ? totalExpected / orderCount : 0;
 
     return {
@@ -486,8 +508,9 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       totalExpected,
       averageOrderValue,
       orderCount,
+      isTekSystemSource: authoritativeAmountCents !== undefined,
     };
-  }, [filteredOrders, selectedMonth, db.activeTenantId, manualTotalAdjustment]);
+  }, [filteredOrders, selectedMonth, db.activeTenantId, manualTotalAdjustment, allTimeBillingSnapshot, selectedBillingSnapshot]);
 
   // Monthly billing goal data for current/selected month
   const monthlyBillingGoalData = useMemo(() => {
@@ -538,12 +561,24 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       billedAmount += 169194.69; // Exactly R$ 169.194,69 for July 1-7
     }
 
-    // Apply manual total adjustment
-    billedAmount += manualTotalAdjustment;
+    // A complete TekSystem snapshot is authoritative for this month's billed amount.
+    if (selectedBillingSnapshot) {
+      billedAmount = selectedBillingSnapshot.amountCents / 100;
+    } else {
+      billedAmount += manualTotalAdjustment;
+    }
 
     const goal = db.systemSettings?.[0]?.monthlyBillingGoal || 0;
-    return { billedAmount, goal, year, month };
-  }, [db.logs, db.systemSettings, db.orders, db.items, selectedMonth, db.activeTenantId, manualTotalAdjustment]);
+    return {
+      billedAmount,
+      goal,
+      year,
+      month,
+      isTekSystemSource: Boolean(selectedBillingSnapshot),
+      dailyAmountsCents: (selectedBillingSnapshot?.dailyAmountsCents || {}) as Record<string, number>,
+      snapshotGeneratedAt: selectedBillingSnapshot?.snapshotGeneratedAt,
+    };
+  }, [db.logs, db.systemSettings, db.orders, db.items, selectedMonth, db.activeTenantId, manualTotalAdjustment, selectedBillingSnapshot]);
 
   // Evolution of daily billing during the selected month
   const dailyBillingEvolution = useMemo(() => {
@@ -600,6 +635,13 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       dailyMap[7] = 7622.86;
     }
 
+    if (monthlyBillingGoalData.isTekSystemSource) {
+      (Object.entries(monthlyBillingGoalData.dailyAmountsCents) as [string, number][]).forEach(([date, amountCents]) => {
+        const day = Number(date.slice(8, 10));
+        if (Number.isInteger(day) && dailyMap[day] !== undefined) dailyMap[day] = amountCents / 100;
+      });
+    }
+
     let accumulated = 0;
     return Array.from({ length: daysInMonth }, (_, idx) => {
       const dayNum = idx + 1;
@@ -609,7 +651,9 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       let dailyVal = dailyMap[dayNum] || 0;
 
       // Check for manual daily override or adjustment
-      if (manualDailyAdjustments[dayKeyISO] !== undefined) {
+      if (monthlyBillingGoalData.isTekSystemSource) {
+        dailyVal = dailyMap[dayNum] || 0;
+      } else if (manualDailyAdjustments[dayKeyISO] !== undefined) {
         dailyVal = manualDailyAdjustments[dayKeyISO];
       } else if (manualDailyAdjustments[dayKeyNum] !== undefined) {
         dailyVal = manualDailyAdjustments[dayKeyNum];
@@ -621,7 +665,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
         dayLabel: `${String(dayNum).padStart(2, "0")}`,
         "Faturamento Diário": Number(dailyVal.toFixed(2)),
         "Faturamento Acumulado": Number(accumulated.toFixed(2)),
-        isManual: manualDailyAdjustments[dayKeyISO] !== undefined || manualDailyAdjustments[dayKeyNum] !== undefined,
+        isManual: !monthlyBillingGoalData.isTekSystemSource && (manualDailyAdjustments[dayKeyISO] !== undefined || manualDailyAdjustments[dayKeyNum] !== undefined),
       };
     });
   }, [db.logs, db.orders, db.items, monthlyBillingGoalData, db.activeTenantId, manualDailyAdjustments]);
@@ -820,6 +864,13 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
     // Apply manual total adjustment
     totalInvoiced += manualTotalAdjustment;
 
+    const authoritativeAmountCents = selectedMonth === "ALL"
+      ? allTimeBillingSnapshot?.amountCents
+      : selectedBillingSnapshot?.amountCents;
+    if (authoritativeAmountCents !== undefined) {
+      totalInvoiced = authoritativeAmountCents / 100;
+    }
+
     const estimatedTaxes = totalInvoiced * 0.06;
     const netRevenue = totalInvoiced - estimatedTaxes;
 
@@ -853,8 +904,9 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       totalItemsQty,
       avgTicketPerOrder,
       avgPricePerUnit,
+      isTekSystemSource: authoritativeAmountCents !== undefined,
     };
-  }, [filteredOrders, selectedMonth, db.activeTenantId]);
+  }, [filteredOrders, selectedMonth, db.activeTenantId, manualTotalAdjustment, allTimeBillingSnapshot, selectedBillingSnapshot]);
 
   // Curva ABC de Clientes
   const customerAbcData = useMemo(() => {
@@ -1240,6 +1292,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
               {manualTotalAdjustment !== 0 && `Total: ${manualTotalAdjustment > 0 ? "+" : ""}R$ ${manualTotalAdjustment.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} `}
               {Object.keys(manualDailyAdjustments).length > 0 && `| ${Object.keys(manualDailyAdjustments).length} dia(s) `}
               {Object.keys(manualRepAdjustments).length > 0 && `| ${Object.keys(manualRepAdjustments).length} representante(s)`}
+              {monthlyBillingGoalData.isTekSystemSource && " · Totais mensal e diário deste período seguem o TEKSYSTEM."}
             </span>
           </div>
           <button
@@ -1282,6 +1335,11 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                         / R$ {monthlyBillingGoalData.goal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
+                    {monthlyBillingGoalData.isTekSystemSource && monthlyBillingGoalData.snapshotGeneratedAt && (
+                      <span className="text-[10px] font-medium text-slate-400 block mt-1">
+                        Fonte TEKSYSTEM · {new Date(monthlyBillingGoalData.snapshotGeneratedAt).toLocaleString("pt-BR")}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -1323,7 +1381,9 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                   <span className="text-xl sm:text-2xl font-black text-slate-850 mt-1 block">
                     R$ {stats.totalInvoiced.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
-                  <p className="text-[10px] text-[#00b14f] mt-1 font-bold">✓ Itens faturados com NF</p>
+                  <p className="text-[10px] text-[#00b14f] mt-1 font-bold">
+                    {stats.isTekSystemSource ? "✓ Total conforme TEKSYSTEM" : "✓ Itens faturados com NF"}
+                  </p>
                 </div>
                 <div className="p-3 bg-[#00b14f]/10 text-[#00b14f] rounded-xl">
                   <CheckCircle size={22} />
@@ -1538,7 +1598,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                   R$ {dreData.totalInvoiced.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                 </div>
                 <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1 mt-1">
-                  <TrendingUp size={12} /> Base de cálculo faturada no período
+                  <TrendingUp size={12} /> {dreData.isTekSystemSource ? "Valor fiscal total conforme TEKSYSTEM" : "Base de cálculo faturada no período"}
                 </span>
               </div>
 
@@ -3248,6 +3308,11 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
               {/* TAB TOTAL */}
               {manualModalTab === "TOTAL" && (
                 <div className="flex flex-col gap-4">
+                  {monthlyBillingGoalData.isTekSystemSource && (
+                    <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-xs text-blue-900">
+                      Este período está sincronizado com o TEKSYSTEM. O total exibido segue a fonte fiscal; ajustes manuais de total ficam suspensos para manter os valores iguais.
+                    </div>
+                  )}
                   <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-xs text-amber-900">
                     <strong>💡 Dica:</strong> Insira um valor positivo para somar ao faturamento calculado do sistema (ex: <code>15000</code>) ou um valor negativo para descontar (ex: <code>-5000</code>).
                   </div>
@@ -3260,6 +3325,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                       placeholder="0.00"
                       value={draftTotalAdj || ""}
                       onChange={(e) => setDraftTotalAdj(Number(e.target.value))}
+                      disabled={monthlyBillingGoalData.isTekSystemSource}
                       className="border border-slate-300 rounded-xl p-3 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none"
                     />
                   </div>
@@ -3268,7 +3334,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                   <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col gap-2 text-xs">
                     <div className="flex justify-between text-slate-500 font-medium">
                       <span>Base Calculada pelo Sistema:</span>
-                      <span className="font-mono">R$ {(monthlyBillingGoalData.billedAmount - manualTotalAdjustment).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                      <span className="font-mono">R$ {(monthlyBillingGoalData.isTekSystemSource ? monthlyBillingGoalData.billedAmount : monthlyBillingGoalData.billedAmount - manualTotalAdjustment).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between text-amber-700 font-bold">
                       <span>Ajuste Manual Aplicado:</span>
@@ -3277,7 +3343,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                     <div className="border-t border-slate-200 pt-2 flex justify-between text-slate-900 font-black text-sm">
                       <span>Faturamento Total Resultante:</span>
                       <span className="font-mono text-emerald-600">
-                        R$ {((monthlyBillingGoalData.billedAmount - manualTotalAdjustment) + (Number(draftTotalAdj) || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {(monthlyBillingGoalData.isTekSystemSource ? monthlyBillingGoalData.billedAmount : (monthlyBillingGoalData.billedAmount - manualTotalAdjustment) + (Number(draftTotalAdj) || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
@@ -3287,6 +3353,11 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
               {/* TAB DAILY */}
               {manualModalTab === "DAILY" && (
                 <div className="flex flex-col gap-3">
+                  {monthlyBillingGoalData.isTekSystemSource && (
+                    <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-xs text-blue-900">
+                      Os valores diários deste período vêm do TEKSYSTEM e não podem ser sobrescritos manualmente.
+                    </div>
+                  )}
                   <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-xs text-amber-900">
                     Altere diretamente o valor faturado para cada dia do mês selecionado. Deixe em branco ou limpe para retornar ao cálculo automático do sistema.
                   </div>
@@ -3319,6 +3390,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                               step="0.01"
                               placeholder={`Ex: ${item["Faturamento Diário"]}`}
                               value={currentVal}
+                              disabled={monthlyBillingGoalData.isTekSystemSource}
                               onChange={(e) => {
                                 const valStr = e.target.value;
                                 const newMap = { ...draftDailyAdjs };

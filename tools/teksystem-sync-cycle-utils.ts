@@ -4,9 +4,10 @@ export interface SyncState {
   lastSuccessfulWatermark?: string;
   lastSuccessfulRunId?: string;
   pipelineVersion?: number;
+  billingHistorySnapshotVersion?: number;
 }
 
-export const ENTITY_NAMES: TekSystemEntityType[] = ["clientes", "produtos", "pedidos", "faturamentos", "romaneios"];
+export const ENTITY_NAMES: TekSystemEntityType[] = ["clientes", "produtos", "pedidos", "faturamentos", "romaneios", "faturamentoDiario"];
 export const MAX_RECORDS_PER_REQUEST = 250;
 
 export function splitPayload(
@@ -28,6 +29,7 @@ export function splitPayload(
       const key = record.entity === "pedidos" || record.entity === "romaneios"
         ? `pedido:${get("codigoPedido")}`
         : record.entity === "produtos" ? `produto:${get("codigo").replace(/\..*$/, "")}`
+        : record.entity === "faturamentoDiario" ? `faturamento-diario:${get("monthKey")}`
         : `${record.entity}:${get("externalId") || get("codigo")}`;
       groups.set(key, [...(groups.get(key) || []), record]);
     }
@@ -51,13 +53,34 @@ export function splitPayload(
     return result;
   }
 
-  const chunks: TekSystemSyncPayload[] = [];
-  for (let offset = 0; offset < records.length; offset += maxRecords) {
-    const chunk = records.slice(offset, offset + maxRecords);
-    const chunkEntities = Object.fromEntries(ENTITY_NAMES.map((name) => [name, [] as unknown[]])) as Record<TekSystemEntityType, unknown[]>;
-    for (const { entity, row } of chunk) chunkEntities[entity].push(row);
-    chunks.push({ ...payload, entities: chunkEntities });
+  const billingGroups = new Map<string, typeof records>();
+  const units: typeof records[] = [];
+  for (const record of records) {
+    if (record.entity !== "faturamentoDiario") {
+      units.push([record]);
+      continue;
+    }
+    const row = record.row as Record<string, unknown>;
+    const monthKey = String(row.monthKey || "");
+    billingGroups.set(monthKey, [...(billingGroups.get(monthKey) || []), record]);
   }
+  units.push(...billingGroups.values());
+
+  const chunks: TekSystemSyncPayload[] = [];
+  let page: typeof records = [];
+  const emit = () => {
+    if (!page.length) return;
+    const chunkEntities = Object.fromEntries(ENTITY_NAMES.map((name) => [name, [] as unknown[]])) as Record<TekSystemEntityType, unknown[]>;
+    for (const { entity, row } of page) chunkEntities[entity].push(row);
+    chunks.push({ ...payload, entities: chunkEntities });
+    page = [];
+  };
+  for (const unit of units) {
+    if (unit.length > maxRecords) throw new Error("O resumo de faturamento diário de um mês excede o limite seguro de lote.");
+    if (page.length + unit.length > maxRecords) emit();
+    page.push(...unit);
+  }
+  emit();
   return chunks;
 }
 

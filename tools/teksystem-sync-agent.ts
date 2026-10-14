@@ -263,11 +263,12 @@ async function runSync(args: string[]) {
     catch (error: any) { if (error?.code !== "ENOENT") throw new Error("Arquivo de estado inválido; não avanço o cursor."); }
 
     const bootstrap = state.pipelineVersion !== 2;
+    const billingHistorySnapshot = state.billingHistorySnapshotVersion !== 1;
     const since = makeSince(bootstrap ? {} : state, startedAt, lookbackHours, overlapMinutes);
     const projectRoot = path.resolve(import.meta.dirname || path.dirname(new URL(import.meta.url).pathname), "..");
     const tsxCli = path.join(projectRoot, "node_modules", "tsx", "dist", "cli.mjs");
     const reader = path.join(projectRoot, "tools", "teksystem-firebird-reader.ts");
-    await execFileAsync(process.execPath, [tsxCli, reader, "export", "--output", tempExport, "--since", since.toISOString(), ...(bootstrap ? ["--customer-snapshot"] : [])], {
+    await execFileAsync(process.execPath, [tsxCli, reader, "export", "--output", tempExport, "--since", since.toISOString(), ...(bootstrap ? ["--customer-snapshot"] : []), ...(billingHistorySnapshot ? ["--billing-history-snapshot"] : [])], {
       cwd: projectRoot,
       windowsHide: true,
       timeout: 20 * 60 * 1000,
@@ -302,6 +303,7 @@ async function runSync(args: string[]) {
         lastSuccessfulWatermark: startedAt.toISOString(),
         lastSuccessfulRunId: runId,
         pipelineVersion: 2,
+        billingHistorySnapshotVersion: 1,
       };
       const stateTemp = `${statePath}.${process.pid}.tmp`;
       await fs.writeFile(stateTemp, `${JSON.stringify(nextState, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });

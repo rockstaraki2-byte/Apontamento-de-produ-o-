@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { stageTekSystemSync } from "../../_lib/teksystemSyncFirestore.js";
+import { stageTekSystemSync, upsertTekSystemBillingMonthTotals } from "../../_lib/teksystemSyncFirestore.js";
 import { enqueueTekSystemWriter } from "../../_lib/teksystemWriterFirestore.js";
 import {
   validateAndNormalizeTekSystemSync,
@@ -83,7 +83,9 @@ export default async function handler(req: any, res: any) {
       return res.status(503).json({ sucesso: false, erro: "WRITER_DISABLED", mensagem: "Escritor desativado; cursor do leitor deve permanecer inalterado." });
     }
     const result = await stageTekSystemSync(payload);
-    const writer = payload.source.readerVersion === 2 && payload.source.completeOrderSnapshots === true
+    const billingMonthsUpdated = await upsertTekSystemBillingMonthTotals(payload);
+    const hasOrderOrRomaneioRows = payload.entities.pedidos.length > 0 || payload.entities.romaneios.length > 0;
+    const writer = payload.source.readerVersion === 2 && payload.source.completeOrderSnapshots === true && hasOrderOrRomaneioRows
       ? await enqueueTekSystemWriter(payload)
       : { jobs: 0, enqueued: 0 };
     return res.status(200).json({
@@ -93,6 +95,7 @@ export default async function handler(req: any, res: any) {
       tenantId: payload.tenantId,
       payloadHash: payload.payloadHash,
       counts: validation.counts,
+      billingMonthsUpdated,
       writer,
       mensagem: "Sincronização recebida em staging; fila do agente de escrita preparada.",
     });

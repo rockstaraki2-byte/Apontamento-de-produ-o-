@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { X, Trash2, Phone, Copy, Printer, Loader2, Edit2 } from "lucide-react";
 import { normalizeString } from "./searchUtils";
 import { OrderEditModal } from "./components/OrderEditModal";
+import { getCompleteTekSystemBillingMonth } from "./teksystemBilling";
 
 export function StatusScreen({
   db,
@@ -20,6 +21,14 @@ export function StatusScreen({
   const [quickInvoiceCode, setQuickInvoiceCode] = useState<string | null>(null);
   const [quickInvoiceQty, setQuickInvoiceQty] = useState<{ [orderId: number]: number | "" }>({});
   const [editingOrderGroupCode, setEditingOrderGroupCode] = useState<string | null>(null);
+  const billingTodayKey = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  })();
+  const tekSystemBillingMonth = useMemo(
+    () => getCompleteTekSystemBillingMonth(db.teksystemBillingMonthlyTotals, billingTodayKey.slice(0, 7), new Date(`${billingTodayKey}T12:00:00`)),
+    [db.teksystemBillingMonthlyTotals, billingTodayKey],
+  );
 
   React.useEffect(() => {
     const handler = setTimeout(() => {
@@ -950,16 +959,22 @@ export function StatusScreen({
       billedAmount += (settings.manualTotalAdjustment || 0) + totalRepAdj;
     }
 
+    if (!isRep && tekSystemBillingMonth) {
+      billedAmount = tekSystemBillingMonth.amountCents / 100;
+    }
+
     return { 
        billedAmount: isRep ? myBilledAmount : billedAmount, 
        myManualAdjustment,
        goal,
        isRep,
+       isTekSystemSource: !isRep && Boolean(tekSystemBillingMonth),
+       tekSystemUpdatedAt: tekSystemBillingMonth?.snapshotGeneratedAt,
        myLaunchedVolume,
        avgMonthlyLaunched,
        performanceStatus
     };
-  }, [db.logs, db.systemSettings, db.orders, db.items, currentUser]);
+  }, [db.logs, db.systemSettings, db.orders, db.items, currentUser, tekSystemBillingMonth]);
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg shadow-sm w-full mx-auto border overflow-hidden p-4">
@@ -982,6 +997,11 @@ export function StatusScreen({
               <span className="text-xs font-bold text-gray-400 ml-1">
                 / R$ {monthlyBillingData.goal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
+              {monthlyBillingData.isTekSystemSource && monthlyBillingData.tekSystemUpdatedAt && (
+                <span className="block text-[10px] font-medium text-slate-400">
+                  Fonte TEKSYSTEM · {new Date(monthlyBillingData.tekSystemUpdatedAt).toLocaleString("pt-BR")}
+                </span>
+              )}
             </div>
           </div>
           
