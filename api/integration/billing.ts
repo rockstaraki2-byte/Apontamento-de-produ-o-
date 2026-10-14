@@ -1,4 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "../../src/firebase.ts";
 
 type FinanceOrder = {
   deliveryDate?: number | string | Date | null;
@@ -159,10 +161,6 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   try {
-    const [{ collection, getDocs, query, where }, { db }] = await Promise.all([
-      import("firebase/firestore"),
-      import("../../src/firebase"),
-    ]);
     const [ordersSnapshot, settingsSnapshot] = await Promise.all([
       getDocs(query(collection(db, "orders"), where("tenantId", "==", "imperio"))),
       getDocs(query(collection(db, "systemSettings"), where("tenantId", "==", "imperio"))),
