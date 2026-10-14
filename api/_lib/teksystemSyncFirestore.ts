@@ -57,6 +57,48 @@ function allRecords(payload: NormalizedTekSystemSyncPayload) {
     .flatMap(([entityType, rows]) => rows.map((data) => ({ entityType, data })));
 }
 
+/** Atualiza somente os resumos mensais e diários importados das notas do TekSystem. */
+export async function upsertTekSystemBillingMonthTotals(payload: NormalizedTekSystemSyncPayload): Promise<number> {
+  const rows = payload.entities.faturamentoDiario;
+  const months = new Map<string, Record<string, { amountCents: number; invoiceCount: number }>>();
+  for (const row of rows) {
+    const monthKey = String(row.monthKey);
+    const dailyTotals = months.get(monthKey) || {};
+    dailyTotals[String(row.date)] = {
+      amountCents: Number(row.amountCents),
+      invoiceCount: Number(row.invoiceCount),
+    };
+    months.set(monthKey, dailyTotals);
+  }
+
+  const collectionRef = collection(db, "teksystemBillingMonthlyTotals");
+  const receivedAt = new Date().toISOString();
+  const entries = [...months.entries()];
+
+  for (let offset = 0; offset < entries.length; offset += FIRESTORE_BATCH_LIMIT) {
+    const batch = writeBatch(db);
+    entries.slice(offset, offset + FIRESTORE_BATCH_LIMIT).forEach(([monthKey, dailyTotals]) => {
+      const monthRows = rows.filter((row) => row.monthKey === monthKey);
+      const throughDate = String(monthRows[0]?.completeThroughDate || "");
+      batch.set(doc(collectionRef, `${payload.tenantId}_${monthKey}`), {
+        tenantId: payload.tenantId,
+        monthKey,
+        completeThroughDate: throughDate,
+        dailyTotals,
+        amountCents: monthRows.reduce((total, row) => total + Number(row.amountCents), 0),
+        invoiceCount: monthRows.reduce((total, row) => total + Number(row.invoiceCount), 0),
+        snapshotGeneratedAt: payload.generatedAt,
+        snapshotSyncId: payload.syncId,
+        source: "TEKSYSTEM",
+        updatedAt: receivedAt,
+      });
+    });
+    await batch.commit();
+  }
+
+  return months.size;
+}
+
 /**
  * Persiste somente uma área de staging. Esta função não altera customers,
  * items, orders, logs ou qualquer outra coleção operacional do Apontador.

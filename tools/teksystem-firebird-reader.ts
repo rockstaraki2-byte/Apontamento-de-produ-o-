@@ -5,9 +5,9 @@ import type { Database, Options } from "node-firebird";
 import { validateAndNormalizeTekSystemSync, type TekSystemSyncPayload } from "../api/_lib/teksystemSync.js";
 import { readCompleteEntities } from "./teksystem-firebird-v2.js";
 
-type EntityName = "clientes" | "produtos" | "pedidos" | "faturamentos" | "romaneios";
+type EntityName = "clientes" | "produtos" | "pedidos" | "faturamentos" | "romaneios" | "faturamentoDiario";
 
-const ALL_ENTITIES: EntityName[] = ["clientes", "produtos", "pedidos", "faturamentos", "romaneios"];
+const ALL_ENTITIES: EntityName[] = ["clientes", "produtos", "pedidos", "faturamentos", "romaneios", "faturamentoDiario"];
 
 function envNumber(name: string, fallback: number): number {
   const value = Number(process.env[name]);
@@ -133,6 +133,7 @@ function printHelp() {
   npm run teksystem:firebird -- probe
   npm run teksystem:firebird -- export --output caminho/lote.json --since 2026-01-01T00:00:00.000Z
   npm run teksystem:firebird -- export --output caminho/lote.json --entities pedidos,romaneios --date 2026-10-05
+  npm run teksystem:firebird -- export --output caminho/lote.json --entities faturamentoDiario --billing-history-snapshot
 
 Variáveis obrigatórias (somente locais):
   TEKSYSTEM_DB_USER, TEKSYSTEM_DB_PASSWORD
@@ -176,6 +177,7 @@ async function runExport(args: string[]) {
       dateRange(argumentValue(args, "--date")),
       args.includes("--catalog-snapshot"),
       args.includes("--customer-snapshot"),
+      args.includes("--billing-history-snapshot"),
     );
     const payload: TekSystemSyncPayload = {
       syncId: `teksystem-firebird-${Date.now()}`,

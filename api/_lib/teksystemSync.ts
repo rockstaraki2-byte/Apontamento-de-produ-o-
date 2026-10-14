@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 export const TEKSYSTEM_SYNC_SCHEMA_VERSION = 1;
 export const DEFAULT_TEKSYSTEM_TENANT_ID = "imperio";
 
-export type TekSystemEntityType = "clientes" | "produtos" | "pedidos" | "faturamentos" | "romaneios";
+export type TekSystemEntityType = "clientes" | "produtos" | "pedidos" | "faturamentos" | "romaneios" | "faturamentoDiario";
 
 export interface TekSystemSourceInfo {
   readerVersion?: number;
@@ -60,6 +60,7 @@ const ENTITY_TYPES: TekSystemEntityType[] = [
   "pedidos",
   "faturamentos",
   "romaneios",
+  "faturamentoDiario",
 ];
 
 function cleanText(value: unknown, fallback = ""): string {
@@ -90,6 +91,71 @@ function payloadHash(value: unknown): string {
 function safeExternalId(value: unknown, fallbackIndex: number): string {
   const candidate = cleanText(value);
   return candidate || `linha-${fallbackIndex + 1}`;
+}
+
+function isDateOnly(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(value + "T00:00:00.000Z");
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function validateDailyBillingRows(rows: Record<string, unknown>[], issues: TekSystemSyncValidationIssue[]) {
+  if (!rows.length) return;
+  const dates = new Set<string>();
+  const monthRows = new Map<string, { throughDates: Set<string>; dates: Set<string>; count: number }>();
+  rows.forEach((row, index) => {
+    const date = row.date;
+    const monthKey = row.monthKey;
+    const throughDate = row.completeThroughDate;
+    const amountCents = row.amountCents;
+    const invoiceCount = row.invoiceCount;
+    if (!isDateOnly(date)) {
+      issues.push({ field: `entities.faturamentoDiario[${index}].date`, message: "Informe uma data válida em YYYY-MM-DD." });
+      return;
+    }
+    if (dates.has(date)) {
+      issues.push({ field: `entities.faturamentoDiario[${index}].date`, message: `Data duplicada no resumo: ${date}.` });
+    }
+    dates.add(date);
+    if (typeof monthKey !== "string" || !/^\d{4}-\d{2}$/.test(monthKey) || date.slice(0, 7) !== monthKey) {
+      issues.push({ field: `entities.faturamentoDiario[${index}].monthKey`, message: "O mês deve corresponder à data do resumo." });
+    }
+    if (!isDateOnly(throughDate) || (isDateOnly(date) && throughDate < date)) {
+      issues.push({ field: `entities.faturamentoDiario[${index}].completeThroughDate`, message: "Informe até qual data este resumo mensal está completo." });
+    } else {
+      if (typeof monthKey === "string" && throughDate.slice(0, 7) !== monthKey) {
+        issues.push({ field: `entities.faturamentoDiario[${index}].completeThroughDate`, message: "A data de cobertura deve estar no mesmo mês do resumo." });
+      }
+    }
+    if (!Number.isSafeInteger(amountCents)) {
+      issues.push({ field: `entities.faturamentoDiario[${index}].amountCents`, message: "O valor deve ser informado em centavos inteiros." });
+    }
+    if (!Number.isSafeInteger(invoiceCount) || Number(invoiceCount) < 0) {
+      issues.push({ field: `entities.faturamentoDiario[${index}].invoiceCount`, message: "A quantidade de notas deve ser um inteiro não negativo." });
+    }
+    if (typeof monthKey === "string" && /^\d{4}-\d{2}$/.test(monthKey) && isDateOnly(date) && isDateOnly(throughDate)) {
+      const group = monthRows.get(monthKey) || { throughDates: new Set<string>(), dates: new Set<string>(), count: 0 };
+      group.throughDates.add(throughDate);
+      group.dates.add(date);
+      group.count += 1;
+      monthRows.set(monthKey, group);
+    }
+  });
+  for (const [monthKey, group] of monthRows) {
+    if (group.throughDates.size !== 1) {
+      issues.push({ field: `entities.faturamentoDiario.${monthKey}`, message: "Todas as datas do mês precisam ter a mesma cobertura do resumo." });
+      continue;
+    }
+    const throughDate = [...group.throughDates][0];
+    const expectedCount = Number(throughDate.slice(8, 10));
+    if (monthKey !== throughDate.slice(0, 7) || group.count !== expectedCount) {
+      issues.push({ field: "entities.faturamentoDiario", message: "O resumo precisa conter todas as datas do mês até a cobertura informada." });
+    }
+    for (let day = 1; day <= expectedCount; day += 1) {
+      const date = monthKey + "-" + String(day).padStart(2, "0");
+      if (!group.dates.has(date)) issues.push({ field: "entities.faturamentoDiario", message: `Falta o total do dia ${date}.` });
+    }
+  }
 }
 
 function normalizeEntityRows(
@@ -167,6 +233,8 @@ export function validateAndNormalizeTekSystemSync(
       ),
     ]),
   ) as Record<TekSystemEntityType, Record<string, unknown>[]>;
+
+  validateDailyBillingRows(entities.faturamentoDiario, issues);
 
   for (const entity of ENTITY_TYPES) {
     const seen = new Set<string>();
