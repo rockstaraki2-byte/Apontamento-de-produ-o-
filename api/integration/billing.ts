@@ -9,6 +9,23 @@ type FinanceOrder = {
   status?: string;
 };
 
+type TekSystemDailyTotal = {
+  amountCents?: unknown;
+  invoiceCount?: unknown;
+};
+
+type TekSystemMonthlySnapshot = {
+  tenantId?: unknown;
+  monthKey?: unknown;
+  completeThroughDate?: unknown;
+  dailyTotals?: unknown;
+  amountCents?: unknown;
+  invoiceCount?: unknown;
+  snapshotGeneratedAt?: unknown;
+  snapshotSyncId?: unknown;
+  source?: unknown;
+};
+
 const LEGACY_JULY_BILLING = 169194.69;
 const OVERRIDDEN_JULY_START = "2026-07-01";
 const OVERRIDDEN_JULY_END = "2026-07-07";
@@ -76,6 +93,66 @@ function getCurrentBusinessMonth(): string {
   const year = parts.find((part) => part.type === "year")?.value || "";
   const month = parts.find((part) => part.type === "month")?.value || "";
   return year && month ? year + "-" + month : "";
+}
+
+
+function getCompleteTekSystemBillingAmount(
+  snapshot: TekSystemMonthlySnapshot | undefined,
+  monthKey: string,
+): number | null {
+  if (!snapshot || snapshot.source !== "TEKSYSTEM" || snapshot.monthKey !== monthKey) return null;
+
+  const today = formatBusinessDate(new Date());
+  const currentMonth = today.slice(0, 7);
+  if (!today || monthKey > currentMonth) return null;
+
+  const [year, month] = monthKey.split("-").map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  if (daysInMonth < 1) return null;
+
+  const requiredThroughDate = monthKey === currentMonth
+    ? today
+    : monthKey + "-" + String(daysInMonth).padStart(2, "0");
+  if (
+    snapshot.tenantId !== "imperio" ||
+    snapshot.completeThroughDate !== requiredThroughDate ||
+    !snapshot.snapshotGeneratedAt ||
+    !snapshot.snapshotSyncId ||
+    typeof snapshot.amountCents !== "number" ||
+    !Number.isSafeInteger(snapshot.amountCents) ||
+    typeof snapshot.invoiceCount !== "number" ||
+    !Number.isSafeInteger(snapshot.invoiceCount)
+  ) return null;
+
+  const dailyTotals = snapshot.dailyTotals as Record<string, TekSystemDailyTotal> | undefined;
+  if (!dailyTotals || typeof dailyTotals !== "object") return null;
+
+  let amountCents = 0;
+  let invoiceCount = 0;
+  const daysCovered = Number(requiredThroughDate.slice(8, 10));
+  for (let day = 1; day <= daysCovered; day += 1) {
+    const date = monthKey + "-" + String(day).padStart(2, "0");
+    const daily = dailyTotals[date];
+    if (
+      !daily ||
+      typeof daily.amountCents !== "number" ||
+      !Number.isSafeInteger(daily.amountCents) ||
+      typeof daily.invoiceCount !== "number" ||
+      !Number.isSafeInteger(daily.invoiceCount) ||
+      daily.invoiceCount < 0
+    ) return null;
+    amountCents += daily.amountCents;
+    invoiceCount += daily.invoiceCount;
+  }
+
+  if (
+    !Number.isSafeInteger(amountCents) ||
+    !Number.isSafeInteger(invoiceCount) ||
+    amountCents !== snapshot.amountCents ||
+    invoiceCount !== snapshot.invoiceCount
+  ) return null;
+
+  return amountCents;
 }
 
 function toFiniteNumber(value: unknown): number {
@@ -178,13 +255,18 @@ export async function GET(request: Request): Promise<Response> {
       { experimentalForceLongPolling: true },
       firebaseConfig.firestoreDatabaseId,
     );
-    const [ordersSnapshot, settingsSnapshot] = await Promise.all([
+    const [ordersSnapshot, settingsSnapshot, tekSystemSnapshots] = await Promise.all([
       firestore.getDocs(firestore.query(firestore.collection(db, "orders"), firestore.where("tenantId", "==", "imperio"))),
       firestore.getDocs(firestore.query(firestore.collection(db, "systemSettings"), firestore.where("tenantId", "==", "imperio"))),
+      firestore.getDocs(firestore.query(firestore.collection(db, "teksystemBillingMonthlyTotals"), firestore.where("tenantId", "==", "imperio"))),
     ]);
 
     const financeOrders = ordersSnapshot.docs.map((document) => document.data() as FinanceOrder);
     const systemSettings = settingsSnapshot.docs[0]?.data() || {};
+    const tekSystemSnapshot = tekSystemSnapshots.docs
+      .map((document) => document.data() as TekSystemMonthlySnapshot)
+      .find((entry) => entry.monthKey === month);
+    const authoritativeBillingAmountCents = getCompleteTekSystemBillingAmount(tekSystemSnapshot, month);
 
     let totalInvoiced = 0;
     let totalActive = 0;
@@ -231,6 +313,10 @@ export async function GET(request: Request): Promise<Response> {
     totalInvoiced += manualTotalAdjustment;
     totalExpected += manualTotalAdjustment;
 
+    if (authoritativeBillingAmountCents !== null) {
+      totalInvoiced = authoritativeBillingAmountCents / 100;
+    }
+
     const updatedAt = spreadsheetDateSerial();
     return csvResponse([
       ["metrica", "valor", "competencia"],
@@ -238,7 +324,7 @@ export async function GET(request: Request): Promise<Response> {
       ["carteira_ativa", totalActive.toFixed(2), month],
       ["provisao_total", totalExpected.toFixed(2), month],
       ["atualizado_em", updatedAt.toFixed(8), month],
-      ["criterio_mes", "data_de_entrega_do_pedido", month],
+      ["criterio_mes", authoritativeBillingAmountCents !== null ? "TEKSYSTEM" : "data_de_entrega_do_pedido", month],
     ]);
   } catch (error) {
     console.error("[billing-sheet-sync] Falha ao montar resumo do ApontaPRO:", error);
