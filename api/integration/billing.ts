@@ -151,9 +151,9 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   const month = url.searchParams.get("month") || getCurrentBusinessMonth();
-  if (month !== "ALL" && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
     return Response.json(
-      { error: "Informe month no formato YYYY-MM ou ALL." },
+      { error: "Informe month no formato YYYY-MM." },
       { status: 400 },
     );
   }
@@ -177,7 +177,7 @@ export async function GET(request: Request): Promise<Response> {
 
     for (const order of financeOrders) {
       const deliveryDate = getLocalDateString(order.deliveryDate);
-      if (month !== "ALL" && !deliveryDate.startsWith(month)) continue;
+      if (!deliveryDate.startsWith(month)) continue;
 
       const isOverriddenDate =
         deliveryDate >= OVERRIDDEN_JULY_START &&
@@ -207,7 +207,7 @@ export async function GET(request: Request): Promise<Response> {
       }
     }
 
-    if (month === "ALL" || month === "2026-07") {
+    if (month === "2026-07") {
       totalInvoiced += LEGACY_JULY_BILLING;
       totalExpected += LEGACY_JULY_BILLING;
     }
