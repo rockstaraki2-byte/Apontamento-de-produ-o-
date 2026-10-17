@@ -42,7 +42,8 @@ const billingTimeZone = "America/Sao_Paulo";
  * only be detected by comparing a successful full snapshot with ApontaPRO.
  */
 export async function readOrderPresenceSnapshot(db: Database, companies: number[], requestedCodes: string[]) {
-  if (!companies.length || companies.some((company) => ![0, 1].includes(Number(company)))) {
+  const companySet = [...new Set(companies.map(Number))].sort((a, b) => a - b);
+  if (companySet.length !== 2 || companySet[0] !== 0 || companySet[1] !== 1) {
     throw new Error("O snapshot de presença exige as empresas autorizadas 0 e 1.");
   }
   const codes = [...new Set(requestedCodes.map(key).filter(Boolean))];

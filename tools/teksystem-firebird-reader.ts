@@ -225,6 +225,10 @@ async function runExport(args: string[]) {
     const normalizedExport: TekSystemSyncPayload = {
       ...validation.payload,
       ...(orderPresence ? { orderPresence } : {}),
+      ...(orderPresence && orderPresenceTarget ? {
+        orderPresenceCheckedCodes: orderPresenceTarget.codes,
+        orderPresenceTargetHash: orderPresenceTarget.targetHash,
+      } : {}),
     };
     await fs.writeFile(output, `${JSON.stringify(normalizedExport, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     console.log(JSON.stringify({ ok: true, output, counts: validation.counts, payloadHash: validation.payload.payloadHash }, null, 2));
