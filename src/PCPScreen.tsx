@@ -1123,13 +1123,24 @@ export function PCPScreen({
   const [newSoldaProcessInput, setNewSoldaProcessInput] = useState("");
   
   React.useEffect(() => {
-    if (db.systemSettings?.[0]) {
-      setSysConfigCompanyName(db.systemSettings[0].companyName || "IMPÉRIO JOMARCI - ACESSÓRIOS PARA MOVÉIS");
-      setSysConfigLogoUrl(db.systemSettings[0].companyLogoUrl || "/icon.png");
-      setSysConfigSystemName(db.systemSettings[0].systemName || "");
-      setSysConfigPrimaryColor(db.systemSettings[0].primaryColor || "#00b14f");
-      setSysConfigMonthlyBillingGoal(db.systemSettings[0].monthlyBillingGoal?.toString() || "");
-    }
+    const generalSettings =
+      db.systemSettings?.find((settings) => settings.id === "default") ||
+      db.systemSettings?.[0];
+    setSysConfigCompanyName(
+      generalSettings?.companyName || db.activeTenant?.name || "",
+    );
+    setSysConfigLogoUrl(
+      generalSettings?.companyLogoUrl || db.activeTenant?.logoUrl || "/icon.png",
+    );
+    setSysConfigSystemName(
+      generalSettings?.systemName || db.activeTenant?.systemName || "",
+    );
+    setSysConfigPrimaryColor(
+      generalSettings?.primaryColor || db.activeTenant?.primaryColor || "#00b14f",
+    );
+    setSysConfigMonthlyBillingGoal(
+      generalSettings?.monthlyBillingGoal?.toString() || "",
+    );
     if (db.activeTenant) {
       setSysConfigExigirQualidade(db.activeTenant.exigirQualidadeNaEmbalagem !== false);
       if (db.activeTenant.soldaProcesses && db.activeTenant.soldaProcesses.length > 0) {
@@ -1140,25 +1151,17 @@ export function PCPScreen({
 
   const handleSaveSystemConfig = async () => {
     try {
-      await db.saveSystemSettings({
-         id: "default",
-         companyName: sysConfigCompanyName,
-         companyLogoUrl: sysConfigLogoUrl,
-         systemName: sysConfigSystemName,
-         primaryColor: sysConfigPrimaryColor,
-         monthlyBillingGoal: sysConfigMonthlyBillingGoal ? parseFloat(sysConfigMonthlyBillingGoal) : undefined
+      await db.saveTenantSystemConfig({
+        companyName: sysConfigCompanyName,
+        companyLogoUrl: sysConfigLogoUrl,
+        systemName: sysConfigSystemName,
+        primaryColor: sysConfigPrimaryColor,
+        monthlyBillingGoal: sysConfigMonthlyBillingGoal
+          ? parseFloat(sysConfigMonthlyBillingGoal)
+          : undefined,
+        exigirQualidadeNaEmbalagem: sysConfigExigirQualidade,
+        soldaProcesses: sysConfigSoldaProcesses,
       });
-
-      if (db.activeTenant && db.addTenant) {
-        await db.addTenant({
-          ...db.activeTenant,
-          name: sysConfigCompanyName,
-          logoUrl: sysConfigLogoUrl,
-          systemName: sysConfigSystemName,
-          exigirQualidadeNaEmbalagem: sysConfigExigirQualidade,
-          soldaProcesses: sysConfigSoldaProcesses,
-        });
-      }
 
       alert("Configurações do sistema salvas com sucesso!");
     } catch(err) {

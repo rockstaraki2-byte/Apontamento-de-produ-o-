@@ -65,6 +65,7 @@ import {
 } from "firebase/firestore";
 
 import { CUSTOMER_TRADE_NAMES } from "./data/customerTradeNames";
+import { systemSettingsDocumentId } from "./systemSettingsKey";
 import {
   DEMO_DATABASE,
   DEMO_TENANT,
@@ -965,7 +966,23 @@ export function useDatabase(currentUser?: User | null) {
     );
     const unsubSystemSettings = listenTenantCollection("systemSettings",
       (snap) => {
-        const list = snap.docs.map((d) => d.data() as SystemSettings);
+        const list = [...snap.docs]
+          .sort((a, b) => {
+            const aSettings = a.data() as SystemSettings;
+            const bSettings = b.data() as SystemSettings;
+            const aLogicalId = String(aSettings.id || a.id);
+            const bLogicalId = String(bSettings.id || b.id);
+            const logicalOrder = aLogicalId.localeCompare(bLogicalId);
+            if (logicalOrder !== 0) return logicalOrder;
+
+            const aIsPreferred =
+              a.id === systemSettingsDocumentId(activeTenantId, aLogicalId);
+            const bIsPreferred =
+              b.id === systemSettingsDocumentId(activeTenantId, bLogicalId);
+            if (aIsPreferred !== bIsPreferred) return aIsPreferred ? -1 : 1;
+            return a.id.localeCompare(b.id);
+          })
+          .map((d) => d.data() as SystemSettings);
         setSystemSettings(list);
       },
       (err) => handleSnapshotError("systemSettings", err),
@@ -3558,12 +3575,25 @@ export function useDatabase(currentUser?: User | null) {
     teksystemBillingMonthlyTotals: filteredTekSystemBillingMonthlyTotals,
     teksystemRepresentativeBillingMonthlyTotals: filteredTekSystemRepresentativeBillingMonthlyTotals,
     saveSystemSettings: async (settings: SystemSettings) => {
-      const id = settings.id || "default";
+      const logicalId = String(settings.id || "default").trim();
+      const storageId = systemSettingsDocumentId(activeTenantId, logicalId);
       await setDoc(
-        doc(db, "systemSettings", id),
-        cleanUndefined({ ...settings, id }),
+        doc(db, "systemSettings", storageId),
+        cleanUndefined({ ...settings, id: logicalId, tenantId: activeTenantId }),
         { merge: true },
       );
+    },
+    saveTenantSystemConfig: async (settings: {
+      companyName: string;
+      companyLogoUrl: string;
+      systemName: string;
+      primaryColor: string;
+      monthlyBillingGoal?: number;
+      exigirQualidadeNaEmbalagem: boolean;
+      soldaProcesses: string[];
+    }) => {
+      if (isDemoMode) return;
+      return callAuthenticatedApi("/api/tenant-settings", "PUT", settings);
     },
 
     tornoEvents: filteredTornoEvents,
