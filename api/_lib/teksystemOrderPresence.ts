@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { collection, doc, getDocs, query, where, writeBatch } from "firebase/firestore";
+import { collection, doc, getDocs, query, where, writeBatch } from "./adminFirestore.js";
 import { teksystemDb } from "./teksystemSyncFirestore.js";
 import { enqueueTekSystemOrderLifecycleJobs } from "./teksystemWriterFirestore.js";
 import { syncRecordKey } from "./teksystemSync.js";
