@@ -74,11 +74,12 @@ function createAiCacheKey(endpoint: string, payload: any): string {
   return endpoint + ":" + crypto.createHash("sha256").update(str).digest("hex");
 }
 import { getApps } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { getMessaging } from "firebase-admin/messaging";
 import { getServerDb, initFirebaseAdmin, collection, getDocs, writeBatch, query, where, doc, setDoc } from "./server_firebase";
 import config from "./firebase-applet-config.json";
 
-async function cleanupInvalidFcmTokens(tokensToRemove: string[]) {
+async function cleanupInvalidFcmTokens(tokensToRemove: string[], tenantId: string) {
   if (!tokensToRemove || tokensToRemove.length === 0) return;
   try {
     const db = getServerDb();
@@ -87,7 +88,7 @@ async function cleanupInvalidFcmTokens(tokensToRemove: string[]) {
     for (const token of tokensToRemove) {
       const snap = await getDocs(query(
         collection(db, "users"),
-        where("tenantId", "==", "imperio"),
+        where("tenantId", "==", tenantId),
         where("fcmToken", "==", token),
       ));
       snap.forEach((doc: any) => {
@@ -232,14 +233,14 @@ async function checkDeadlines() {
         const tokensToRemove: string[] = [];
         response.responses.forEach((resp, idx) => {
           if (!resp.success) {
-            console.warn(`Falha na entrega ao token ${targetTokens[idx]}:`, resp.error);
+            console.warn(`Falha na entrega periódica ao destinatário ${idx + 1}:`, resp.error?.code || "UNKNOWN");
             if (resp.error?.code === 'messaging/invalid-registration-token' ||
                 resp.error?.code === 'messaging/registration-token-not-registered') {
               tokensToRemove.push(targetTokens[idx]);
             }
           }
         });
-        await cleanupInvalidFcmTokens(tokensToRemove);
+        await cleanupInvalidFcmTokens(tokensToRemove, "imperio");
       }
     }
   } catch (e: any) {
@@ -817,10 +818,13 @@ async function startServer() {
 
   app.post("/api/integration/orders", async (req, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      const expectedToken = process.env.INTEGRATION_TOKEN || "ImpeJomIntegration2026";
-      
-      if (!authHeader || authHeader !== `Bearer ${expectedToken}`) {
+      const authHeader = String(req.headers.authorization || "");
+      const suppliedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+      const expectedToken = process.env.ORDER_IMPORT_API_TOKEN || process.env.INTEGRATION_TOKEN || "";
+      const suppliedBuffer = Buffer.from(suppliedToken);
+      const expectedBuffer = Buffer.from(expectedToken);
+      if (!expectedToken || suppliedBuffer.length === 0 || suppliedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(suppliedBuffer, expectedBuffer)) {
+        if (!expectedToken) return res.status(503).json({ success: false, error: "Token de integração não configurado." });
         return res.status(401).json({
           success: false,
           error: "Não autorizado: Token de integração inválido ou ausente."
@@ -835,6 +839,9 @@ async function startServer() {
           success: false,
           error: "Nenhum pedido recebido."
         });
+      }
+      if (incoming.length > 100) {
+        return res.status(413).json({ success: false, error: "Limite de 100 pedidos por requisição." });
       }
 
       console.log(`[API Integração] Recebendo ${incoming.length} pedidos para processamento...`);
@@ -1268,13 +1275,27 @@ Retorne SOMENTE um OBJETO JSON estritamente dentro do request Schema abaixo. Nã
         return res.status(400).json({ error: "No fcmTokens provided" });
       }
 
-      if (getApps().length === 0) {
-        return res
-          .status(503)
-          .json({ error: "Firebase Admin is not configured on the server." });
+      const bearer = String(req.headers.authorization || "").match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
+      if (!bearer || getApps().length === 0) return res.status(401).json({ error: "Não autorizado." });
+      let claims: any;
+      try { claims = await getAuth().verifyIdToken(bearer, true); }
+      catch { return res.status(401).json({ error: "Não autorizado." }); }
+      const tenantId = String(claims.tenantId || "");
+      if (!tenantId || tenantId === "global" || claims.superAdmin === true) return res.status(403).json({ error: "Ação disponível apenas para usuários de uma empresa." });
+      if (typeof title !== "string" || title.length > 120 || typeof body !== "string" || body.length > 1000) {
+        return res.status(400).json({ error: "Título ou mensagem inválidos." });
       }
-
-      console.log("Enviando push manual para tokens:", fcmTokens.length);
+      const requestedTokens = [...new Set((fcmTokens as unknown[]).filter((token): token is string => typeof token === "string" && token.length > 0))];
+      if (requestedTokens.length > 100 || requestedTokens.length !== fcmTokens.length) return res.status(400).json({ error: "Lista de destinatários inválida." });
+      const db = getServerDb();
+      const tenantUsers = await getDocs(query(collection(db, "users"), where("tenantId", "==", tenantId)));
+      const allowedTokens = new Set<string>();
+      tenantUsers.forEach((userDoc) => {
+        const token = userDoc.data()?.fcmToken;
+        if (typeof token === "string" && token) allowedTokens.add(token);
+      });
+      if (requestedTokens.some((token) => !allowedTokens.has(token))) return res.status(403).json({ error: "Há destinatários fora da empresa autenticada." });
+      const tenantTokens = requestedTokens;
 
       const message = {
         notification: { title, body },
@@ -1293,7 +1314,7 @@ Retorne SOMENTE um OBJETO JSON estritamente dentro do request Schema abaixo. Nã
         data: {
           click_action: '/'
         },
-        tokens: fcmTokens,
+        tokens: tenantTokens,
       };
 
       const response = await getMessaging().sendEachForMulticast(message);
@@ -1305,14 +1326,14 @@ Retorne SOMENTE um OBJETO JSON estritamente dentro do request Schema abaixo. Nã
         const tokensToRemove: string[] = [];
         response.responses.forEach((resp, idx) => {
           if (!resp.success) {
-            console.warn(`Falha na entrega ao token ${fcmTokens[idx]}:`, resp.error);
+            console.warn(`Falha na entrega de push para o destinatário ${idx + 1}:`, resp.error?.code || "UNKNOWN");
             if (resp.error?.code === 'messaging/invalid-registration-token' ||
                 resp.error?.code === 'messaging/registration-token-not-registered') {
               tokensToRemove.push(fcmTokens[idx]);
             }
           }
         });
-        await cleanupInvalidFcmTokens(tokensToRemove);
+        await cleanupInvalidFcmTokens(tokensToRemove, tenantId);
       }
 
       res.json({ success: true, response });

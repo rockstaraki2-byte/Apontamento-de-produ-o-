@@ -2002,26 +2002,30 @@ export function ProducaoScreen({
         <div className="bg-emerald-50 border border-emerald-100 text-[#0f5132] px-4 py-2.5 rounded-xl flex items-center justify-between gap-4 shadow-2xs text-xs font-bold flex-wrap shrink-0">
           <div className="flex items-center gap-2">
             <span
-              className={`w-2 h-2 rounded-full ${db.quotaExceeded ? "bg-rose-500" : "bg-emerald-500"} animate-pulse`}
+              className={`w-2 h-2 rounded-full ${db.quotaExceeded || db.storageQuotaExceeded ? "bg-rose-500" : "bg-emerald-500"} animate-pulse`}
             ></span>
             <span>
-              {db.quotaExceeded
-                ? "Sincronização em Pausa (Cota)"
+              {db.storageQuotaExceeded
+                ? "Sincronização em Pausa (Armazenamento local)"
+                : db.quotaExceeded
+                ? "Sincronização em Pausa (Cota do Firestore)"
                 : "Sincronizado com o servidor principal"}
             </span>
           </div>
 
-          {db.quotaExceeded ? (
+          {db.storageQuotaExceeded || db.quotaExceeded ? (
             <div className="flex items-center gap-2 bg-rose-100/80 border border-rose-200 text-rose-950 px-3 py-1.5 rounded-lg text-[11px]">
               <span>⚠️</span>
               <span className="truncate">
-                Limite de gravação diária atingido. Dados salvos localmente!
+                {db.storageQuotaExceeded
+                  ? "Armazenamento local do navegador cheio. Dados permanecem na fila local."
+                  : "Cota de gravação do Firestore atingida. Dados permanecem na fila local."}
               </span>
               <button
                 onClick={() => db.triggerSyncQueue?.(true)}
                 className="bg-rose-600 text-white font-extrabold px-2 py-0.5 rounded text-[9px] uppercase hover:bg-rose-700 transition"
               >
-                Forçar Sincronização
+                Tentar novamente
               </button>
             </div>
           ) : db.syncQueueCount > 0 ? (

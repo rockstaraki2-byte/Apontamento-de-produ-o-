@@ -36,7 +36,7 @@ import type {
   TekSystemBillingMonthlyTotal,
   TekSystemRepresentativeBillingMonthlyTotal,
 } from "./types";
-import { db } from "./firebase";
+import { auth, db } from "./firebase";
 import {
   enqueueAction as enqueueActionFirebase,
   getQueue,
@@ -75,6 +75,22 @@ import { getOrderBillingSummary, isFullySeparated, mergeCargaOrderAllocations } 
 import type { CargaOrderAllocationRequest } from "./expeditionMetrics";
 import { canManageExpedition } from "./expeditionAccess";
 
+async function callAuthenticatedApi(path: string, method: string, body?: any) {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error("Sessão expirada. Entre novamente.");
+  const response = await fetch(path, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result?.error || "Não foi possível salvar as alterações.");
+  return result;
+}
+
 function cleanUndefined<T>(obj: T): T {
   if (obj === null || typeof obj !== "object") {
     return obj;
@@ -112,154 +128,6 @@ function isRetiredTenantId(value?: string | null) {
   return RETIRED_TENANT_IDS.has(String(value || "").trim().toLowerCase());
 }
 
-function isRetiredTenantUser(user: Partial<User> & { companyId?: string }) {
-  return (
-    isRetiredTenantId(user.tenantId || user.companyId) ||
-    String(user.id || "").toLowerCase().includes("cyrnedecor") ||
-    String(user.id || "").toLowerCase().includes("cirnedecor") ||
-    String(user.name || "").toLowerCase().includes("cyrne decor") ||
-    String(user.name || "").toLowerCase().includes("cirne decor")
-  );
-}
-
-const INITIAL_USERS: User[] = [
-  { id: "raul", name: "Raul", role: "ADMIN", password: "230213", tenantId: "global" },
-  { id: "gerencia.imperio", name: "Gerência", role: "GERENCIA", password: "230213", tenantId: "imperio" },
-  { id: "romario", name: "Romario", role: "LEITURA", tenantId: "imperio" },
-  { id: "alessandra", name: "Alessandra", role: "LEITURA", tenantId: "imperio" },
-  { id: "pcp", name: "PCP", role: "PCP", password: "1111", tenantId: "imperio" },
-  { id: "embalagem", name: "Embalagem", role: "EMBALAGEM", tenantId: "imperio" },
-  {
-    id: "dinei",
-    name: "Encarregado - Dinei",
-    role: "ENCARREGADO",
-    password: "1111",
-    tenantId: "imperio",
-  },
-  { id: "solda", name: "Solda", role: "SOLDA", password: "1111", tenantId: "imperio" },
-  {
-    id: "montagem_retratil",
-    name: "Montagem de Retrátil",
-    role: "MONTAGEM_RETRATIL",
-    password: "1111",
-    tenantId: "imperio",
-  },
-  {
-    id: "montagem_rodrigo",
-    name: "Renata - Pendurar Barra chata",
-    role: "MONTAGEM_RODRIGO",
-    password: "1111",
-    tenantId: "imperio",
-  },
-  { id: "pintura", name: "Pintura", role: "PINTURA", tenantId: "imperio" },
-  {
-    id: "cortelaser_giovani",
-    name: "Corte a Laser - Giovani",
-    role: "CORTE_LASER",
-    tenantId: "imperio",
-  },
-  {
-    id: "cortelaser_clovis",
-    name: "Corte a Laser - Clovis",
-    role: "CORTE_LASER",
-    tenantId: "imperio",
-  },
-  {
-    id: "projetista_marcos",
-    name: "Marcos (Projetista)",
-    role: "PROJETISTA",
-    password: "1111",
-    tenantId: "imperio",
-  },
-  {
-    id: "representante_kesse",
-    name: "Kesse Representante",
-    role: "REPRESENTANTE",
-    password: "1111",
-    phone: "",
-    tenantId: "imperio",
-  },
-  {
-    id: "representante_imperio",
-    name: "Império Representante",
-    role: "REPRESENTANTE",
-    password: "1111",
-    phone: "",
-    tenantId: "imperio",
-  },
-  {
-    id: "representante_andre",
-    name: "André Representante",
-    role: "REPRESENTANTE",
-    password: "1111",
-    phone: "",
-    tenantId: "imperio",
-  },
-  {
-    id: "representante_danilo",
-    name: "Danilo Representante",
-    role: "REPRESENTANTE",
-    password: "1111",
-    phone: "",
-    tenantId: "imperio",
-  },
-  {
-    id: "representante_angelo",
-    name: "Ângelo representante",
-    role: "REPRESENTANTE",
-    password: "1111",
-    phone: "",
-    tenantId: "imperio",
-  },
-  {
-    id: "pedidos_loja_imperio",
-    name: "Pedidos LOJA Imperio",
-    role: "REPRESENTANTE",
-    password: "1111",
-    phone: "",
-    tenantId: "imperio",
-  },
-  {
-    id: "representante_lilian",
-    name: "Lilian Representante",
-    role: "REPRESENTANTE",
-    password: "1111",
-    phone: "",
-    tenantId: "imperio",
-  },
-  {
-    id: "pedidos_ddesigner",
-    name: "Pedidos DDesigner",
-    role: "REPRESENTANTE",
-    password: "1111",
-    phone: "",
-    tenantId: "imperio",
-  },
-  { id: "prensa_eduardo", name: "Prensa Eduardo", role: "PRENSA_EDUARDO", password: "1111", tenantId: "imperio" },
-  { id: "prensa_rafael", name: "Prensa Rafael", role: "PRENSA_RAFAEL", password: "1111", tenantId: "imperio" },
-  {
-    id: "torno_cnc_willian",
-    name: "Torno CNC Willian",
-    role: "TORNO_CNC_WILLIAN",
-    tenantId: "imperio",
-  },
-  {
-    id: "eric.imperio",
-    name: "Eric",
-    role: "TORNO_CNC_WILLIAN",
-    password: "0000",
-    tenantId: "imperio",
-  },
-  {
-    id: "torno_cnc_henrique",
-    name: "Torno CNC Henrique",
-    role: "TORNO_CNC_HENRIQUE",
-    tenantId: "imperio",
-  },
-  { id: "injetora", name: "Injetora", role: "INJETORA", tenantId: "imperio" },
-  { id: "banho_quimico", name: "Banho Químico", role: "BANHO_QUIMICO", tenantId: "imperio" },
-];
-
 const BILLING_LOAD_STATUSES = new Set<Carga["status"]>([
   "FATURADA_PARCIAL",
   "FATURADA_COMPLETA",
@@ -273,7 +141,6 @@ const ROLE_SCOPED_LISTENER_COLLECTIONS: Record<string, readonly string[]> = {
   CORTE_LASER: ["items", "activePacks", "nestTasks", "sheetStocks", "stocks", "notifications", "sectors"],
 };
 
-const USERS_LOAD_FALLBACK_TIMEOUT_MS = 12000;
 const USERS_LOAD_TIMEOUT_ERROR =
   "O carregamento dos acessos demorou mais de 12 segundos. O login local foi liberado; verifique a conexão e tente reconectar.";
 
@@ -312,9 +179,7 @@ export function useDatabase(currentUser?: User | null) {
 
   const activeTenantId =
     currentUser?.tenantId === "global"
-      ? selectedTenantId === "global"
-        ? "imperio"
-        : selectedTenantId
+      ? "global"
       : currentUser?.tenantId || "imperio";
 
   const setSelectedTenantId = (id: string) => {
@@ -340,52 +205,18 @@ export function useDatabase(currentUser?: User | null) {
     return updateDocFirebase(ref, data);
   };
 
-  const [users, setUsers] = useState<User[]>(() => {
-    if (isDemoMode) return [DEMO_USER];
-    const saved = localStorage.getItem("producao_users_v2");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        const sanitizedParsed = Array.isArray(parsed)
-          ? parsed
-              .filter((p: User) => !isRetiredTenantUser(p))
-              .map((p: User) =>
-                p.id === "gerencia" && (p.tenantId || "imperio") === "imperio"
-                  ? { ...p, id: "gerencia.imperio", role: "GERENCIA" as const, tenantId: "imperio" }
-                  : p,
-              )
-              .filter(
-                (p: User, index: number, arr: User[]) =>
-                  arr.findIndex((candidate) => candidate.id === p.id) === index,
-              )
-          : [];
-        // Garante que novos campos nos INITIAL_USERS sejam mesclados caso não existam no salvo
-        const merged = INITIAL_USERS.map((initU) => {
-          const match = sanitizedParsed.find((p: User) => p.id === initU.id);
-          const mergedU = match ? { ...initU, ...match } : initU;
-          if (initU.id === "raul") {
-            mergedU.password = "230213";
-            mergedU.role = "ADMIN";
-            mergedU.tenantId = "global";
-          }
-          return mergedU;
-        });
-        sanitizedParsed.forEach((p: User) => {
-          if (!merged.some((u) => u.id === p.id)) {
-            merged.push(p);
-          }
-        });
-        return merged;
-      } catch (e) {
-        return INITIAL_USERS;
-      }
-    }
-    return INITIAL_USERS;
-  });
+  const [users, setUsers] = useState<User[]>(() => isDemoMode ? [DEMO_USER] : []);
+  useEffect(() => {
+    if (isDemoMode) return;
+    // Remove cached profiles from the former client-side password login.
+    localStorage.removeItem("producao_users_v2");
+  }, [isDemoMode]);
   const [syncQueueCount, setSyncQueueCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const quotaExceededRef = useRef(false);
+  const [storageQuotaExceeded, setStorageQuotaExceeded] = useState(false);
+  const storageQuotaExceededRef = useRef(false);
   const firestoreReadPausedRef = useRef(false);
   const firestoreReadRetryTimerRef = useRef<any>(null);
   const firestoreListenerUnsubsRef = useRef<(() => void)[]>([]);
@@ -410,6 +241,8 @@ export function useDatabase(currentUser?: User | null) {
     if (force) {
       quotaExceededRef.current = false;
       setQuotaExceeded(false);
+      storageQuotaExceededRef.current = false;
+      setStorageQuotaExceeded(false);
       firestoreReadPausedRef.current = false;
       if (firestoreReadRetryTimerRef.current) {
         clearTimeout(firestoreReadRetryTimerRef.current);
@@ -427,6 +260,13 @@ export function useDatabase(currentUser?: User | null) {
     if (quotaExceededRef.current && !force) {
       console.warn(
         "Skip syncing queue items because Firestore quota is currently exceeded.",
+      );
+      return;
+    }
+
+    if (storageQuotaExceededRef.current && !force) {
+      console.warn(
+        "Skip syncing queue items because the browser's local Firestore storage is full.",
       );
       return;
     }
@@ -461,9 +301,11 @@ export function useDatabase(currentUser?: User | null) {
           if (syncRetriesRef.current[item.id]) {
             delete syncRetriesRef.current[item.id];
           }
-          if (quotaExceededRef.current) {
+          if (quotaExceededRef.current || storageQuotaExceededRef.current) {
             quotaExceededRef.current = false;
             setQuotaExceeded(false);
+            storageQuotaExceededRef.current = false;
+            setStorageQuotaExceeded(false);
             try {
               await enableNetwork(db);
               console.log(
@@ -477,6 +319,39 @@ export function useDatabase(currentUser?: User | null) {
           setSyncQueueCount(q.length);
         } catch (error: any) {
           console.error("Queue sync error for item:", item, "Error:", error);
+
+          const errorMessage = String(error?.message || "").toLowerCase();
+          const isLocalPersistenceQuota =
+            error?.name === "QuotaExceededError" ||
+            errorMessage.includes("quotaexceedederror") ||
+            errorMessage.includes("failed to execute 'setitem' on 'storage'") ||
+            errorMessage.includes("firestore_mutations_");
+
+          if (isLocalPersistenceQuota) {
+            storageQuotaExceededRef.current = true;
+            setStorageQuotaExceeded(true);
+            quotaExceededRef.current = false;
+            setQuotaExceeded(false);
+
+            const backoffDelay = 300000;
+            syncRetriesRef.current[item.id] = {
+              attempts: syncRetriesRef.current[item.id]?.attempts || 0,
+              nextRetryTime: Date.now() + backoffDelay,
+            };
+            console.warn(
+              `Browser storage quota exceeded. Retrying queue item ${item.id} of type ${item.type} in 5 minutes. Item preserved in queue.`,
+            );
+
+            if (!retryTimerRef.current) {
+              retryTimerRef.current = setTimeout(() => {
+                retryTimerRef.current = null;
+                storageQuotaExceededRef.current = false;
+                setStorageQuotaExceeded(false);
+                runSync();
+              }, backoffDelay + 50);
+            }
+            break;
+          }
 
           const isQuota =
             error?.code === "resource-exhausted" ||
@@ -823,11 +698,11 @@ export function useDatabase(currentUser?: User | null) {
     }
 
     const handleOnline = () => {
-      if (currentUser) runSync();
+      if (currentUser && currentUser.tenantId !== "global") runSync();
     };
     window.addEventListener("online", handleOnline);
 
-    const interval = currentUser
+    const interval = currentUser && currentUser.tenantId !== "global"
       ? window.setInterval(() => {
           runSync();
         }, 15000)
@@ -857,141 +732,42 @@ export function useDatabase(currentUser?: User | null) {
       return onSnapshot(scopedCollection(collectionName), { includeMetadataChanges }, onNext, onError);
     };
 
+    const tenantsQuery = !currentUser || currentUser.tenantId === "global"
+      ? collection(db, "tenants")
+      : query(collection(db, "tenants"), where("id", "==", activeTenantId));
     const unsubTenants = onSnapshot(
-      query(collection(db, "tenants"), where("id", "==", activeTenantId)),
-      (snap) => {
-        let list = snap.docs
+      tenantsQuery,
+      (snap) => setTenants(
+        snap.docs
           .map((d) => ({ id: d.id, ...(d.data() as Tenant) }))
-          .filter((tenant) => {
-            const normalizedName = String(tenant.name || "").toLowerCase();
-            return (
-              !isRetiredTenantId(tenant.id) &&
-              !normalizedName.includes("cyrne decor") &&
-              !normalizedName.includes("cirne decor")
-            );
-          });
-        const imperioIndex = list.findIndex((t) => t.id === "imperio");
-        if (imperioIndex !== -1) {
-          const imperio = list[imperioIndex];
-          if (imperio.systemName === "Império Produção") {
-            imperio.systemName = "Apontador de Produção";
-            setDoc(doc(db, "tenants", "imperio"), { systemName: "Apontador de Produção" }, { merge: true }).catch(console.error);
-          }
-        } else if (list.length === 0) {
-          const imperioTenant = { id: "imperio", name: "Império Jomarci", logoUrl: "/icon.png", primaryColor: "#00b14f", systemName: "Apontador de Produção" };
-          setDoc(doc(db, "tenants", "imperio"), imperioTenant).catch(console.error);
-          list = [imperioTenant];
-        }
-        setTenants(list);
-      },
+          .filter((tenant) => !isRetiredTenantId(tenant.id)),
+      ),
       (err) => handleSnapshotError("tenants", err),
     );
 
-    let usersLoadFallbackTimer: number | null = null;
-    const clearUsersLoadFallbackTimer = () => {
-      if (usersLoadFallbackTimer !== null) {
-        window.clearTimeout(usersLoadFallbackTimer);
-        usersLoadFallbackTimer = null;
-      }
-    };
-    const markUsersLoaded = () => {
-      clearUsersLoadFallbackTimer();
-      setUsersLoaded(true);
-      setPermissionError((currentError) =>
-        currentError === USERS_LOAD_TIMEOUT_ERROR ? null : currentError,
-      );
-    };
-
-    if (!currentUser && !usersLoaded) {
-      usersLoadFallbackTimer = window.setTimeout(() => {
-        usersLoadFallbackTimer = null;
-        console.warn(
-          "Firestore user access list did not respond before the login fallback timeout.",
-        );
-        setUsersLoaded(true);
-        setPermissionError((currentError) =>
-          currentError || USERS_LOAD_TIMEOUT_ERROR,
-        );
-      }, USERS_LOAD_FALLBACK_TIMEOUT_MS);
+    let usersRequestActive = true;
+    const unsubUsers = () => { usersRequestActive = false; };
+    if (!currentUser) {
+      setUsers([]);
+      setUsersLoaded(false);
+    } else {
+      void callAuthenticatedApi("/api/users", "GET")
+        .then((result) => {
+          if (!usersRequestActive) return;
+          setUsers(Array.isArray(result.users) ? result.users as User[] : []);
+          setUsersLoaded(true);
+          setPermissionError((currentError) => currentError === USERS_LOAD_TIMEOUT_ERROR ? null : currentError);
+        })
+        .catch((error) => {
+          if (!usersRequestActive) return;
+          setUsersLoaded(true);
+          handleSnapshotError("users", error);
+        });
     }
 
-    const unsubUsers = onSnapshot(
-      scopedCollection("users"),
-      (snap) => {
-        const list = snap.docs
-          .map((d) => ({
-            ...(d.data() as User),
-            id: d.id,
-          }))
-          .map((user) =>
-            user.id === "gerencia" && (user.tenantId || "imperio") === "imperio"
-              ? { ...user, id: "gerencia.imperio", role: "GERENCIA" as const, tenantId: "imperio" }
-              : user,
-          )
-          .filter((user) => !isRetiredTenantUser(user))
-          .filter(
-            (user, index, arr) =>
-              arr.findIndex((candidate) => candidate.id === user.id) === index,
-          );
-        setUsers((prev) => {
-          const merged = INITIAL_USERS.map((initU) => {
-            const dbUser = list.find((u) => u.id === initU.id);
-            const mergedUser = dbUser ? { ...initU, ...dbUser, id: initU.id } : initU;
-            if (initU.id === "raul") {
-              mergedUser.password = "230213";
-              mergedUser.role = "ADMIN";
-              mergedUser.tenantId = "global";
-            }
-            if (initU.id === "prensa_eduardo") {
-              mergedUser.role = "PRENSA_EDUARDO";
-              mergedUser.name = "Prensa Eduardo";
-              if (!mergedUser.password) mergedUser.password = "1111";
-            }
-            if (initU.id === "prensa_rafael") {
-              mergedUser.role = "PRENSA_RAFAEL";
-              mergedUser.name = "Prensa Rafael";
-              if (!mergedUser.password) mergedUser.password = "1111";
-            }
-            if (initU.id === "projetista_marcos") {
-              mergedUser.role = "PROJETISTA";
-              mergedUser.name = "Marcos (Projetista)";
-              mergedUser.tenantId = "imperio";
-              if (!mergedUser.password) mergedUser.password = "1111";
-            }
-            if (initU.id === "gerencia.imperio") {
-              mergedUser.role = "GERENCIA";
-              mergedUser.name = "Gerência";
-              mergedUser.tenantId = "imperio";
-              if (!mergedUser.password) mergedUser.password = "230213";
-            }
-            return mergedUser;
-          });
-          list.forEach((dbUser) => {
-            if (!merged.some((u) => u.id === dbUser.id)) {
-              if (dbUser.id === "prensa_eduardo" || dbUser.name?.toLowerCase() === "prensa eduardo") {
-                dbUser.role = "PRENSA_EDUARDO";
-              }
-              if (dbUser.id === "prensa_rafael" || dbUser.name?.toLowerCase() === "prensa rafael") {
-                dbUser.role = "PRENSA_RAFAEL";
-              }
-              merged.push(dbUser);
-            }
-          });
-          localStorage.setItem("producao_users_v2", JSON.stringify(merged));
-          return merged;
-        });
-        markUsersLoaded();
-      },
-      (err) => {
-        markUsersLoaded();
-        handleSnapshotError("users", err);
-      },
-    );
-
-    if (!currentUser) {
+    if (!currentUser || currentUser.tenantId === "global") {
       return () => {
-        clearUsersLoadFallbackTimer();
-      window.removeEventListener("online", handleOnline);
+        window.removeEventListener("online", handleOnline);
         if (interval !== null) window.clearInterval(interval);
         unsubTenants();
         unsubUsers();
@@ -1357,7 +1133,6 @@ export function useDatabase(currentUser?: User | null) {
 
     return () => {
       firestoreListenerUnsubsRef.current = [];
-      clearUsersLoadFallbackTimer();
       window.removeEventListener("online", handleOnline);
       if (interval !== null) window.clearInterval(interval);
       if (firestoreReadRetryTimerRef.current) {
@@ -1703,45 +1478,31 @@ export function useDatabase(currentUser?: User | null) {
   };
 
   const updateUser = async (id: string, partial: Partial<User>) => {
-    try {
-      setUsers((prev) => {
-        const next = prev.map((u) => (u.id === id ? { ...u, ...partial } : u));
-        localStorage.setItem("producao_users_v2", JSON.stringify(next));
-        return next;
-      });
-      await setDoc(doc(db, "users", id), partial, { merge: true });
-    } catch (e) {
-      console.error("Error updating user:", e);
-    }
+    if (isDemoMode) return;
+    const existingUser = users.find((user) => user.id === id);
+    const isSelf = currentUser?.id === id;
+    const payload = isSelf
+      ? { id, ...partial }
+      : { ...(existingUser || {}), ...partial, id, tenantId: partial.tenantId || existingUser?.tenantId || activeTenantId };
+    const result = await callAuthenticatedApi("/api/users", isSelf ? "PATCH" : "PUT", payload);
+    setUsers((previous) => previous.map((user) => user.id === id
+      ? { ...user, ...(isSelf ? partial : result.user || payload), password: undefined }
+      : user));
   };
 
   const addUser = async (user: any) => {
-    try {
-      const newId = user.id || `user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-      const tenantToAssign = user.tenantId || activeTenantId;
-      const newUser = { ...user, id: newId, tenantId: tenantToAssign } as User;
-      setUsers((prev) => {
-        const next = [...prev, newUser];
-        localStorage.setItem("producao_users_v2", JSON.stringify(next));
-        return next;
-      });
-      await setDoc(doc(db, "users", newId), newUser);
-    } catch (e) {
-      console.error("Error adding user:", e);
-    }
+    if (isDemoMode) return;
+    const newId = String(user.id || `user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`).trim().toLowerCase();
+    const tenantToAssign = user.tenantId || activeTenantId;
+    const payload = { ...user, id: newId, tenantId: tenantToAssign };
+    const result = await callAuthenticatedApi("/api/users", "POST", payload);
+    setUsers((previous) => previous.some((user) => user.id === newId) ? previous : [...previous, result.user as User]);
   };
 
   const deleteUser = async (id: string) => {
-    try {
-      setUsers((prev) => {
-        const next = prev.filter((u) => u.id !== id);
-        localStorage.setItem("producao_users_v2", JSON.stringify(next));
-        return next;
-      });
-      await safeDeleteDoc(doc(db, "users", id));
-    } catch (e) {
-      console.error("Error deleting user:", e);
-    }
+    if (isDemoMode) return;
+    await callAuthenticatedApi(`/api/users?id=${encodeURIComponent(id)}`, "DELETE", { id });
+    setUsers((previous) => previous.filter((user) => user.id !== id));
   };
 
   const completeProductionInBatch = async (
@@ -2422,8 +2183,10 @@ export function useDatabase(currentUser?: User | null) {
   );
 
   const filteredUsers = useMemo(
-    () => users.filter((u) => matchesTenant(u.tenantId || (u as any).companyId)),
-    [users, matchesTenant],
+    () => currentUser?.id === "raul" && currentUser.tenantId === "global"
+      ? users
+      : users.filter((u) => matchesTenant(u.tenantId || (u as any).companyId)),
+    [users, matchesTenant, currentUser],
   );
 
   const filteredItems = useMemo(() => items.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [items, matchesTenant]);
@@ -2617,12 +2380,14 @@ export function useDatabase(currentUser?: User | null) {
     return tenants.find((t) => t.id === activeTenantId) || tenants.find((t) => t.id === "imperio") || { id: "imperio", name: "Império Jomarci", logoUrl: "/icon.png", primaryColor: "#00b14f", systemName: "Apontador de Produção" };
   }, [tenants, activeTenantId]);
 
-  const addTenant = async (tenant: Tenant) => {
-    await safeSetDocFirebase(doc(db, "tenants", tenant.id), cleanUndefined(tenant));
+  const addTenant = async (tenant: Tenant, sectorNames: string[] = [], update = false) => {
+    if (isDemoMode) return;
+    await callAuthenticatedApi("/api/tenants", update ? "PUT" : "POST", { ...tenant, sectorNames });
   };
 
   const deleteTenant = async (id: string) => {
-    await safeDeleteDoc(doc(db, "tenants", id));
+    if (isDemoMode) return;
+    await callAuthenticatedApi(`/api/tenants?id=${encodeURIComponent(id)}`, "DELETE", { id });
   };
 
   return {
@@ -3202,6 +2967,7 @@ export function useDatabase(currentUser?: User | null) {
     syncQueueCount,
     isSyncing,
     quotaExceeded,
+    storageQuotaExceeded,
     triggerSyncQueue: (force = false) => runSync(force),
 
     customers: filteredCustomers,

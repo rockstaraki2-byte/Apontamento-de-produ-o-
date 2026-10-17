@@ -2,29 +2,67 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // O sistema atual usa autenticação própria na aplicação. Até a migração
-    // para Firebase Auth, o Firestore deve permitir somente registros do
-    // tenant operacional ativo: Império.
-    function isImperio(data) {
-      return data != null && data.tenantId == "imperio";
+    function signedIn() {
+      return request.auth != null;
     }
 
-    // Metadados necessários para abrir o sistema. Outros tenants não ficam
-    // acessíveis pelo cliente.
-    match /tenants/imperio {
-      allow read, write: if true;
+    function isSuperAdmin() {
+      return signedIn()
+        && request.auth.uid == "raul"
+        && request.auth.token.superAdmin == true
+        && request.auth.token.tenantId == "global"
+        && request.auth.token.role == "ADMIN";
+    }
+
+    function isTenantUser() {
+      return signedIn()
+        && request.auth.token.tenantId is string
+        && request.auth.token.tenantId.size() > 0
+        && request.auth.token.tenantId != "global";
     }
 
     match /tenants/{tenantId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /users/{userId} {
       allow read, write: if false;
     }
 
-    // Fail closed: registros sem tenantId também não são expostos.
+    match /userCredentials/{credentialId} {
+      allow read, write: if false;
+    }
+
+    // Operational documents must carry the authenticated tenantId. The global
+    // account deliberately has no access to operational collections.
+    match /{collection}/{documentId} {
+      allow read: if collection != "tenants"
+        && collection != "users"
+        && collection != "userCredentials"
+        && isTenantUser()
+        && resource.data.tenantId == request.auth.token.tenantId;
+      allow create: if collection != "tenants"
+        && collection != "users"
+        && collection != "userCredentials"
+        && isTenantUser()
+        && request.resource.data.tenantId == request.auth.token.tenantId;
+      allow update: if collection != "tenants"
+        && collection != "users"
+        && collection != "userCredentials"
+        && isTenantUser()
+        && resource.data.tenantId == request.auth.token.tenantId
+        && request.resource.data.tenantId == request.auth.token.tenantId;
+      allow delete: if collection != "tenants"
+        && collection != "users"
+        && collection != "userCredentials"
+        && isTenantUser()
+        && resource.data.tenantId == request.auth.token.tenantId;
+    }
+
+    // Nested documents and every unlisted path are denied by default.
     match /{document=**} {
-      allow read: if isImperio(resource.data);
-      allow create: if isImperio(request.resource.data);
-      allow update: if isImperio(resource.data) && isImperio(request.resource.data);
-      allow delete: if isImperio(resource.data);
+      allow read, write: if false;
     }
   }
 }

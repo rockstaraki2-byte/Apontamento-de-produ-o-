@@ -1,4 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
+import { collection, getDocs, query, where } from "../_lib/adminFirestore.js";
+import { getFirebaseAdmin } from "../_lib/firebaseAdmin.js";
 
 type DailyTotal = {
   amountCents?: unknown;
@@ -103,27 +105,9 @@ export async function GET(request: Request): Promise<Response> {
     : monthKey + "-" + String(daysInMonth).padStart(2, "0");
 
   try {
-    const [{ getApps, initializeApp }, firestore, configModule] = await Promise.all([
-      import("firebase/app"),
-      import("firebase/firestore"),
-      import("../../firebase-applet-config.json", { with: { type: "json" } }),
-    ]);
-    const firebaseConfig = configModule.default;
-    const existingApp = getApps().find((candidate) => candidate.name === "billing-daily-sheet");
-    const app = existingApp || initializeApp(firebaseConfig, "billing-daily-sheet");
-    const db = existingApp
-      ? firestore.getFirestore(app, firebaseConfig.firestoreDatabaseId)
-      : firestore.initializeFirestore(
-          app,
-          { experimentalForceLongPolling: true },
-          firebaseConfig.firestoreDatabaseId,
-        );
-
-    const snapshots = await firestore.getDocs(
-      firestore.query(
-        firestore.collection(db, "teksystemBillingMonthlyTotals"),
-        firestore.where("tenantId", "==", "imperio"),
-      ),
+    const db = getFirebaseAdmin().db;
+    const snapshots = await getDocs(
+      query(collection(db, "teksystemBillingMonthlyTotals"), where("tenantId", "==", "imperio")),
     );
     const snapshotDocument = snapshots.docs.find((document) => document.data().monthKey === monthKey);
     const snapshot = snapshotDocument?.data() as MonthlySnapshot | undefined;

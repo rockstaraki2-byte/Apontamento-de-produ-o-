@@ -1,43 +1,12 @@
 import crypto from "node:crypto";
-import { createRequire } from "node:module";
-import { getApps, initializeApp } from "firebase/app";
-import { collection, getDocs, initializeFirestore, query, where } from "firebase/firestore";
+import { collection, getDocs, query, where } from "../../_lib/adminFirestore.js";
+import { getFirebaseAdmin } from "../../_lib/firebaseAdmin.js";
 
-const require = createRequire(import.meta.url);
-const firebaseConfigFile = require("../../../firebase-applet-config.json") as {
-  apiKey: string;
-  authDomain?: string;
-  projectId: string;
-  storageBucket?: string;
-  messagingSenderId?: string;
-  appId: string;
-  firestoreDatabaseId?: string;
-};
-
-const APP_NAME = "overdue-orders-report-api";
 // Hash SHA-256 de uma chave exclusiva da rotina de leitura. A chave em texto
 // puro nunca é versionada no repositório.
 const REPORT_TOKEN_SHA256 = "438e86d265406e36170c2b192b26a411ea73624839754fa885d1664576e92afc";
 
-const firebaseApp =
-  getApps().find((app) => app.name === APP_NAME) ||
-  initializeApp(
-    {
-      apiKey: firebaseConfigFile.apiKey,
-      authDomain: firebaseConfigFile.authDomain,
-      projectId: firebaseConfigFile.projectId,
-      storageBucket: firebaseConfigFile.storageBucket,
-      messagingSenderId: firebaseConfigFile.messagingSenderId,
-      appId: firebaseConfigFile.appId,
-    },
-    APP_NAME,
-  );
-
-const db = initializeFirestore(
-  firebaseApp,
-  { experimentalForceLongPolling: true },
-  firebaseConfigFile.firestoreDatabaseId,
-);
+const db = getFirebaseAdmin().db;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SAO_PAULO_TZ = "America/Sao_Paulo";

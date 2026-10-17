@@ -103,7 +103,6 @@ import { RealTimeFactoryMonitoring } from "./components/RealTimeFactoryMonitorin
 import { parsePositiveUnitPrice } from "./utils/orderPrice";
 import { isDynamicImportLoadError } from "./utils/chunkLoadRecovery";
 import {
-  getLoginIdentifierCandidates,
   isImperioTornoWillianUser,
   normalizeTornoWillianUser,
 } from "./loginAliases";
@@ -122,7 +121,8 @@ import {
 } from "./components/Layout";
 
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { storage } from "./firebase";
+import { signInWithCustomToken, onAuthStateChanged, signOut } from "firebase/auth";
+import { auth, storage } from "./firebase";
 
 import { COLOR_MAP, isSubTabAllowed } from "./types";
 
@@ -1251,8 +1251,6 @@ function Welcome({
 }
 
 function LoginScreen({
-  users,
-  usersLoaded,
   tenants,
   onLogin,
   deferredPrompt,
@@ -1262,8 +1260,6 @@ function LoginScreen({
   isInIframe,
   handleInstallClick,
 }: {
-  users: User[];
-  usersLoaded: boolean;
   tenants?: import('./types').Tenant[];
   onLogin: (u: User) => void;
   deferredPrompt: any;
@@ -1337,174 +1333,46 @@ function LoginScreen({
     }
   }, [usernameInput, tenants, selectedLoginTenantId]);
 
-  const handleLogin = () => {
-    if (!usersLoaded) return;
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState("");
 
-    const rawTyped = (usernameInput || "").trim();
-    const typed = normalizeStr(rawTyped);
-    if (!typed) {
-      alert("Por favor, digite o usuário.");
+  const handleLogin = async () => {
+    const username = usernameInput.trim();
+    if (!username || !password || isLoggingIn) {
+      if (!username) setLoginError("Digite seu usuário.");
+      else if (!password) setLoginError("Digite sua senha.");
       return;
     }
 
-    // Identify if the user typed an explicit company suffix (e.g. joao.cyrnedecor)
-    const lastDotIdx = typed.lastIndexOf(".");
-    let explicitTenantId: string | null = null;
-    let baseTyped = typed;
-
-    if (lastDotIdx > 0) {
-      const candidateSuffix = typed.substring(lastDotIdx + 1);
-      const matchedTenantId =
-        tenants?.find(
-          (t) =>
-            t &&
-            t.id &&
-            (normalizeStr(t.id) === candidateSuffix ||
-              normalizeStr(t.id).replace(/^empresa_/i, "") === candidateSuffix ||
-              normalizeStr(t.name) === candidateSuffix)
-        )?.id ||
-        // The active Império tenant is also a safe fallback while its listener
-        // is still loading; user lookup remains scoped to this tenant.
-        (candidateSuffix === "imperio" ? "imperio" : null);
-      if (matchedTenantId) {
-        explicitTenantId = matchedTenantId;
-        baseTyped = typed.substring(0, lastDotIdx);
-      }
-    }
-
-    const targetTenantId = explicitTenantId || selectedLoginTenantId || "imperio";
-    const baseCandidates = new Set(
-      getLoginIdentifierCandidates(baseTyped).map((candidate) =>
-        candidate.replace(/\.[^.]+$/, ""),
-      ),
+    const typed = normalizeStr(username);
+    const suffix = typed.split(".").at(-1) || "";
+    const explicitTenant = tenants?.find((tenant) =>
+      normalizeStr(tenant.id) === suffix ||
+      normalizeStr(tenant.id).replace(/^empresa_/i, "") === suffix ||
+      normalizeStr(tenant.name) === suffix,
     );
-    const exactIdCandidates = new Set<string>([
-      ...getLoginIdentifierCandidates(typed),
-      ...Array.from(baseCandidates).map(
-        (candidate) => `${candidate}.${normalizeStr(targetTenantId)}`,
-      ),
-      ...(explicitTenantId ? [] : Array.from(baseCandidates)),
-    ]);
+    const tenantId = typed === "raul"
+      ? "global"
+      : explicitTenant?.id || tenants?.find((tenant) => tenant.id === selectedLoginTenantId)?.id || "imperio";
 
-    let user: User | undefined;
-
-    // 1. Global Admin check (e.g. raul)
-    if (typed === "raul" || baseTyped === "raul") {
-      user = users.find((u) => u && normalizeStr(u.id) === "raul");
-    }
-
-    // 2. Prefer an exact user id inside the selected tenant.
-    // This prevents a legacy alias such as "gerencia" from winning over
-    // the canonical account "gerencia.imperio".
-    if (!user) {
-      for (const candidateId of exactIdCandidates) {
-        user = users.find((u) => {
-          if (!u || !u.id) return false;
-          const uTenant = u.tenantId || "imperio";
-          if (uTenant !== targetTenantId && uTenant !== "global") return false;
-          return normalizeStr(u.id) === candidateId;
-        });
-        if (user) break;
-      }
-    }
-
-    // 3. Backward-compatible alias/base match within the target tenant.
-    if (!user) {
-      user = users.find((u) => {
-        if (!u || !u.id) return false;
-        const uTenant = u.tenantId || "imperio";
-        if (uTenant !== targetTenantId && uTenant !== "global") return false;
-
-        const uId = normalizeStr(u.id);
-        const uIdBase = uId.replace(/\.[^.]+$/, "");
-        return baseCandidates.has(uId) || baseCandidates.has(uIdBase);
+    setIsLoggingIn(true);
+    setLoginError("");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, tenantId }),
       });
-    }
-
-    // 4. Match by user display name within the target tenant
-    if (!user) {
-      user = users.find((u) => {
-        if (!u || !u.name) return false;
-        const uTenant = u.tenantId || "imperio";
-        if (uTenant !== targetTenantId && uTenant !== "global") return false;
-
-        const uName = normalizeStr(u.name);
-        const cleanName = uName
-          .replace(new RegExp(`\\s*${normalizeStr(targetTenantId)}.*$`, "i"), "")
-          .replace(/\s*\([^)]*\)/g, "")
-          .trim();
-
-        return (
-          uName === typed ||
-          uName === baseTyped ||
-          cleanName === baseTyped ||
-          Array.from(baseCandidates).some(
-            (candidate) => cleanName === candidate || uName === candidate,
-          )
-        );
-      });
-    }
-
-    // 5. If no explicit tenant was typed and not found in selected tenant,
-    // check if the username uniquely belongs to another registered company
-    if (!user && !explicitTenantId) {
-      const candidates = users.filter((u) => {
-        if (!u || !u.id) return false;
-        const uId = normalizeStr(u.id);
-        const uIdBase = uId.replace(/\.[^.]+$/, "");
-        const uName = normalizeStr(u.name || "");
-        return (
-          exactIdCandidates.has(uId) ||
-          baseCandidates.has(uIdBase) ||
-          uName === typed ||
-          uName.replace(/\s*\([^)]*\)/g, "").trim() === typed
-        );
-      });
-
-      if (candidates.length === 1) {
-        // Unambiguous single match in the whole system
-        user = candidates[0];
-      } else if (candidates.length > 1) {
-        // Ambiguous match across multiple companies:
-        // Filter candidates by selectedLoginTenantId
-        const scopedMatch = candidates.find(
-          (u) => (u.tenantId || "imperio") === selectedLoginTenantId
-        );
-        if (scopedMatch) {
-          user = scopedMatch;
-        } else {
-          alert(
-            `O usuário "${rawTyped}" existe em mais de uma empresa. Por favor, digite o seu login com o sufixo da empresa no formato: ${rawTyped}.empresa`
-          );
-          return;
-        }
-      }
-    }
-
-    if (user) {
-      user = normalizeTornoWillianUser(user);
-      const userPass = user.password || "0000";
-      const isRaulOverride = user.id === "raul" && password === "230213";
-      if (password !== userPass && !isRaulOverride) {
-        alert("Senha Incorreta");
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.customToken || !result.user) {
+        setLoginError(response.status === 401 ? "Usuário ou senha inválidos." : "Não foi possível acessar agora. Tente novamente.");
         return;
       }
-      if (user.id === "raul") {
-        user.role = "ADMIN";
-        user.tenantId = "global";
-      } else if (user.id === "prensa_eduardo" || user.name.toLowerCase().includes("prensa eduardo")) {
-        user.role = "PRENSA_EDUARDO";
-      } else if (user.id === "prensa_rafael" || user.name.toLowerCase().includes("prensa rafael")) {
-        user.role = "PRENSA_RAFAEL";
-      } else if (!user.tenantId) {
-        user.tenantId = "imperio";
-      }
-
-      // Update stored login tenant preference
-      const finalTenantId = user.tenantId === "global" ? selectedLoginTenantId : user.tenantId;
+      await signInWithCustomToken(auth, result.customToken);
+      const user = normalizeTornoWillianUser(result.user as User);
+      const finalTenantId = user.tenantId === "global" ? "imperio" : user.tenantId || "imperio";
       localStorage.setItem("login_tenant_id", finalTenantId);
       setSelectedLoginTenantId(finalTenantId);
-
       if (
         "Notification" in window &&
         Notification.permission !== "granted" &&
@@ -1512,9 +1380,11 @@ function LoginScreen({
       ) {
         Notification.requestPermission();
       }
-      onLogin(normalizeTornoWillianUser({ ...user }));
-    } else {
-      alert("Usuário Incorreto");
+      onLogin(user);
+    } catch {
+      setLoginError("Falha na autenticação. Verifique sua conexão e tente novamente.");
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -1529,7 +1399,7 @@ function LoginScreen({
           />
           <div className="h-px bg-slate-200 w-full mt-2" />
           <span className="text-[0.65rem] text-slate-500 font-bold tracking-[0.1em] text-center uppercase">
-            {detectedTenant.name || "Acesso ao Sistema"}
+            {normalizeStr(usernameInput) === "raul" ? "Central global · Super Admin" : detectedTenant.name || "Acesso ao Sistema"}
           </span>
         </div>
 
@@ -1537,7 +1407,7 @@ function LoginScreen({
           type="text"
           placeholder="Usuário (Ex: gerencia.imp)"
           value={usernameInput}
-          onChange={(e) => setUsernameInput(e.target.value)}
+          onChange={(e) => { setUsernameInput(e.target.value); setLoginError(""); }}
           className="border border-slate-300 p-3 w-full rounded-lg mb-4 text-center text-lg focus:outline-none focus:ring-2 focus:ring-[#FB9214]/30 focus:border-[#FB9214] bg-white text-slate-900 placeholder-slate-400"
           onKeyDown={(e) => e.key === "Enter" && handleLogin()}
         />
@@ -1546,17 +1416,23 @@ function LoginScreen({
           type="password"
           placeholder="Senha"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => { setPassword(e.target.value); setLoginError(""); }}
           className="border border-slate-300 p-3 w-full rounded-lg mb-4 text-center text-lg focus:outline-none focus:ring-2 focus:ring-[#FB9214]/30 focus:border-[#FB9214] bg-white text-slate-900 placeholder-slate-400"
           onKeyDown={(e) => e.key === "Enter" && handleLogin()}
         />
 
+        {loginError && (
+          <p role="alert" className="w-full text-center text-sm font-semibold text-red-600" aria-live="polite">
+            {loginError}
+          </p>
+        )}
+
         <button
           onClick={handleLogin}
-          disabled={!usersLoaded}
+          disabled={isLoggingIn}
           className="w-full bg-[#032D51] hover:bg-[#08243F] text-white font-bold p-3 rounded-lg transition text-lg mt-2 tracking-wide disabled:cursor-wait disabled:opacity-70 shadow-md shadow-[#032D51]/15"
         >
-          {usersLoaded ? "Entrar no ApontaPRO" : "Carregando acessos…"}
+          {isLoggingIn ? "Validando acesso…" : "Entrar no ApontaPRO"}
         </button>
       </div>
 
@@ -5533,9 +5409,11 @@ function PedidosScreen({
     if (tokens.length === 0) return;
 
     try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
       await fetch("/api/send-push", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ title, body, fcmTokens: tokens }),
       });
     } catch (e) {
@@ -15477,32 +15355,50 @@ _Mensagem do Sistema Império Jomarci_`;
 export default function App() {
   const isDemoMode = isDemoModeEnabled();
 
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    if (isDemoMode) return DEMO_USER;
-    const saved = localStorage.getItem("imperio_logged_user");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as User;
-        if (
-          (parsed.id === "gerencia" || parsed.id === "gerencia.imperio") &&
-          (parsed.tenantId || "imperio") === "imperio"
-        ) {
-          return {
-            ...parsed,
-            id: "gerencia.imperio",
-            role: "GERENCIA",
-            tenantId: "imperio",
-          };
-        }
-        return normalizeTornoWillianUser(parsed);
-      } catch (e) {
-        localStorage.removeItem("imperio_logged_user");
-        return null;
-      }
-    }
-    return null;
-  });
+  const [currentUser, setCurrentUser] = useState<User | null>(() => isDemoMode ? DEMO_USER : null);
+  const [authReady, setAuthReady] = useState(isDemoMode);
   const db = useDatabase(currentUser);
+
+  useEffect(() => {
+    if (isDemoMode) {
+      setCurrentUser(DEMO_USER);
+      setAuthReady(true);
+      return;
+    }
+    localStorage.removeItem("imperio_logged_user");
+    localStorage.removeItem("producao_users_v2");
+    return onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setCurrentUser(null);
+        setAuthReady(true);
+        return;
+      }
+      try {
+        const { claims } = await firebaseUser.getIdTokenResult();
+        const isGlobalAdmin = firebaseUser.uid === "raul" && claims.superAdmin === true &&
+          claims.tenantId === "global" && claims.role === "ADMIN";
+        const tenantId = isGlobalAdmin ? "global" : String(claims.tenantId || "");
+        const role = isGlobalAdmin ? "ADMIN" : String(claims.role || "");
+        if (!tenantId || (!isGlobalAdmin && tenantId === "global") || !role) {
+          await signOut(auth);
+          setCurrentUser(null);
+          setAuthReady(true);
+          return;
+        }
+        setCurrentUser(normalizeTornoWillianUser({
+          id: firebaseUser.uid,
+          name: String(claims.name || firebaseUser.displayName || firebaseUser.uid),
+          role: role as Role,
+          tenantId,
+        }));
+        setAuthReady(true);
+      } catch {
+        await signOut(auth);
+        setCurrentUser(null);
+        setAuthReady(true);
+      }
+    });
+  }, [isDemoMode]);
 
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isStandalone, setIsStandalone] = useState(false);
@@ -15535,13 +15431,12 @@ export default function App() {
     };
   }, []);
 
-  const handleLogout = React.useCallback(() => {
+  const handleLogout = React.useCallback(async () => {
     localStorage.removeItem("imperio_logged_user");
     setCurrentUser(null);
-    window.setTimeout(() => {
-      window.location.replace("/");
-    }, 0);
-  }, []);
+    if (!isDemoMode) await signOut(auth);
+    window.location.replace("/");
+  }, [isDemoMode]);
 
   const toggleFullscreen = () => {
     try {
@@ -15809,15 +15704,6 @@ export default function App() {
     }[]
   >([]);
 
-  React.useEffect(() => {
-    if (isDemoMode) return;
-    if (currentUser) {
-      localStorage.setItem("imperio_logged_user", JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem("imperio_logged_user");
-    }
-  }, [currentUser]);
-
   // Keep active session user data automatically synchronized with Firestore in real-time
   React.useEffect(() => {
     if (!currentUser || !db.allUsers || db.allUsers.length === 0) return;
@@ -15835,7 +15721,6 @@ export default function App() {
         sessionUser.name !== currentUser.name ||
         sessionUser.role !== currentUser.role ||
         sessionUser.tenantId !== currentUser.tenantId ||
-        sessionUser.password !== currentUser.password ||
         sessionUser.avatarUrl !== currentUser.avatarUrl ||
         JSON.stringify(sessionUser.permissions || {}) !==
           JSON.stringify(currentUser.permissions || {});
@@ -16128,11 +16013,13 @@ export default function App() {
     };
   }, [currentUser]);
 
+  if (!authReady) {
+    return <div className="min-h-screen flex items-center justify-center text-slate-600">Verificando sessão…</div>;
+  }
+
   if (!currentUser) {
     return (
       <LoginScreen
-        users={db.allUsers}
-        usersLoaded={db.usersLoaded}
         tenants={db.tenants}
         onLogin={setCurrentUser}
         deferredPrompt={deferredPrompt}
@@ -16142,6 +16029,30 @@ export default function App() {
         isInIframe={isInIframe}
         handleInstallClick={handleInstallClick}
       />
+    );
+  }
+
+  if (currentUser.id === "raul" && currentUser.role === "ADMIN" && currentUser.tenantId === "global") {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50">
+        <header className="bg-[#032D51] text-white px-5 py-3 flex items-center justify-between border-b-2 border-[#FB9214]">
+          <div className="flex items-center gap-3">
+            <img src="/apontapro-icon.svg" alt="ApontaPRO" className="h-9 w-9 object-contain" />
+            <div>
+              <h1 className="text-lg font-black">Central global do Super Admin</h1>
+              <p className="text-[10px] uppercase tracking-wider text-slate-300">Sessão global · sem tenant operacional</p>
+            </div>
+          </div>
+          <button onClick={handleLogout} aria-label="Sair do ApontaPRO" className="p-2 rounded-full bg-white/10 hover:bg-white/20">
+            <LogOut size={18} />
+          </button>
+        </header>
+        <main className="flex-1 min-h-0 flex flex-col">
+          <React.Suspense fallback={<ScreenLoadingFallback />}>
+            <SuperAdminScreen db={db} currentUser={currentUser} />
+          </React.Suspense>
+        </main>
+      </div>
     );
   }
 

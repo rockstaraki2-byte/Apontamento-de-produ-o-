@@ -1,49 +1,17 @@
-import { createRequire } from "node:module";
-import { getApps, initializeApp } from "firebase/app";
 import {
   collection,
   doc,
-  initializeFirestore,
   setDoc,
   writeBatch,
-} from "firebase/firestore";
+} from "./adminFirestore.js";
+import { getFirebaseAdmin } from "./firebaseAdmin.js";
 import {
   syncRecordKey,
   type NormalizedTekSystemSyncPayload,
   type TekSystemEntityType,
 } from "./teksystemSync.js";
 
-const require = createRequire(import.meta.url);
-const firebaseConfigFile = require("../../firebase-applet-config.json") as {
-  apiKey: string;
-  authDomain?: string;
-  projectId: string;
-  storageBucket?: string;
-  messagingSenderId?: string;
-  appId: string;
-  firestoreDatabaseId?: string;
-};
-
-const APP_NAME = "teksystem-sync-api";
-const firebaseApp =
-  getApps().find((app) => app.name === APP_NAME) ||
-  initializeApp(
-    {
-      apiKey: firebaseConfigFile.apiKey,
-      authDomain: firebaseConfigFile.authDomain,
-      projectId: firebaseConfigFile.projectId,
-      storageBucket: firebaseConfigFile.storageBucket,
-      messagingSenderId: firebaseConfigFile.messagingSenderId,
-      appId: firebaseConfigFile.appId,
-    },
-    APP_NAME,
-  );
-
-export const teksystemDb = initializeFirestore(
-  firebaseApp,
-  { experimentalForceLongPolling: true },
-  firebaseConfigFile.firestoreDatabaseId,
-);
+export const teksystemDb = getFirebaseAdmin().db;
 const db = teksystemDb;
 
 const FIRESTORE_BATCH_LIMIT = 400;

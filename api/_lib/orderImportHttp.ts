@@ -55,6 +55,10 @@ export async function handleOrderImportHttp(req: any, res: any, forceDryRun = fa
   const urlDryRun = String(req.query?.dryRun || "").toLowerCase() === "true";
   const dryRun = forceDryRun || urlDryRun;
   const tenantId = String(payload.tenantId || req.headers?.["x-tenant-id"] || "imperio").trim() || "imperio";
+  const allowedTenantId = String(process.env.ORDER_IMPORT_ALLOWED_TENANT_ID || "imperio").trim();
+  if (tenantId !== allowedTenantId) {
+    return res.status(403).json({ sucesso: false, erro: "TENANT_NAO_AUTORIZADO" });
+  }
   const origem = String(payload.origem || "API").trim() || "API";
   const solicitadoPor = String(
     payload.solicitadoPor || req.headers?.["x-integration-user"] || "api-integration",

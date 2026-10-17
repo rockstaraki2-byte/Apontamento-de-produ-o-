@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { processOrderImport } from "./_lib/orderImportCore.js";
 import { FirestoreOrderImportRepository } from "./_lib/orderImportFirestore.js";
 
@@ -92,8 +93,19 @@ const orders: any[] = [
 ];
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== "GET") {
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
     return res.status(405).json({ sucesso: false, erro: "METHOD_NOT_ALLOWED" });
+  }
+  if (process.env.LEGACY_ORDER_IMPORT_ENABLED !== "true") {
+    return res.status(410).json({ sucesso: false, erro: "LEGACY_IMPORT_DISABLED" });
+  }
+  const supplied = String(req.headers?.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  const expected = process.env.LEGACY_ORDER_IMPORT_TOKEN || "";
+  const suppliedBytes = Buffer.from(supplied);
+  const expectedBytes = Buffer.from(expected);
+  if (!expected || suppliedBytes.length === 0 || suppliedBytes.length !== expectedBytes.length || !crypto.timingSafeEqual(suppliedBytes, expectedBytes)) {
+    return res.status(401).json({ sucesso: false, erro: "NAO_AUTORIZADO" });
   }
 
   const repo = new FirestoreOrderImportRepository();

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import {
   collection, doc, getCountFromServer, getDoc, getDocs, limit, query, runTransaction, where,
-} from "firebase/firestore";
+} from "./adminFirestore.js";
 import { teksystemDb as db } from "./teksystemSyncFirestore.js";
 import { FirestoreOrderImportRepository } from "./orderImportFirestore.js";
 import { buildImportedOrderDocument } from "./orderImportDocuments.js";

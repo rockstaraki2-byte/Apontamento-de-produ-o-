@@ -30,6 +30,8 @@ test("normaliza as cinco entidades e cria externalId quando necessário", () => 
     pedidos: 1,
     faturamentos: 1,
     romaneios: 1,
+    faturamentoDiario: 0,
+    faturamentoPorRepresentante: 0,
   });
   assert.equal(result.payload?.entities.clientes[0].externalId, "501");
   assert.equal(result.payload?.entities.pedidos[0].externalId, "PED-001");

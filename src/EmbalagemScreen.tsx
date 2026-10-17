@@ -1579,9 +1579,13 @@ export function EmbalagemScreen({
               <span>Sincronizado com o servidor</span>
             </div>
 
-            {db.quotaExceeded ? (
+            {db.storageQuotaExceeded || db.quotaExceeded ? (
               <div className="flex items-center gap-1.5 bg-rose-100/80 border border-rose-200 text-rose-950 px-2 py-1 rounded-md text-[9px]">
-                <span>⚠️ Limite atingido. Salvo local!</span>
+                <span>
+                  ⚠️ {db.storageQuotaExceeded
+                    ? "Armazenamento local cheio. Mantido na fila local."
+                    : "Cota do Firestore atingida. Mantido na fila local."}
+                </span>
               </div>
             ) : db.syncQueueCount > 0 ? (
               <div className="flex items-center gap-1.5 bg-amber-150 border border-amber-300 text-amber-950 px-2 py-1 rounded-md text-[9px] animate-pulse">

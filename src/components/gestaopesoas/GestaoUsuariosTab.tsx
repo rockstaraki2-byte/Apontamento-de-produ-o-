@@ -40,12 +40,16 @@ export function GestaoUsuariosTab({
     const userData: Partial<User> = {
       name: formData.name.trim(),
       role: formData.role as Role,
-      password: formData.password || "",
       sectorIds: formData.sectorIds || [],
       machines: formData.machines || [],
       permissions: formData.permissions || {},
       tenantId: db.activeTenantId,
     };
+    if (formData.password) userData.password = formData.password;
+    if (!editId && !formData.password) {
+      alert("Defina uma senha para o novo usuário.");
+      return;
+    }
 
     if (editId) {
       await db.updateUser(editId, userData);
@@ -202,16 +206,17 @@ export function GestaoUsuariosTab({
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-600 mb-1">
-                Senha (Opcional)
+                Senha {editId ? "(opcional; em branco mantém a atual)" : "(obrigatória)"}
               </label>
               <input
-                type="text"
+                type="password"
+                autoComplete="new-password"
                 value={formData.password || ""}
                 onChange={(e) =>
                   setFormData({ ...formData, password: e.target.value })
                 }
                 className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-1 focus:ring-indigo-500 outline-none"
-                placeholder="Ex: 123456"
+                placeholder={editId ? "Deixe em branco para manter a atual" : "Defina uma senha"}
               />
             </div>
           </div>

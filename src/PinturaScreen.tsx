@@ -449,26 +449,30 @@ export function PinturaScreen({
           <div className="bg-emerald-50 border border-emerald-100 text-[#0f5132] px-3 py-1.5 rounded-lg flex items-center justify-between gap-3 shadow-3xs text-[10px] font-bold flex-wrap">
             <div className="flex items-center gap-1.5">
               <span
-                className={`w-1.5 h-1.5 rounded-full ${db.quotaExceeded ? "bg-rose-500" : "bg-emerald-500"} animate-pulse`}
+                className={`w-1.5 h-1.5 rounded-full ${db.quotaExceeded || db.storageQuotaExceeded ? "bg-rose-500" : "bg-emerald-500"} animate-pulse`}
               ></span>
               <span>
-                {db.quotaExceeded
-                  ? "Sincronização em Pausa (Cota)"
+                {db.storageQuotaExceeded
+                  ? "Sincronização em Pausa (Armazenamento local)"
+                  : db.quotaExceeded
+                  ? "Sincronização em Pausa (Cota do Firestore)"
                   : "Sincronizado com o servidor principal"}
               </span>
             </div>
 
-            {db.quotaExceeded ? (
+            {db.storageQuotaExceeded || db.quotaExceeded ? (
               <div className="flex items-center gap-1.5 bg-rose-100/80 border border-rose-200 text-rose-950 px-2 py-1 rounded text-[9px]">
                 <span>⚠️</span>
                 <span className="truncate">
-                  Surgiram limites de gravação diária. Dados salvos localmente!
+                  {db.storageQuotaExceeded
+                    ? "Armazenamento local do navegador cheio. Dados permanecem na fila local."
+                    : "Cota de gravação do Firestore atingida. Dados permanecem na fila local."}
                 </span>
                 <button
                   onClick={() => db.triggerSyncQueue?.(true)}
                   className="bg-rose-600 text-white font-extrabold px-1.5 py-0.5 rounded text-[8px] uppercase hover:bg-rose-700 transition"
                 >
-                  Forçar
+                  Tentar novamente
                 </button>
               </div>
             ) : db.syncQueueCount > 0 ? (

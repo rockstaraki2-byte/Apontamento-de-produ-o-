@@ -1,4 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
+import { collection, getDocs, query, where } from "../_lib/adminFirestore.js";
+import { getFirebaseAdmin } from "../_lib/firebaseAdmin.js";
 
 type FinanceOrder = {
   deliveryDate?: number | string | Date | null;
@@ -236,29 +238,11 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   try {
-    const [{ initializeApp }, firestore, configModule] = await Promise.all([
-      import("firebase/app"),
-      import("firebase/firestore"),
-      import("../../firebase-applet-config.json", { with: { type: "json" } }),
-    ]);
-    const firebaseConfig = configModule.default;
-    const app = initializeApp({
-      apiKey: firebaseConfig.apiKey,
-      authDomain: firebaseConfig.authDomain,
-      projectId: firebaseConfig.projectId,
-      storageBucket: firebaseConfig.storageBucket,
-      messagingSenderId: firebaseConfig.messagingSenderId,
-      appId: firebaseConfig.appId,
-    });
-    const db = firestore.initializeFirestore(
-      app,
-      { experimentalForceLongPolling: true },
-      firebaseConfig.firestoreDatabaseId,
-    );
+    const db = getFirebaseAdmin().db;
     const [ordersSnapshot, settingsSnapshot, tekSystemSnapshots] = await Promise.all([
-      firestore.getDocs(firestore.query(firestore.collection(db, "orders"), firestore.where("tenantId", "==", "imperio"))),
-      firestore.getDocs(firestore.query(firestore.collection(db, "systemSettings"), firestore.where("tenantId", "==", "imperio"))),
-      firestore.getDocs(firestore.query(firestore.collection(db, "teksystemBillingMonthlyTotals"), firestore.where("tenantId", "==", "imperio"))),
+      getDocs(query(collection(db, "orders"), where("tenantId", "==", "imperio"))),
+      getDocs(query(collection(db, "systemSettings"), where("tenantId", "==", "imperio"))),
+      getDocs(query(collection(db, "teksystemBillingMonthlyTotals"), where("tenantId", "==", "imperio"))),
     ]);
 
     const financeOrders = ordersSnapshot.docs.map((document) => document.data() as FinanceOrder);

@@ -26,7 +26,7 @@ interface SuperAdminScreenProps {
 }
 
 export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
-  const isGlobalAdmin = (currentUser?.id === "raul" || currentUser?.tenantId === "global") && currentUser?.role === "ADMIN";
+  const isGlobalAdmin = currentUser?.id === "raul" && currentUser?.tenantId === "global" && currentUser?.role === "ADMIN";
 
   if (!isGlobalAdmin) {
     return (
@@ -40,6 +40,11 @@ export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
     );
   }
 
+  return <GlobalSuperAdminScreen db={db} currentUser={currentUser} />;
+}
+
+function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
+  const isGlobalAdmin = true;
   const [activeTab, setActiveTab] = useState<"COMPANIES" | "USERS">("COMPANIES");
   
   // Company Form State
@@ -181,24 +186,15 @@ export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
     };
 
     try {
-      await db.addTenant(tenantData);
-
-      // Sync sectors
       const parsedSectors = trimmedSectors
         .split(",")
         .map((s: string) => s.trim())
         .filter(Boolean);
-
-      const existingSectors = db.allSectors.filter((s) => s.tenantId === cleanId);
-      for (const sName of parsedSectors) {
-        const exists = existingSectors.some((es) => es.name.toLowerCase() === sName.toLowerCase());
-        if (!exists) {
-          await db.addSector({
-            name: sName,
-            tenantId: cleanId,
-          } as any);
-        }
+      if (editCompanyId && cleanId !== editCompanyId) {
+        alert("O ID da empresa não pode ser alterado depois da criação.");
+        return;
       }
+      await db.addTenant(tenantData, parsedSectors, Boolean(editCompanyId));
 
       setIsAddingCompany(false);
       setEditCompanyId(null);
@@ -222,9 +218,9 @@ export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
 
   const handleEditCompany = (t: Tenant) => {
     setEditCompanyId(t.id);
-    const tenantSectors = db.allSectors
-      .filter((s) => s.tenantId === t.id)
-      .map((s) => s.name)
+    const tenantSectors = (t as any).sectorMetadata
+      ?.map((sector: any) => sector.name)
+      .filter(Boolean)
       .join(", ");
     setCompanyForm({
       ...t,
@@ -259,8 +255,8 @@ export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
   // USER HANDLERS
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userForm.id || !userForm.name || !userForm.password) {
-      alert("Por favor, preencha todos os campos obrigatórios.");
+    if (!userForm.id || !userForm.name || (!editUserId && !userForm.password)) {
+      alert("Preencha usuário, nome e senha para uma nova conta.");
       return;
     }
 
@@ -276,12 +272,12 @@ export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
       id: cleanId,
       name: userForm.name.trim(),
       role: userForm.role,
-      password: userForm.password.trim(),
       tenantId: userForm.tenantId,
       sectorIds: userForm.sectorIds || [],
       machines: userForm.machines || [],
       permissions: userForm.permissions || {},
     };
+    if (userForm.password.trim()) userData.password = userForm.password.trim();
 
     try {
       if (editUserId) {
@@ -316,7 +312,7 @@ export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
       id: baseId,
       name: u.name,
       role: u.role,
-      password: u.password || "",
+      password: "",
       tenantId: u.tenantId || "imperio",
       sectorIds: u.sectorIds || [],
       machines: u.machines || [],
@@ -922,11 +918,12 @@ export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
 
                 <div>
                   <label className="text-[10px] font-extrabold uppercase text-slate-500 block mb-1">
-                    Senha de Acesso <span className="text-red-500">*</span>
+                    Senha de Acesso {editUserId ? <span className="text-slate-400">(opcional; em branco mantém a atual)</span> : <span className="text-red-500">*</span>}
                   </label>
                   <input
-                    type="text"
-                    placeholder="Ex: 230213"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder={editUserId ? "Deixe em branco para manter a atual" : "Defina uma senha"}
                     value={userForm.password}
                     onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
                     className="w-full border border-slate-200 bg-slate-50/50 rounded-lg p-2.5 text-xs font-mono focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -940,7 +937,8 @@ export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
                         Vincular aos Setores da Empresa
                       </label>
                       {(() => {
-                        const tenantSectors = db.allSectors.filter(s => s.tenantId === userForm.tenantId);
+                        const tenantSectors = (db.tenants.find((tenant) => tenant.id === userForm.tenantId) as any)?.sectorMetadata
+                          || db.allSectors.filter(s => s.tenantId === userForm.tenantId);
                         if (tenantSectors.length === 0) {
                           return <p className="text-[11px] text-slate-400 italic">Nenhum setor cadastrado para esta empresa.</p>;
                         }
@@ -1094,7 +1092,7 @@ export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
                         <th className="py-2.5 px-2">Nome</th>
                         <th className="py-2.5 px-2">Empresa</th>
                         <th className="py-2.5 px-2">Nível (Role)</th>
-                        <th className="py-2.5 px-2">Senha</th>
+                        <th className="py-2.5 px-2">Credencial</th>
                         <th className="py-2.5 px-2 text-right">Ações</th>
                       </tr>
                     </thead>
@@ -1122,7 +1120,10 @@ export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
                                   </span>
                                   {u.sectorIds && u.sectorIds.length > 0 && (
                                     <span className="text-[10px] text-slate-500 font-bold">
-                                      📍 Setores: {u.sectorIds.map(sid => db.allSectors.find(s => s.id === sid)?.name || sid).join(", ")}
+                                      📍 Setores: {u.sectorIds.map(sid => {
+                                        const tenant = db.tenants.find((entry) => entry.id === u.tenantId) as any;
+                                        return tenant?.sectorMetadata?.find((sector: any) => sector.id === sid)?.name || db.allSectors.find(s => s.id === sid)?.name || sid;
+                                      }).join(", ")}
                                     </span>
                                   )}
                                   {u.machines && u.machines.length > 0 && (
@@ -1134,13 +1135,14 @@ export function SuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
                               )}
                             </td>
                             <td className="py-3 px-2 font-bold text-slate-500">{u.role}</td>
-                            <td className="py-3 px-2 font-mono text-slate-600">{u.password}</td>
+                            <td className="py-3 px-2 font-mono text-slate-500">Senha protegida</td>
                             <td className="py-3 px-2 text-right">
                               <div className="flex justify-end gap-1">
                                 <button
                                   onClick={() => handleEditUser(u)}
-                                  className="p-1 hover:bg-slate-100 text-indigo-600 rounded transition"
-                                  title="Editar"
+                                  disabled={u.id === "raul"}
+                                  className="p-1 hover:bg-slate-100 text-indigo-600 rounded transition disabled:opacity-20"
+                                  title={u.id === "raul" ? "A conta global é protegida" : "Editar"}
                                 >
                                   <Edit size={12} />
                                 </button>

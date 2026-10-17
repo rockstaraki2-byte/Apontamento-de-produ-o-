@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
 import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getMessaging, isSupported } from "firebase/messaging";
@@ -14,6 +15,7 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
 export const storage = getStorage(app);
 const isServer = typeof window === "undefined";
 
@@ -23,6 +25,9 @@ export const db = initializeFirestore(
     ? { experimentalForceLongPolling: true }
     : {
         localCache: persistentLocalCache({
+          // Limit the persisted document cache while keeping cross-tenant
+          // listeners isolated to the active tab.
+          cacheSizeBytes: 20 * 1024 * 1024,
           // Evita manter estado de listeners de várias abas no localStorage,
           // que pode atingir a cota e travar toda a fila do Firestore.
           // O cache de documentos continua persistido no IndexedDB.
