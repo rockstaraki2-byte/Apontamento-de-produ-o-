@@ -5,6 +5,7 @@ import { connectAuthEmulator, getAuth, signInWithCustomToken, signOut } from "fi
 import { getFirebaseAdmin } from "../api/_lib/firebaseAdmin.js";
 import usersHandler from "../api/users.js";
 import tenantsHandler from "../api/tenants.js";
+import tenantSettingsHandler from "../api/tenant-settings.js";
 import loginHandler from "../api/auth/login.js";
 
 const projectId = process.env.GCLOUD_PROJECT || "demo-apontapro";
@@ -41,7 +42,7 @@ before(async () => {
   const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
   if (!authHost || !process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Firebase Auth e Firestore emulators são obrigatórios neste teste.");
   connectAuthEmulator(clientAuth, `http://${authHost}`, { disableWarnings: true });
-  for (const collectionName of ["tenants", "users", "userCredentials", "sectors"]) {
+  for (const collectionName of ["tenants", "users", "userCredentials", "sectors", "systemSettings"]) {
     const snapshot = await db.collection(collectionName).get();
     const batch = db.batch();
     snapshot.docs.forEach((document) => batch.delete(document.ref));
@@ -54,7 +55,7 @@ before(async () => {
 
 after(async () => {
   await signOut(clientAuth).catch(() => undefined);
-  for (const collectionName of ["tenants", "users", "userCredentials", "sectors"]) {
+  for (const collectionName of ["tenants", "users", "userCredentials", "sectors", "systemSettings"]) {
     const snapshot = await db.collection(collectionName).get();
     const batch = db.batch();
     snapshot.docs.forEach((document) => batch.delete(document.ref));
@@ -121,6 +122,70 @@ test("APIs limitam usuários ao tenant e barram empresas fora do Super Admin", a
   });
   assert.equal(companyMutation.statusCode, 403);
   assert.equal((await db.collection("tenants").doc("empresa-intrusa").get()).exists, false);
+});
+
+test("configuração do tenant só altera a empresa indicada pelas claims", async () => {
+  await db.collection("tenants").doc("imperio").set({
+    id: "imperio",
+    name: "Império original",
+  });
+  await db.collection("systemSettings").doc("default").set({
+    id: "default",
+    tenantId: "imperio",
+    companyName: "Configuração Império original",
+  });
+
+  const updated = await invoke(tenantSettingsHandler, {
+    method: "PUT",
+    token: tenantAdminToken,
+    body: {
+      tenantId: "imperio",
+      companyName: "Empresa teste atualizada",
+      companyLogoUrl: "",
+      systemName: "ApontaPRO teste",
+      primaryColor: "#123ABC",
+      monthlyBillingGoal: 1500,
+      exigirQualidadeNaEmbalagem: false,
+      soldaProcesses: ["Solda", "Furação"],
+    },
+  });
+
+  assert.equal(updated.statusCode, 200);
+  assert.equal((await db.collection("tenants").doc("empresa-teste").get()).get("name"), "Empresa teste atualizada");
+  assert.equal((await db.collection("tenants").doc("imperio").get()).get("name"), "Império original");
+  const settings = await db.collection("systemSettings").doc("tenant_empresa-teste__default").get();
+  assert.equal(settings.get("tenantId"), "empresa-teste");
+  assert.equal(settings.get("id"), "default");
+  assert.equal(settings.get("companyName"), "Empresa teste atualizada");
+  assert.equal((await db.collection("systemSettings").doc("default").get()).get("companyName"), "Configuração Império original");
+
+  const operatorAttempt = await invoke(tenantSettingsHandler, {
+    method: "PUT",
+    token: operatorToken,
+    body: {
+      companyName: "Operador não deve salvar",
+      companyLogoUrl: "",
+      systemName: "ApontaPRO",
+      primaryColor: "#123ABC",
+      exigirQualidadeNaEmbalagem: true,
+      soldaProcesses: [],
+    },
+  });
+  assert.equal(operatorAttempt.statusCode, 403);
+
+  const globalAttempt = await invoke(tenantSettingsHandler, {
+    method: "PUT",
+    token: superAdminToken,
+    body: {
+      companyName: "Global não deve salvar",
+      companyLogoUrl: "",
+      systemName: "ApontaPRO",
+      primaryColor: "#123ABC",
+      exigirQualidadeNaEmbalagem: true,
+      soldaProcesses: [],
+    },
+  });
+  assert.equal(globalAttempt.statusCode, 403);
 });
 
 test("Login diferencia ids canônicos de aliases legados dentro do mesmo tenant", async () => {

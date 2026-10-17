@@ -16074,12 +16074,15 @@ export default function App() {
 
   const isImperioGerencia =
     db.activeTenantId === "imperio" && currentUser.role === "GERENCIA";
+  const isSteelKubeGerencia =
+    db.activeTenantId.toLowerCase() === "sk" && currentUser.role === "GERENCIA";
   const canAccessTornoWillian = isImperioTornoWillianUser(currentUser);
 
   const canAccessCustomerManagement =
     currentUser.role === "ADMIN" ||
     currentUser.role === "PCP" ||
-    isImperioGerencia;
+    isImperioGerencia ||
+    isSteelKubeGerencia;
 
   const canManageImperioStock =
     db.activeTenantId === "imperio" &&
@@ -16117,6 +16120,7 @@ export default function App() {
     if (isImperioPcpOrGerencia && screenKey === "injetora") return true;
     if (currentUser.id === "gerencia.imperio" && screenKey === "itens") return true;
     if (isImperioGerencia && screenKey === "gestao-clientes") return true;
+    if (isSteelKubeGerencia && screenKey === "gestao-clientes") return true;
     if (isImperioMarcosProjetista && screenKey === "nests") return true;
     if (screenKey === "embalagem" && isImperioPackagingUser(db.activeTenantId, currentUser)) return true;
     if (currentUser?.id === "raul") return true;
