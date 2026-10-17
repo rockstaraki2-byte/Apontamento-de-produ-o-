@@ -3,7 +3,7 @@ import process from "node:process";
 import * as Firebird from "node-firebird";
 import type { Database, Options } from "node-firebird";
 import { validateAndNormalizeTekSystemSync, type TekSystemSyncPayload } from "../api/_lib/teksystemSync.js";
-import { readCompleteEntities } from "./teksystem-firebird-v2.js";
+import { readCompleteEntities, readOrderPresenceSnapshot } from "./teksystem-firebird-v2.js";
 
 type EntityName = "clientes" | "produtos" | "pedidos" | "faturamentos" | "romaneios" | "faturamentoDiario" | "faturamentoPorRepresentante";
 
@@ -146,6 +146,7 @@ Variáveis de conexão:
   TEKSYSTEM_HOST, TEKSYSTEM_DATABASE_PORT, TEKSYSTEM_DATABASE_PATH
   TEKSYSTEM_COMPANY_ID, TEKSYSTEM_PROTOCOL
   TEKSYSTEM_COMPANY_IDS (padrão: 0,1)
+  --order-codes-file arquivo com { "codes": [...], "targetHash": "..." } habilita snapshot direcionado
 `);
 }
 
@@ -170,6 +171,19 @@ async function runExport(args: string[]) {
   const entities = (requested ? requested.split(",") : ALL_ENTITIES).map((name) => name.trim()) as EntityName[];
   const invalid = entities.filter((entity) => !ALL_ENTITIES.includes(entity));
   if (invalid.length) throw new Error(`Entidades inválidas: ${invalid.join(", ")}`);
+  const orderCodesFile = argumentValue(args, "--order-codes-file");
+  let orderPresenceTarget: { codes: string[]; targetHash: string } | undefined;
+  if (orderCodesFile) {
+    const parsed = JSON.parse(await fs.readFile(orderCodesFile, "utf8"));
+    if (!parsed || !Array.isArray(parsed.codes) || typeof parsed.targetHash !== "string" || !/^[a-f0-9]{64}$/.test(parsed.targetHash)) {
+      throw new Error("Arquivo de códigos para reconciliação está inválido.");
+    }
+    const codes = parsed.codes.map((code: unknown) => String(code ?? "").trim());
+    if (codes.some((code: string) => !code || code.length > 80) || new Set(codes).size !== codes.length || codes.length > 25_000) {
+      throw new Error("Lista de códigos para reconciliação inválida ou acima de 25.000 itens.");
+    }
+    orderPresenceTarget = { codes, targetHash: parsed.targetHash };
+  }
 
   const db = await attach();
   try {
@@ -184,18 +198,35 @@ async function runExport(args: string[]) {
       args.includes("--billing-history-snapshot"),
       args.includes("--representative-billing-history-snapshot"),
     );
+    const includesCompleteOrderSnapshot = entities.includes("pedidos") && entities.includes("romaneios");
+    const orderPresence = includesCompleteOrderSnapshot && orderPresenceTarget
+      ? await readOrderPresenceSnapshot(db, sourceDefaults().companyIds, orderPresenceTarget.codes)
+      : undefined;
     const payload: TekSystemSyncPayload = {
       syncId: `teksystem-firebird-${Date.now()}`,
       tenantId: process.env.TEKSYSTEM_ALLOWED_TENANT_ID || "imperio",
       generatedAt: new Date().toISOString(),
-      source: { ...sourceDefaults(), readerVersion: 2, completeOrderSnapshots: (entities.includes("pedidos") && entities.includes("romaneios")) || (!entities.includes("pedidos") && !entities.includes("romaneios")) },
+      source: {
+        ...sourceDefaults(), readerVersion: 2,
+        completeOrderSnapshots: includesCompleteOrderSnapshot || (!entities.includes("pedidos") && !entities.includes("romaneios")),
+        ...(includesCompleteOrderSnapshot && orderPresenceTarget ? { orderPresenceSnapshotComplete: true } : {}),
+      },
       entities: rows,
+      ...(orderPresence ? { orderPresence } : {}),
+      ...(orderPresence && orderPresenceTarget ? {
+        orderPresenceCheckedCodes: orderPresenceTarget.codes,
+        orderPresenceTargetHash: orderPresenceTarget.targetHash,
+      } : {}),
     };
     const validation = validateAndNormalizeTekSystemSync(payload);
     if (!validation.ok || !validation.payload) {
       throw new Error(`Dados extraídos não passaram na validação: ${JSON.stringify(validation.issues)}`);
     }
-    await fs.writeFile(output, `${JSON.stringify(validation.payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    const normalizedExport: TekSystemSyncPayload = {
+      ...validation.payload,
+      ...(orderPresence ? { orderPresence } : {}),
+    };
+    await fs.writeFile(output, `${JSON.stringify(normalizedExport, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     console.log(JSON.stringify({ ok: true, output, counts: validation.counts, payloadHash: validation.payload.payloadHash }, null, 2));
   } finally {
     await db.detachAsync();

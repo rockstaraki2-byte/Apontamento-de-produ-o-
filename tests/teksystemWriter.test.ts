@@ -4,7 +4,8 @@ import { validateAndNormalizeTekSystemSync } from "../api/_lib/teksystemSync.js"
 import { buildWriterJobs, hasTransaction74, planCargaQuantityMutations, planWriterJob, sourcePayment, type WriterCatalog, type WriterJob } from "../api/_lib/teksystemWriter.js";
 import { buildImportedOrderDocument } from "../api/_lib/orderImportDocuments.js";
 import { splitPayload } from "../tools/teksystem-sync-cycle-utils.js";
-import { readOnlyRows } from "../tools/teksystem-firebird-v2.js";
+import { readOnlyRows, readOrderPresenceSnapshot } from "../tools/teksystem-firebird-v2.js";
+import { orderPresenceTargetCodes, orderPresenceTargetHash, planOrderPresenceReconciliation } from "../api/_lib/teksystemOrderPresence.js";
 import * as Firebird from "node-firebird";
 import { EventEmitter } from "node:events";
 
@@ -342,6 +343,62 @@ test("pedido cancelado, cliente divergente e chaves repetidas não permitem adic
   order.customerId = 5; orderJob.rows[1].detalheid = 900;
   assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "ITEM_DUPLICADO");
 });
+test("cancelamento de origem cancela logicamente somente pedido sem operação e remove vínculos não iniciados", () => {
+  const order: any = existing();
+  const source = { ...sourceRow(), situacaodescricao: "DOCUMENTO CANCELADO" };
+  const cancellationJob = { ...jobs()[0], rows: [source] };
+  const context = {
+    loaded: true, productionAgendas: [], coilCuttingPlans: [],
+    productionSteps: [], logs: [],
+    productionBatches: [{ id: 44, docId: "44", tenantId: "imperio", name: "LOTE 44", status: "PENDENTE", orderIds: [order.id] }],
+    cargas: [{ id: "carga-1", docId: "carga-1", tenantId: "imperio", name: "CARGA 1", status: "ABERTA", orderIds: [order.id],
+      orderQuantities: { [order.id]: 10 }, separatedQuantities: {} }],
+  };
+  const plan = planWriterJob(cancellationJob, catalog(), [order], now, context);
+  assert.equal(plan.action, "CANCELADO");
+  assert.equal(plan.details.historicoPreservado, true);
+  assert.equal(plan.details.pdfNeedsRefresh, false);
+  assert.equal(plan.mutations.find((mutation) => mutation.collection === "orders")!.patch.status, "CANCELADO");
+  const batchPatch = plan.mutations.find((mutation) => mutation.collection === "productionBatches")!.patch;
+  const cargaPatch = plan.mutations.find((mutation) => mutation.collection === "cargas")!.patch;
+  assert.deepEqual(batchPatch.orderIds, []);
+  assert.deepEqual(cargaPatch.orderIds, []);
+  assert.equal((cargaPatch.auditTrail as any[])[0].userId, "teksystem-sync-agent");
+});
+test("cancelamento parcial ou com apontamento fica em revisão sem planejar mutações", () => {
+  const order: any = existing();
+  const context = { loaded: true, cargas: [], productionBatches: [], productionAgendas: [], coilCuttingPlans: [], productionSteps: [], logs: [] };
+  const partial = { ...jobs()[0], rows: [{ ...sourceRow(), situacaodescricao: "DOCUMENTO CANCELADO PARCIAL" }] };
+  assert.throws(() => planWriterJob(partial, catalog(), [order], now, context), (error: any) => error.code === "CANCELAMENTO_PARCIAL_REQUER_REVISAO");
+  const canceled = { ...jobs()[0], rows: [{ ...sourceRow(), situacaodescricao: "DOCUMENTO CANCELADO" }] };
+  order.packedQuantity = 1;
+  assert.throws(() => planWriterJob(canceled, catalog(), [order], now, context), (error: any) => error.code === "CANCELAMENTO_COM_OPERACAO_INICIADA");
+  order.packedQuantity = 0;
+  assert.throws(() => planWriterJob(canceled, catalog(), [order], now, { ...context, logs: [{ orderId: order.id }] }), (error: any) => error.code === "CANCELAMENTO_COM_HISTORICO_OPERACIONAL");
+});
+test("exclusão física só é confirmada em dois snapshots independentes e reseta se o pedido reaparecer", () => {
+  const imported = [{ id: 123, teksystemOrderId: "77", teksystemLineId: "pedido:77:900", importOrigin: "TEKSYSTEM", status: "PENDENTE" }];
+  const first = planOrderPresenceReconciliation("imperio", imported, [], [], "snapshot-1", now.toISOString());
+  assert.equal(first.firstMisses, 1);
+  assert.deepEqual(first.deletedOrderCodes, []);
+  const candidate = { id: first.updates[0].id, orderCode: "77", ...first.updates[0].data } as any;
+  const targets = orderPresenceTargetCodes(imported, [candidate]);
+  assert.deepEqual(targets, ["77"]);
+  assert.match(orderPresenceTargetHash(targets), /^[a-f0-9]{64}$/);
+  const repeated = planOrderPresenceReconciliation("imperio", imported, [candidate], [], "snapshot-1", now.toISOString());
+  assert.deepEqual(repeated.deletedOrderCodes, []);
+  const second = planOrderPresenceReconciliation("imperio", imported, [candidate], [], "snapshot-2", now.toISOString());
+  assert.deepEqual(second.deletedOrderCodes, ["77"]);
+  const returned = planOrderPresenceReconciliation("imperio", imported, [candidate], [{ empresa: 1, codigoPedido: "77" }], "snapshot-3", now.toISOString());
+  assert.equal(returned.reset.length, 1);
+  assert.equal(returned.reset[0].data.missingCount, 0);
+  const companyMismatch = planOrderPresenceReconciliation("imperio", imported, [], [
+    { empresa: 0, codigoPedido: "77", lifecycle: "CANCELADO" },
+    { empresa: 1, codigoPedido: "77" },
+  ], "snapshot-4", now.toISOString());
+  assert.deepEqual(companyMismatch.cancelledOrderCodes, []);
+  assert.deepEqual(companyMismatch.inconsistentLifecycleCodes, ["77"]);
+});
 test("romaneio só fatura linhas novas depois de o pedido ter sido complementado", () => {
   const { cat, order, orderJob } = appendFixture();
   const billing: WriterJob = { ...jobs()[1], orderRows: orderJob.rows, rows: [{ ...orderJob.rows[1], externalId: "romaneio:1:2", quantidadefaturada: 50 }] };
@@ -388,4 +445,35 @@ test("BLOBs são lidos na mesma transação READ ONLY e decodificados em UTF8", 
   const db: any = { transactionAsync: async (isolation: any) => { assert.equal(isolation, Firebird.ISOLATION_READ_COMMITTED_READ_ONLY); return tx; } };
   const rows = await readOnlyRows(db, "SELECT note FROM PESSOA");
   assert.equal(rows[0].note, "Transação 74"); assert.equal(committed, true);
+});
+test("snapshot completo de pedidos lê situação em transação Firebird somente leitura", async () => {
+  let committed = false;
+  let sql = "";
+  let paramsSeen: unknown[] = [];
+  const tx: any = {
+    queryAsync: async (statement: string, params: unknown[]) => {
+      sql = statement;
+      paramsSeen = params;
+      assert.deepEqual(params, [0, 1, "77", "78"]);
+      return [
+        { empresa: 1, codigopedido: 77, status: 2, situacao: 9, situacaodescricao: "Documento cancelado" },
+        { empresa: 0, codigopedido: 78, status: 1, situacao: 8, situacaodescricao: "Documento cancelado parcial" },
+        { empresa: 1, codigopedido: 79, status: 1, situacao: 1, situacaodescricao: "Normal" },
+      ];
+    },
+    commitAsync: async () => { committed = true; }, rollbackAsync: async () => {},
+  };
+  const db: any = { transactionAsync: async (isolation: any) => {
+    assert.equal(isolation, Firebird.ISOLATION_READ_COMMITTED_READ_ONLY); return tx;
+  } };
+  const snapshot = await readOrderPresenceSnapshot(db, [0, 1], ["77", "78"]);
+  assert.match(sql, /SELECT DISTINCT/i);
+  assert.doesNotMatch(sql, /DATAHORAALTERACAO/i);
+  assert.match(sql, /CODIGO_DOCFAT IN/i);
+  assert.deepEqual(paramsSeen, [0, 1, "77", "78"]);
+  assert.equal(snapshot[0].lifecycle, "CANCELADO");
+  assert.equal(snapshot[1].lifecycle, "CANCELAMENTO_PARCIAL");
+  assert.equal(snapshot[2].lifecycle, undefined);
+  assert.equal(committed, true);
+  await assert.rejects(readOrderPresenceSnapshot(db, [2], []), /empresas autorizadas 0 e 1/);
 });

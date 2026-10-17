@@ -203,6 +203,86 @@ async function postStagingPayload(apiUrl: string, apiToken: string, bypassSecret
   throw new Error(`Falha ao enviar lote de staging (HTTP ${lastStatus}).`);
 }
 
+function orderPresenceEndpoint(apiUrl: string): URL {
+  const endpoint = new URL(apiUrl);
+  endpoint.pathname = endpoint.pathname.replace(/\/sync\/?$/, "/reconcile-orders");
+  endpoint.search = "";
+  if (!endpoint.pathname.endsWith("/reconcile-orders")) throw new Error("TEKSYSTEM_SYNC_API_URL deve terminar com /api/integration/teksystem/sync.");
+  return endpoint;
+}
+
+async function fetchOrderPresenceTargets(apiUrl: string, apiToken: string, bypassSecret: string) {
+  const endpoint = orderPresenceEndpoint(apiUrl);
+  const tenantId = process.env.TEKSYSTEM_ALLOWED_TENANT_ID || "imperio";
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiToken}`, "X-Tenant-Id": tenantId,
+        "X-Integration-User": "teksystem-sync-agent", "x-vercel-protection-bypass": bypassSecret,
+      },
+      signal: AbortSignal.timeout(45_000),
+    });
+    lastStatus = response.status;
+    const responseText = await response.text();
+    let parsed: any;
+    try { parsed = JSON.parse(responseText); } catch { parsed = { mensagem: responseText.slice(0, 300) }; }
+    if (response.ok && parsed?.sucesso === true && parsed.complete === true && Array.isArray(parsed.targetCodes) &&
+      Array.isArray(parsed.companyIds) && parsed.companyIds.map(Number).sort().join(",") === "0,1" && /^[a-f0-9]{64}$/.test(parsed.targetHash || "")) {
+      if (parsed.targetCodes.length > 25_000 || parsed.targetCodes.some((code: unknown) => typeof code !== "string" || !code.trim() || code.length > 80)) {
+        throw new Error("A lista de códigos retornada pela API excede os limites locais de segurança.");
+      }
+      return { codes: parsed.targetCodes as string[], targetHash: parsed.targetHash as string, companyIds: parsed.companyIds };
+    }
+    if (![408, 425, 429, 500, 502, 503, 504].includes(response.status) || attempt === 2) {
+      throw new Error(`Não foi possível preparar a leitura dos pedidos vinculados (HTTP ${response.status}): ${parsed?.mensagem || parsed?.erro || "resposta inválida"}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+  }
+  throw new Error(`Falha ao consultar códigos vinculados (HTTP ${lastStatus}).`);
+}
+
+async function postOrderPresenceSnapshot(
+  apiUrl: string, apiToken: string, bypassSecret: string, payload: TekSystemSyncPayload, snapshotId: string, dryRun: boolean,
+) {
+  if (payload.source?.orderPresenceSnapshotComplete !== true || !Array.isArray(payload.orderPresence) ||
+    !Array.isArray(payload.orderPresenceCheckedCodes) || !/^[a-f0-9]{64}$/.test(payload.orderPresenceTargetHash || "")) {
+    throw new Error("O leitor não forneceu o snapshot completo de presença de pedidos; reconciliação/cursor interrompidos por segurança.");
+  }
+  const body = {
+    tenantId: payload.tenantId || process.env.TEKSYSTEM_ALLOWED_TENANT_ID || "imperio",
+    snapshotId, generatedAt: payload.generatedAt || new Date().toISOString(),
+    companyIds: payload.source.companyIds || [0, 1], completeSnapshot: true,
+    checkedOrderCodes: payload.orderPresenceCheckedCodes, targetHash: payload.orderPresenceTargetHash,
+    orders: payload.orderPresence, dryRun,
+  };
+  if (Buffer.byteLength(JSON.stringify(body)) > 3_500_000) throw new Error("Snapshot de presença excede o limite seguro; nenhuma reconciliação foi iniciada.");
+  const base = orderPresenceEndpoint(apiUrl);
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch(base, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiToken}`, "Content-Type": "application/json",
+        "X-Tenant-Id": String(body.tenantId), "X-Integration-User": "teksystem-sync-agent",
+        "x-vercel-protection-bypass": bypassSecret,
+      },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(45_000),
+    });
+    lastStatus = response.status;
+    const responseText = await response.text();
+    let parsed: any;
+    try { parsed = JSON.parse(responseText); } catch { parsed = { mensagem: responseText.slice(0, 300) }; }
+    if (response.ok && parsed?.sucesso === true) return parsed;
+    if (![408, 425, 429, 500, 502, 503, 504].includes(response.status) || attempt === 2) {
+      throw new Error(`Reconciliação de pedidos recusada (HTTP ${response.status}): ${parsed?.reason || parsed?.mensagem || parsed?.erro || "sem detalhe"}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+  }
+  throw new Error(`Falha ao reconciliar presença de pedidos (HTTP ${lastStatus}).`);
+}
+
 async function runSync(args: string[]) {
   const apiUrl = process.env.TEKSYSTEM_SYNC_API_URL;
   const apiToken = process.env.TEKSYSTEM_SYNC_API_TOKEN || process.env.ORDER_IMPORT_API_TOKEN || process.env.INTEGRATION_TOKEN;
@@ -254,6 +334,7 @@ async function runSync(args: string[]) {
   const runId = `teksystem-${startedAt.toISOString().replace(/[-:.TZ]/g, "")}`;
   const statePath = path.join(appDirectory, "sync-state.json");
   const tempExport = path.join(os.tmpdir(), `${runId}-${process.pid}.json`);
+  const tempOrderTargets = path.join(os.tmpdir(), `${runId}-${process.pid}-order-targets.json`);
   const logPath = path.join(appDirectory, `sync-${startedAt.toISOString().slice(0, 10)}.jsonl`);
   let outcome: Record<string, unknown> = { runId, startedAt: startedAt.toISOString(), ok: false,
     mode: args.includes("--dry-run") ? "dry-run" : "collect-and-process" };
@@ -266,10 +347,12 @@ async function runSync(args: string[]) {
     const billingHistorySnapshot = state.billingHistorySnapshotVersion !== 1;
     const representativeBillingHistorySnapshot = state.billingRepresentativeHistorySnapshotVersion !== 1;
     const since = makeSince(bootstrap ? {} : state, startedAt, lookbackHours, overlapMinutes);
+    const orderTargets = await fetchOrderPresenceTargets(apiUrl, apiToken, bypassSecret);
+    await fs.writeFile(tempOrderTargets, `${JSON.stringify(orderTargets)}\n`, { encoding: "utf8", mode: 0o600 });
     const projectRoot = path.resolve(import.meta.dirname || path.dirname(new URL(import.meta.url).pathname), "..");
     const tsxCli = path.join(projectRoot, "node_modules", "tsx", "dist", "cli.mjs");
     const reader = path.join(projectRoot, "tools", "teksystem-firebird-reader.ts");
-    await execFileAsync(process.execPath, [tsxCli, reader, "export", "--output", tempExport, "--since", since.toISOString(), ...(bootstrap ? ["--customer-snapshot"] : []), ...(billingHistorySnapshot ? ["--billing-history-snapshot"] : []), ...(representativeBillingHistorySnapshot ? ["--representative-billing-history-snapshot"] : [])], {
+    await execFileAsync(process.execPath, [tsxCli, reader, "export", "--output", tempExport, "--since", since.toISOString(), "--order-codes-file", tempOrderTargets, ...(bootstrap ? ["--customer-snapshot"] : []), ...(billingHistorySnapshot ? ["--billing-history-snapshot"] : []), ...(representativeBillingHistorySnapshot ? ["--representative-billing-history-snapshot"] : [])], {
       cwd: projectRoot,
       windowsHide: true,
       timeout: 20 * 60 * 1000,
@@ -277,8 +360,9 @@ async function runSync(args: string[]) {
     });
 
     const exported = JSON.parse(await fs.readFile(tempExport, "utf8")) as TekSystemSyncPayload;
+    const { orderPresence: _orderPresence, ...stagingExport } = exported;
     const payloadBase: TekSystemSyncPayload = {
-      ...exported,
+      ...stagingExport,
       syncId: runId,
       modo: "delta",
       solicitadoPor: "teksystem-sync-agent",
@@ -298,6 +382,21 @@ async function runSync(args: string[]) {
       outcome.stagedRecords = stagedRecords;
       outcome.stagedBatches = stagedBatches;
     }
+
+    const orderPresence = await postOrderPresenceSnapshot(apiUrl, apiToken, bypassSecret, exported, runId, args.includes("--dry-run"));
+    outcome.orderPresence = {
+      presentOrderCodes: orderPresence.presentOrderCodes,
+      linkedOrderCodes: orderPresence.linkedOrderCodes,
+      firstMisses: orderPresence.firstMisses,
+      confirmedMissing: orderPresence.confirmedMissing,
+      canceledAtSource: orderPresence.canceledAtSource || 0,
+      partialCancellationReview: orderPresence.partialCancellationReview || 0,
+      inconsistentStatusReview: orderPresence.inconsistentStatusReview || 0,
+      queued: orderPresence.queued,
+      blocked: orderPresence.blocked,
+      reason: orderPresence.reason,
+      dryRun: orderPresence.dryRun,
+    };
 
     if (!args.includes("--dry-run")) {
       const nextState: SyncState = {
@@ -337,6 +436,7 @@ async function runSync(args: string[]) {
     try { outcome.followups = await finishFollowups(outcome); }
     catch { outcome.followups = { error: "Falha ao salvar fila de PDFs/relatório; consulte o log local." }; process.exitCode = 1; }
     await fs.rm(tempExport, { force: true }).catch(() => undefined);
+    await fs.rm(tempOrderTargets, { force: true }).catch(() => undefined);
     await lockHandle.close().catch(() => undefined);
     await fs.rm(lockPath, { force: true }).catch(() => undefined);
     await fs.appendFile(logPath, `${JSON.stringify(outcome)}\n`, "utf8").catch(() => undefined);
