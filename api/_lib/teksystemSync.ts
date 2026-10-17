@@ -8,6 +8,7 @@ export type TekSystemEntityType = "clientes" | "produtos" | "pedidos" | "faturam
 export interface TekSystemSourceInfo {
   readerVersion?: number;
   completeOrderSnapshots?: boolean;
+  orderPresenceSnapshotComplete?: boolean;
   host?: string;
   serverPort?: number;
   databasePort?: number;
@@ -26,6 +27,10 @@ export interface TekSystemSyncPayload {
   modo?: "snapshot" | "delta";
   generatedAt?: string;
   source?: TekSystemSourceInfo;
+  /** Compact, complete header-only snapshot used only by the local scheduled sync. */
+  orderPresence?: Array<{ empresa: number; codigoPedido: string; lifecycle?: "CANCELADO" | "CANCELAMENTO_PARCIAL" }>;
+  orderPresenceCheckedCodes?: string[];
+  orderPresenceTargetHash?: string;
   entities?: Partial<Record<TekSystemEntityType, unknown[]>>;
 }
 

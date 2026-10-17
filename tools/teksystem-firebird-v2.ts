@@ -1,7 +1,7 @@
 import * as Firebird from "node-firebird";
 import type { Database } from "node-firebird";
 import type { TekSystemEntityType } from "../api/_lib/teksystemSync.js";
-import { mapRepresentativeName } from "../api/_lib/orderImportRules.js";
+import { mapRepresentativeName, normalizeText } from "../api/_lib/orderImportRules.js";
 import { getSystemRepresentativeByCanonicalName } from "../api/_lib/systemRepresentatives.js";
 
 type Row = Record<string, any>;
@@ -35,6 +35,39 @@ const key = (v: unknown) => String(v ?? "").trim();
 const ids = (rows: Row[], field: string) => [...new Set(rows.map((r) => key(r[field])).filter(Boolean))];
 const baseCode = (code: string) => code.replace(/\..*$/, "");
 const billingTimeZone = "America/Sao_Paulo";
+
+/**
+ * Returns a complete, compact set of current Tek-System sales-order headers.
+ * This query intentionally has no timestamp filter: a hard-deleted order can
+ * only be detected by comparing a successful full snapshot with ApontaPRO.
+ */
+export async function readOrderPresenceSnapshot(db: Database, companies: number[], requestedCodes: string[]) {
+  const companySet = [...new Set(companies.map(Number))].sort((a, b) => a - b);
+  if (companySet.length !== 2 || companySet[0] !== 0 || companySet[1] !== 1) {
+    throw new Error("O snapshot de presença exige as empresas autorizadas 0 e 1.");
+  }
+  const codes = [...new Set(requestedCodes.map(key).filter(Boolean))];
+  if (codes.length > 25_000) throw new Error("A lista de pedidos vinculados excede 25.000 códigos; a reconciliação não foi iniciada.");
+  const result: Row[] = [];
+  for (const codeBatch of batches(codes, 400)) {
+    result.push(...await readOnlyRows(db, `
+      SELECT DISTINCT d.EMPRESA_DOCFAT AS empresa, d.CODIGO_DOCFAT AS codigopedido,
+             d.STATUS_DOCFAT AS status, d.SITUACAO_DOCFAT AS situacao,
+             sit.DESCRICAO_SITUACAO AS situacaodescricao
+        FROM DOCUMENTO_FATURA d
+        JOIN DOCUMENTO_PEDIDO p ON p.DOCUMENTO_DOCPED = d.CODIGO_DOCFAT
+        LEFT JOIN SITUACAO sit ON sit.CODIGO_SITUACAO = d.SITUACAO_DOCFAT
+       WHERE d.EMPRESA_DOCFAT IN (${placeholders(companies)})
+         AND d.CODIGO_DOCFAT IN (${placeholders(codeBatch)})`, [...companies, ...codeBatch]));
+  }
+  const rows = result;
+  return rows.map((row) => {
+    const status = normalizeText(`${key(row.situacaodescricao)} ${key(row.status)} ${key(row.situacao)}`);
+    const lifecycle: "CANCELAMENTO_PARCIAL" | "CANCELADO" | undefined = /CANCEL.{0,12}PARCIAL|PARCIAL.{0,12}CANCEL/.test(status) ? "CANCELAMENTO_PARCIAL"
+      : /\bCANCELAD[AO]S?\b|\bCANCELAMENTO\b/.test(status) && !/\bNAO CANCELAD[AO]S?\b/.test(status) ? "CANCELADO" : undefined;
+    return { empresa: Number(row.empresa), codigoPedido: key(row.codigopedido), ...(lifecycle ? { lifecycle } : {}) };
+  }).filter((row) => row.codigoPedido && [0, 1].includes(row.empresa));
+}
 
 function dateInBillingTimeZone(value: Date): string {
   const parts = new Intl.DateTimeFormat("en-US", {

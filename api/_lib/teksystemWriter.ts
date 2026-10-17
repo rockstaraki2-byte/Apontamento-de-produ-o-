@@ -28,17 +28,26 @@ export interface WriterCatalog extends CatalogSnapshot {
   users: WriterCatalogEntry[];
 }
 export interface WriterMutation {
-  collection: "customers" | "items" | "orders" | "cargas" | "logs";
+  collection: "customers" | "items" | "orders" | "cargas" | "productionBatches" | "logs";
   docId: string;
   before: WriterRow | null;
   patch: WriterRow;
 }
 export interface WriterPlan {
-  action: "CRIADO" | "ATUALIZADO" | "JA_EXISTE" | "COMPLEMENTADO" | "SEM_ALTERACAO" | "FATURADO";
+  action: "CRIADO" | "ATUALIZADO" | "JA_EXISTE" | "COMPLEMENTADO" | "SEM_ALTERACAO" | "FATURADO" | "CANCELADO";
   mutations: WriterMutation[];
   orderGuards?: WriterRow[];
   createOrder?: AtomicCreateInput;
   details: WriterRow;
+}
+export interface OrderCancellationContext {
+  loaded: boolean;
+  cargas: WriterRow[];
+  productionBatches: WriterRow[];
+  productionAgendas: WriterRow[];
+  coilCuttingPlans: WriterRow[];
+  productionSteps: WriterRow[];
+  logs: WriterRow[];
 }
 export class WriterConflict extends Error {
   constructor(public code: string, message: string, public retryable = false) { super(message); }
@@ -291,6 +300,119 @@ export function orderInput(rows: WriterRow[], catalog: WriterCatalog, identityOn
     observacoes: withPaymentNote(value(head, "observacoes"), payment.note), itens,
   };
 }
+
+export type TekSystemOrderLifecycle = "CANCELADO" | "EXCLUIDO_NO_TEKSYSTEM" | "CANCELAMENTO_PARCIAL" | "INATIVO_REQUER_REVISAO" | null;
+
+export function sourceOrderLifecycle(rows: WriterRow[]): TekSystemOrderLifecycle {
+  if (!rows.length) return null;
+  const explicit = text(value(rows[0], "lifecycleAction")).toUpperCase();
+  if (explicit === "EXCLUIDO_NO_TEKSYSTEM") return "EXCLUIDO_NO_TEKSYSTEM";
+  if (explicit === "CANCELAMENTO_PARCIAL") return "CANCELAMENTO_PARCIAL";
+  if (explicit === "CANCELADO") return "CANCELADO";
+  if (explicit === "STATUS_INCONSISTENTE") return "INATIVO_REQUER_REVISAO";
+  const statuses = rows.map((row) => normalizeText([
+    value(row, "situacaoDescricao"), value(row, "status"), value(row, "situacao"),
+  ].map(text).filter(Boolean).join(" ")));
+  if (statuses.some((status) => /CANCEL.{0,12}PARCIAL|PARCIAL.{0,12}CANCEL/.test(status))) return "CANCELAMENTO_PARCIAL";
+  if (statuses.some((status) => /\bCANCELAD[AO]S?\b|\bCANCELAMENTO\b/.test(status) && !/\bNAO CANCELAD[AO]S?\b/.test(status))) return "CANCELADO";
+  if (statuses.some((status) => /\bREJEITAD[AO]S?\b|\bORCAMENTO\b/.test(status))) return "INATIVO_REQUER_REVISAO";
+  return null;
+}
+
+function linkedTekSystemOrders(orders: WriterRow[], code: string): WriterRow[] {
+  return orders.filter((order) => text(order.teksystemOrderId) === code || text(order.teksystemLineId).startsWith(`pedido:${code}:`));
+}
+
+function orderIdKey(id: unknown): string { return text(id); }
+function asIds(values: unknown): string[] { return Array.isArray(values) ? values.map(orderIdKey) : []; }
+
+function planOrderCancellation(
+  job: WriterJob, orders: WriterRow[], lifecycle: Exclude<TekSystemOrderLifecycle, null>,
+  context?: OrderCancellationContext,
+): WriterPlan {
+  const reason = lifecycle === "CANCELADO" ? "Pedido cancelado no Tek-System" : "Pedido excluído do Tek-System";
+  if (!context?.loaded) throw new WriterConflict("CONTEXTO_CANCELAMENTO_NAO_CARREGADO", "Não foi possível validar lotes, cargas e apontamentos antes do cancelamento.", true);
+  const linked = linkedTekSystemOrders(orders, job.externalKey);
+  if (!linked.length) return { action: "SEM_ALTERACAO", mutations: [], details: {
+    codigoPedido: job.externalKey, lifecycle, pedidoApontaPROEncontrado: false,
+    motivo: "Nenhum item com vínculo de origem Tek-System foi encontrado; não alterei pedidos sem vínculo.",
+  } };
+  const linkedIds = new Set(linked.map((order) => orderIdKey(order.id)));
+  const progressOrder = linked.find((order) => {
+    const quantities = [order.invoicedQuantity, order.packedQuantity, order.producedQuantity, order.paintedQuantity, order.cutQuantity];
+    if (quantities.some((quantity) => Number(quantity || 0) > 0)) return true;
+    return !["PENDENTE", "AGUARDANDO_APROVACAO", "TEM_ESTOQUE", "PLANEJADO", "CANCELADO"].includes(text(order.status));
+  });
+  if (progressOrder) throw new WriterConflict("CANCELAMENTO_COM_OPERACAO_INICIADA", `O item ${progressOrder.id} já possui produção, embalagem, faturamento ou status operacional; nenhuma alteração foi feita.`);
+  if (context.productionSteps.some((step) => linkedIds.has(orderIdKey(step.orderId)))) {
+    throw new WriterConflict("CANCELAMENTO_COM_ETAPA_PRODUCAO", "Há etapa de produção vinculada ao pedido; requer revisão antes de cancelar.");
+  }
+  if (context.productionAgendas.some((agenda) => linkedIds.has(orderIdKey(agenda.orderId)))) {
+    throw new WriterConflict("CANCELAMENTO_COM_AGENDA_PRODUCAO", "Há programação de produção vinculada ao pedido; requer revisão antes de cancelar.");
+  }
+  if (context.coilCuttingPlans.some((plan) => linkedIds.has(orderIdKey(plan.orderId)))) {
+    throw new WriterConflict("CANCELAMENTO_COM_PLANO_PRODUCAO", "Há plano de produção vinculado ao pedido; requer revisão antes de cancelar.");
+  }
+  if (context.logs.some((log) => linkedIds.has(orderIdKey(log.orderId)))) {
+    throw new WriterConflict("CANCELAMENTO_COM_HISTORICO_OPERACIONAL", "Há apontamento operacional vinculado ao pedido; requer revisão antes de cancelar.");
+  }
+
+  const batches = context.productionBatches.filter((batch) => asIds(batch.orderIds).some((id) => linkedIds.has(id)));
+  for (const batch of batches) {
+    if (text(batch.status) !== "PENDENTE") throw new WriterConflict("CANCELAMENTO_COM_LOTE_INICIADO", `O lote ${text(batch.name || batch.id)} já saiu de PENDENTE; requer revisão.`);
+    if ([...asIds(batch.checkedOrderIds), ...asIds(batch.liberatedOrderIds)].some((id) => linkedIds.has(id))) {
+      throw new WriterConflict("CANCELAMENTO_COM_LOTE_SELECIONADO", `O pedido está selecionado/liberado no lote ${text(batch.name || batch.id)}; requer revisão.`);
+    }
+  }
+  const cargas = context.cargas.filter((carga) => asIds(carga.orderIds).some((id) => linkedIds.has(id)));
+  for (const carga of cargas) {
+    if (!["PLANEJADA", "ABERTA"].includes(text(carga.status))) throw new WriterConflict("CANCELAMENTO_COM_CARGA_INICIADA", `A carga ${text(carga.name || carga.id)} já avançou no processo; requer revisão.`);
+    for (const id of linkedIds) {
+      if (Number(carga.separatedQuantities?.[id] || 0) > 0) throw new WriterConflict("CANCELAMENTO_COM_SEPARACAO", `O item ${id} já tem quantidade separada na carga ${text(carga.name || carga.id)}; requer revisão.`);
+    }
+  }
+
+  const timestamp = Number.isFinite(Date.parse(job.generatedAt)) ? Date.parse(job.generatedAt) : Date.now();
+  const mutations: WriterMutation[] = linked.map((order) => {
+    if (text(order.status) === "CANCELADO" && order.teksystemLifecycleAction === lifecycle && order.isActive === false) return null;
+    return patchMutation("orders", order.id, order, {
+      status: "CANCELADO", isActive: false, teksystemLifecycleAction: lifecycle,
+      teksystemLifecycleReason: reason, teksystemLifecycleAt: timestamp,
+      teksystemLifecycleSyncId: job.syncId,
+    });
+  }).filter((mutation): mutation is WriterMutation => Boolean(mutation));
+  for (const batch of batches) {
+    const nextOrderIds = asIds(batch.orderIds).filter((id) => !linkedIds.has(id)).map((id) => {
+      const original = (batch.orderIds as unknown[]).find((candidate) => orderIdKey(candidate) === id);
+      return original;
+    });
+    const patch = {
+      orderIds: nextOrderIds,
+      status: batch.status,
+      ...(Array.isArray(batch.checkedOrderIds) ? { checkedOrderIds: batch.checkedOrderIds.filter((id: unknown) => !linkedIds.has(orderIdKey(id))) } : {}),
+      ...(Array.isArray(batch.liberatedOrderIds) ? { liberatedOrderIds: batch.liberatedOrderIds.filter((id: unknown) => !linkedIds.has(orderIdKey(id))) } : {}),
+      teksystemLastOrderLifecycle: { action: lifecycle, orderIds: [...linkedIds], timestamp, syncId: job.syncId },
+    };
+    mutations.push({ collection: "productionBatches", docId: text(batch.docId || batch.id), before: batch, patch });
+  }
+  for (const carga of cargas) {
+    const nextOrderIds = (Array.isArray(carga.orderIds) ? carga.orderIds : []).filter((id: unknown) => !linkedIds.has(orderIdKey(id)));
+    const nextOrderQuantities = { ...(carga.orderQuantities || {}) };
+    const nextSeparatedQuantities = { ...(carga.separatedQuantities || {}) };
+    for (const id of linkedIds) { delete nextOrderQuantities[id]; delete nextSeparatedQuantities[id]; }
+    const auditTrail = Array.isArray(carga.auditTrail) ? carga.auditTrail : [];
+    mutations.push({ collection: "cargas", docId: text(carga.docId || carga.id), before: carga, patch: {
+      orderIds: nextOrderIds, orderQuantities: nextOrderQuantities, separatedQuantities: nextSeparatedQuantities,
+      auditTrail: [...auditTrail, { timestamp, userId: "teksystem-sync-agent", userName: "Integração Tek-System", action: "Pedido removido da carga por cancelamento na origem", reason }],
+    } });
+  }
+  if (mutations.length > 400) throw new WriterConflict("CANCELAMENTO_MUITO_GRANDE", "O cancelamento afetaria muitos registros; requer revisão manual.");
+  return { action: mutations.length ? "CANCELADO" : "SEM_ALTERACAO", mutations, orderGuards: linked,
+    details: { codigoPedido: job.externalKey, lifecycle, pedidoApontaPROEncontrado: true,
+      itensCancelados: linked.map((order) => order.id), lotesAtualizados: batches.map((batch) => batch.id),
+      cargasAtualizadas: cargas.map((carga) => carga.id), historicoPreservado: true,
+      pdfNeedsRefresh: false, motivo: reason } };
+}
 function definedDimension(v: unknown): string {
   const normalized = normalizeText(v);
   return !normalized || normalized === "INDEFINIDA" || normalized === "INDEFINIDO" ? "-" : text(v);
@@ -408,7 +530,18 @@ export function bindSourceLines(
   if (used.size !== orders.length) throw new WriterConflict("ITENS_PEDIDO_DIVERGENTES", "O ApontaPRO contém itens adicionais para este pedido.");
   return matches;
 }
-export function planOrder(job: WriterJob, catalog: WriterCatalog, orders: WriterRow[], now: Date): WriterPlan {
+export function planOrder(
+  job: WriterJob, catalog: WriterCatalog, orders: WriterRow[], now: Date,
+  cancellationContext?: OrderCancellationContext,
+): WriterPlan {
+  const lifecycleValues = [...new Set(job.rows.map((row) => sourceOrderLifecycle([row])))];
+  if (lifecycleValues.length > 1) throw new WriterConflict("STATUS_PEDIDO_INCONSISTENTE", `O snapshot do pedido ${job.externalKey} contém situações diferentes.`);
+  const lifecycle = lifecycleValues[0];
+  if (lifecycle === "CANCELAMENTO_PARCIAL") throw new WriterConflict("CANCELAMENTO_PARCIAL_REQUER_REVISAO", `Pedido ${job.externalKey} tem cancelamento parcial; não cancelei o pedido inteiro.`);
+  if (lifecycle === "INATIVO_REQUER_REVISAO") throw new WriterConflict("PEDIDO_NAO_ATIVO", `Pedido ${job.externalKey} está rejeitado/orçamento e requer revisão antes de qualquer alteração.`);
+  if (lifecycle === "CANCELADO" || lifecycle === "EXCLUIDO_NO_TEKSYSTEM") {
+    return planOrderCancellation(job, orders, lifecycle, cancellationContext);
+  }
   const input = orderInput(job.rows, catalog);
   if (orders.length) {
     if (orders.some((order) => order.status === "CANCELADO")) {
@@ -680,11 +813,14 @@ export function planBilling(job: WriterJob, catalog: WriterCatalog, orders: Writ
   }
   return { action: mutations.length ? "FATURADO" : "SEM_ALTERACAO", mutations, details: { codigoPedido: job.externalKey, itens: billed, timestamp: now.getTime() } };
 }
-export function planWriterJob(job: WriterJob, catalog: WriterCatalog, orders: WriterRow[], now = new Date()): WriterPlan {
+export function planWriterJob(
+  job: WriterJob, catalog: WriterCatalog, orders: WriterRow[], now = new Date(),
+  cancellationContext?: OrderCancellationContext,
+): WriterPlan {
   if ([...catalog.customers, ...catalog.items].some((row) => row.tenantId !== job.tenantId) || catalog.users.some((row) => row.tenantId !== job.tenantId && row.tenantId !== "global")) throw new WriterConflict("TENANT_INVALIDO", "Catálogo não pertence à empresa autorizada.");
   if (orders.some((o) => o.tenantId !== job.tenantId)) throw new WriterConflict("TENANT_INVALIDO", "Pedido não pertence à empresa autorizada.");
   if (job.kind === "clientes") return planCustomer(job, catalog);
   if (job.kind === "produtos") return planProduct(job, catalog);
-  if (job.kind === "pedidos") return planOrder(job, catalog, orders, now);
+  if (job.kind === "pedidos") return planOrder(job, catalog, orders, now, cancellationContext);
   return planBilling(job, catalog, orders, now);
 }

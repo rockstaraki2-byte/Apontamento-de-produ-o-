@@ -9,7 +9,7 @@ import type { NormalizedTekSystemSyncPayload } from "./teksystemSync.js";
 import { syncRecordKey } from "./teksystemSync.js";
 import {
   buildWriterJobs, planCargaQuantityMutations, planWriterJob, signature, stableNumericId, text, WRITER_KINDS, WriterConflict,
-  type WriterCatalog, type WriterCatalogEntry, type WriterJob, type WriterKind, type WriterPlan, type WriterRow,
+  sourceOrderLifecycle, type OrderCancellationContext, type WriterCatalog, type WriterCatalogEntry, type WriterJob, type WriterKind, type WriterPlan, type WriterRow,
 } from "./teksystemWriter.js";
 
 type JobState = "READY" | "PROCESSING" | "APPLIED" | "REVIEW" | "RETRY";
@@ -38,6 +38,27 @@ async function loadOrders(tenantId: string, code: string): Promise<WriterRow[]> 
   assertTenant(tenantId);
   return rows(await getDocs(query(collection(db, "orders"), where("tenantId", "==", tenantId), where("orderCode", "==", code))));
 }
+async function loadOrderCancellationContext(tenantId: string, orders: WriterRow[]): Promise<OrderCancellationContext> {
+  assertTenant(tenantId);
+  const numericIds = [...new Set(orders.map((order) => Number(order.id)).filter((id) => Number.isSafeInteger(id) && id > 0))];
+  const [cargas, productionBatches] = await Promise.all([
+    getDocs(query(collection(db, "cargas"), where("tenantId", "==", tenantId))),
+    getDocs(query(collection(db, "productionBatches"), where("tenantId", "==", tenantId))),
+  ]);
+  const idGroups = Array.from({ length: Math.ceil(numericIds.length / 30) }, (_, index) => numericIds.slice(index * 30, (index + 1) * 30));
+  const [steps, logs, agendas, coilPlans] = await Promise.all(["productionSteps", "logs", "productionAgendas", "coilCuttingPlans"].map(async (collectionName) => {
+    const snapshots = await Promise.all(idGroups.map((ids) => getDocs(query(
+      collection(db, collectionName), where("tenantId", "==", tenantId), where("orderId", "in", ids),
+    ))));
+    return snapshots.flatMap(rows);
+  }));
+  return { loaded: true, cargas: rows(cargas), productionBatches: rows(productionBatches),
+    productionSteps: steps, logs, productionAgendas: agendas, coilCuttingPlans: coilPlans };
+}
+function needsOrderCancellationContext(job: WriterJob): boolean {
+  const lifecycle = sourceOrderLifecycle(job.rows);
+  return job.kind === "pedidos" && (lifecycle === "CANCELADO" || lifecycle === "EXCLUIDO_NO_TEKSYSTEM");
+}
 async function attachCargaMutations(job: WriterJob, plan: WriterPlan) {
   if (job.kind !== "pedidos" || !plan.mutations.some((mutation) => mutation.collection === "orders" &&
       (Object.hasOwn(mutation.patch, "totalQuantity") || Object.hasOwn(mutation.patch, "deliveryDate")))) return;
@@ -64,6 +85,34 @@ export async function enqueueTekSystemWriter(payload: NormalizedTekSystemSyncPay
     enqueued += outcomes.filter(Boolean).length;
   }
   return { jobs: jobs.length, enqueued };
+}
+
+export async function enqueueTekSystemOrderLifecycleJobs(
+  tenantId: string, orderCodes: string[], lifecycle: "CANCELADO" | "CANCELAMENTO_PARCIAL" | "EXCLUIDO_NO_TEKSYSTEM" | "STATUS_INCONSISTENTE", snapshotId: string, generatedAt: string,
+) {
+  assertTenant(tenantId);
+  let enqueued = 0;
+  for (const code of [...new Set(orderCodes.map((value) => String(value).trim()).filter(Boolean))]) {
+    const rows = [{ codigoPedido: code, lifecycleAction: lifecycle,
+      situacaoDescricao: lifecycle === "EXCLUIDO_NO_TEKSYSTEM" ? "Ausente em snapshots completos consecutivos" : lifecycle }];
+    const job: WriterJob = {
+      id: syncRecordKey(tenantId, "pedidos", code), tenantId, kind: "pedidos", externalKey: code,
+      syncId: snapshotId, generatedAt, rows, orderRows: [],
+      hash: signature({ kind: "pedidos", externalKey: code, rows, orderRows: [] }),
+    };
+    const queued = await runTransaction(db, async (tx) => {
+      const ref = jobRef(job.id);
+      const snapshot = await tx.get(ref);
+      const current = snapshot.exists() ? snapshot.data() : undefined;
+      if (current && current.tenantId !== tenantId) throw new WriterConflict("TENANT_INVALIDO", "Trabalho pertence a outra empresa.");
+      if (current?.hash === job.hash || (current && current.generatedAt > generatedAt)) return false;
+      tx.set(ref, { ...job, state: "READY", queueScope: scope(tenantId, "pedidos", "READY"),
+        attempts: 0, retryAt: 0, leaseUntil: 0, leaseOwner: "", issues: [], receivedAt: Date.now(), result: null });
+      return true;
+    });
+    if (queued) enqueued += 1;
+  }
+  return { jobs: new Set(orderCodes).size, enqueued };
 }
 
 export async function writerStatus(tenantId: string) {
@@ -152,6 +201,7 @@ async function applyPlan(job: WriterJob, owner: string, plan: WriterPlan) {
           ...Object.keys(mutation.patch), "id", "tenantId",
           ...(mutation.collection === "orders" ? ["totalQuantity", "invoicedQuantity", "itemId", "status", "customerId", "packedQuantity", "producedQuantity", "paintedQuantity", "cutQuantity"] : []),
           ...(mutation.collection === "cargas" ? ["status", "separatedQuantities", "orderIds"] : []),
+          ...(mutation.collection === "productionBatches" ? ["status", "orderIds", "checkedOrderIds", "liberatedOrderIds"] : []),
         ])];
         if (current && mutation.before && checkKeys.some((key) => signature(current[key] ?? null) !== signature(mutation.before![key] ?? null))) throw new WriterConflict("CADASTRO_ALTERADO", "O registro mudou durante o processamento; será verificado novamente.", true);
       }
@@ -181,7 +231,10 @@ export async function previewWriterPayload(payload: NormalizedTekSystemSyncPaylo
         if (!ordersByCode.has(job.externalKey)) ordersByCode.set(job.externalKey, await loadOrders(job.tenantId, job.externalKey));
         orders = ordersByCode.get(job.externalKey)!;
       }
-      const plan = planWriterJob(job, catalog, orders);
+      const cancellationContext = needsOrderCancellationContext(job)
+        ? await loadOrderCancellationContext(job.tenantId, orders)
+        : undefined;
+      const plan = planWriterJob(job, catalog, orders, new Date(), cancellationContext);
       await attachCargaMutations(job, plan);
       updateCatalog(catalog, plan);
       if (plan.createOrder) {
@@ -246,7 +299,10 @@ export async function processWriterQueue(tenantId: string, requestedLimit = 80) 
           const parent = await getDoc(jobRef(syncRecordKey(tenantId, "pedidos", job.externalKey)));
           if (parent.exists() && parent.data().tenantId === tenantId && parent.data().state === "REVIEW") throw new WriterConflict("PEDIDO_REQUER_REVISAO", "O lançamento do pedido precisa de revisão antes do faturamento.");
         }
-        const plan = planWriterJob(job, catalog, orders);
+        const cancellationContext = needsOrderCancellationContext(job)
+          ? await loadOrderCancellationContext(tenantId, orders)
+          : undefined;
+        const plan = planWriterJob(job, catalog, orders, new Date(), cancellationContext);
         await attachCargaMutations(job, plan);
         if (plan.createOrder) {
           const result = await repository.createOrderAtomically(plan.createOrder);
