@@ -16034,8 +16034,8 @@ export default function App() {
 
   if (currentUser.id === "raul" && currentUser.role === "ADMIN" && currentUser.tenantId === "global") {
     return (
-      <div className="min-h-screen flex flex-col bg-slate-50">
-        <header className="bg-[#032D51] text-white px-5 py-3 flex items-center justify-between border-b-2 border-[#FB9214]">
+      <div className="h-full min-h-0 w-full flex flex-col overflow-hidden bg-slate-50">
+        <header className="shrink-0 bg-[#032D51] text-white px-5 py-3 flex items-center justify-between border-b-2 border-[#FB9214]">
           <div className="flex items-center gap-3">
             <img src="/apontapro-icon.svg" alt="ApontaPRO" className="h-9 w-9 object-contain" />
             <div>
