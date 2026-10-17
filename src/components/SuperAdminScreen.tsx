@@ -337,7 +337,7 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6 md:p-8">
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain bg-slate-50 p-4 sm:p-6 md:p-8" style={{ WebkitOverflowScrolling: "touch" }}>
       <div className="max-w-6xl mx-auto flex flex-col gap-6">
         
         {/* Banner de Super Admin */}
