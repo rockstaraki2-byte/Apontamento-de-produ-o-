@@ -122,6 +122,10 @@ export function getUniqueNumericId(): number {
   return lastAssignedId;
 }
 
+function tenantCustomerDocumentId(tenantId: string, customerId: number): string {
+  return `tenant_${encodeURIComponent(tenantId)}__customer_${customerId}`;
+}
+
 // Cyrne tenant retirement deployment sync 2026-09-18
 const RETIRED_TENANT_IDS = new Set(["cyrnedecor", "cirnedecor"]);
 
@@ -607,6 +611,7 @@ export function useDatabase(currentUser?: User | null) {
     UniformDistribution[]
   >([]);
   const [customers, setCustomers] = useState<Customer[]>(() => isDemoMode ? DEMO_DATABASE.customers : loadCache("customers", []));
+  const customerDocumentIdsByTenantRef = useRef<Map<string, Map<number, string>>>(new Map());
   const [sectors, setSectors] = useState<Sector[]>(() => isDemoMode ? DEMO_DATABASE.sectors : loadCache("sectors", []));
   const [productFlows, setProductFlows] = useState<ProductFlow[]>([]);
   const [flows, setFlows] = useState<import("./types").Flow[]>([]);
@@ -874,16 +879,19 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("uniformDistributions", err),
     );
     const unsubCustomers = listenTenantCollection("customers",
-      (snap) =>
-        setCustomers(
-          snap.docs.map((d) => {
-            const data = d.data() as Customer;
-            return {
-              ...data,
-              tradeName: data.tradeName || CUSTOMER_TRADE_NAMES[data.id] || "",
-            };
-          }),
-        ),
+      (snap) => {
+        const documentIdsByCustomerId = new Map<number, string>();
+        const nextCustomers = snap.docs.map((d) => {
+          const data = d.data() as Customer;
+          if (typeof data.id === "number") documentIdsByCustomerId.set(data.id, d.id);
+          return {
+            ...data,
+            tradeName: data.tradeName || CUSTOMER_TRADE_NAMES[data.id] || "",
+          };
+        });
+        customerDocumentIdsByTenantRef.current.set(activeTenantId, documentIdsByCustomerId);
+        setCustomers(nextCustomers);
+      },
       (err) => handleSnapshotError("customers", err),
     );
     const unsubSectors = listenTenantCollection("sectors",
@@ -2989,16 +2997,25 @@ export function useDatabase(currentUser?: User | null) {
 
     customers: filteredCustomers,
     addCustomer: async (customer: Omit<Customer, "id"> & { id?: number }) => {
-      const id = customer.id || Date.now();
+      const id = customer.id ?? getUniqueNumericId();
+      if (filteredCustomers.some((existing) => existing.id === id)) {
+        throw new Error(`O código do cliente ${id} já está cadastrado nesta empresa.`);
+      }
       let tradeName = customer.tradeName?.trim();
       if (!tradeName) {
         const words = customer.name.trim().split(/\s+/);
         tradeName = words.slice(0, 3).join(" ");
       }
+      const documentId = tenantCustomerDocumentId(activeTenantId, id);
       await setDoc(
-        doc(db, "customers", id.toString()),
-        cleanUndefined({ ...customer, tradeName, id, tenantId: (customer as any).tenantId || activeTenantId }),
+        doc(db, "customers", documentId),
+        cleanUndefined({ ...customer, tradeName, id, tenantId: activeTenantId }),
       );
+      const documentIdsByCustomerId = new Map(
+        customerDocumentIdsByTenantRef.current.get(activeTenantId) || [],
+      );
+      documentIdsByCustomerId.set(id, documentId);
+      customerDocumentIdsByTenantRef.current.set(activeTenantId, documentIdsByCustomerId);
     },
     updateCustomer: async (customer: Customer, oldId?: number) => {
       let tradeName = customer.tradeName?.trim();
@@ -3006,29 +3023,53 @@ export function useDatabase(currentUser?: User | null) {
         const words = customer.name.trim().split(/\s+/);
         tradeName = words.slice(0, 3).join(" ");
       }
-      const updated = { ...customer, tradeName, tenantId: (customer as any).tenantId || activeTenantId };
+      const updated = { ...customer, tradeName, tenantId: activeTenantId };
       const actualOldId = oldId !== undefined ? oldId : customer.id;
-      
+      if (
+        actualOldId !== customer.id &&
+        filteredCustomers.some((existing) => existing.id === customer.id)
+      ) {
+        throw new Error(`O código do cliente ${customer.id} já está cadastrado nesta empresa.`);
+      }
+
+      const documentIdsByCustomerId = customerDocumentIdsByTenantRef.current.get(activeTenantId);
+      const oldDocumentId =
+        documentIdsByCustomerId?.get(actualOldId) ||
+        tenantCustomerDocumentId(activeTenantId, actualOldId);
+
       if (actualOldId !== customer.id) {
-        // ID has changed. Delete the old document and write the new document
-        await safeDeleteDoc(doc(db, "customers", actualOldId.toString()));
-        await setDoc(
-          doc(db, "customers", customer.id.toString()),
-          cleanUndefined(updated)
-        );
+        const newDocumentId = tenantCustomerDocumentId(activeTenantId, customer.id);
+        if (!isDemoMode) {
+          const batch = writeBatch(db);
+          batch.set(doc(db, "customers", newDocumentId), cleanUndefined(updated));
+          batch.delete(doc(db, "customers", oldDocumentId));
+          await batch.commit();
+        }
+        const nextDocumentIdsByCustomerId = new Map(documentIdsByCustomerId || []);
+        nextDocumentIdsByCustomerId.delete(actualOldId);
+        nextDocumentIdsByCustomerId.set(customer.id, newDocumentId);
+        customerDocumentIdsByTenantRef.current.set(activeTenantId, nextDocumentIdsByCustomerId);
       } else {
-        const current = customers.find((c) => c.id === customer.id);
+        const current = filteredCustomers.find((c) => c.id === customer.id);
         if (current && JSON.stringify(current) === JSON.stringify(updated))
           return;
         await setDoc(
-          doc(db, "customers", customer.id.toString()),
+          doc(db, "customers", oldDocumentId),
           cleanUndefined(updated),
           { merge: true },
         );
       }
     },
     deleteCustomer: async (id: number) => {
-      await safeDeleteDoc(doc(db, "customers", id.toString()));
+      const documentId =
+        customerDocumentIdsByTenantRef.current.get(activeTenantId)?.get(id) ||
+        tenantCustomerDocumentId(activeTenantId, id);
+      await safeDeleteDoc(doc(db, "customers", documentId));
+      const documentIdsByCustomerId = new Map(
+        customerDocumentIdsByTenantRef.current.get(activeTenantId) || [],
+      );
+      documentIdsByCustomerId.delete(id);
+      customerDocumentIdsByTenantRef.current.set(activeTenantId, documentIdsByCustomerId);
     },
 
     sectors: filteredSectors,
