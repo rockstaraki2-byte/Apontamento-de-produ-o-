@@ -1,6 +1,16 @@
 import React, { useState, useMemo } from "react";
 import { useDatabase } from "./useDatabase";
 import { Customer, Order } from "./types";
+import { CustomerAddressFields } from "./components/CustomerAddressFields";
+import {
+  CustomerAddressDraft,
+  emptyCustomerAddressDraft,
+  formatCustomerFullAddress,
+  formatPostalCodeInput,
+  lookupAddressByPostalCode,
+  normalizePostalCode,
+  parseCustomerCityState,
+} from "./utils/customerAddress";
 import {
   Users,
   Search,
@@ -56,9 +66,9 @@ export function GestaoClientesScreen({
   const [newCustomerId, setNewCustomerId] = useState("");
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerTradeName, setNewCustomerTradeName] = useState("");
-  const [newCustomerCity, setNewCustomerCity] = useState("");
-  const [newCustomerUF, setNewCustomerUF] = useState("");
-  const [newCustomerNeighborhood, setNewCustomerNeighborhood] = useState("");
+  const [newCustomerAddress, setNewCustomerAddress] = useState<CustomerAddressDraft>(emptyCustomerAddressDraft);
+  const [newCustomerCepMessage, setNewCustomerCepMessage] = useState<{ text: string; success: boolean } | null>(null);
+  const [cepLookupTarget, setCepLookupTarget] = useState<"new" | "edit" | null>(null);
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [newCustomerEmail, setNewCustomerEmail] = useState("");
   const [newCustomerFiscalType, setNewCustomerFiscalType] = useState<
@@ -69,6 +79,35 @@ export function GestaoClientesScreen({
   const [newCustomerDefaultDiscountPercent, setNewCustomerDefaultDiscountPercent] =
     useState<number | "">("");
   const [newCustomerHasRET, setNewCustomerHasRET] = useState<boolean>(false);
+
+  const handleLookupCustomerPostalCode = async (target: "new" | "edit") => {
+    const draft = target === "new" ? newCustomerAddress : inlineEditAddress;
+    const setMessage = target === "new" ? setNewCustomerCepMessage : setInlineEditCepMessage;
+    const setAddress = target === "new" ? setNewCustomerAddress : setInlineEditAddress;
+    setMessage(null);
+    setCepLookupTarget(target);
+
+    try {
+      const result = await lookupAddressByPostalCode(draft.postalCode);
+      setAddress((current) => ({
+        ...current,
+        street: result.logradouro || current.street,
+        complement: current.complement || result.complemento || "",
+        neighborhood: result.bairro || current.neighborhood,
+        city: result.localidade || current.city,
+        state: result.uf || current.state,
+        postalCode: formatPostalCodeInput(result.cep || draft.postalCode),
+      }));
+      setMessage({ text: "Endereço localizado. Confira e informe o número.", success: true });
+    } catch (error) {
+      setMessage({
+        text: error instanceof Error ? error.message : "Não foi possível consultar o CEP.",
+        success: false,
+      });
+    } finally {
+      setCepLookupTarget(null);
+    }
+  };
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,35 +132,46 @@ export function GestaoClientesScreen({
       finalTradeName = newCustomerName.trim().split(" ").slice(0, 3).join(" ");
     }
 
-    const city = newCustomerCity.trim();
-    const uf = newCustomerUF.trim().toUpperCase();
+    const city = newCustomerAddress.city.trim();
+    const uf = newCustomerAddress.state.trim().toUpperCase();
     const address = city && uf ? `${city} - ${uf}` : city || uf || "";
 
-    await db.addCustomer({
-      ...(customId !== undefined ? { id: customId } : {}),
-      name: newCustomerName.trim(),
-      tradeName: finalTradeName,
-      address,
-      neighborhood: newCustomerNeighborhood.trim(),
-      bairro: newCustomerNeighborhood.trim(),
-      phone: newCustomerPhone.trim(),
-      email: newCustomerEmail.trim().toLowerCase(),
-      fiscalType: newCustomerFiscalType,
-      defaultPaymentTerms: newCustomerDefaultPaymentTerms.trim(),
-      defaultDiscountPercent:
-        newCustomerDefaultDiscountPercent === ""
-          ? undefined
-          : Number(newCustomerDefaultDiscountPercent),
-      hasRET: newCustomerHasRET,
-    });
+    try {
+      await db.addCustomer({
+        ...(customId !== undefined ? { id: customId } : {}),
+        name: newCustomerName.trim(),
+        tradeName: finalTradeName,
+        address,
+        street: newCustomerAddress.street.trim(),
+        number: newCustomerAddress.number.trim(),
+        complement: newCustomerAddress.complement.trim(),
+        neighborhood: newCustomerAddress.neighborhood.trim(),
+        bairro: newCustomerAddress.neighborhood.trim(),
+        city,
+        state: uf,
+        uf,
+        postalCode: normalizePostalCode(newCustomerAddress.postalCode),
+        phone: newCustomerPhone.trim(),
+        email: newCustomerEmail.trim().toLowerCase(),
+        fiscalType: newCustomerFiscalType,
+        defaultPaymentTerms: newCustomerDefaultPaymentTerms.trim(),
+        defaultDiscountPercent:
+          newCustomerDefaultDiscountPercent === ""
+            ? undefined
+            : Number(newCustomerDefaultDiscountPercent),
+        hasRET: newCustomerHasRET,
+      });
+    } catch (error) {
+      alert(`Erro ao cadastrar cliente: ${error instanceof Error ? error.message : error}`);
+      return;
+    }
 
     setIsAddModalOpen(false);
     setNewCustomerId("");
     setNewCustomerName("");
     setNewCustomerTradeName("");
-    setNewCustomerCity("");
-    setNewCustomerUF("");
-    setNewCustomerNeighborhood("");
+    setNewCustomerAddress(emptyCustomerAddressDraft());
+    setNewCustomerCepMessage(null);
     setNewCustomerPhone("");
     setNewCustomerEmail("");
     setNewCustomerFiscalType("COM_NF");
@@ -135,9 +185,8 @@ export function GestaoClientesScreen({
   const [inlineEditNewId, setInlineEditNewId] = useState("");
   const [inlineEditName, setInlineEditName] = useState("");
   const [inlineEditTradeName, setInlineEditTradeName] = useState("");
-  const [inlineEditCity, setInlineEditCity] = useState("");
-  const [inlineEditUF, setInlineEditUF] = useState("");
-  const [inlineEditNeighborhood, setInlineEditNeighborhood] = useState("");
+  const [inlineEditAddress, setInlineEditAddress] = useState<CustomerAddressDraft>(emptyCustomerAddressDraft);
+  const [inlineEditCepMessage, setInlineEditCepMessage] = useState<{ text: string; success: boolean } | null>(null);
   const [inlineEditPhone, setInlineEditPhone] = useState("");
   const [inlineEditEmail, setInlineEditEmail] = useState("");
   const [inlineEditFiscalType, setInlineEditFiscalType] = useState<
@@ -194,13 +243,9 @@ export function GestaoClientesScreen({
     const ufs = new Set<string>();
 
     db.customers.forEach((c) => {
-      if (c.address && c.address.includes(" - ")) {
-        const parts = c.address.split(" - ");
-        if (parts[0]?.trim()) cities.add(parts[0].trim());
-        if (parts[1]?.trim()) ufs.add(parts[1].trim().toUpperCase());
-      } else if (c.address?.trim()) {
-        cities.add(c.address.trim());
-      }
+      const { city, state } = parseCustomerCityState(c);
+      if (city) cities.add(city);
+      if (state) ufs.add(state);
     });
 
     return {
@@ -249,9 +294,10 @@ export function GestaoClientesScreen({
         const codeStr = String(c.id || "");
         const nameLower = (c.name || "").toLowerCase();
         const tradeLower = (c.tradeName || "").toLowerCase();
-        const addrLower = (c.address || "").toLowerCase();
+        const addrLower = formatCustomerFullAddress(c).toLowerCase();
         const phoneLower = (c.phone || "").toLowerCase();
         const emailLower = (c.email || "").toLowerCase();
+        const { city, state } = parseCustomerCityState(c);
 
         // Standard search term matching
         const matchesSearch =
@@ -267,12 +313,10 @@ export function GestaoClientesScreen({
         let matchesUF = true;
 
         if (cityFilter) {
-          matchesCity = addrLower.includes(cityFilter.toLowerCase());
+          matchesCity = city.toLowerCase() === cityFilter.toLowerCase();
         }
         if (ufFilter) {
-          matchesUF =
-            addrLower.split(" - ")[1]?.trim().toLowerCase() ===
-            ufFilter.toLowerCase();
+          matchesUF = state.toLowerCase() === ufFilter.toLowerCase();
         }
 
         return matchesSearch && matchesCity && matchesUF;
@@ -322,20 +366,17 @@ export function GestaoClientesScreen({
     setInlineEditNewId(c.id.toString());
     setInlineEditName(c.name);
     setInlineEditTradeName(c.tradeName || "");
-
-    let city = "";
-    let uf = "";
-    if (c.address && c.address.includes(" - ")) {
-      const parts = c.address.split(" - ");
-      city = parts[0] || "";
-      uf = parts[1] || "";
-    } else {
-      city = c.address || "";
-    }
-
-    setInlineEditCity(city);
-    setInlineEditUF(uf);
-    setInlineEditNeighborhood(c.neighborhood || c.bairro || "");
+    const { city, state } = parseCustomerCityState(c);
+    setInlineEditAddress({
+      street: c.street || "",
+      number: c.number || "",
+      complement: c.complement || "",
+      neighborhood: c.neighborhood || c.bairro || "",
+      city,
+      state,
+      postalCode: formatPostalCodeInput(c.postalCode || ""),
+    });
+    setInlineEditCepMessage(null);
     setInlineEditPhone(c.phone || "");
     setInlineEditEmail(c.email || "");
     setInlineEditFiscalType(c.fiscalType || "COM_NF");
@@ -362,8 +403,8 @@ export function GestaoClientesScreen({
       return;
     }
 
-    const city = inlineEditCity.trim();
-    const uf = inlineEditUF.trim().toUpperCase();
+    const city = inlineEditAddress.city.trim();
+    const uf = inlineEditAddress.state.trim().toUpperCase();
     const address = city && uf ? `${city} - ${uf}` : city || uf || "";
 
     let finalTradeName = inlineEditTradeName.trim();
@@ -372,12 +413,20 @@ export function GestaoClientesScreen({
     }
 
     const updatedCustomer: Customer = {
+      ...db.customers.find((c) => c.id === inlineEditId),
       id: parsedNewId,
       name: inlineEditName.trim(),
       tradeName: finalTradeName,
       address,
-      neighborhood: inlineEditNeighborhood.trim(),
-      bairro: inlineEditNeighborhood.trim(),
+      street: inlineEditAddress.street.trim(),
+      number: inlineEditAddress.number.trim(),
+      complement: inlineEditAddress.complement.trim(),
+      neighborhood: inlineEditAddress.neighborhood.trim(),
+      bairro: inlineEditAddress.neighborhood.trim(),
+      city,
+      state: uf,
+      uf,
+      postalCode: normalizePostalCode(inlineEditAddress.postalCode),
       phone: inlineEditPhone.trim(),
       email: inlineEditEmail.trim().toLowerCase(),
       fiscalType: inlineEditFiscalType,
@@ -397,6 +446,8 @@ export function GestaoClientesScreen({
     }
 
     setInlineEditId(null);
+    setInlineEditAddress(emptyCustomerAddressDraft());
+    setInlineEditCepMessage(null);
   };
 
   const deleteCustomer = async (e: React.MouseEvent, c: Customer) => {
@@ -440,22 +491,12 @@ export function GestaoClientesScreen({
     const headers = [
       "Codigo",
       "Razao Social / Nome",
-      "Cidade",
-      "UF",
+      "Endereço completo",
       "Telefone",
       "Email",
     ];
     const rows = db.customers.map((c) => {
-      let city = "";
-      let uf = "";
-      if (c.address && c.address.includes(" - ")) {
-        const parts = c.address.split(" - ");
-        city = parts[0]?.trim() || "";
-        uf = parts[1]?.trim() || "";
-      } else {
-        city = c.address || "";
-      }
-      return [c.id, c.name, city, uf, c.phone || "", c.email || ""];
+      return [c.id, c.name, formatCustomerFullAddress(c), c.phone || "", c.email || ""];
     });
 
     const csvContent =
@@ -637,7 +678,7 @@ export function GestaoClientesScreen({
                       className="py-3.5 px-4 cursor-pointer hover:bg-slate-100 transition duration-150"
                     >
                       <div className="flex items-center gap-1">
-                        Localidade{" "}
+                        Endereço{" "}
                         <ArrowUpDown size={12} className="text-gray-400" />
                       </div>
                     </th>
@@ -667,14 +708,7 @@ export function GestaoClientesScreen({
                         c.name.toLowerCase().trim()
                       ] || { totalOrders: 0, activeOrders: 0, totalItems: 0 };
 
-                      // Process address format
-                      let pCity = c.address || "";
-                      let pUF = "";
-                      if (c.address && c.address.includes(" - ")) {
-                        const parts = c.address.split(" - ");
-                        pCity = parts[0]?.trim() || "";
-                        pUF = parts[1]?.trim() || "";
-                      }
+                      const customerAddress = formatCustomerFullAddress(c);
 
                       return (
                         <tr
@@ -748,56 +782,27 @@ export function GestaoClientesScreen({
                                 className="flex flex-col gap-1"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                <div className="flex gap-1">
-                                  <input
-                                    type="text"
-                                    placeholder="Cidade"
-                                    value={inlineEditCity}
-                                    onChange={(e) =>
-                                      setInlineEditCity(e.target.value)
-                                    }
-                                    className="w-2/3 border border-blue-400 rounded px-2 py-1 outline-none text-[11px]"
-                                  />
-                                  <input
-                                    type="text"
-                                    placeholder="UF"
-                                    maxLength={2}
-                                    value={inlineEditUF}
-                                    onChange={(e) =>
-                                      setInlineEditUF(e.target.value)
-                                    }
-                                    className="w-1/3 border border-blue-400 rounded px-1 py-1 text-center uppercase outline-none text-[11px]"
-                                  />
-                                </div>
-                                <input
-                                  type="text"
-                                  placeholder="Bairro"
-                                  value={inlineEditNeighborhood}
-                                  onChange={(e) =>
-                                    setInlineEditNeighborhood(e.target.value)
+                                <CustomerAddressFields
+                                  draft={inlineEditAddress}
+                                  onChange={(field, value) =>
+                                    setInlineEditAddress((current) => ({ ...current, [field]: value }))
                                   }
-                                  className="w-full border border-blue-400 rounded px-2 py-0.5 outline-none text-[10px]"
+                                  onLookup={() => void handleLookupCustomerPostalCode("edit")}
+                                  isLookingUp={cepLookupTarget === "edit"}
+                                  isDisabled={cepLookupTarget !== null}
+                                  lookupMessage={inlineEditCepMessage}
+                                  compact
                                 />
                               </div>
-                            ) : pCity || c.neighborhood || c.bairro ? (
+                            ) : customerAddress ? (
                               <div className="flex flex-col gap-0.5">
                                 <span className="flex items-center gap-1.5 text-gray-600">
                                   <MapPin
                                     size={13}
                                     className="text-gray-400 shrink-0"
                                   />
-                                  <span>{pCity}</span>
-                                  {pUF && (
-                                    <span className="bg-blue-50 border border-blue-100 text-[9px] font-bold text-blue-600 px-1.5 py-0.5 rounded-sm">
-                                      {pUF.toUpperCase()}
-                                    </span>
-                                  )}
+                                  <span className="break-words">{customerAddress}</span>
                                 </span>
-                                {(c.neighborhood || c.bairro) && (
-                                  <span className="text-[10px] text-gray-500 font-medium pl-4">
-                                    Bairro: {c.neighborhood || c.bairro}
-                                  </span>
-                                )}
                               </div>
                             ) : (
                               <span className="text-gray-300 italic">
@@ -1175,17 +1180,12 @@ export function GestaoClientesScreen({
                         </span>
                       )}
                     <div className="flex flex-col gap-0.5 text-xs text-slate-500">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-start gap-1.5">
                         <MapPin size={13} className="text-slate-400 shrink-0" />
-                        <span className="truncate">
-                          {selectedCustomer.address || "Sem endereço cadastrado"}
+                        <span className="min-w-0 break-words">
+                          {formatCustomerFullAddress(selectedCustomer) || "Sem endereço cadastrado"}
                         </span>
                       </div>
-                      {(selectedCustomer.neighborhood || selectedCustomer.bairro) && (
-                        <div className="pl-5 text-[11px] font-semibold text-slate-700">
-                          Bairro: {selectedCustomer.neighborhood || selectedCustomer.bairro}
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -1468,45 +1468,16 @@ export function GestaoClientesScreen({
                   placeholder="Ex: Moveis Aliança"
                 />
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-gray-600 mb-1">
-                    Cidade
-                  </label>
-                  <input
-                    type="text"
-                    value={newCustomerCity}
-                    onChange={(e) => setNewCustomerCity(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    placeholder="Ex: Ubá"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-600 mb-1">
-                    UF
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={2}
-                    value={newCustomerUF}
-                    onChange={(e) => setNewCustomerUF(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    placeholder="Ex: MG"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-600 mb-1">
-                    Bairro
-                  </label>
-                  <input
-                    type="text"
-                    value={newCustomerNeighborhood}
-                    onChange={(e) => setNewCustomerNeighborhood(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    placeholder="Ex: Centro"
-                  />
-                </div>
-              </div>
+              <CustomerAddressFields
+                draft={newCustomerAddress}
+                onChange={(field, value) =>
+                  setNewCustomerAddress((current) => ({ ...current, [field]: value }))
+                }
+                onLookup={() => void handleLookupCustomerPostalCode("new")}
+                isLookingUp={cepLookupTarget === "new"}
+                isDisabled={cepLookupTarget !== null}
+                lookupMessage={newCustomerCepMessage}
+              />
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-600 mb-1">

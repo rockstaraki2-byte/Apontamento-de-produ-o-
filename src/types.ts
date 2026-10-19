@@ -570,6 +570,10 @@ export interface Customer {
   email?: string;
   phone?: string;
   address?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  postalCode?: string;
   neighborhood?: string;
   bairro?: string;
   city?: string;
