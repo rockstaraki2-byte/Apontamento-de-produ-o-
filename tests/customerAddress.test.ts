@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   formatCustomerFullAddress,
   formatPostalCodeInput,
+  getCustomerAddressForLabel,
   lookupAddressByPostalCode,
   normalizePostalCode,
   parseCustomerCityState,
@@ -29,6 +30,25 @@ test("full customer address includes street, number, neighborhood, city, state a
       address: "Ubá - MG",
     }),
     "Rua XV de Novembro, 123 — Sala 2 | Centro · Ubá/MG | CEP 36500-000",
+  );
+});
+
+test("label resolves a customer address when the order name starts with its numeric code", () => {
+  const customer = {
+    id: 1902,
+    name: "Adriana Baptiston Cefai Zaher",
+    tradeName: "Adriana Baptiston",
+    street: "Rua das Flores",
+    number: "45",
+    neighborhood: "Centro",
+    city: "Ubá",
+    state: "MG",
+    postalCode: "36500000",
+  };
+
+  assert.equal(
+    getCustomerAddressForLabel("1902 - ADRIANA BAPTISTON CEFAI ZAHER", [customer]),
+    "Rua das Flores, 45 | Centro · Ubá/MG | CEP 36500-000",
   );
 });
 

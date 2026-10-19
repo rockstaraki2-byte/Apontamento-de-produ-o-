@@ -1,4 +1,5 @@
 import type { Customer } from "../types";
+import { findCustomerForOrder } from "../searchUtils";
 
 export type CustomerAddressDraft = {
   street: string;
@@ -73,6 +74,23 @@ export function formatCustomerFullAddress(customer: Partial<Customer>): string {
   return [addressLine, locality, postalCode ? `CEP ${postalCode}` : ""]
     .filter(Boolean)
     .join(" | ");
+}
+
+export function getCustomerAddressForLabel(
+  customerName: string,
+  customers: Customer[],
+): string {
+  const normalizedName = String(customerName || "").trim();
+  if (!normalizedName || normalizedName === "-" || normalizedName.includes(" / ")) {
+    return "";
+  }
+
+  const customer = findCustomerForOrder(
+    { customerName: normalizedName },
+    customers,
+  ) as Customer | null;
+
+  return customer ? formatCustomerFullAddress(customer) : "";
 }
 
 export function lookupAddressByPostalCode(value: string): Promise<ViaCepAddress> {
