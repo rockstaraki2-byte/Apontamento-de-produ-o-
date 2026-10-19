@@ -34,6 +34,17 @@ import { CadastroFluxosTab } from "./components/CadastroFluxosTab";
 import { CadastroMotivosTab } from "./components/CadastroMotivosTab";
 import { RepresentativeContactsTab } from "./components/RepresentativeContactsTab";
 import { getAssignableBatchOperators } from "./utils/productionBatchAccess";
+import { CustomerAddressFields } from "./components/CustomerAddressFields";
+import {
+  CustomerAddressDraft,
+  emptyCustomerAddressDraft,
+  formatCustomerFullAddress,
+  formatPostalCodeInput,
+  lookupAddressByPostalCode,
+  normalizePostalCode,
+  parseCustomerCityState,
+} from "./utils/customerAddress";
+
 
 function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [newPlanName, setNewPlanName] = React.useState("");
@@ -1181,12 +1192,13 @@ export function PCPScreen({
   const [customerPage, setCustomerPage] = useState(1);
   const [customerPerPage] = useState(12);
   const [newCustomerId, setNewCustomerId] = useState("");
-  const [newCustomerCity, setNewCustomerCity] = useState("");
-  const [newCustomerUF, setNewCustomerUF] = useState("");
+  const [newCustomerAddress, setNewCustomerAddress] = useState<CustomerAddressDraft>(emptyCustomerAddressDraft);
+  const [newCustomerCepMessage, setNewCustomerCepMessage] = useState<{ text: string; success: boolean } | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [editCustomerName, setEditCustomerName] = useState("");
-  const [editCustomerCity, setEditCustomerCity] = useState("");
-  const [editCustomerUF, setEditCustomerUF] = useState("");
+  const [editCustomerAddress, setEditCustomerAddress] = useState<CustomerAddressDraft>(emptyCustomerAddressDraft);
+  const [editCustomerCepMessage, setEditCustomerCepMessage] = useState<{ text: string; success: boolean } | null>(null);
+  const [cepLookupTarget, setCepLookupTarget] = useState<"new" | "edit" | null>(null);
 
   const [sectorName, setSectorName] = useState("");
   const [sectorCapacity, setSectorCapacity] = useState("");
@@ -1899,7 +1911,36 @@ export function PCPScreen({
     return ids.length > 0 ? Math.max(...ids) + 1 : 1;
   }, [db.customers]);
 
-  const handleAddCustomer = () => {
+  const handleLookupCustomerPostalCode = async (target: "new" | "edit") => {
+    const draft = target === "new" ? newCustomerAddress : editCustomerAddress;
+    const setMessage = target === "new" ? setNewCustomerCepMessage : setEditCustomerCepMessage;
+    const setAddress = target === "new" ? setNewCustomerAddress : setEditCustomerAddress;
+    setMessage(null);
+    setCepLookupTarget(target);
+
+    try {
+      const result = await lookupAddressByPostalCode(draft.postalCode);
+      setAddress((current) => ({
+        ...current,
+        street: result.logradouro || current.street,
+        complement: current.complement || result.complemento || "",
+        neighborhood: result.bairro || current.neighborhood,
+        city: result.localidade || current.city,
+        state: result.uf || current.state,
+        postalCode: formatPostalCodeInput(result.cep || draft.postalCode),
+      }));
+      setMessage({ text: "Endereço localizado. Confira e informe o número.", success: true });
+    } catch (error) {
+      setMessage({
+        text: error instanceof Error ? error.message : "Não foi possível consultar o CEP.",
+        success: false,
+      });
+    } finally {
+      setCepLookupTarget(null);
+    }
+  };
+
+  const handleAddCustomer = async () => {
     if (!customerName) return;
     const cid = newCustomerId ? parseInt(newCustomerId, 10) : nextId;
     if (isNaN(cid)) {
@@ -1913,69 +1954,95 @@ export function PCPScreen({
       return;
     }
 
-    const city = newCustomerCity.trim();
-    const uf = newCustomerUF.trim();
+    const city = newCustomerAddress.city.trim();
+    const uf = newCustomerAddress.state.trim().toUpperCase();
     const address =
       city && uf
-        ? `${city} - ${uf.toUpperCase()}`
-        : city || uf.toUpperCase() || "";
+        ? `${city} - ${uf}`
+        : city || uf || "";
 
-    db.addCustomer({
-      id: cid,
-      name: customerName,
-      address,
-      phone: "",
-      email: "",
-    });
+    try {
+      await db.addCustomer({
+        id: cid,
+        name: customerName,
+        address,
+        street: newCustomerAddress.street.trim(),
+        number: newCustomerAddress.number.trim(),
+        complement: newCustomerAddress.complement.trim(),
+        neighborhood: newCustomerAddress.neighborhood.trim(),
+        bairro: newCustomerAddress.neighborhood.trim(),
+        city,
+        state: uf,
+        uf,
+        postalCode: normalizePostalCode(newCustomerAddress.postalCode),
+        phone: "",
+        email: "",
+      });
 
-    setCustomerName("");
-    setNewCustomerId("");
-    setNewCustomerCity("");
-    setNewCustomerUF("");
+      setCustomerName("");
+      setNewCustomerId("");
+      setNewCustomerAddress(emptyCustomerAddressDraft());
+      setNewCustomerCepMessage(null);
+    } catch (error) {
+      alert(`Erro ao cadastrar cliente: ${error instanceof Error ? error.message : error}`);
+    }
   };
 
   const startEditCustomer = (c: Customer) => {
     setEditingCustomer(c);
     setEditCustomerName(c.name);
-    let city = "";
-    let uf = "";
-    if (c.address && c.address.includes(" - ")) {
-      const parts = c.address.split(" - ");
-      city = parts[0] || "";
-      uf = parts[1] || "";
-    } else {
-      city = c.address || "";
-    }
-    setEditCustomerCity(city);
-    setEditCustomerUF(uf);
+    const { city, state } = parseCustomerCityState(c);
+    setEditCustomerAddress({
+      street: c.street || "",
+      number: c.number || "",
+      complement: c.complement || "",
+      neighborhood: c.neighborhood || c.bairro || "",
+      city,
+      state,
+      postalCode: formatPostalCodeInput(c.postalCode || ""),
+    });
+    setEditCustomerCepMessage(null);
   };
 
-  const handleSaveEditCustomer = () => {
+  const handleSaveEditCustomer = async () => {
     if (!editingCustomer || !editCustomerName) return;
-    const city = editCustomerCity.trim();
-    const uf = editCustomerUF.trim();
+    const city = editCustomerAddress.city.trim();
+    const uf = editCustomerAddress.state.trim().toUpperCase();
     const address =
       city && uf
-        ? `${city} - ${uf.toUpperCase()}`
-        : city || uf.toUpperCase() || "";
+        ? `${city} - ${uf}`
+        : city || uf || "";
 
-    db.updateCustomer({
-      ...editingCustomer,
-      name: editCustomerName,
-      address,
-    });
+    try {
+      await db.updateCustomer({
+        ...editingCustomer,
+        name: editCustomerName,
+        address,
+        street: editCustomerAddress.street.trim(),
+        number: editCustomerAddress.number.trim(),
+        complement: editCustomerAddress.complement.trim(),
+        neighborhood: editCustomerAddress.neighborhood.trim(),
+        bairro: editCustomerAddress.neighborhood.trim(),
+        city,
+        state: uf,
+        uf,
+        postalCode: normalizePostalCode(editCustomerAddress.postalCode),
+      });
 
-    setEditingCustomer(null);
-    setEditCustomerName("");
-    setEditCustomerCity("");
-    setEditCustomerUF("");
+      setEditingCustomer(null);
+      setEditCustomerName("");
+      setEditCustomerAddress(emptyCustomerAddressDraft());
+      setEditCustomerCepMessage(null);
+    } catch (error) {
+      alert(`Erro ao salvar cliente: ${error instanceof Error ? error.message : error}`);
+    }
   };
 
   const filteredCustomers = React.useMemo(() => {
     return db.customers.filter((c) => {
       const codeStr = String(c.id || "");
       const nameLower = (c.name || "").toLowerCase();
-      const addressLower = (c.address || "").toLowerCase();
+      const addressLower = formatCustomerFullAddress(c).toLowerCase();
       const qLower = customerSearch.toLowerCase();
       return (
         codeStr.includes(qLower) ||
@@ -2877,37 +2944,16 @@ export function PCPScreen({
                           />
                         </div>
 
-                        <div className="grid grid-cols-3 gap-2">
-                          <div className="col-span-2">
-                            <label className="text-xs font-semibold text-gray-700 block mb-1">
-                              Cidade
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="Ex: Ubá"
-                              value={editCustomerCity}
-                              onChange={(e) =>
-                                setEditCustomerCity(e.target.value)
-                              }
-                              className="w-full border p-2 rounded text-sm focus:ring-1 focus:ring-indigo-500 outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs font-semibold text-gray-700 block mb-1">
-                              UF
-                            </label>
-                            <input
-                              type="text"
-                              maxLength={2}
-                              placeholder="MG"
-                              value={editCustomerUF}
-                              onChange={(e) =>
-                                setEditCustomerUF(e.target.value)
-                              }
-                              className="w-full border p-2 rounded text-sm text-center uppercase focus:ring-1 focus:ring-indigo-500 outline-none"
-                            />
-                          </div>
-                        </div>
+                        <CustomerAddressFields
+                          draft={editCustomerAddress}
+                          onChange={(field, value) =>
+                            setEditCustomerAddress((current) => ({ ...current, [field]: value }))
+                          }
+                          onLookup={() => void handleLookupCustomerPostalCode("edit")}
+                          isLookingUp={cepLookupTarget === "edit"}
+                          isDisabled={cepLookupTarget !== null}
+                          lookupMessage={editCustomerCepMessage}
+                        />
 
                         <div className="flex gap-2 pt-2">
                           <button
@@ -2920,8 +2966,8 @@ export function PCPScreen({
                             onClick={() => {
                               setEditingCustomer(null);
                               setEditCustomerName("");
-                              setEditCustomerCity("");
-                              setEditCustomerUF("");
+                              setEditCustomerAddress(emptyCustomerAddressDraft());
+                              setEditCustomerCepMessage(null);
                             }}
                             className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-sm py-2 px-3 rounded transition flex items-center justify-center gap-1"
                           >
@@ -2962,35 +3008,16 @@ export function PCPScreen({
                           />
                         </div>
 
-                        <div className="grid grid-cols-3 gap-2">
-                          <div className="col-span-2">
-                            <label className="text-xs font-semibold text-gray-700 block mb-1">
-                              Cidade
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="Ex: Ubá"
-                              value={newCustomerCity}
-                              onChange={(e) =>
-                                setNewCustomerCity(e.target.value)
-                              }
-                              className="w-full border p-2 rounded text-sm focus:ring-1 focus:ring-indigo-500 outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs font-semibold text-gray-700 block mb-1">
-                              UF
-                            </label>
-                            <input
-                              type="text"
-                              maxLength={2}
-                              placeholder="MG"
-                              value={newCustomerUF}
-                              onChange={(e) => setNewCustomerUF(e.target.value)}
-                              className="w-full border p-2 rounded text-sm text-center uppercase focus:ring-1 focus:ring-indigo-500 outline-none"
-                            />
-                          </div>
-                        </div>
+                        <CustomerAddressFields
+                          draft={newCustomerAddress}
+                          onChange={(field, value) =>
+                            setNewCustomerAddress((current) => ({ ...current, [field]: value }))
+                          }
+                          onLookup={() => void handleLookupCustomerPostalCode("new")}
+                          isLookingUp={cepLookupTarget === "new"}
+                          isDisabled={cepLookupTarget !== null}
+                          lookupMessage={newCustomerCepMessage}
+                        />
 
                         <button
                           onClick={handleAddCustomer}
@@ -3028,7 +3055,7 @@ export function PCPScreen({
                         />
                         <input
                           type="text"
-                          placeholder="Buscar por código, nome ou cidade..."
+                          placeholder="Buscar por código, nome ou endereço..."
                           value={customerSearch}
                           onChange={(e) => {
                             setCustomerSearch(e.target.value);
@@ -3061,7 +3088,7 @@ export function PCPScreen({
                             <th className="py-2.5 px-3">
                               Razão Social / Nome do Cliente
                             </th>
-                            <th className="py-2.5 px-3">Cidade / UF</th>
+                            <th className="py-2.5 px-3">Endereço</th>
                             <th className="py-2.5 px-3 w-20 text-center">
                               Ações
                             </th>
@@ -3080,12 +3107,7 @@ export function PCPScreen({
                             </tr>
                           ) : (
                             paginatedCustomers.map((c) => {
-                              const addressParts = c.address
-                                ? c.address.split(" - ")
-                                : [];
-                              const cityOnly = addressParts[0] || "";
-                              const ufOnly = addressParts[1] || "";
-
+                              const customerAddress = formatCustomerFullAddress(c);
                               return (
                                 <tr
                                   key={c.id}
@@ -3099,20 +3121,15 @@ export function PCPScreen({
                                   <td className="py-2.5 px-3 font-semibold text-gray-900 break-words max-w-xs">
                                     {c.name}
                                   </td>
-                                  <td className="py-2.5 px-3 text-gray-600">
-                                    {cityOnly ? (
-                                      <span className="flex items-center gap-1">
+                                  <td className="py-2.5 px-3 text-gray-600 max-w-sm">
+                                    {customerAddress ? (
+                                      <span className="flex items-start gap-1">
                                         <MapPin
                                           size={12}
-                                          className="text-gray-400 shrink-0"
+                                          className="mt-0.5 text-gray-400 shrink-0"
                                         />
-                                        <span>
-                                          {cityOnly}{" "}
-                                          {ufOnly && (
-                                            <span className="text-[10px] text-gray-400 font-bold">
-                                              ({ufOnly.toUpperCase()})
-                                            </span>
-                                          )}
+                                        <span className="break-words">
+                                          {customerAddress}
                                         </span>
                                       </span>
                                     ) : (

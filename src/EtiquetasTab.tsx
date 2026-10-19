@@ -22,6 +22,7 @@ import { jsPDF } from "jspdf";
 import { ScrollContainer } from "./components/Layout";
 import { resolveCompanyInfo, CompanyLogo } from "./utils/companyUtils";
 import { imageToZPLHex } from "./utils/zplUtils";
+import { formatCustomerFullAddress } from "./utils/customerAddress";
 import {
   buildLabelPackagePlans,
   getRegisteredPackageType,
@@ -587,6 +588,12 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     else if (log.type === "CORTE_LASER") sectorLabel = "CORTE LASER";
     else if (log.operatorId === "montagem_retratil") sectorLabel = "MONTAGEM RETRÁTIL";
 
+    const findCustomer = (customerName: string) => db.customers?.find(
+      (c) =>
+        c.name.toLowerCase().trim() === customerName.toLowerCase().trim() ||
+        (c.tradeName && c.tradeName.toLowerCase().trim() === customerName.toLowerCase().trim())
+    );
+    const singleCustomerRecord = customer && !customer.includes(" / ") ? findCustomer(customer) : undefined;
     const resolvedCustomer = (() => {
       if (!customer || customer === "-") return "-";
       if (customer.includes(" / ")) {
@@ -594,24 +601,18 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           .split(" / ")
           .map((part) => {
             const trimmed = part.trim();
-            const match = db.customers?.find(
-              (c) =>
-                c.name.toLowerCase().trim() === trimmed.toLowerCase().trim() ||
-                (c.tradeName && c.tradeName.toLowerCase().trim() === trimmed.toLowerCase().trim())
-            );
+            const match = findCustomer(trimmed);
             return match?.tradeName?.trim() || trimmed;
           })
           .join(" / ");
       }
-      const match = db.customers?.find(
-        (c) =>
-          c.name.toLowerCase().trim() === customer.toLowerCase().trim() ||
-          (c.tradeName && c.tradeName.toLowerCase().trim() === customer.toLowerCase().trim())
-      );
-      return match?.tradeName?.trim() || customer;
+      return singleCustomerRecord?.tradeName?.trim() || customer;
     })();
+    const customerAddress = singleCustomerRecord
+      ? formatCustomerFullAddress(singleCustomerRecord)
+      : "";
 
-    return { name, code, quantity, color, size, variation, orderCode, customer: resolvedCustomer, sectorLabel, imageUrl, linkedOrder, isFaturado, isFaturadoParcial };
+    return { name, code, quantity, color, size, variation, orderCode, customer: resolvedCustomer, customerAddress, sectorLabel, imageUrl, linkedOrder, isFaturado, isFaturadoParcial };
   };
 
   // Resolved final labels structure (expands split records)
@@ -984,6 +985,12 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         // Clean words from accents for ZPL printing standard fonts
         const cleanName = removeAccents(name).toUpperCase().slice(0, 48);
         const cleanCustomer = removeAccents(customer).toUpperCase().slice(0, 36);
+        const cleanCustomerAddress = removeAccents(String(label.customerAddress || ""))
+          .toUpperCase()
+          .replace(/[\^~]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 100);
         const cleanColor = removeAccents(color).toUpperCase().slice(0, 24);
         const cleanSector = removeAccents(sectorLabel).toUpperCase();
         const cleanPkg = removeAccents(packageType).toUpperCase();
@@ -1020,7 +1027,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         const barcodeBlock = hasImage 
           ? imageZPLCommand
           : isSquare
-            ? `^FO550,170^BY2,3,230^BCR,230,Y,N,N^FD${code}^FS`
+            ? `^FO550,220^BY2,3,180^BCR,180,Y,N,N^FD${code}^FS`
             : `^FO535,110^BY2,3,110^BCN,110,Y,N,N^FD${code}^FS`;
 
         // Calculate Pill Badge for the Sector (using narrowed sizes to absolutely prevent overlaps with titles!)
@@ -1034,6 +1041,9 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           : `^FO40,15^GB44,44,2,B,3^FS`;
 
         const maxTitleWidth = badgeX - 110;
+        const squareCustomerAddressLine = cleanCustomerAddress
+          ? `^FO40,496^A0N,18,16^FB460,2,0,L^FDEnd.: ${cleanCustomerAddress}^FS`
+          : "";
 
         const squareLabelBody = `
 ^FO40,66^GB460,2,2^FS
@@ -1043,10 +1053,11 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 ^FO52,342^A0N,26,24^FDCor: ${cleanColor}^FS
 ^FO280,346^A0N,20,18^FB210,1,0,R^FDVar: ${variation}^FS
 ^FO40,408^A0N,25,23^FB460,2,0,L^FD${cleanSector}: ${boxIndex}/${boxTotal} (${cleanPkg})^FS
-^FO40,492^GB460,3,3^FS
-^FO40,518^A0N,24,22^FDData/Hora: ${dateStr} ${timeStr}^FS
-^FO40,560^A0N,24,22^FDOperador: ${label.operatorId || "-"}^FS
-^FO40,602^A0N,24,22^FB460,1,0,L^FDCliente: ${cleanCustomer}^FS
+^FO40,456^GB460,3,3^FS
+^FO40,470^A0N,22,20^FB460,1,0,L^FDCliente: ${cleanCustomer}^FS
+${squareCustomerAddressLine}
+^FO40,548^A0N,20,18^FDData/Hora: ${dateStr} ${timeStr}^FS
+^FO40,580^A0N,20,18^FDOperador: ${label.operatorId || "-"}^FS
 ^FO300,690^A0N,22,20^FB190,1,0,R^FDQUANTIDADE^FS
 ^FO300,722^A0N,50,48^FB190,1,0,R^FD${printQuantity} UN^FS
 `;
@@ -1177,11 +1188,11 @@ ${barcodeBlock}
               </span>
             </div>
 
-            <h3 className="mb-[2mm] line-clamp-3 text-[23px] font-black leading-[1.05] tracking-tight">
+            <h3 className="mb-[2mm] line-clamp-3 text-[27px] font-black leading-[1.02] tracking-tight">
               {label.name}
             </h3>
 
-            <p className="mb-[2mm] font-mono text-[11px] font-black leading-tight">
+            <p className="mb-[2mm] font-mono text-[12px] font-black leading-tight">
               Cod: {label.code} | Pedido: {label.orderCode}
             </p>
 
@@ -1193,15 +1204,23 @@ ${barcodeBlock}
             <p className="text-[10px] font-black uppercase leading-tight tracking-wide">
               Embalagem: {label.boxIndex}/{label.boxTotal} ({label.packageType})
             </p>
+
+            {label.customer && label.customer !== "-" && (
+              <div className="mt-[2mm] rounded border border-slate-200 bg-slate-50 px-1.5 py-1 text-[8px] font-black leading-tight">
+                <span className="block truncate">Cliente: {label.customer}</span>
+                {label.customerAddress && (
+                  <span className="mt-0.5 line-clamp-2 break-words font-bold text-slate-700">
+                    Endereço: {label.customerAddress}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-end justify-between gap-2 border-t border-slate-300 pt-[2mm]">
             <div className="min-w-0 flex-1 pr-1 text-[9px] font-black leading-tight">
               <span className="block">Data: {dateStr} {timeStr}</span>
               <span className="block truncate">Operador: {label.operatorId || "-"}</span>
-              {label.customer && label.customer !== "-" && (
-                <span className="block truncate">Cliente: {label.customer}</span>
-              )}
             </div>
             <div className="shrink-0 text-right">
               <span className="mb-1 block text-[8px] font-black uppercase leading-none">QTD</span>
@@ -1212,7 +1231,7 @@ ${barcodeBlock}
           </div>
         </div>
 
-        <div className="flex w-[18mm] shrink-0 items-center justify-center overflow-hidden border-l border-slate-200 pl-[2mm]">
+        <div className="flex w-[16mm] shrink-0 items-center justify-center overflow-hidden border-l border-slate-200 pl-[1mm]">
           {includeImageInLabel && label.imageUrl ? (
             <img
               src={label.imageUrl}
@@ -1221,8 +1240,8 @@ ${barcodeBlock}
               crossOrigin="anonymous"
             />
           ) : (
-            <div className="flex h-[84mm] w-[14mm] items-center justify-center overflow-visible">
-              <div className="w-[84mm] shrink-0 rotate-90">
+            <div className="flex h-[60mm] w-[14mm] items-center justify-center overflow-visible">
+              <div className="w-[60mm] shrink-0 rotate-90">
                 <LocalSVGBarcode
                   data={`${label.code}|${label.color}|${label.size}|${label.printQuantity}`}
                   codeText={label.code}
