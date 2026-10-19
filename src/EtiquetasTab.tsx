@@ -22,7 +22,7 @@ import { jsPDF } from "jspdf";
 import { ScrollContainer } from "./components/Layout";
 import { resolveCompanyInfo, CompanyLogo } from "./utils/companyUtils";
 import { imageToZPLHex } from "./utils/zplUtils";
-import { formatCustomerFullAddress } from "./utils/customerAddress";
+import { getCustomerAddressForLabel } from "./utils/customerAddress";
 import {
   buildLabelPackagePlans,
   getRegisteredPackageType,
@@ -608,9 +608,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
       }
       return singleCustomerRecord?.tradeName?.trim() || customer;
     })();
-    const customerAddress = singleCustomerRecord
-      ? formatCustomerFullAddress(singleCustomerRecord)
-      : "";
+    const customerAddress = getCustomerAddressForLabel(customer, db.customers || []);
 
     return { name, code, quantity, color, size, variation, orderCode, customer: resolvedCustomer, customerAddress, sectorLabel, imageUrl, linkedOrder, isFaturado, isFaturadoParcial };
   };
