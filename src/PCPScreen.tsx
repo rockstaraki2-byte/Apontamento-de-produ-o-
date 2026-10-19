@@ -32,6 +32,7 @@ import { ScreenLayout, ScrollContainer } from "./components/Layout";
 import { ComposicaoProdutosTab } from "./components/ComposicaoProdutosTab";
 import { CadastroFluxosTab } from "./components/CadastroFluxosTab";
 import { CadastroMotivosTab } from "./components/CadastroMotivosTab";
+import { getAssignableBatchOperators } from "./utils/productionBatchAccess";
 
 function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [newPlanName, setNewPlanName] = React.useState("");
@@ -1107,6 +1108,11 @@ export function PCPScreen({
   currentUser: User;
   subScreen?: "CADASTROS" | "LOTES";
 }) {
+  const assignableBatchOperators = useMemo(
+    () => getAssignableBatchOperators(db.users, db.activeTenantId),
+    [db.users, db.activeTenantId],
+  );
+
   const [cadastroTab, setCadastroTab] = useState<
     "CLIENTES" | "SETORES" | "FLUXOS" | "MOTIVOS_REPROVACAO" | "PLANOS_CORTE" | "COLABORADORES" | "CONFIGURACOES" | "REPRESENTANTES" | "COMPOSICAO"
   >("CLIENTES");
@@ -1261,11 +1267,7 @@ export function PCPScreen({
   const [isGerenciaLote, setIsGerenciaLote] = useState(
     currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.id === "gerencia"
   );
-  const [assignedOperatorIds, setAssignedOperatorIds] = useState<string[]>([
-    "dinei",
-    "projetista_marcos",
-    "pcp"
-  ]);
+  const [assignedOperatorIds, setAssignedOperatorIds] = useState<string[]>([]);
 
   const [manuallyEditedBatchName, setManuallyEditedBatchName] = useState(false);
 
@@ -1501,6 +1503,15 @@ export function PCPScreen({
       }
     }
 
+    const assignableOperatorIds = new Set<string>(
+      assignableBatchOperators.map((operator) => operator.id),
+    );
+    const safeAssignedOperatorIds: string[] = isGer
+      ? assignedOperatorIds.filter(
+          (id, index, ids) => assignableOperatorIds.has(id) && ids.indexOf(id) === index,
+        )
+      : [];
+
     await db.addProductionBatch({
       name: newBatchName,
       sectorId: isGer ? 999 : newBatchSectorId,
@@ -1508,7 +1519,7 @@ export function PCPScreen({
       status: "PENDENTE",
       createdAt: Date.now(),
       isGerenciaLote: isGer,
-      assignedOperatorIds: isGer ? assignedOperatorIds : [],
+      assignedOperatorIds: safeAssignedOperatorIds,
       checkedOrderIds: [],
       liberatedOrderIds: [],
     });
@@ -1519,6 +1530,7 @@ export function PCPScreen({
     setNewBatchDeliveryFilter("TODOS");
     setNewBatchExcludeInProduction(true);
     setCustomNewBatchQuantities({});
+    setAssignedOperatorIds([]);
   };
 
   // Custom Interactive Batch edit / details states
@@ -3854,83 +3866,34 @@ export function PCPScreen({
                     <span className="text-[11px] text-amber-800">
                       Os operadores marcados abaixo terão acesso para checagem e liberação deste lote em formato de lista:
                     </span>
-                    <div className="flex flex-wrap gap-4 mt-1">
-                      <label className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={assignedOperatorIds.includes("prensa_eduardo")}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setAssignedOperatorIds([...assignedOperatorIds, "prensa_eduardo"]);
-                            } else {
-                              setAssignedOperatorIds(assignedOperatorIds.filter(id => id !== "prensa_eduardo"));
-                            }
-                          }}
-                          className="rounded border-slate-350 text-indigo-650"
-                        />
-                        <span className="text-indigo-900 font-bold">Prensa Eduardo</span>
-                      </label>
-                      <label className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={assignedOperatorIds.includes("prensa_rafael")}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setAssignedOperatorIds([...assignedOperatorIds, "prensa_rafael"]);
-                            } else {
-                              setAssignedOperatorIds(assignedOperatorIds.filter(id => id !== "prensa_rafael"));
-                            }
-                          }}
-                          className="rounded border-slate-350 text-indigo-650"
-                        />
-                        <span>Prensa Rafael</span>
-                      </label>
-                      <label className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={assignedOperatorIds.includes("dinei")}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setAssignedOperatorIds([...assignedOperatorIds, "dinei"]);
-                            } else {
-                              setAssignedOperatorIds(assignedOperatorIds.filter(id => id !== "dinei"));
-                            }
-                          }}
-                          className="rounded border-slate-350 text-indigo-650"
-                        />
-                        <span>Encarregado Dinei</span>
-                      </label>
-                      <label className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={assignedOperatorIds.includes("projetista_marcos")}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setAssignedOperatorIds([...assignedOperatorIds, "projetista_marcos"]);
-                            } else {
-                              setAssignedOperatorIds(assignedOperatorIds.filter(id => id !== "projetista_marcos"));
-                            }
-                          }}
-                          className="rounded border-slate-350 text-indigo-650"
-                        />
-                        <span>Marcos Projetista</span>
-                      </label>
-                      <label className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={assignedOperatorIds.includes("pcp")}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setAssignedOperatorIds([...assignedOperatorIds, "pcp"]);
-                            } else {
-                              setAssignedOperatorIds(assignedOperatorIds.filter(id => id !== "pcp"));
-                            }
-                          }}
-                          className="rounded border-slate-350 text-indigo-650"
-                        />
-                        <span>PCP</span>
-                      </label>
-                    </div>
+                    {assignableBatchOperators.length > 0 ? (
+                      <div className="flex flex-wrap gap-4 mt-1">
+                        {assignableBatchOperators.map((operator) => (
+                          <label
+                            key={operator.id}
+                            className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={assignedOperatorIds.includes(operator.id)}
+                              onChange={(event) => {
+                                setAssignedOperatorIds((current) =>
+                                  event.target.checked
+                                    ? Array.from(new Set([...current, operator.id]))
+                                    : current.filter((id) => id !== operator.id),
+                                );
+                              }}
+                              className="rounded border-slate-350 text-indigo-650"
+                            />
+                            <span>{operator.name || operator.id}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="mt-1 text-xs text-amber-800">
+                        Nenhum operador disponível neste tenant.
+                      </span>
+                    )}
                   </div>
                 )}
 

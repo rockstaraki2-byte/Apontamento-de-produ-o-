@@ -48,6 +48,7 @@ import {
 import { AcompanhamentoPrintSheet } from "./AcompanhamentoPrintSheet";
 import { BatchEtiquetasPrintSheet, buildBatchLabelItemsData } from "./BatchEtiquetasPrintSheet";
 import { generateZPLFromBatchLabels } from "./utils/zplUtils";
+import { getVisibleProductionBatches } from "./utils/productionBatchAccess";
 import { getItemUnit } from "./utils/unitUtils";
 import { resolveCompanyInfo } from "./utils/companyUtils";
 import html2pdf from "html2pdf.js";
@@ -375,22 +376,12 @@ export function LotesScreen({
 
   // Filter batches according to target user permissions
   const batches = useMemo(() => {
-    const baseList = Array.isArray(db.productionBatches) ? db.productionBatches : [];
-
-    if (
-      !currentUser ||
-      currentUser.role === "ADMIN" ||
-      currentUser.role === "PCP" ||
-      currentUser.role === "GERENCIA" ||
-      currentUser.id === "gerencia"
-    ) {
-      return baseList;
-    }
-    
-    // For operators with assigned batches, show assigned, otherwise show baseList
-    const assigned = baseList.filter((b) => b && Array.isArray(b.assignedOperatorIds) && b.assignedOperatorIds.includes(currentUser.id));
-    return assigned.length > 0 ? assigned : baseList;
-  }, [db.productionBatches, currentUser]);
+    return getVisibleProductionBatches(
+      db.productionBatches,
+      currentUser,
+      db.activeTenantId,
+    );
+  }, [db.productionBatches, db.activeTenantId, currentUser]);
 
   const laserOrderIds = useMemo(() => {
     const laserItemIds = new Set(
