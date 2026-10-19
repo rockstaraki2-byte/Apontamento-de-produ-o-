@@ -743,6 +743,7 @@ export interface ProductFlow {
 
 export interface ProductionBatch {
   id: number;
+  tenantId?: string;
   name: string;
   sectorId: number;
   orderIds: number[];
