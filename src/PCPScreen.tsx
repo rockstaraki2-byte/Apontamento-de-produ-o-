@@ -32,6 +32,7 @@ import { ScreenLayout, ScrollContainer } from "./components/Layout";
 import { ComposicaoProdutosTab } from "./components/ComposicaoProdutosTab";
 import { CadastroFluxosTab } from "./components/CadastroFluxosTab";
 import { CadastroMotivosTab } from "./components/CadastroMotivosTab";
+import { RepresentativeContactsTab } from "./components/RepresentativeContactsTab";
 import { getAssignableBatchOperators } from "./utils/productionBatchAccess";
 
 function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
@@ -2567,12 +2568,12 @@ export function PCPScreen({
                   Injeção (Prensa e Injetora)
                 </button>
               )}
-              {isSubTabAllowed(db.activeTenant, "pcp:cadastro_representantes") && (
+              {(currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || isSubTabAllowed(db.activeTenant, "pcp:cadastro_representantes")) && (
                 <button
                   onClick={() => setCadastroTab("REPRESENTANTES")}
                   className={`px-4 py-2 rounded font-bold text-sm whitespace-nowrap transition-colors ${cadastroTab === "REPRESENTANTES" ? "bg-teal-700 text-white shadow-md" : "bg-white text-teal-700 border border-teal-200"}`}
                 >
-                  <Phone size={16} className="inline mr-2" /> Contatos Representantes
+                  <Phone size={16} className="inline mr-2" /> Representantes
                 </button>
               )}
               {isSubTabAllowed(db.activeTenant, "pcp:cadastro_bom") && (
@@ -2595,35 +2596,7 @@ export function PCPScreen({
 
             <div className="w-full">
               {cadastroTab === "REPRESENTANTES" && (
-                <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 flex flex-col gap-5 max-w-2xl mx-auto mt-4 text-left">
-                  <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
-                    <Phone className="text-teal-600" size={24} />
-                    <div>
-                      <h3 className="font-bold text-gray-800 text-lg">WhatsApp dos Representantes</h3>
-                      <p className="text-xs text-gray-500 font-medium">Cadastre os números de telefone para redirecionamento direto no compartilhamento de faturamento</p>
-                    </div>
-                  </div>
-
-                  <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded text-amber-900 text-xs">
-                    <p className="font-bold mb-1">💡 Importante para o funcionamento correto:</p>
-                    <p>
-                      Ao cadastrar os números, insira sempre o <strong>Código do País + DDD + Número</strong> (apenas números, sem espaços ou traços). 
-                      Exemplo: <code>5511999998888</code> para o Brasil (55), São Paulo (11).
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-4 divide-y divide-gray-100">
-                    {db.users
-                      .filter((u) => u.role === "REPRESENTANTE")
-                      .map((u) => (
-                        <RepresentativeContactRow key={u.id} u={u} db={db} />
-                      ))
-                    }
-                    {db.users.filter((u) => u.role === "REPRESENTANTE").length === 0 && (
-                      <p className="text-gray-500 text-center text-sm py-8">Nenhum usuário com perfil de Representante encontrado no sistema.</p>
-                    )}
-                  </div>
-                </div>
+                <RepresentativeContactsTab db={db} currentUser={currentUser} />
               )}
 
               {cadastroTab === "CONFIGURACOES" && (
