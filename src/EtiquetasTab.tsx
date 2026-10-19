@@ -38,6 +38,9 @@ interface EtiquetasTabProps {
   currentUser: User;
 }
 
+type LabelPreviewFormat = "thermal-100x50" | "thermal-100x100" | "a4";
+type ThermalLabelSize = "100x50" | "100x100";
+
 // Inline deterministic high-resolution Barcode renderer
 function LocalSVGBarcode({ data, codeText }: { data: string; codeText?: string }) {
   const displayCode = React.useMemo(() => {
@@ -167,7 +170,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
   // Preview and customization modal states
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState<boolean>(false);
-  const [previewFormat, setPreviewFormat] = useState<"thermal" | "a4">("thermal");
+  const [previewFormat, setPreviewFormat] = useState<LabelPreviewFormat>("thermal-100x50");
   const [includeImageInLabel, setIncludeImageInLabel] = useState<boolean>(() => localStorage.getItem("etiquetas_show_image") === "true");
   const [previewLabels, setPreviewLabels] = useState<any[]>([]);
 
@@ -343,6 +346,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
   // Hidden print refs
   const thermalPrintContainerRef = useRef<HTMLDivElement | null>(null);
+  const squareThermalPrintContainerRef = useRef<HTMLDivElement | null>(null);
   const a4PrintContainerRef = useRef<HTMLDivElement | null>(null);
 
   const companyInfo = useMemo(() => {
@@ -651,8 +655,8 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     return list;
   }, [previewLabels]);
 
-  // 1. GENERATE THERMAL PDF (100mm x 50mm landscape)
-  const handleGenerateThermalPDF = async () => {
+  // 1. GENERATE THERMAL PDF (100mm x 50mm or 100mm x 100mm)
+  const handleGenerateThermalPDF = async (size: ThermalLabelSize = "100x50") => {
     if (resolvedLabelsToPrint.length === 0) {
       alert("Nenhum item disponível para emitir etiquetas.");
       return;
@@ -660,7 +664,12 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     setIsPrinting(true);
     try {
       await new Promise((resolve) => setTimeout(resolve, 350));
-      const element = thermalPrintContainerRef.current;
+      const isSquare = size === "100x100";
+      const heightMm = isSquare ? 100 : 50;
+      const canvasHeight = isSquare ? 378 : 189;
+      const element = isSquare
+        ? squareThermalPrintContainerRef.current
+        : thermalPrintContainerRef.current;
       if (!element) {
         throw new Error("Elemento do container térmico não foi localizado.");
       }
@@ -675,9 +684,9 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
       }
 
       const pdf = new jsPDF({
-        orientation: "landscape",
+        orientation: isSquare ? "portrait" : "landscape",
         unit: "mm",
-        format: [100, 50]
+        format: [100, heightMm]
       });
 
       for (let i = 0; i < children.length; i++) {
@@ -694,23 +703,23 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           x: 0,
           y: 0,
           width: 378,  // width of 100mm at 96 DPI
-          height: 189, // height of 50mm at 96 DPI
+          height: canvasHeight,
           windowWidth: 378,
-          windowHeight: 189,
+          windowHeight: canvasHeight,
         });
 
         const imgData = canvas.toDataURL("image/jpeg", 1.0);
 
         if (i > 0) {
-          pdf.addPage([100, 50], "landscape");
+          pdf.addPage([100, heightMm], isSquare ? "portrait" : "landscape");
         }
 
-        pdf.addImage(imgData, "JPEG", 0, 0, 100, 50);
+        pdf.addImage(imgData, "JPEG", 0, 0, 100, heightMm);
       }
 
-      pdf.save(`Etiquetas_Termicas_10x5_${Date.now()}.pdf`);
+      pdf.save(`Etiquetas_Termicas_${isSquare ? "10x10" : "10x5"}_${Date.now()}.pdf`);
       markLabelsAsPrinted();
-      triggerNotification("Etiquetas geradas com sucesso para impressora térmica!");
+      triggerNotification(`Etiquetas ${isSquare ? "10x10" : "10x5"} geradas com sucesso!`);
     } catch (e: any) {
       alert(`Erro ao gerar PDF térmico: ${e.message || e}`);
     } finally {
@@ -814,9 +823,17 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     }
   };
 
-  const handleDirectPrintAll = (type: "thermal" | "a4") => {
+  const handleDirectPrintAll = (type: "thermal" | "thermal100x100" | "a4") => {
     try {
-      const container = type === "thermal" ? thermalPrintContainerRef.current : a4PrintContainerRef.current;
+      const isA4 = type === "a4";
+      const isSquare = type === "thermal100x100";
+      const printWidth = isA4 ? "210mm" : "100mm";
+      const printHeight = isA4 ? "297mm" : isSquare ? "100mm" : "50mm";
+      const container = isA4
+        ? a4PrintContainerRef.current
+        : isSquare
+          ? squareThermalPrintContainerRef.current
+          : thermalPrintContainerRef.current;
       if (!container) {
         alert("Nenhum item está pronto para impressão.");
         return;
@@ -842,22 +859,22 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         return '<div class="print-page">' + child.outerHTML + '</div>';
       }).join("");
 
-      const styleBlock = type === "thermal" 
+      const styleBlock = !isA4
         ? `
           @page {
-            size: 100mm 50mm;
+            size: ${printWidth} ${printHeight};
             margin: 0 !important;
           }
           body {
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
-            width: 100mm !important;
-            height: 50mm !important;
+            width: ${printWidth} !important;
+            height: ${printHeight} !important;
           }
           .print-page {
-            width: 100mm !important;
-            height: 50mm !important;
+            width: ${printWidth} !important;
+            height: ${printHeight} !important;
             page-break-after: always !important;
             break-after: page !important;
             margin: 0 !important;
@@ -937,7 +954,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     }
   };
 
-  // 3. GENERATE RAW ZEBRA ZPL COMMANDS FORMATTED FOR 100x50mm
+  // 3. GENERATE RAW ZEBRA ZPL COMMANDS FOR THE SELECTED THERMAL SIZE
   const handleGenerateZPL = async () => {
     if (resolvedLabelsToPrint.length === 0) {
       alert("Nenhum item disponível para gerar códigos ZPL.");
@@ -947,6 +964,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     setIsGeneratingZPL(true);
 
     try {
+      const isSquare = previewFormat === "thermal-100x100";
       let zplString = "";
       
       // Load corporate badge image once to paint high-resolution native logo inside labels
@@ -994,14 +1012,16 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         if (includeImageInLabel && imageUrl) {
           const zplImg = await imageToZPLHex(imageUrl, 240, 240);
           if (zplImg) {
-            imageZPLCommand = `^FO540,80^GFA,${zplImg.byteCount},${zplImg.byteCount},${zplImg.bytesPerRow},${zplImg.hex}^FS`;
+            imageZPLCommand = `^FO540,${isSquare ? 280 : 80}^GFA,${zplImg.byteCount},${zplImg.byteCount},${zplImg.bytesPerRow},${zplImg.hex}^FS`;
             hasImage = true;
           }
         }
 
         const barcodeBlock = hasImage 
           ? imageZPLCommand
-          : `^FO535,110^BY2,3,110^BCN,110,Y,N,N^FD${code}^FS`;
+          : isSquare
+            ? `^FO550,170^BY2,3,230^BCR,230,Y,N,N^FD${code}^FS`
+            : `^FO535,110^BY2,3,110^BCN,110,Y,N,N^FD${code}^FS`;
 
         // Calculate Pill Badge for the Sector (using narrowed sizes to absolutely prevent overlaps with titles!)
         const badgeWidth = Math.max(100, cleanSector.length * 13 + 18);
@@ -1015,7 +1035,43 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
         const maxTitleWidth = badgeX - 110;
 
-        // Compiled ZPL standard 100x50mm label mirroring the PDF design style perfectly with bold condensed crisp readable text sizes!
+        const squareLabelBody = `
+^FO40,66^GB460,2,2^FS
+^FO40,84^A0N,58,54^FB460,3,0,L^FD${cleanName}^FS
+^FO40,280^A0N,28,26^FDCod: ${code}  |  Pedido: ${orderCode}^FS
+^FO40,324^GB460,62,3,B,4^FS
+^FO52,342^A0N,26,24^FDCor: ${cleanColor}^FS
+^FO280,346^A0N,20,18^FB210,1,0,R^FDVar: ${variation}^FS
+^FO40,408^A0N,25,23^FB460,2,0,L^FD${cleanSector}: ${boxIndex}/${boxTotal} (${cleanPkg})^FS
+^FO40,492^GB460,3,3^FS
+^FO40,518^A0N,24,22^FDData/Hora: ${dateStr} ${timeStr}^FS
+^FO40,560^A0N,24,22^FDOperador: ${label.operatorId || "-"}^FS
+^FO40,602^A0N,24,22^FB460,1,0,L^FDCliente: ${cleanCustomer}^FS
+^FO300,690^A0N,22,20^FB190,1,0,R^FDQUANTIDADE^FS
+^FO300,722^A0N,50,48^FB190,1,0,R^FD${printQuantity} UN^FS
+`;
+
+        if (isSquare) {
+          return `^XA
+^PW800
+^LL800
+^CI28
+
+${logoBlock}
+^FO100,16^A0N,24,22^FB${maxTitleWidth},2,0,L^FD${companyClean}^FS
+
+${sectorBadgeBlock}
+
+${squareLabelBody}
+^FO510,12^GB2,776,2^FS
+${barcodeBlock}
+
+^PQ1
+^XZ
+`;
+        }
+
+        // 100 x 50 mm landscape layout.
         return `^XA
 ^PW800
 ^LL400
@@ -1086,6 +1142,99 @@ ${barcodeBlock}
     }, 4000);
   };
 
+  const renderSquareThermalLabel = (label: any, index: number) => {
+    const date = new Date(label.timestamp || Date.now());
+    const dateStr = date.toLocaleDateString("pt-BR");
+    const timeStr = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+    return (
+      <div
+        key={`thermal-square-${index}-${label.id}`}
+        className="relative flex box-border gap-[3mm] overflow-hidden bg-white p-[4mm] font-sans text-black select-none"
+        style={{
+          width: "100mm",
+          height: "100mm",
+          maxHeight: "100mm",
+          pageBreakAfter: "always",
+          breakAfter: "page",
+          fontFamily: "sans-serif",
+        }}
+      >
+        <div className="flex min-w-0 flex-1 flex-col justify-between overflow-hidden">
+          <div className="min-w-0">
+            <div className="mb-[2mm] flex min-h-[10mm] items-center justify-between gap-2 border-b border-slate-300 pb-[1.5mm]">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="h-[6mm] w-[6mm] shrink-0" />
+                <div className="flex min-w-0 flex-col leading-tight">
+                  <span className="truncate text-[9px] font-black uppercase tracking-tight">{companyName}</span>
+                  {companySubtitle && (
+                    <span className="truncate text-[7px] font-bold uppercase text-slate-600">{companySubtitle}</span>
+                  )}
+                </div>
+              </div>
+              <span className="max-w-[22mm] rounded bg-slate-100 px-1.5 py-1 text-center text-[8px] font-black uppercase leading-tight">
+                {label.sectorLabel}
+              </span>
+            </div>
+
+            <h3 className="mb-[2mm] line-clamp-3 text-[23px] font-black leading-[1.05] tracking-tight">
+              {label.name}
+            </h3>
+
+            <p className="mb-[2mm] font-mono text-[11px] font-black leading-tight">
+              Cod: {label.code} | Pedido: {label.orderCode}
+            </p>
+
+            <div className="mb-[2mm] flex items-center justify-between gap-2 rounded border border-black bg-slate-50 px-2 py-1.5 text-[10px] font-black leading-tight">
+              <span className="min-w-0 truncate">Cor: {label.color || "-"}</span>
+              <span className="shrink-0">Var: {label.variation || "-"}</span>
+            </div>
+
+            <p className="text-[10px] font-black uppercase leading-tight tracking-wide">
+              Embalagem: {label.boxIndex}/{label.boxTotal} ({label.packageType})
+            </p>
+          </div>
+
+          <div className="flex items-end justify-between gap-2 border-t border-slate-300 pt-[2mm]">
+            <div className="min-w-0 flex-1 pr-1 text-[9px] font-black leading-tight">
+              <span className="block">Data: {dateStr} {timeStr}</span>
+              <span className="block truncate">Operador: {label.operatorId || "-"}</span>
+              {label.customer && label.customer !== "-" && (
+                <span className="block truncate">Cliente: {label.customer}</span>
+              )}
+            </div>
+            <div className="shrink-0 text-right">
+              <span className="mb-1 block text-[8px] font-black uppercase leading-none">QTD</span>
+              <strong className="block whitespace-nowrap text-[16px] font-black leading-none">
+                {label.printQuantity} <span className="text-[10px]">UN</span>
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex w-[18mm] shrink-0 items-center justify-center overflow-hidden border-l border-slate-200 pl-[2mm]">
+          {includeImageInLabel && label.imageUrl ? (
+            <img
+              src={label.imageUrl}
+              alt="Produto"
+              className="h-full w-full object-contain"
+              crossOrigin="anonymous"
+            />
+          ) : (
+            <div className="flex h-[84mm] w-[14mm] items-center justify-center overflow-visible">
+              <div className="w-[84mm] shrink-0 rotate-90">
+                <LocalSVGBarcode
+                  data={`${label.code}|${label.color}|${label.size}|${label.printQuantity}`}
+                  codeText={label.code}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <ScrollContainer paddingSize="normal" className="bg-slate-100/40 min-h-0 flex-1 hover:scrollbar-thumb-slate-300">
       {/* Hidden preloaded images for html2canvas reliability */}
@@ -1108,7 +1257,7 @@ ${barcodeBlock}
               Impressão de Etiquetas de Processo
             </h2>
           <p className="text-black text-xs mt-1">
-            Gere etiquetas em PDF de Alta Definição (Térmico ou A4) e código Zebra ZPL nativo para os setores vinculados.
+            Gere etiquetas térmicas 10x5 ou 10x10 cm, grade A4 e comandos Zebra ZPL para os setores vinculados.
           </p>
         </div>
         
@@ -1829,13 +1978,19 @@ ${barcodeBlock}
                       </button>
                     </div>
 
-                    {/* Thermal vs A4 format */}
+                    {/* Thermal label size and A4 format */}
                     <div className="flex bg-slate-800 p-0.5 rounded-lg border border-slate-750">
                       <button
-                        onClick={() => setPreviewFormat("thermal")}
-                        className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase transition cursor-pointer ${previewFormat === "thermal" ? "bg-blue-600 text-white" : "text-slate-300 hover:text-white"}`}
+                        onClick={() => setPreviewFormat("thermal-100x50")}
+                        className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase transition cursor-pointer ${previewFormat === "thermal-100x50" ? "bg-blue-600 text-white" : "text-slate-300 hover:text-white"}`}
                       >
                         Térmica 10x5cm
+                      </button>
+                      <button
+                        onClick={() => setPreviewFormat("thermal-100x100")}
+                        className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase transition cursor-pointer ${previewFormat === "thermal-100x100" ? "bg-teal-600 text-white" : "text-slate-300 hover:text-white"}`}
+                      >
+                        Térmica 10x10cm
                       </button>
                       <button
                         onClick={() => setPreviewFormat("a4")}
@@ -1855,7 +2010,7 @@ ${barcodeBlock}
                 <div className="flex-1 flex flex-col items-center justify-start gap-4 p-2 overflow-y-auto">
                   {resolvedLabelsToPrint.length === 0 ? (
                     <div className="py-12 text-black text-xs text-center">Nenhum dado de etiqueta ativo. Ajuste as informações nas configurações ao lado.</div>
-                  ) : previewFormat === "thermal" ? (
+                  ) : previewFormat === "thermal-100x50" ? (
                     /* Render list of simulated thermal labels */
                     resolvedLabelsToPrint.map((lbl, idx) => (
                       <div
@@ -1913,6 +2068,15 @@ ${barcodeBlock}
                             </div>
                           )}
                         </div>
+                      </div>
+                    ))
+                  ) : previewFormat === "thermal-100x100" ? (
+                    resolvedLabelsToPrint.map((lbl, idx) => (
+                      <div
+                        key={`prev-thm-square-${idx}-${lbl.id}`}
+                        className="w-full flex justify-center overflow-x-auto"
+                      >
+                        {renderSquareThermalLabel(lbl, idx)}
                       </div>
                     ))
                   ) : (
@@ -1999,7 +2163,9 @@ ${barcodeBlock}
                   className="bg-amber-600 hover:bg-amber-500 text-white font-black text-xs px-4 py-2.5 rounded-xl transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-sm flex items-center gap-1.5"
                 >
                   <Copy size={14} className={isGeneratingZPL ? "animate-spin" : ""} />
-                  {isGeneratingZPL ? "Gerando ZPL c/ Imagens..." : "Copias Comandos ZPL (Zebra)"}
+                  {isGeneratingZPL
+                    ? "Gerando ZPL c/ Imagens..."
+                    : `Copiar ZPL ${previewFormat === "thermal-100x100" ? "10x10" : "10x5"} (Zebra)`}
                 </button>
                 {/* A4 Grid PDF */}
                 <button
@@ -2026,7 +2192,7 @@ ${barcodeBlock}
                   className="bg-blue-600 hover:bg-blue-500 text-white font-black text-xs px-5 py-2.5 rounded-xl transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md flex items-center gap-1.5 shadow-blue-500/20"
                 >
                   <Printer size={14} className={isPrinting ? "animate-spin" : ""} />
-                  Gerar PDF Térmico
+                  Gerar PDF Térmico 10x5
                 </button>
                 {/* Direct Print Thermal */}
                 <button
@@ -2035,7 +2201,25 @@ ${barcodeBlock}
                   className="bg-teal-600 hover:bg-teal-500 text-white font-black text-xs px-4 py-2.5 rounded-xl transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md flex items-center gap-1.5 shadow-teal-500/20"
                 >
                   <Printer size={14} />
-                  Imprimir (Térmico)
+                  Imprimir (Térmico 10x5)
+                </button>
+                {/* 100 x 100 thermal PDF */}
+                <button
+                  disabled={isPrinting}
+                  onClick={() => handleGenerateThermalPDF("100x100")}
+                  className="bg-cyan-700 hover:bg-cyan-600 text-white font-black text-xs px-5 py-2.5 rounded-xl transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md flex items-center gap-1.5 shadow-cyan-500/20"
+                >
+                  <Printer size={14} className={isPrinting ? "animate-spin" : ""} />
+                  Gerar PDF Térmico 10x10
+                </button>
+                {/* Direct print 100 x 100 thermal */}
+                <button
+                  disabled={isPrinting}
+                  onClick={() => handleDirectPrintAll("thermal100x100")}
+                  className="bg-teal-700 hover:bg-teal-600 text-white font-black text-xs px-4 py-2.5 rounded-xl transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md flex items-center gap-1.5 shadow-teal-500/20"
+                >
+                  <Printer size={14} />
+                  Imprimir (Térmico 10x10)
                 </button>
               </div>
             </div>
@@ -2203,6 +2387,25 @@ ${barcodeBlock}
               </div>
             );
           })}
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "fixed",
+          top: 0,
+          left: "-9999px",
+          width: "auto",
+          height: "auto",
+          overflow: "visible",
+          opacity: 1,
+          pointerEvents: "none",
+          zIndex: -9999,
+          backgroundColor: "#ffffff",
+        }}
+      >
+        <div ref={squareThermalPrintContainerRef} id="thermal-100x100-printable-wrapper" className="bg-white">
+          {resolvedLabelsToPrint.map((label, index) => renderSquareThermalLabel(label, index))}
         </div>
       </div>
 
