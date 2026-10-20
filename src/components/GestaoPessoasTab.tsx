@@ -94,9 +94,12 @@ export function GestaoPessoasTab({
       </div>
 
       <ScrollContainer paddingSize="none" className="flex-1 w-full relative min-h-0">
-        {subTab === "MAPA_FABRICA" && (
-          <MapaFabricaTab db={db} currentUser={currentUser} />
-        )}
+        {subTab === "MAPA_FABRICA" &&
+          React.createElement(MapaFabricaTab, {
+            key: db.activeTenantId,
+            db,
+            currentUser,
+          })}
         {subTab === "CADASTROS" && <CadastrosPeopleTab db={db} />}
         {subTab === "PONTO" && <ControlePontoTab db={db} />}
         {subTab === "HORA_EXTRA" && <HoraExtraPessoasTab db={db} />}

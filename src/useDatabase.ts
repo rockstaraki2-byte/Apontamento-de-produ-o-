@@ -42,7 +42,10 @@ import {
   getQueue,
   removeFromQueue,
   processQueueItem,
+  updateQueueItem,
 } from "./syncQueue";
+import { tenantIdMatches, tenantScopedCacheKey } from "./tenantIsolation";
+import { shouldParkSyncItem } from "./syncQueuePolicy";
 import {
   collection,
   query,
@@ -60,6 +63,7 @@ import {
   updateDoc as updateDocFirebase,
   disableNetwork,
   enableNetwork,
+  increment,
   type DocumentReference,
   type SetOptions,
 } from "firebase/firestore";
@@ -217,6 +221,7 @@ export function useDatabase(currentUser?: User | null) {
     localStorage.removeItem("producao_users_v2");
   }, [isDemoMode]);
   const [syncQueueCount, setSyncQueueCount] = useState(0);
+  const [syncQueueAttentionCount, setSyncQueueAttentionCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const quotaExceededRef = useRef(false);
@@ -227,15 +232,13 @@ export function useDatabase(currentUser?: User | null) {
   const firestoreListenerUnsubsRef = useRef<(() => void)[]>([]);
   const [firestoreRestartToken, setFirestoreRestartToken] = useState(0);
   const isSyncingRef = useRef(false);
-  const syncRetriesRef = useRef<{
-    [id: number]: { attempts: number; nextRetryTime: number };
-  }>({});
   const retryTimerRef = useRef<any>(null);
 
   const updateQueueCount = async () => {
     try {
       const q = await getQueue();
       setSyncQueueCount(q.length);
+      setSyncQueueAttentionCount(q.filter((item) => item.status === "needs_attention").length);
     } catch (e) {
       console.error("Error reading sync queue length:", e);
     }
@@ -280,14 +283,29 @@ export function useDatabase(currentUser?: User | null) {
     isSyncingRef.current = true;
     setIsSyncing(true);
     try {
+      if (force) {
+        const queuedItems = await getQueue();
+        for (const item of queuedItems) {
+          if (item.status === "needs_attention") {
+            await updateQueueItem(item.id, {
+              status: "pending",
+              attempts: 0,
+              nextRetryAt: 0,
+              lastError: "",
+            });
+          }
+        }
+      }
       let q = await getQueue();
       while (q.length > 0) {
         const item = q[0];
 
+        if (item.status === "needs_attention") break;
+
         // Check backoff condition
-        const retryInfo = syncRetriesRef.current[item.id];
-        if (retryInfo && retryInfo.nextRetryTime > Date.now()) {
-          const delay = retryInfo.nextRetryTime - Date.now();
+        const retryAt = Number(item.nextRetryAt || 0);
+        if (retryAt > Date.now()) {
+          const delay = retryAt - Date.now();
           console.warn(
             `Skip syncing queue item ${item.id} (type ${item.type}) due to active backoff. Retrying in ${Math.round(delay / 1000)}s.`,
           );
@@ -303,9 +321,6 @@ export function useDatabase(currentUser?: User | null) {
         try {
           await processQueueItem(item);
           await removeFromQueue(item.id);
-          if (syncRetriesRef.current[item.id]) {
-            delete syncRetriesRef.current[item.id];
-          }
           if (quotaExceededRef.current || storageQuotaExceededRef.current) {
             quotaExceededRef.current = false;
             setQuotaExceeded(false);
@@ -322,6 +337,7 @@ export function useDatabase(currentUser?: User | null) {
           }
           q = await getQueue();
           setSyncQueueCount(q.length);
+          setSyncQueueAttentionCount(q.filter((queued) => queued.status === "needs_attention").length);
         } catch (error: any) {
           console.error("Queue sync error for item:", item, "Error:", error);
 
@@ -339,10 +355,12 @@ export function useDatabase(currentUser?: User | null) {
             setQuotaExceeded(false);
 
             const backoffDelay = 300000;
-            syncRetriesRef.current[item.id] = {
-              attempts: syncRetriesRef.current[item.id]?.attempts || 0,
-              nextRetryTime: Date.now() + backoffDelay,
-            };
+            await updateQueueItem(item.id, {
+              status: "pending",
+              attempts: Number(item.attempts || 0),
+              nextRetryAt: Date.now() + backoffDelay,
+              lastError: String(error?.message || error),
+            });
             console.warn(
               `Browser storage quota exceeded. Retrying queue item ${item.id} of type ${item.type} in 5 minutes. Item preserved in queue.`,
             );
@@ -378,12 +396,14 @@ export function useDatabase(currentUser?: User | null) {
               console.error("Failed to disable Firestore network:", netErr);
             }
 
-            // On quota exhaustion, do not increment attempts count (never discard item). Just lock with 5-minute backoff.
+            // On quota exhaustion, preserve the item without increasing its failure count.
             const backoffDelay = 300000; // 5 minutes
-            syncRetriesRef.current[item.id] = {
-              attempts: syncRetriesRef.current[item.id]?.attempts || 0,
-              nextRetryTime: Date.now() + backoffDelay,
-            };
+            await updateQueueItem(item.id, {
+              status: "pending",
+              attempts: Number(item.attempts || 0),
+              nextRetryAt: Date.now() + backoffDelay,
+              lastError: String(error?.message || error),
+            });
             console.warn(
               `Quota limit exceeded. Retrying queue item ${item.id} of type ${item.type} in 5 minutes. Item preserved in queue.`,
             );
@@ -410,36 +430,39 @@ export function useDatabase(currentUser?: User | null) {
             break;
           }
 
-          const prev = syncRetriesRef.current[item.id] || {
-            attempts: 0,
-            nextRetryTime: 0,
-          };
-          const currentAttempts = prev.attempts + 1;
+          const currentAttempts = Number(item.attempts || 0) + 1;
 
           // Exponential backoff formulation: 1s, 2s, 4s, 8s, 16s...
-          const backoffDelay = 1000 * Math.pow(2, currentAttempts);
-          syncRetriesRef.current[item.id] = {
-            attempts: currentAttempts,
-            nextRetryTime: Date.now() + backoffDelay,
-          };
+          const backoffDelay = 1000 * Math.pow(2, currentAttempts - 1);
+          const lastError = String(error?.message || error);
 
-          if (currentAttempts >= 5) {
+          if (shouldParkSyncItem(error, currentAttempts)) {
             console.error(
-              `Discarding stuck queue item ${item.id} of type ${item.type} after ${currentAttempts} failed attempts to avoid blocking database sync.`,
+              `Preserving queue item ${item.id} of type ${item.type} for review after ${currentAttempts} failed attempt(s).`,
             );
-            await removeFromQueue(item.id);
-            delete syncRetriesRef.current[item.id];
-
-            // Show alert/notification warning of discarded incorrect item
-            alert(
-              `Aviso: Um registro inválido do tipo "${item.type}" falhou nas dezenas de tentativas de sincronização e foi descartado para não travar o sistema. Detalhes: ${error?.message || error}`,
+            await updateQueueItem(item.id, {
+              status: "needs_attention",
+              attempts: currentAttempts,
+              nextRetryAt: 0,
+              lastError,
+            });
+            setPermissionError(
+              `Ação "${item.type}" preservada na fila local para revisão. Último erro: ${lastError}`,
             );
 
             q = await getQueue();
             setSyncQueueCount(q.length);
+            setSyncQueueAttentionCount(q.filter((queued) => queued.status === "needs_attention").length);
+            continue;
           } else {
+            await updateQueueItem(item.id, {
+              status: "pending",
+              attempts: currentAttempts,
+              nextRetryAt: Date.now() + backoffDelay,
+              lastError,
+            });
             console.warn(
-              `Retrying sync item ${item.id} of type ${item.type} later. Attempt ${currentAttempts}/5. Backoff delay is ${backoffDelay}ms`,
+              `Retrying sync item ${item.id} of type ${item.type} later. Attempt ${currentAttempts}. Backoff delay is ${backoffDelay}ms`,
             );
 
             if (!retryTimerRef.current) {
@@ -612,7 +635,9 @@ export function useDatabase(currentUser?: User | null) {
   >([]);
   const [customers, setCustomers] = useState<Customer[]>(() => isDemoMode ? DEMO_DATABASE.customers : loadCache("customers", []));
   const customerDocumentIdsByTenantRef = useRef<Map<string, Map<number, string>>>(new Map());
-  const [sectors, setSectors] = useState<Sector[]>(() => isDemoMode ? DEMO_DATABASE.sectors : loadCache("sectors", []));
+  const [sectors, setSectors] = useState<Sector[]>(() => isDemoMode
+    ? DEMO_DATABASE.sectors
+    : loadCache(tenantScopedCacheKey("sectors", activeTenantId), []));
   const [productFlows, setProductFlows] = useState<ProductFlow[]>([]);
   const [flows, setFlows] = useState<import("./types").Flow[]>([]);
   const [rejectionReasons, setRejectionReasons] = useState<import("./types").RejectionReason[]>([]);
@@ -895,7 +920,12 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("customers", err),
     );
     const unsubSectors = listenTenantCollection("sectors",
-      (snap) => setSectors(snap.docs.map((d) => d.data() as Sector)),
+      (snap) => {
+        const loadedSectors = snap.docs.map((d) => d.data() as Sector)
+          .filter((sector) => tenantIdMatches(sector.tenantId || (sector as any).companyId, activeTenantId));
+        setSectors(loadedSectors);
+        saveCache(tenantScopedCacheKey("sectors", activeTenantId), loadedSectors);
+      },
       (err) => handleSnapshotError("sectors", err),
     );
     const unsubProductFlows = listenTenantCollection("productFlows",
@@ -1749,7 +1779,11 @@ export function useDatabase(currentUser?: User | null) {
       }
     }
 
-    await enqueueAction("REMOVE_ACTIVE_PACK", { id, isEmbalagem });
+    await enqueueAction("REMOVE_ACTIVE_PACK", {
+      id,
+      isEmbalagem,
+      tenantId: activeTenantId,
+    });
     runSync();
   };
 
@@ -2543,7 +2577,6 @@ export function useDatabase(currentUser?: User | null) {
         await runTransaction(db, async (transaction) => {
           let stockRef;
           let uniformRef;
-          let stockSnapshot;
           let uniformSnapshot;
           if (entry.inventoryType === "EPI") {
             if (!entry.itemId) throw new Error("Selecione um EPI válido.");
@@ -2552,8 +2585,10 @@ export function useDatabase(currentUser?: User | null) {
             if (!itemSnapshot.exists() || itemSnapshot.data()?.tenantId !== activeTenantId) throw new Error("O EPI selecionado não pertence a esta empresa ou não existe mais.");
             const stockId = `${entry.itemId}|${stockColor}|${stockSize}|${stockVariation}|ACABADO`;
             stockRef = doc(db, "stocks", stockId);
-            stockSnapshot = await transaction.get(stockRef);
-            if (stockSnapshot.exists() && stockSnapshot.data()?.tenantId !== activeTenantId) throw new Error("O saldo de estoque encontrado não pertence a esta empresa.");
+            // Do not read a possibly missing stock document here. The tenant
+            // rules correctly reject reads of documents that do not exist;
+            // increment() creates the first balance and atomically adds later
+            // entries without weakening those rules.
             transaction.update(itemRef, { ppeInventoryUpdatedAt: timestamp });
           } else {
             if (!entry.uniformId) throw new Error("Selecione um uniforme válido.");
@@ -2565,18 +2600,17 @@ export function useDatabase(currentUser?: User | null) {
           }
 
           if (entry.inventoryType === "EPI" && stockRef) {
-            const existing = stockSnapshot?.exists() ? stockSnapshot.data() as StockEntry : null;
-            const updatedStock: StockEntry & { tenantId: string } = {
+            const updatedStock = {
               id: stockRef.id,
               itemId: entry.itemId!,
               color: stockColor,
               size: stockSize,
               variation: stockVariation,
               stage: "ACABADO",
-              quantity: Number(existing?.quantity || 0) + quantity,
+              quantity: increment(quantity),
               tenantId: activeTenantId,
             };
-            transaction.set(stockRef, cleanUndefined(updatedStock), { merge: true });
+            transaction.set(stockRef, updatedStock, { merge: true });
           } else if (uniformRef && uniformSnapshot?.exists()) {
             transaction.update(uniformRef, { stock: Number(uniformSnapshot.data()?.stock || 0) + quantity });
           }
@@ -2990,6 +3024,7 @@ export function useDatabase(currentUser?: User | null) {
       });
     },
     syncQueueCount,
+    syncQueueAttentionCount,
     isSyncing,
     quotaExceeded,
     storageQuotaExceeded,
@@ -3767,7 +3802,7 @@ export function useDatabase(currentUser?: User | null) {
     },
 
     tenants,
-    allSectors: sectors,
+    allSectors: filteredSectors,
     addTenant,
     deleteTenant,
     activeTenantId,

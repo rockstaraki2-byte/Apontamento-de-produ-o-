@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import type { useDatabase } from "../../useDatabase";
-import type { User } from "../../types";
+import type { Sector, User } from "../../types";
+import { tenantScopedCacheKey } from "../../tenantIsolation";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -153,7 +154,26 @@ const INITIAL_SECTOR_ZONES: SectorAllocation[] = [
   },
 ];
 
+function toSectorAllocation(sector: Sector): SectorAllocation {
+  return {
+    id: String(sector.id),
+    name: sector.name,
+    zone: sector.zone || sector.department || "Sem zona definida",
+    recommendedCount: Number(sector.recommendedCount) || 1,
+    icon: sector.icon || "🏭",
+    description: sector.description || sector.department || "",
+    rolesIncluded: sector.rolesIncluded || (sector.role ? [sector.role] : []),
+    revenueGoalDaily: sector.revenueGoalDaily || 0,
+    revenueGoalWeekly: sector.revenueGoalWeekly || 0,
+    hourlyCost: sector.hourlyCost || 0,
+    productiveCost: sector.productiveCost || 0,
+  };
+}
+
 export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
+  const hiringRequestsCacheKey = tenantScopedCacheKey("factory_hiring_requests", db.activeTenantId);
+  const factorySectorsCacheKey = tenantScopedCacheKey("factory_sectors", db.activeTenantId);
+  const factoryAllocationsCacheKey = tenantScopedCacheKey("factory_allocations", db.activeTenantId);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedZone, setSelectedZone] = useState<string>("TODOS");
   const [reallocateUser, setReallocateUser] = useState<any | null>(null);
@@ -168,11 +188,12 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
 
   const [hiringRequests, setHiringRequests] = useState<HiringRequest[]>(() => {
     try {
-      const saved = localStorage.getItem("producao_hiring_requests_v1");
+      const saved = localStorage.getItem(hiringRequestsCacheKey);
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
     }
+    if (db.activeTenantId !== "imperio") return [];
     return [
       {
         id: "HR-101",
@@ -203,25 +224,36 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
 
   useEffect(() => {
     try {
-      localStorage.setItem("producao_hiring_requests_v1", JSON.stringify(hiringRequests));
+      localStorage.setItem(hiringRequestsCacheKey, JSON.stringify(hiringRequests));
     } catch (e) {
       console.error(e);
     }
-  }, [hiringRequests]);
+  }, [hiringRequests, hiringRequestsCacheKey]);
 
   const [sectors, setSectors] = useState<SectorAllocation[]>(() => {
     try {
-      const saved = localStorage.getItem("producao_factory_sectors_v1");
-      return saved ? JSON.parse(saved) : INITIAL_SECTOR_ZONES;
+      const saved = localStorage.getItem(factorySectorsCacheKey);
+      if (saved) return JSON.parse(saved);
     } catch {
-      return INITIAL_SECTOR_ZONES;
+      // Rebuild from the active tenant's Firestore sectors below.
     }
+    if (db.sectors.length > 0) return db.sectors.map(toSectorAllocation);
+    return db.activeTenantId === "imperio" ? INITIAL_SECTOR_ZONES : [];
   });
+  const hasLoadedSectorsRef = useRef(sectors.length > 0);
+
+  useEffect(() => {
+    if (!hasLoadedSectorsRef.current && db.sectors.length > 0) {
+      setSectors(db.sectors.map(toSectorAllocation));
+      hasLoadedSectorsRef.current = true;
+    }
+  }, [db.sectors]);
 
   const saveSectors = async (newSectors: SectorAllocation[]) => {
+    hasLoadedSectorsRef.current = true;
     setSectors(newSectors);
     try {
-      localStorage.setItem("producao_factory_sectors_v1", JSON.stringify(newSectors));
+      localStorage.setItem(factorySectorsCacheKey, JSON.stringify(newSectors));
     } catch (e) {
       console.error(e);
     }
@@ -344,10 +376,10 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
     doc.save(`mapa_fabrica_${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
-  // Saved manual sector allocations map state (persisted in localStorage)
+  // Saved manual allocations are isolated by tenant in localStorage.
   const [savedAllocations, setSavedAllocations] = useState<{ [personKey: string]: string }>(() => {
     try {
-      const raw = localStorage.getItem("producao_factory_allocations_v1");
+      const raw = localStorage.getItem(factoryAllocationsCacheKey);
       return raw ? JSON.parse(raw) : {};
     } catch {
       return {};
@@ -357,7 +389,7 @@ export function MapaFabricaTab({ db, currentUser }: MapaFabricaTabProps) {
   const saveAllocations = (newMap: { [personKey: string]: string }) => {
     setSavedAllocations(newMap);
     try {
-      localStorage.setItem("producao_factory_allocations_v1", JSON.stringify(newMap));
+      localStorage.setItem(factoryAllocationsCacheKey, JSON.stringify(newMap));
     } catch (e) {
       console.error(e);
     }
