@@ -1121,21 +1121,21 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
             "^FO30,580^A0N,29,26^FB740,2,5,L,0^FD" + cleanVariation + "^FS",
             "^FO30,675^A0N,28,25^FDTamanho: " + cleanSize + "^FS",
             "^FO30,715^A0N,28,25^FB740,1,0,L,0^FDEmbalagem: " + boxIndex + "/" + boxTotal + " (" + cleanPkg + ")^FS",
-            "^FO30,765^A0N,27,24^FB740,2,5,L,0^FDCliente: " + printableCustomer + "^FS"
+            "^FO30,765^A0N,32,29^FB740,2,5,L,0^FDCliente: " + printableCustomer + "^FS"
           ];
 
-          const customerLineCount = Math.min(2, wrapZplText("Cliente: " + printableCustomer, 50).length);
+          const customerLineCount = Math.min(2, wrapZplText("Cliente: " + printableCustomer, 45).length);
           const customerAddressLines = cleanCustomerAddress === "-"
             ? []
-            : wrapZplText("Endereco: " + cleanCustomerAddress, 76);
+            : wrapZplText("Endereco: " + cleanCustomerAddress, 66);
           let dividerY = 840;
           let dateY = 860;
           let operatorY = 895;
 
           if (customerAddressLines.length > 0) {
-            const addressY = 765 + customerLineCount * 32 + 4;
-            blocks.push("^FO30," + addressY + "^A0N,18,16^FB740,2,2,L,0^FD" + customerAddressLines.join("\\&") + "^FS");
-            dividerY = Math.max(840, addressY + customerAddressLines.length * 20 + 5);
+            const addressY = 765 + customerLineCount * 36 + 4;
+            blocks.push("^FO30," + addressY + "^A0N,22,20^FB740,2,2,L,0^FD" + customerAddressLines.join("\\&") + "^FS");
+            dividerY = Math.max(840, addressY + customerAddressLines.length * 24 + 5);
             dateY = dividerY + 20;
             operatorY = dividerY + 55;
           }
@@ -1281,16 +1281,22 @@ ${barcodeBlock}
 
     const customerText = String(label.customer || "-").toUpperCase();
     const customerAddress = String(label.customerAddress || "").trim();
-    const customerLineCount = Math.min(2, Math.max(1, Math.ceil(customerText.length / 50)));
+    const customerFontSize = 15;
+    const customerLineHeightMm = 4.375;
+    const addressFontSize = 11;
+    const addressLineHeightMm = 3.2;
+    const customerLineCount = Math.min(2, Math.max(1, Math.ceil(("Cliente: " + customerText).length / 45)));
     const customerTopMm = 95.625;
-    const customerBottomMm = customerTopMm + customerLineCount * 3.6;
+    const customerBottomMm = customerTopMm + customerLineCount * customerLineHeightMm;
     const addressLineCount = customerAddress
-      ? Math.min(2, Math.max(1, Math.ceil(("Endereco: " + customerAddress).length / 78)))
+      ? Math.min(2, Math.max(1, Math.ceil(("Endereco: " + customerAddress).length / 54)))
       : 0;
-    const addressTopMm = customerBottomMm + 0.4;
+    const addressTopMm = customerBottomMm + 0.6;
     const footerRuleTopMm = Math.max(
       105,
-      customerAddress ? addressTopMm + addressLineCount * 2.5 + 0.5 : customerBottomMm + 0.5
+      customerAddress
+        ? addressTopMm + addressLineCount * addressLineHeightMm + 0.5
+        : customerBottomMm + 0.5
     );
     const dateTopMm = footerRuleTopMm + 2.5;
     const operatorTopMm = dateTopMm + 4.375;
@@ -1403,14 +1409,14 @@ ${barcodeBlock}
         </div>
         <div
           className="absolute overflow-hidden font-black uppercase"
-          style={{ left: "3.75mm", top: "95.625mm", width: "92.5mm", height: customerLineCount * 3.6 + "mm", fontSize: 13, lineHeight: 1.1, overflowWrap: "anywhere" }}
+          style={{ left: "3.75mm", top: customerTopMm + "mm", width: "92.5mm", height: customerLineCount * customerLineHeightMm + "mm", fontSize: customerFontSize, lineHeight: 1.1, overflowWrap: "anywhere" }}
         >
           Cliente: {customerText}
         </div>
         {customerAddress && (
           <div
             className="absolute overflow-hidden font-bold uppercase"
-            style={{ left: "3.75mm", top: addressTopMm + "mm", width: "92.5mm", height: addressLineCount * 2.5 + "mm", fontSize: 9, lineHeight: 1, overflowWrap: "anywhere" }}
+            style={{ left: "3.75mm", top: addressTopMm + "mm", width: "92.5mm", height: addressLineCount * addressLineHeightMm + "mm", fontSize: addressFontSize, lineHeight: 1.05, overflowWrap: "anywhere" }}
           >
             Endereco: {customerAddress}
           </div>
