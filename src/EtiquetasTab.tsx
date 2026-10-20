@@ -39,8 +39,8 @@ interface EtiquetasTabProps {
   currentUser: User;
 }
 
-type LabelPreviewFormat = "thermal-100x50" | "thermal-150x100" | "a4";
-type ThermalLabelSize = "100x50" | "150x100";
+type LabelPreviewFormat = "thermal-100x50" | "thermal-100x150" | "a4";
+type ThermalLabelSize = "100x50" | "100x150";
 
 // Inline deterministic high-resolution Barcode renderer
 function LocalSVGBarcode({ data, codeText, large = false }: { data: string; codeText?: string; large?: boolean }) {
@@ -347,7 +347,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
   // Hidden print refs
   const thermalPrintContainerRef = useRef<HTMLDivElement | null>(null);
-  const wideThermalPrintContainerRef = useRef<HTMLDivElement | null>(null);
+  const portraitThermalPrintContainerRef = useRef<HTMLDivElement | null>(null);
   const a4PrintContainerRef = useRef<HTMLDivElement | null>(null);
 
   const companyInfo = useMemo(() => {
@@ -654,7 +654,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     return list;
   }, [previewLabels]);
 
-  // 1. GENERATE THERMAL PDF (100mm x 50mm or 150mm x 100mm)
+  // 1. GENERATE THERMAL PDF (100mm x 50mm or 100mm × 150mm)
   const handleGenerateThermalPDF = async (size: ThermalLabelSize = "100x50") => {
     if (resolvedLabelsToPrint.length === 0) {
       alert("Nenhum item disponível para emitir etiquetas.");
@@ -663,13 +663,13 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     setIsPrinting(true);
     try {
       await new Promise((resolve) => setTimeout(resolve, 350));
-      const isWide = size === "150x100";
-      const widthMm = isWide ? 150 : 100;
-      const heightMm = isWide ? 100 : 50;
-      const canvasWidth = isWide ? 567 : 378;
-      const canvasHeight = isWide ? 378 : 189;
-      const element = isWide
-        ? wideThermalPrintContainerRef.current
+      const isPortrait = size === "100x150";
+      const widthMm = 100;
+      const heightMm = isPortrait ? 150 : 50;
+      const canvasWidth = 378;
+      const canvasHeight = isPortrait ? 567 : 189;
+      const element = isPortrait
+        ? portraitThermalPrintContainerRef.current
         : thermalPrintContainerRef.current;
       if (!element) {
         throw new Error("Elemento do container térmico não foi localizado.");
@@ -685,7 +685,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
       }
 
       const pdf = new jsPDF({
-        orientation: "landscape",
+        orientation: isPortrait ? "portrait" : "landscape",
         unit: "mm",
         format: [widthMm, heightMm]
       });
@@ -712,15 +712,15 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         const imgData = canvas.toDataURL("image/jpeg", 1.0);
 
         if (i > 0) {
-          pdf.addPage([widthMm, heightMm], "landscape");
+          pdf.addPage([widthMm, heightMm], isPortrait ? "portrait" : "landscape");
         }
 
         pdf.addImage(imgData, "JPEG", 0, 0, widthMm, heightMm);
       }
 
-      pdf.save(`Etiquetas_Termicas_${isWide ? "15x10" : "10x5"}_${Date.now()}.pdf`);
+      pdf.save(`Etiquetas_Termicas_${isPortrait ? "10x15" : "10x5"}_${Date.now()}.pdf`);
       markLabelsAsPrinted();
-      triggerNotification(`Etiquetas ${isWide ? "15x10" : "10x5"} geradas com sucesso!`);
+      triggerNotification(`Etiquetas ${isPortrait ? "10x15" : "10x5"} geradas com sucesso!`);
     } catch (e: any) {
       alert(`Erro ao gerar PDF térmico: ${e.message || e}`);
     } finally {
@@ -824,16 +824,16 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     }
   };
 
-  const handleDirectPrintAll = (type: "thermal" | "thermal150x100" | "a4") => {
+  const handleDirectPrintAll = (type: "thermal" | "thermal100x150" | "a4") => {
     try {
       const isA4 = type === "a4";
-      const isWide = type === "thermal150x100";
-      const printWidth = isA4 ? "210mm" : isWide ? "150mm" : "100mm";
-      const printHeight = isA4 ? "297mm" : isWide ? "100mm" : "50mm";
+      const isPortrait = type === "thermal100x150";
+      const printWidth = isA4 ? "210mm" : "100mm";
+      const printHeight = isA4 ? "297mm" : isPortrait ? "150mm" : "50mm";
       const container = isA4
         ? a4PrintContainerRef.current
-        : isWide
-          ? wideThermalPrintContainerRef.current
+        : isPortrait
+          ? portraitThermalPrintContainerRef.current
           : thermalPrintContainerRef.current;
       if (!container) {
         alert("Nenhum item está pronto para impressão.");
@@ -965,7 +965,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     setIsGeneratingZPL(true);
 
     try {
-      const isWide = previewFormat === "thermal-150x100";
+      const isPortrait = previewFormat === "thermal-100x150";
       let zplString = "";
       const cleanZplText = (value: unknown) => removeAccents(String(value ?? "-"))
         .toUpperCase()
@@ -1019,7 +1019,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         const timeStr = new Date(label.timestamp || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
         // Remove characters that can be interpreted as ZPL commands, but preserve
-        // all text for 150x100 labels so long values can wrap instead of clipping.
+        // all text for 100x150 labels so long values can wrap instead of clipping.
         const cleanName = cleanZplText(name);
         const cleanCustomer = cleanZplText(customer);
         const cleanCustomerAddress = cleanZplText(label.customerAddress);
@@ -1031,10 +1031,10 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         const cleanSector = cleanZplText(sectorLabel);
         const cleanPkg = cleanZplText(packageType);
 
-        const printableName = isWide ? cleanName : cleanName.slice(0, 48);
-        const printableCustomer = isWide ? cleanCustomer : cleanCustomer.slice(0, 36);
-        const printableColor = isWide ? cleanColor : cleanColor.slice(0, 24);
-        const printableVariation = isWide ? cleanVariation : variation;
+        const printableName = isPortrait ? cleanName : cleanName.slice(0, 48);
+        const printableCustomer = isPortrait ? cleanCustomer : cleanCustomer.slice(0, 36);
+        const printableColor = isPortrait ? cleanColor : cleanColor.slice(0, 24);
+        const printableVariation = isPortrait ? cleanVariation : variation;
 
         const companyClean = cleanZplText(companyName);
         let compLine1 = companyClean;
@@ -1058,22 +1058,22 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         let imageZPLCommand = "";
         let hasImage = false;
         if (includeImageInLabel && imageUrl) {
-          const zplImg = await imageToZPLHex(imageUrl, 240, 240);
+          const zplImg = await imageToZPLHex(imageUrl, isPortrait ? 160 : 240, isPortrait ? 320 : 240);
           if (zplImg) {
-            imageZPLCommand = `^FO${isWide ? 950 : 540},${isWide ? 280 : 80}^GFA,${zplImg.byteCount},${zplImg.byteCount},${zplImg.bytesPerRow},${zplImg.hex}^FS`;
+            imageZPLCommand = `^FO${isPortrait ? 630 : 540},${isPortrait ? 420 : 80}^GFA,${zplImg.byteCount},${zplImg.byteCount},${zplImg.bytesPerRow},${zplImg.hex}^FS`;
             hasImage = true;
           }
         }
 
         const barcodeBlock = hasImage 
           ? imageZPLCommand
-          : isWide
-            ? `^FO955,210^BY3,3,220^BCR,220,Y,N,N^FD${code}^FS`
+          : isPortrait
+            ? `^FO630,400^BY2,3,160^BCR,160,Y,N,N^FD${code}^FS`
             : `^FO535,110^BY2,3,110^BCN,110,Y,N,N^FD${code}^FS`;
 
-        // Place the sector badge against the full-width layout's text boundary.
-        const badgeBoundary = isWide ? 900 : 500;
-        const badgeWidth = Math.max(100, Math.min(isWide ? 240 : 420, cleanSector.length * 13 + 18));
+        // Keep the sector badge and product details inside the printable portrait area.
+        const badgeBoundary = isPortrait ? 600 : 500;
+        const badgeWidth = Math.max(100, Math.min(isPortrait ? 180 : 420, cleanSector.length * 13 + 18));
         const badgeX = badgeBoundary - badgeWidth;
         const badgeTextX = badgeX + 10;
         const sectorBadgeBlock = `^FO${badgeX},15^GB${badgeWidth},34,34,B,3^FS^FO${badgeTextX},23^A0N,18,16^FR^FD${cleanSector}^FS`;
@@ -1083,28 +1083,28 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           : `^FO40,15^GB44,44,2,B,3^FS`;
 
         const maxTitleWidth = badgeX - 110;
-        const companyFont = isWide ? [40, 36, 32, 28, 24, 20, 18] : [24, 20, 18, 16, 14, 12, 10, 8];
+        const companyFont = isPortrait ? [32, 28, 24, 20, 18, 16, 14] : [24, 20, 18, 16, 14, 12, 10, 8];
         const companyFontSize = companyFont.find((font) => {
           const maxChars = Math.max(8, Math.floor(maxTitleWidth / (font * 0.52)));
           const lineCount = wrapZplText(companyClean, maxChars).length;
-          return lineCount * (font + 4) <= (isWide ? 56 : 48);
-        }) || (isWide ? 18 : 8);
+          return lineCount * (font + 4) <= (isPortrait ? 56 : 48);
+        }) || (isPortrait ? 14 : 8);
         const companyLines = wrapZplText(
           companyClean,
           Math.max(8, Math.floor(maxTitleWidth / (companyFontSize * 0.52)))
         );
         const companyHeader = `^FO100,16^A0N,${companyFontSize},${Math.round(companyFontSize * 0.92)}^FB${maxTitleWidth},${companyLines.length},0,L^FD${companyLines.join("\\&")}^FS`;
-        const wideLabelBody = (() => {
-          const blocks: string[] = ["^FO40,66^GB850,2,2^FS"];
+        const portraitLabelBody = (() => {
+          const blocks: string[] = ["^FO40,66^GB550,2,2^FS"];
           let y = 80;
 
-          const titleFont = [86, 78, 70, 62, 54, 48, 44].find((font) => {
-            const maxChars = Math.max(10, Math.floor(835 / (font * 0.52)));
+          const titleFont = [74, 68, 62, 56, 50, 44, 40].find((font) => {
+            const maxChars = Math.max(9, Math.floor(550 / (font * 0.52)));
             const lineCount = wrapZplText(cleanName, maxChars).length;
-            return lineCount * (font + 9) <= 270;
-          }) || 44;
-          const titleLines = wrapZplText(cleanName, Math.max(10, Math.floor(835 / (titleFont * 0.52))));
-          blocks.push(`^FO40,${y}^A0N,${titleFont},${Math.round(titleFont * 0.92)}^FB835,${titleLines.length},0,L^FD${titleLines.join("\\&")}^FS`);
+            return lineCount * (font + 9) <= 360;
+          }) || 40;
+          const titleLines = wrapZplText(cleanName, Math.max(9, Math.floor(550 / (titleFont * 0.52))));
+          blocks.push(`^FO40,${y}^A0N,${titleFont},${Math.round(titleFont * 0.92)}^FB550,${titleLines.length},0,L^FD${titleLines.join("\\&")}^FS`);
           y += titleLines.length * (titleFont + 8) + 8;
 
           const totalDetailsLength = [
@@ -1112,43 +1112,41 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
             cleanPkg, cleanCustomer, cleanCustomerAddress, cleanOperator,
           ].join(" ").length;
           const detailFont = totalDetailsLength > 520 ? 20 : totalDetailsLength > 360 ? 22 : 25;
-          const appendWideField = (value: string, font: number, gap = 4, width = 835) => {
+          const appendPortraitField = (value: string, font: number, gap = 4, width = 550) => {
             const lines = wrapZplText(value, Math.max(10, Math.floor(width / (font * 0.52))));
             blocks.push(`^FO40,${y}^A0N,${font},${Math.round(font * 0.92)}^FB${width},${lines.length},0,L^FD${lines.join("\\&")}^FS`);
             y += lines.length * (font + 6) + gap;
           };
-          const appendWidePair = (left: string, right: string, font: number, gap = 4) => {
-            const columnWidth = 405;
+          const appendPortraitPair = (left: string, right: string, font: number, gap = 4) => {
+            const columnWidth = 255;
             const wrap = (value: string) => wrapZplText(value, Math.max(8, Math.floor(columnWidth / (font * 0.52))));
             const leftLines = wrap(left);
             const rightLines = wrap(right);
             blocks.push(`^FO40,${y}^A0N,${font},${Math.round(font * 0.92)}^FB${columnWidth},${leftLines.length},0,L^FD${leftLines.join("\\&")}^FS`);
-            blocks.push(`^FO470,${y}^A0N,${font},${Math.round(font * 0.92)}^FB${columnWidth},${rightLines.length},0,L^FD${rightLines.join("\\&")}^FS`);
+            blocks.push(`^FO315,${y}^A0N,${font},${Math.round(font * 0.92)}^FB${columnWidth},${rightLines.length},0,L^FD${rightLines.join("\\&")}^FS`);
             y += Math.max(leftLines.length, rightLines.length) * (font + 6) + gap;
           };
 
-          appendWideField(`Cód.: ${cleanZplText(code)} | Pedido: ${cleanOrderCode}`, detailFont, 6);
-          appendWidePair(`Cor: ${cleanColor}`, `Variação: ${cleanVariation}`, detailFont, 4);
-          appendWidePair(`Tamanho: ${cleanSize}`, `Embalagem: ${boxIndex}/${boxTotal} (${cleanPkg})`, detailFont, 6);
-          if (printableCustomer !== "-") appendWideField(`Cliente: ${printableCustomer}`, detailFont, 3);
-          if (cleanCustomerAddress !== "-") appendWideField(`Endereço: ${cleanCustomerAddress}`, detailFont, 5);
-          const dateLines = wrapZplText(`Data/Hora: ${dateStr} ${timeStr}`, 34);
-          const operatorLines = wrapZplText(`Operador: ${cleanOperator}`, 34);
-          const footerTop = Math.min(680, Math.max(y + 12, 550));
-          blocks.push(`^FO40,${footerTop}^GB835,2,2^FS`);
-          blocks.push(`^FO40,${footerTop + 14}^A0N,22,20^FB270,${Math.max(1, dateLines.length)},0,L^FD${dateLines.join("\\&")}^FS`);
-          blocks.push(`^FO320,${footerTop + 14}^A0N,22,20^FB300,${Math.max(1, operatorLines.length)},0,L^FD${operatorLines.join("\\&")}^FS`);
-          blocks.push(`^FO640,${footerTop + 10}^A0N,18,16^FB230,1,0,R^FDQUANTIDADE^FS`);
-          blocks.push(`^FO640,${footerTop + 30}^A0N,46,44^FB230,1,0,R^FD${printQuantity} UN^FS`);
+          appendPortraitField(`Cód.: ${cleanZplText(code)} | Pedido: ${cleanOrderCode}`, detailFont, 6);
+          appendPortraitPair(`Cor: ${cleanColor}`, `Variação: ${cleanVariation}`, detailFont, 4);
+          appendPortraitPair(`Tamanho: ${cleanSize}`, `Embalagem: ${boxIndex}/${boxTotal} (${cleanPkg})`, detailFont, 6);
+          if (printableCustomer !== "-") appendPortraitField(`Cliente: ${printableCustomer}`, detailFont, 3);
+          if (cleanCustomerAddress !== "-") appendPortraitField(`Endereço: ${cleanCustomerAddress}`, detailFont, 5);
+          const footerTop = Math.min(1020, Math.max(y + 12, 930));
+          blocks.push(`^FO40,${footerTop}^GB550,2,2^FS`);
+          blocks.push(`^FO40,${footerTop + 14}^A0N,22,20^FB550,1,0,L^FDData/Hora: ${dateStr} ${timeStr}^FS`);
+          blocks.push(`^FO40,${footerTop + 42}^A0N,22,20^FB550,1,0,L^FDOperador: ${cleanOperator}^FS`);
+          blocks.push(`^FO350,${footerTop + 76}^A0N,22,20^FB240,1,0,R^FDQUANTIDADE^FS`);
+          blocks.push(`^FO350,${footerTop + 98}^A0N,46,44^FB240,1,0,R^FD${printQuantity} UN^FS`);
           return blocks.join("\n");
         })();
 
-        if (isWide) {
-          const wideBarcodeBlock = barcodeBlock;
+        if (isPortrait) {
+          const portraitBarcodeBlock = barcodeBlock;
 
           return `^XA
-^PW1200
-^LL800
+^PW800
+^LL1200
 ^CI28
 
 ${logoBlock}
@@ -1156,9 +1154,9 @@ ${companyHeader}
 
 ${sectorBadgeBlock}
 
-${wideLabelBody}
-^FO920,12^GB2,776,2^FS
-${wideBarcodeBlock}
+${portraitLabelBody}
+^FO620,12^GB2,1176,2^FS
+${portraitBarcodeBlock}
 
 ^PQ1
 ^XZ
@@ -1235,20 +1233,20 @@ ${barcodeBlock}
     }, 4000);
   };
 
-  const renderWideThermalLabel = (label: any, index: number) => {
+  const renderPortraitThermalLabel = (label: any, index: number) => {
     const date = new Date(label.timestamp || Date.now());
     const dateStr = date.toLocaleDateString("pt-BR");
     const timeStr = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     const productNameLength = String(label.name || "").length;
-    const wideTitleFontSize = productNameLength > 180
-      ? 24
+    const portraitTitleFontSize = productNameLength > 180
+      ? 21
       : productNameLength > 130
-        ? 28
+        ? 23
         : productNameLength > 90
-          ? 32
+          ? 26
           : productNameLength > 55
-            ? 36
-            : 42;
+            ? 30
+            : 36;
     const labelDetailsLength = [
       label.code,
       label.orderCode,
@@ -1260,16 +1258,16 @@ ${barcodeBlock}
       label.customerAddress,
       label.operatorId,
     ].map((value) => String(value || "")).join(" ").length;
-    const wideDetailsFontSize = labelDetailsLength > 420 ? 13 : labelDetailsLength > 300 ? 14 : labelDetailsLength > 200 ? 15 : 16;
+    const portraitDetailsFontSize = labelDetailsLength > 420 ? 12 : labelDetailsLength > 300 ? 13 : labelDetailsLength > 200 ? 14 : 15;
 
     return (
       <div
-        key={`thermal-wide-${index}-${label.id}`}
-        className="relative flex box-border gap-[4mm] overflow-hidden bg-white p-[5mm] font-sans text-black select-none"
+        key={`thermal-portrait-${index}-${label.id}`}
+        className="relative flex box-border gap-[3mm] overflow-hidden bg-white p-[4mm] font-sans text-black select-none"
         style={{
-          width: "150mm",
-          height: "100mm",
-          maxHeight: "100mm",
+          width: "100mm",
+          height: "150mm",
+          maxHeight: "150mm",
           pageBreakAfter: "always",
           breakAfter: "page",
           fontFamily: "sans-serif",
@@ -1277,7 +1275,7 @@ ${barcodeBlock}
       >
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="min-w-0">
-            <div className="mb-[2mm] flex min-h-[12mm] items-center justify-between gap-3 border-b border-slate-300 pb-[1.5mm]">
+            <div className="mb-[2mm] flex min-h-[13mm] items-center justify-between gap-2 border-b border-slate-300 pb-[1.5mm]">
               <div className="flex min-w-0 flex-1 items-center gap-2.5">
                 <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="h-[8mm] w-[8mm] shrink-0" />
                 <div className="flex min-w-0 flex-col leading-tight">
@@ -1287,28 +1285,28 @@ ${barcodeBlock}
                   )}
                 </div>
               </div>
-              <span className="max-w-[30mm] whitespace-normal break-words rounded bg-slate-100 px-2 py-1.5 text-center text-[11px] font-black uppercase leading-tight">
+              <span className="max-w-[23mm] whitespace-normal break-words rounded bg-slate-100 px-1.5 py-1 text-center text-[10px] font-black uppercase leading-tight">
                 {label.sectorLabel}
               </span>
             </div>
 
             <h3
               className="mb-[2mm] whitespace-normal break-words font-black leading-[1.04] tracking-tight"
-              style={{ fontSize: `${wideTitleFontSize}px`, overflowWrap: "anywhere" }}
+              style={{ fontSize: `${portraitTitleFontSize}px`, overflowWrap: "anywhere" }}
             >
               {label.name}
             </h3>
 
             <p
               className="mb-[2mm] whitespace-normal break-words font-mono font-black leading-snug"
-              style={{ fontSize: `${Math.max(16, wideDetailsFontSize + 2)}px`, overflowWrap: "anywhere" }}
+              style={{ fontSize: `${Math.max(16, portraitDetailsFontSize + 2)}px`, overflowWrap: "anywhere" }}
             >
               Cód.: {label.code} | Pedido: {label.orderCode}
             </p>
 
             <div
-              className="mb-[2mm] grid grid-cols-2 gap-x-4 gap-y-1.5 rounded border border-black bg-slate-50 px-2.5 py-2 font-black leading-snug"
-              style={{ fontSize: `${wideDetailsFontSize}px` }}
+              className="mb-[2mm] flex flex-col gap-1 rounded border border-black bg-slate-50 px-2 py-1.5 font-black leading-snug"
+              style={{ fontSize: `${portraitDetailsFontSize}px` }}
             >
               <span className="min-w-0 whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Cor: {label.color || "-"}</span>
               <span className="min-w-0 whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Variação: {label.variation || "-"}</span>
@@ -1319,7 +1317,7 @@ ${barcodeBlock}
             {(label.customer && label.customer !== "-") || label.customerAddress ? (
               <div
                 className="rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-black leading-snug"
-                style={{ fontSize: `${Math.max(13, wideDetailsFontSize - 1)}px` }}
+                style={{ fontSize: `${Math.max(13, portraitDetailsFontSize - 1)}px` }}
               >
                 {label.customer && label.customer !== "-" && (
                   <span className="block whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Cliente: {label.customer}</span>
@@ -1334,7 +1332,7 @@ ${barcodeBlock}
           </div>
 
           <div className="mt-auto flex items-end justify-between gap-3 border-t border-slate-300 pt-[2mm]">
-            <div className="min-w-0 flex-1 pr-1 font-black leading-snug" style={{ fontSize: `${Math.max(13, wideDetailsFontSize)}px` }}>
+            <div className="min-w-0 flex-1 pr-1 font-black leading-snug" style={{ fontSize: `${Math.max(13, portraitDetailsFontSize)}px` }}>
               <span className="block whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Data: {dateStr} {timeStr}</span>
               <span className="block whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Operador: {label.operatorId || "-"}</span>
             </div>
@@ -1347,7 +1345,7 @@ ${barcodeBlock}
           </div>
         </div>
 
-        <div className="flex w-[24mm] shrink-0 items-center justify-center overflow-hidden border-l border-slate-300 pl-[1.5mm]">
+        <div className="flex w-[20mm] shrink-0 items-center justify-center overflow-hidden border-l border-slate-300 pl-[1mm]">
           {includeImageInLabel && label.imageUrl ? (
             <img
               src={label.imageUrl}
@@ -1356,8 +1354,8 @@ ${barcodeBlock}
               crossOrigin="anonymous"
             />
           ) : (
-            <div className="flex h-[82mm] w-[14mm] items-center justify-center overflow-visible">
-              <div className="w-[82mm] shrink-0 rotate-90">
+            <div className="flex h-[110mm] w-[16mm] items-center justify-center overflow-visible">
+              <div className="w-[110mm] shrink-0 rotate-90">
                 <LocalSVGBarcode
                   data={`${label.code}|${label.color}|${label.size}|${label.printQuantity}`}
                   codeText={label.code}
@@ -1393,7 +1391,7 @@ ${barcodeBlock}
               Impressão de Etiquetas de Processo
             </h2>
           <p className="text-black text-xs mt-1">
-            Gere etiquetas térmicas 10x5 ou 15x10 cm, grade A4 e comandos Zebra ZPL para os setores vinculados.
+            Gere etiquetas térmicas 10x5 ou 10x15 cm, grade A4 e comandos Zebra ZPL para os setores vinculados.
           </p>
         </div>
         
@@ -2123,10 +2121,10 @@ ${barcodeBlock}
                         Térmica 10x5cm
                       </button>
                       <button
-                        onClick={() => setPreviewFormat("thermal-150x100")}
-                        className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase transition cursor-pointer ${previewFormat === "thermal-150x100" ? "bg-teal-600 text-white" : "text-slate-300 hover:text-white"}`}
+                        onClick={() => setPreviewFormat("thermal-100x150")}
+                        className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase transition cursor-pointer ${previewFormat === "thermal-100x150" ? "bg-teal-600 text-white" : "text-slate-300 hover:text-white"}`}
                       >
-                        Térmica 15x10cm
+                        Térmica 10x15cm
                       </button>
                       <button
                         onClick={() => setPreviewFormat("a4")}
@@ -2206,13 +2204,13 @@ ${barcodeBlock}
                         </div>
                       </div>
                     ))
-                  ) : previewFormat === "thermal-150x100" ? (
+                  ) : previewFormat === "thermal-100x150" ? (
                     resolvedLabelsToPrint.map((lbl, idx) => (
                       <div
                         key={`prev-thm-square-${idx}-${lbl.id}`}
                         className="w-full flex justify-center overflow-x-auto"
                       >
-                        {renderWideThermalLabel(lbl, idx)}
+                        {renderPortraitThermalLabel(lbl, idx)}
                       </div>
                     ))
                   ) : (
@@ -2301,7 +2299,7 @@ ${barcodeBlock}
                   <Copy size={14} className={isGeneratingZPL ? "animate-spin" : ""} />
                   {isGeneratingZPL
                     ? "Gerando ZPL c/ Imagens..."
-                    : `Copiar ZPL ${previewFormat === "thermal-150x100" ? "15x10" : "10x5"} (Zebra)`}
+                    : `Copiar ZPL ${previewFormat === "thermal-100x150" ? "10x15" : "10x5"} (Zebra)`}
                 </button>
                 {/* A4 Grid PDF */}
                 <button
@@ -2339,23 +2337,23 @@ ${barcodeBlock}
                   <Printer size={14} />
                   Imprimir (Térmico 10x5)
                 </button>
-                {/* 150 x 100 thermal PDF */}
+                {/* 100 x 150 thermal PDF */}
                 <button
                   disabled={isPrinting}
-                  onClick={() => handleGenerateThermalPDF("150x100")}
+                  onClick={() => handleGenerateThermalPDF("100x150")}
                   className="bg-cyan-700 hover:bg-cyan-600 text-white font-black text-xs px-5 py-2.5 rounded-xl transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md flex items-center gap-1.5 shadow-cyan-500/20"
                 >
                   <Printer size={14} className={isPrinting ? "animate-spin" : ""} />
-                  Gerar PDF Térmico 15x10
+                  Gerar PDF Térmico 10x15
                 </button>
-                {/* Direct print 150 x 100 thermal */}
+                {/* Direct print 100 x 150 thermal */}
                 <button
                   disabled={isPrinting}
-                  onClick={() => handleDirectPrintAll("thermal150x100")}
+                  onClick={() => handleDirectPrintAll("thermal100x150")}
                   className="bg-teal-700 hover:bg-teal-600 text-white font-black text-xs px-4 py-2.5 rounded-xl transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md flex items-center gap-1.5 shadow-teal-500/20"
                 >
                   <Printer size={14} />
-                  Imprimir (Térmico 15x10)
+                  Imprimir (Térmico 10x15)
                 </button>
               </div>
             </div>
@@ -2540,8 +2538,8 @@ ${barcodeBlock}
           backgroundColor: "#ffffff",
         }}
       >
-        <div ref={wideThermalPrintContainerRef} id="thermal-150x100-printable-wrapper" className="bg-white">
-          {resolvedLabelsToPrint.map((label, index) => renderWideThermalLabel(label, index))}
+        <div ref={portraitThermalPrintContainerRef} id="thermal-100x150-printable-wrapper" className="bg-white">
+          {resolvedLabelsToPrint.map((label, index) => renderPortraitThermalLabel(label, index))}
         </div>
       </div>
 
