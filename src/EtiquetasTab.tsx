@@ -1006,10 +1006,13 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
       
       // Load corporate badge image once to paint high-resolution native logo inside labels
       let logoZPLCommand = "";
-      if (logoUrl && !isPortrait) {
-        const logoImg = await imageToZPLHex(logoUrl, 44, 44);
+      if (logoUrl) {
+        const logoSize = isPortrait ? 48 : 44;
+        const logoImg = await imageToZPLHex(logoUrl, logoSize, logoSize);
         if (logoImg) {
-          logoZPLCommand = `^FO40,15^GFA,${logoImg.byteCount},${logoImg.byteCount},${logoImg.bytesPerRow},${logoImg.hex}^FS`;
+          const logoX = isPortrait ? 30 : 40;
+          const logoY = isPortrait ? 26 : 15;
+          logoZPLCommand = `^FO${logoX},${logoY}^GFA,${logoImg.byteCount},${logoImg.byteCount},${logoImg.bytesPerRow},${logoImg.hex}^FS`;
         }
       }
       
@@ -1082,7 +1085,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           ? logoZPLCommand
           : `^FO40,15^GB44,44,2,B,3^FS`;
 
-        const maxTitleWidth = isPortrait ? 545 : badgeX - 110;
+        const maxTitleWidth = isPortrait ? 495 : badgeX - 110;
         const companyFont = isPortrait ? [38, 34, 30, 26, 22, 18, 14] : [24, 20, 18, 16, 14, 12, 10, 8];
         const companyFontSize = companyFont.find((font) => {
           const maxChars = Math.max(8, Math.floor(maxTitleWidth / (font * 0.52)));
@@ -1094,13 +1097,22 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           Math.max(8, Math.floor(maxTitleWidth / (companyFontSize * 0.52)))
         );
         const companyHeader = isPortrait
-          ? "^FO30,30^A0N," + companyFontSize + "," + Math.round(companyFontSize * 0.92) + "^FB545," + companyLines.length + ",0,L^FD" + companyLines.join("\\&") + "^FS"
+          ? "^FO90,30^A0N," + companyFontSize + "," + Math.round(companyFontSize * 0.92) + "^FB" + maxTitleWidth + "," + companyLines.length + ",0,L^FD" + companyLines.join("\\&") + "^FS"
           : "^FO100,16^A0N," + companyFontSize + "," + Math.round(companyFontSize * 0.92) + "^FB" + maxTitleWidth + "," + companyLines.length + ",0,L^FD" + companyLines.join("\\&") + "^FS";
         let portraitBarcodeY = 945;
+        const portraitTitleFontSize = [64, 62, 60, 58, 56, 54, 52, 50, 48, 46, 44, 42, 40, 38, 36, 34, 32, 30, 28, 26, 24, 22, 20, 18].find((fontSize) => {
+          const fontWidth = Math.round(fontSize * 0.9);
+          const charsPerLine = Math.max(1, Math.floor(740 / (fontWidth * 0.52)));
+          const lineCount = wrapZplText(cleanName, charsPerLine).length;
+          return lineCount * fontSize + Math.max(0, lineCount - 1) * 4 <= 305;
+        }) || 18;
+        const portraitTitleWidth = Math.round(portraitTitleFontSize * 0.9);
+        const portraitTitleCharsPerLine = Math.max(1, Math.floor(740 / (portraitTitleWidth * 0.52)));
+        const portraitTitleLines = wrapZplText(cleanName, portraitTitleCharsPerLine);
         const portraitLabelBody = (() => {
           const blocks: string[] = [
             "^FO30,100^GB740,2,2^FS",
-            "^FO30,120^A0N,58,52^FB740,5,4,L,0^FD" + cleanName + "^FS",
+            "^FO30,120^A0N," + portraitTitleFontSize + "," + portraitTitleWidth + "^FB740," + portraitTitleLines.length + ",4,L,0^FD" + portraitTitleLines.join("\\&") + "^FS",
             "^FO30,425^GB740,2,2^FS",
             "^FO30,445^A0N,30,27^FDCod.: " + cleanZplText(code) + "^FS",
             "^FO395,445^A0N,30,27^FDPedido: " + cleanOrderCode + "^FS",
@@ -1156,6 +1168,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
             "^LL1200",
             "^LS0",
             "",
+            logoZPLCommand,
             companyHeader,
             sectorBadgeBlock,
             "",
@@ -1246,14 +1259,14 @@ ${barcodeBlock}
     const name = String(label.name || "-");
     const nameLength = name.length;
     const availableTitleWidthPx = 350;
-    const portraitTitleFontSize = [27, 25, 23, 21, 19, 17].find((fontSize) => {
+    const portraitTitleFontSize = [32, 31, 30, 29, 28, 27, 25, 23, 21, 19, 17].find((fontSize) => {
       const charsPerLine = Math.max(1, Math.floor(availableTitleWidthPx / (fontSize * 0.52)));
       const lineCount = Math.ceil(nameLength / charsPerLine);
       return lineCount <= 5 && lineCount * fontSize * 1.04 <= 144;
     }) || 17;
     const companyHeaderFontSize = Math.max(
       11,
-      Math.min(18, Math.floor(255 / Math.max(1, String(companyName || "").length * 0.52)))
+      Math.min(18, Math.floor(225 / Math.max(1, String(companyName || "").length * 0.52)))
     );
     const sector = String(label.sectorLabel || "-").toUpperCase();
     const sectorFontSize = Math.max(
@@ -1298,10 +1311,21 @@ ${barcodeBlock}
         }}
       >
         <div
-          className="absolute overflow-hidden whitespace-nowrap font-black uppercase"
-          style={{ left: "3.75mm", top: "3.75mm", width: "67mm", fontSize: companyHeaderFontSize, lineHeight: 1 }}
+          className="absolute flex items-center gap-[1.25mm] overflow-hidden"
+          style={{ left: "3.75mm", top: "3.125mm", width: "67mm", height: "7mm" }}
         >
-          {companyName}
+          <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="h-[6mm] w-[6mm] shrink-0" />
+          <div
+            className="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-black uppercase"
+            style={{
+              fontSize: companyHeaderFontSize,
+              lineHeight: 1,
+              fontFamily: '"Arial Black", Arial, sans-serif',
+              fontWeight: 900,
+            }}
+          >
+            {companyName}
+          </div>
         </div>
         <div
           className="absolute flex items-center justify-center overflow-hidden border-[0.4mm] border-black bg-black px-[1mm] text-center font-black uppercase leading-none text-white"
@@ -1322,6 +1346,9 @@ ${barcodeBlock}
             maxHeight: "38.125mm",
             fontSize: portraitTitleFontSize,
             lineHeight: 1.04,
+            fontFamily: '"Arial Black", Arial, sans-serif',
+            fontWeight: 900,
+            WebkitTextStroke: "0.2px currentColor",
             overflowWrap: "anywhere",
           }}
         >
