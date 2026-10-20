@@ -1659,7 +1659,9 @@ export function HistoricoProducaoScreen({
                     Monitor de Integridade de Logs &amp; Linha de Sincronismo
                   </h3>
                   <p className="text-xs text-slate-500">
-                    {db.syncQueueCount > 0
+                    {db.syncQueueAttentionCount > 0
+                      ? `${db.syncQueueAttentionCount} ação(ões) foram preservadas para revisão; ${db.syncQueueCount - db.syncQueueAttentionCount} ainda podem sincronizar automaticamente.`
+                      : db.syncQueueCount > 0
                       ? `Há ${db.syncQueueCount} registros na fila local pendentes de envio ao servidor.`
                       : "Todos os registros locais estão sincronizados em tempo real com o banco Firebase!"}
                   </p>
@@ -1750,6 +1752,14 @@ export function HistoricoProducaoScreen({
                                 <span className="px-2 py-0.5 font-sans font-extrabold text-[10px] rounded-md bg-slate-100 text-slate-750 border border-slate-200">
                                   {item.type}
                                 </span>
+                                {item.status === "needs_attention" && (
+                                  <span
+                                    className="ml-1 px-2 py-0.5 font-sans font-extrabold text-[9px] rounded-md bg-rose-50 text-rose-700 border border-rose-200"
+                                    title={item.lastError || "Falha persistida para revisão"}
+                                  >
+                                    REVISAR
+                                  </span>
+                                )}
                               </td>
                               <td className="p-3 text-slate-500 font-medium whitespace-nowrap">{dateStr}</td>
                               <td className="p-3 text-slate-600 max-w-[160px] truncate" title={JSON.stringify(item.payload)}>

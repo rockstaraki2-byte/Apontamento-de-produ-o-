@@ -1363,13 +1363,17 @@ export function CorteLaserScreen({
         <div className="bg-emerald-50 border border-emerald-100 text-[#0f5132] px-4 py-2.5 rounded-xl flex items-center justify-between gap-4 shadow-2xs mb-4 text-xs font-bold flex-wrap">
           <div className="flex items-center gap-2">
             <span
-              className={`w-2 h-2 rounded-full ${db.quotaExceeded || db.storageQuotaExceeded ? "bg-rose-500" : "bg-emerald-500"} animate-pulse`}
+              className={`w-2 h-2 rounded-full ${db.syncQueueAttentionCount > 0 || db.quotaExceeded || db.storageQuotaExceeded ? "bg-rose-500" : db.syncQueueCount > 0 ? "bg-amber-500" : "bg-emerald-500"} animate-pulse`}
             ></span>
             <span>
-              {db.storageQuotaExceeded
+              {db.syncQueueAttentionCount > 0
+                ? `${db.syncQueueAttentionCount} ação(ões) preservada(s) para revisão`
+                : db.storageQuotaExceeded
                 ? "Sincronização em Pausa (Armazenamento local)"
                 : db.quotaExceeded
                 ? "Sincronização em Pausa (Cota do Firestore)"
+                : db.syncQueueCount > 0
+                ? `${db.syncQueueCount} apontamento(s) aguardando sincronização`
                 : "Sincronizado com o servidor principal"}
             </span>
           </div>
@@ -1385,6 +1389,19 @@ export function CorteLaserScreen({
               <button
                 onClick={() => db.triggerSyncQueue?.(true)}
                 className="bg-rose-600 text-white font-extrabold px-2 py-0.5 rounded text-[9px] uppercase hover:bg-rose-700 transition"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : db.syncQueueAttentionCount > 0 ? (
+            <div className="flex items-center gap-2 bg-rose-50 border border-rose-300 text-rose-950 px-3 py-1.5 rounded-lg text-[11px]">
+              <span>⚠️</span>
+              <span className="truncate">
+                A fila foi preservada. Reprocesse após corrigir a permissão ou validar o registro.
+              </span>
+              <button
+                onClick={() => db.triggerSyncQueue?.(true)}
+                className="bg-rose-600 text-white font-extrabold px-2.5 py-1 rounded text-[10px] uppercase hover:bg-rose-700 transition"
               >
                 Tentar novamente
               </button>

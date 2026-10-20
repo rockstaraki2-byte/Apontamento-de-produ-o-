@@ -1,11 +1,27 @@
-import { db } from "./firebase";
-import { doc, setDoc, writeBatch, deleteDoc } from "firebase/firestore";
+import { auth, db } from "./firebase";
+import { compareQueueStatus } from "./syncQueuePolicy";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  query,
+  setDoc,
+  where,
+  writeBatch,
+} from "firebase/firestore";
+
+export type QueueItemStatus = "pending" | "needs_attention";
 
 export interface QueueItem {
   id: number; // autoincrement in IndexedDB
   type: string;
   payload: any;
   createdAt: number;
+  status?: QueueItemStatus;
+  attempts?: number;
+  nextRetryAt?: number;
+  lastError?: string;
 }
 
 const DB_NAME = "SyncQueueDatabase";
@@ -108,6 +124,10 @@ export async function enqueueAction(type: string, payload: any): Promise<number>
       type,
       payload: clonedPayload,
       createdAt,
+      status: "pending" as const,
+      attempts: 0,
+      nextRetryAt: 0,
+      lastError: "",
     };
     const request = store.add(item);
     request.onsuccess = () => resolve(request.result as number);
@@ -161,8 +181,10 @@ export async function getQueue(): Promise<QueueItem[]> {
       const request = store.getAll();
       request.onsuccess = () => {
         const items = request.result as QueueItem[];
-        // Sort: embalagem items first, and keep chronological order for the rest
+        // Keep actionable items first, then prioritize embalagem and preserve order.
         items.sort((a, b) => {
+          const statusOrder = compareQueueStatus(a.status, b.status);
+          if (statusOrder !== 0) return statusOrder;
           const isA = isEmbalagemItem(a);
           const isB = isEmbalagemItem(b);
           if (isA && !isB) return -1;
@@ -187,6 +209,22 @@ export async function removeFromQueue(id: number): Promise<void> {
     const request = store.delete(id);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
+  });
+}
+
+export async function updateQueueItem(id: number, updates: Partial<QueueItem>): Promise<void> {
+  const database = await getDB();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get(id);
+    request.onsuccess = () => {
+      const current = request.result as QueueItem | undefined;
+      if (current) store.put({ ...current, ...updates, id });
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error("Não foi possível atualizar a fila local."));
   });
 }
 
@@ -331,7 +369,31 @@ export async function processQueueItem(item: QueueItem): Promise<void> {
     }
     case "REMOVE_ACTIVE_PACK": {
       if (payload && payload.id) {
-        await deleteDoc(doc(db, "activePacks", payload.id.toString()));
+        const id = Number(payload.id);
+        if (!Number.isFinite(id)) throw new Error("O identificador do corte é inválido.");
+        const token = await auth.currentUser?.getIdTokenResult();
+        const authenticatedTenantId = String(token?.claims?.tenantId || "").trim();
+        const requestedTenantId = String(payload.tenantId || authenticatedTenantId).trim();
+        if (
+          !authenticatedTenantId ||
+          authenticatedTenantId === "global" ||
+          requestedTenantId !== authenticatedTenantId
+        ) {
+          throw new Error("A remoção do corte está fora do tenant autenticado; o registro foi mantido na fila.");
+        }
+
+        // Query within the authenticated tenant first. A repeat delete of an
+        // already-removed pack is a successful no-op, and a same-ID pack in
+        // another tenant is never targeted by this action.
+        const matchingPacks = await getDocs(query(
+          collection(db, "activePacks"),
+          where("tenantId", "==", authenticatedTenantId),
+          where("id", "==", id),
+        ));
+        const target = matchingPacks.docs.find((snapshot) => snapshot.id === String(id));
+        if (target && target.data().tenantId === authenticatedTenantId) {
+          await deleteDoc(target.ref);
+        }
       }
       break;
     }
