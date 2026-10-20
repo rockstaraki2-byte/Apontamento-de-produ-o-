@@ -52,6 +52,24 @@ test("label resolves a customer address when the order name starts with its nume
   );
 });
 
+test("label resolves legacy Portuguese address keys and string customer ids", () => {
+  const customer = {
+    id: "1902" as unknown as number,
+    name: "Adriana Baptiston Cefai Zaher",
+    logradouro: "Rua das Flores",
+    numero: "25",
+    bairro: "Centro",
+    cidade: "Ubá",
+    uf: "MG",
+    cep: "36500000",
+  };
+
+  assert.equal(
+    getCustomerAddressForLabel("1902 - ADRIANA BAPTISTON CEFAI ZAHER", [customer]),
+    "Rua das Flores, 25 | Centro · Ubá/MG | CEP 36500-000",
+  );
+});
+
 test("CEP input formatting strips non-digits and keeps at most eight digits", () => {
   assert.equal(normalizePostalCode("36.500-000"), "36500000");
   assert.equal(formatPostalCodeInput("3650000099"), "36500-000");

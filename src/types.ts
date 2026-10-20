@@ -571,12 +571,19 @@ export interface Customer {
   phone?: string;
   address?: string;
   street?: string;
+  /** Legacy address keys found in older customer records. */
+  logradouro?: string;
+  endereco?: string;
   number?: string;
+  numero?: string;
   complement?: string;
+  complemento?: string;
   postalCode?: string;
+  cep?: string;
   neighborhood?: string;
   bairro?: string;
   city?: string;
+  cidade?: string;
   state?: string;
   uf?: string;
   tradeName?: string;
