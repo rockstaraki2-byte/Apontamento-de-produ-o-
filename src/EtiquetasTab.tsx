@@ -1138,7 +1138,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           blocks.push(`^FO40,${footerTop + 42}^A0N,22,20^FB550,1,0,L^FDOperador: ${cleanOperator}^FS`);
           blocks.push(`^FO350,${footerTop + 76}^A0N,22,20^FB240,1,0,R^FDQUANTIDADE^FS`);
           blocks.push(`^FO350,${footerTop + 98}^A0N,46,44^FB240,1,0,R^FD${printQuantity} UN^FS`);
-          return blocks.join("\\n");
+          return blocks.join("\n");
         })();
 
         if (isPortrait) {
