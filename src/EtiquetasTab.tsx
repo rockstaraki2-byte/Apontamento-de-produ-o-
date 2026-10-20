@@ -1032,6 +1032,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         const printableName = isSquare ? cleanName : cleanName.slice(0, 48);
         const printableCustomer = isSquare ? cleanCustomer : cleanCustomer.slice(0, 36);
         const printableColor = isSquare ? cleanColor : cleanColor.slice(0, 24);
+        const printableVariation = isSquare ? cleanVariation : variation;
 
         const companyClean = cleanZplText(companyName);
         let compLine1 = companyClean;
@@ -1164,7 +1165,7 @@ ${sectorBadgeBlock}
 
 ^FO40,174^GB460,54,3,B,4^FS
 ^FO52,190^A0N,24,22^FDCor: ${printableColor}^FS
-^FO280,194^A0N,18,16^FB210,1,0,R^FDVar: ${cleanVariation.slice(0, 20)}^FS
+^FO280,194^A0N,18,16^FB210,1,0,R^FDVar: ${printableVariation}^FS
 
 ^FO40,242^A0N,28,28^FD${cleanSector}: ${boxIndex}/${boxTotal} (${cleanPkg})^FS
 
