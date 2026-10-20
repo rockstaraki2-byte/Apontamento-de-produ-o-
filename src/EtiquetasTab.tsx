@@ -965,6 +965,42 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     try {
       const isSquare = previewFormat === "thermal-100x100";
       let zplString = "";
+      const cleanZplText = (value: unknown) => removeAccents(String(value ?? "-"))
+        .toUpperCase()
+        .replace(/[\^~\\]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim() || "-";
+      const wrapZplText = (value: string, maxChars: number) => {
+        const lines: string[] = [];
+        let currentLine = "";
+
+        for (const word of value.split(/\s+/).filter(Boolean)) {
+          if (word.length > maxChars) {
+            if (currentLine) {
+              lines.push(currentLine);
+              currentLine = "";
+            }
+            for (let offset = 0; offset < word.length; offset += maxChars) {
+              lines.push(word.slice(offset, offset + maxChars));
+            }
+            continue;
+          }
+
+          if (!currentLine) {
+            currentLine = word;
+          } else if (`${currentLine} ${word}`.length <= maxChars) {
+            currentLine += ` ${word}`;
+          } else {
+            lines.push(currentLine);
+            currentLine = word;
+          }
+        }
+
+        if (currentLine) lines.push(currentLine);
+        return lines.length ? lines : ["-"];
+      };
+      
+
       
       // Load corporate badge image once to paint high-resolution native logo inside labels
       let logoZPLCommand = "";
@@ -980,20 +1016,24 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         const dateStr = new Date(label.timestamp || Date.now()).toLocaleDateString("pt-BR");
         const timeStr = new Date(label.timestamp || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
-        // Clean words from accents for ZPL printing standard fonts
-        const cleanName = removeAccents(name).toUpperCase().slice(0, 48);
-        const cleanCustomer = removeAccents(customer).toUpperCase().slice(0, 36);
-        const cleanCustomerAddress = removeAccents(String(label.customerAddress || ""))
-          .toUpperCase()
-          .replace(/[\^~]/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 100);
-        const cleanColor = removeAccents(color).toUpperCase().slice(0, 24);
-        const cleanSector = removeAccents(sectorLabel).toUpperCase();
-        const cleanPkg = removeAccents(packageType).toUpperCase();
+        // Remove characters that can be interpreted as ZPL commands, but preserve
+        // all text for 100x100 labels so long values can wrap instead of clipping.
+        const cleanName = cleanZplText(name);
+        const cleanCustomer = cleanZplText(customer);
+        const cleanCustomerAddress = cleanZplText(label.customerAddress);
+        const cleanColor = cleanZplText(color);
+        const cleanVariation = cleanZplText(variation);
+        const cleanSize = cleanZplText(size);
+        const cleanOrderCode = cleanZplText(orderCode);
+        const cleanOperator = cleanZplText(label.operatorId);
+        const cleanSector = cleanZplText(sectorLabel);
+        const cleanPkg = cleanZplText(packageType);
 
-        const companyClean = removeAccents(companyName).toUpperCase();
+        const printableName = isSquare ? cleanName : cleanName.slice(0, 48);
+        const printableCustomer = isSquare ? cleanCustomer : cleanCustomer.slice(0, 36);
+        const printableColor = isSquare ? cleanColor : cleanColor.slice(0, 24);
+
+        const companyClean = cleanZplText(companyName);
         let compLine1 = companyClean;
         let compLine2 = "";
         if (companyClean.startsWith("IMPERIO JOMARCI")) {
@@ -1039,26 +1079,51 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           : `^FO40,15^GB44,44,2,B,3^FS`;
 
         const maxTitleWidth = badgeX - 110;
-        const squareCustomerAddressLine = cleanCustomerAddress
-          ? `^FO40,496^A0N,18,16^FB460,2,0,L^FDEnd.: ${cleanCustomerAddress}^FS`
-          : "";
+        const squareCompanyFont = [24, 20, 18, 16, 14, 12, 10, 8].find((font) => {
+          const maxChars = Math.max(8, Math.floor(maxTitleWidth / (font * 0.52)));
+          const lineCount = wrapZplText(companyClean, maxChars).length;
+          return lineCount * (font + 4) <= 48;
+        }) || 8;
+        const squareCompanyLines = wrapZplText(
+          companyClean,
+          Math.max(8, Math.floor(maxTitleWidth / (squareCompanyFont * 0.52)))
+        );
+        const squareCompanyHeader = `^FO100,16^A0N,${squareCompanyFont},${Math.round(squareCompanyFont * 0.92)}^FB${maxTitleWidth},${squareCompanyLines.length},0,L^FD${squareCompanyLines.join("\\&")}^FS`;
+        const squareLabelBody = (() => {
+          const blocks: string[] = ["^FO40,66^GB460,2,2^FS"];
+          let y = 80;
 
-        const squareLabelBody = `
-^FO40,66^GB460,2,2^FS
-^FO40,84^A0N,58,54^FB460,3,0,L^FD${cleanName}^FS
-^FO40,280^A0N,28,26^FDCod: ${code}  |  Pedido: ${orderCode}^FS
-^FO40,324^GB460,62,3,B,4^FS
-^FO52,342^A0N,26,24^FDCor: ${cleanColor}^FS
-^FO280,346^A0N,20,18^FB210,1,0,R^FDVar: ${variation}^FS
-^FO40,408^A0N,25,23^FB460,2,0,L^FD${cleanSector}: ${boxIndex}/${boxTotal} (${cleanPkg})^FS
-^FO40,456^GB460,3,3^FS
-^FO40,470^A0N,22,20^FB460,1,0,L^FDCliente: ${cleanCustomer}^FS
-${squareCustomerAddressLine}
-^FO40,548^A0N,20,18^FDData/Hora: ${dateStr} ${timeStr}^FS
-^FO40,580^A0N,20,18^FDOperador: ${label.operatorId || "-"}^FS
-^FO300,690^A0N,22,20^FB190,1,0,R^FDQUANTIDADE^FS
-^FO300,722^A0N,50,48^FB190,1,0,R^FD${printQuantity} UN^FS
-`;
+          // Select the largest title size that keeps the full name within a
+          // flexible area below the company header.
+          const titleFont = [54, 46, 38, 32, 28, 24, 20, 18].find((font) => {
+            const maxChars = Math.max(8, Math.floor(460 / (font * 0.52)));
+            const lineCount = wrapZplText(cleanName, maxChars).length;
+            return lineCount * (font + 8) <= 210;
+          }) || 18;
+
+          const appendField = (value: string, font: number, gap = 3) => {
+            const maxChars = Math.max(8, Math.floor(460 / (font * 0.52)));
+            const lines = wrapZplText(value, maxChars);
+            blocks.push(`^FO40,${y}^A0N,${font},${Math.round(font * 0.92)}^FB460,${lines.length},0,L^FD${lines.join("\\&")}^FS`);
+            y += lines.length * (font + 5) + gap;
+          };
+
+          appendField(cleanName, titleFont, 8);
+          blocks.push(`^FO40,${y}^GB460,2,2^FS`);
+          y += 10;
+          appendField(`Cod: ${cleanZplText(code)} | Pedido: ${cleanOrderCode}`, 20, 5);
+          appendField(`Cor: ${cleanColor}`, 18, 2);
+          appendField(`Var.: ${cleanVariation}`, 18, 2);
+          appendField(`Tamanho: ${cleanSize}`, 18, 4);
+          appendField(`${cleanSector}: ${boxIndex}/${boxTotal} (${cleanPkg})`, 18, 4);
+          if (printableCustomer !== "-") appendField(`Cliente: ${printableCustomer}`, 16, 2);
+          if (cleanCustomerAddress !== "-") appendField(`End.: ${cleanCustomerAddress}`, 16, 4);
+          appendField(`Data/Hora: ${dateStr} ${timeStr}`, 16, 2);
+          appendField(`Operador: ${cleanOperator}`, 16, 4);
+          blocks.push("^FO300,690^A0N,22,20^FB190,1,0,R^FDQUANTIDADE^FS");
+          blocks.push(`^FO300,722^A0N,50,48^FB190,1,0,R^FD${printQuantity} UN^FS`);
+          return blocks.join("\n");
+        })();
 
         if (isSquare) {
           return `^XA
@@ -1067,7 +1132,7 @@ ${squareCustomerAddressLine}
 ^CI28
 
 ${logoBlock}
-^FO100,16^A0N,24,22^FB${maxTitleWidth},2,0,L^FD${companyClean}^FS
+${squareCompanyHeader}
 
 ${sectorBadgeBlock}
 
@@ -1093,13 +1158,13 @@ ${sectorBadgeBlock}
 
 ^FO40,66^GB460,2,2^FS
 
-^FO40,74^A0N,38,34^FB460,2,0,L^FD${cleanName}^FS
+^FO40,74^A0N,38,34^FB460,2,0,L^FD${printableName}^FS
 
 ^FO40,146^A0N,24,24^FDCod: ${code}  |  Pedido: ${orderCode}^FS
 
 ^FO40,174^GB460,54,3,B,4^FS
-^FO52,190^A0N,24,22^FDCor: ${cleanColor}^FS
-^FO280,194^A0N,18,16^FB210,1,0,R^FDVar: ${variation}^FS
+^FO52,190^A0N,24,22^FDCor: ${printableColor}^FS
+^FO280,194^A0N,18,16^FB210,1,0,R^FDVar: ${cleanVariation.slice(0, 20)}^FS
 
 ^FO40,242^A0N,28,28^FD${cleanSector}: ${boxIndex}/${boxTotal} (${cleanPkg})^FS
 
@@ -1107,7 +1172,7 @@ ${sectorBadgeBlock}
 
 ^FO40,294^A0N,26,24^FDData/Hora: ${dateStr} ${timeStr}^FS
 ^FO40,324^A0N,26,24^FDOperador: ${label.operatorId || "-"}^FS
-^FO40,354^A0N,26,24^FDCliente: ${cleanCustomer}^FS
+^FO40,354^A0N,26,24^FDCliente: ${printableCustomer}^FS
 
 ^FO300,294^A0N,20,18^FB190,1,0,R^FDQUANTIDADE^FS
 ^FO300,318^A0N,48,46^FB190,1,0,R^FD${printQuantity} UN^FS
@@ -1155,6 +1220,28 @@ ${barcodeBlock}
     const date = new Date(label.timestamp || Date.now());
     const dateStr = date.toLocaleDateString("pt-BR");
     const timeStr = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const productNameLength = String(label.name || "").length;
+    const squareTitleFontSize = productNameLength > 140
+      ? 16
+      : productNameLength > 110
+        ? 18
+        : productNameLength > 80
+          ? 21
+          : productNameLength > 55
+            ? 24
+            : 27;
+    const labelDetailsLength = [
+      label.code,
+      label.orderCode,
+      label.color,
+      label.variation,
+      label.size,
+      label.packageType,
+      label.customer,
+      label.customerAddress,
+      label.operatorId,
+    ].map((value) => String(value || "")).join(" ").length;
+    const squareDetailsFontSize = labelDetailsLength > 280 ? 7 : labelDetailsLength > 190 ? 8 : 9;
 
     return (
       <div
@@ -1169,45 +1256,61 @@ ${barcodeBlock}
           fontFamily: "sans-serif",
         }}
       >
-        <div className="flex min-w-0 flex-1 flex-col justify-between overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col">
           <div className="min-w-0">
-            <div className="mb-[2mm] flex min-h-[10mm] items-center justify-between gap-2 border-b border-slate-300 pb-[1.5mm]">
+            <div className="mb-[1.5mm] flex min-h-[10mm] items-start justify-between gap-2 border-b border-slate-300 pb-[1mm]">
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="h-[6mm] w-[6mm] shrink-0" />
                 <div className="flex min-w-0 flex-col leading-tight">
-                  <span className="truncate text-[9px] font-black uppercase tracking-tight">{companyName}</span>
+                  <span className="whitespace-normal break-words text-[9px] font-black uppercase tracking-tight">{companyName}</span>
                   {companySubtitle && (
-                    <span className="truncate text-[7px] font-bold uppercase text-slate-600">{companySubtitle}</span>
+                    <span className="whitespace-normal break-words text-[7px] font-bold uppercase text-slate-600">{companySubtitle}</span>
                   )}
                 </div>
               </div>
-              <span className="max-w-[22mm] rounded bg-slate-100 px-1.5 py-1 text-center text-[8px] font-black uppercase leading-tight">
+              <span className="max-w-[22mm] whitespace-normal break-words rounded bg-slate-100 px-1.5 py-1 text-center text-[8px] font-black uppercase leading-tight">
                 {label.sectorLabel}
               </span>
             </div>
 
-            <h3 className="mb-[2mm] line-clamp-3 text-[27px] font-black leading-[1.02] tracking-tight">
+            <h3
+              className="mb-[1.5mm] whitespace-normal break-words font-black leading-[1.02] tracking-tight"
+              style={{ fontSize: `${squareTitleFontSize}px`, overflowWrap: "anywhere" }}
+            >
               {label.name}
             </h3>
 
-            <p className="mb-[2mm] font-mono text-[12px] font-black leading-tight">
+            <p
+              className="mb-[1.5mm] whitespace-normal break-words font-mono font-black leading-tight"
+              style={{ fontSize: `${Math.max(8, squareDetailsFontSize + 2)}px`, overflowWrap: "anywhere" }}
+            >
               Cod: {label.code} | Pedido: {label.orderCode}
             </p>
 
-            <div className="mb-[2mm] flex items-center justify-between gap-2 rounded border border-black bg-slate-50 px-2 py-1.5 text-[10px] font-black leading-tight">
-              <span className="min-w-0 truncate">Cor: {label.color || "-"}</span>
-              <span className="shrink-0">Var: {label.variation || "-"}</span>
+            <div
+              className="mb-[1.5mm] flex flex-col gap-0.5 rounded border border-black bg-slate-50 px-2 py-1.5 font-black leading-tight"
+              style={{ fontSize: `${squareDetailsFontSize}px` }}
+            >
+              <span className="whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Cor: {label.color || "-"}</span>
+              <span className="whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Var.: {label.variation || "-"}</span>
+              <span className="whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Tamanho: {label.size || "-"}</span>
             </div>
 
-            <p className="text-[10px] font-black uppercase leading-tight tracking-wide">
+            <p
+              className="whitespace-normal break-words font-black uppercase leading-tight tracking-wide"
+              style={{ fontSize: `${squareDetailsFontSize}px`, overflowWrap: "anywhere" }}
+            >
               Embalagem: {label.boxIndex}/{label.boxTotal} ({label.packageType})
             </p>
 
             {label.customer && label.customer !== "-" && (
-              <div className="mt-[2mm] rounded border border-slate-200 bg-slate-50 px-1.5 py-1 text-[8px] font-black leading-tight">
-                <span className="block truncate">Cliente: {label.customer}</span>
+              <div
+                className="mt-[1.5mm] rounded border border-slate-200 bg-slate-50 px-1.5 py-1 font-black leading-tight"
+                style={{ fontSize: `${Math.max(7, squareDetailsFontSize - 1)}px` }}
+              >
+                <span className="block whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Cliente: {label.customer}</span>
                 {label.customerAddress && (
-                  <span className="mt-0.5 line-clamp-2 break-words font-bold text-slate-700">
+                  <span className="mt-0.5 block whitespace-normal break-words font-bold text-slate-700" style={{ overflowWrap: "anywhere" }}>
                     Endereço: {label.customerAddress}
                   </span>
                 )}
@@ -1215,10 +1318,10 @@ ${barcodeBlock}
             )}
           </div>
 
-          <div className="flex items-end justify-between gap-2 border-t border-slate-300 pt-[2mm]">
-            <div className="min-w-0 flex-1 pr-1 text-[9px] font-black leading-tight">
+          <div className="mt-auto flex items-end justify-between gap-2 border-t border-slate-300 pt-[1.5mm]">
+            <div className="min-w-0 flex-1 pr-1 font-black leading-tight" style={{ fontSize: `${Math.max(7, squareDetailsFontSize)}px` }}>
               <span className="block">Data: {dateStr} {timeStr}</span>
-              <span className="block truncate">Operador: {label.operatorId || "-"}</span>
+              <span className="block whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Operador: {label.operatorId || "-"}</span>
             </div>
             <div className="shrink-0 text-right">
               <span className="mb-1 block text-[8px] font-black uppercase leading-none">QTD</span>
@@ -1238,7 +1341,7 @@ ${barcodeBlock}
               crossOrigin="anonymous"
             />
           ) : (
-            <div className="flex h-[60mm] w-[14mm] items-center justify-center overflow-visible">
+            <div className="flex h-[60mm] w-[12mm] items-center justify-center overflow-visible">
               <div className="w-[60mm] shrink-0 rotate-90">
                 <LocalSVGBarcode
                   data={`${label.code}|${label.color}|${label.size}|${label.printQuantity}`}
