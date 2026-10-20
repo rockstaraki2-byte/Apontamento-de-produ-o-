@@ -10,8 +10,8 @@ export default defineConfig(() => {
       react(), 
       tailwindcss(),
       VitePWA({
-        // Troca versões antigas automaticamente para evitar telas presas em chunks removidos.
-        registerType: 'autoUpdate',
+        // Mantém a versão atual aberta e pede confirmação antes de recarregar.
+        registerType: 'prompt',
         injectRegister: null,
         manifestFilename: 'manifest.json',
         includeAssets: ['apontapro-icon.svg', 'apontapro-logo.svg'],
