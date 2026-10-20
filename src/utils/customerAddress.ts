@@ -1,5 +1,4 @@
 import type { Customer } from "../types";
-import { findCustomerForOrder } from "../searchUtils";
 
 export type CustomerAddressDraft = {
   street: string;
@@ -49,25 +48,34 @@ function parseLegacyCityState(address: string) {
 }
 
 export function parseCustomerCityState(customer: Partial<Customer>) {
+  const fields = customer as Partial<Customer> & Record<string, unknown>;
   const legacy = parseLegacyCityState(String(customer.address || "").trim());
   return {
-    city: String(customer.city || legacy?.city || "").trim(),
+    city: String(customer.city || fields.cidade || legacy?.city || "").trim(),
     state: String(customer.state || customer.uf || legacy?.state || "").trim().toUpperCase(),
   };
 }
 
 export function formatCustomerFullAddress(customer: Partial<Customer>): string {
-  const legacyAddress = String(customer.address || "").trim();
+  const fields = customer as Partial<Customer> & Record<string, unknown>;
+  const legacyAddress = String(customer.address || fields.customerAddress || fields.deliveryAddress || "").trim();
   const { city, state } = parseCustomerCityState(customer);
-  const street = String(customer.street || "").trim();
-  const number = String(customer.number || "").trim();
-  const complement = String(customer.complement || "").trim();
+  const street = String(customer.street || fields.logradouro || fields.endereco || "").trim();
+  const number = String(customer.number || fields.numero || "").trim();
+  const complement = String(customer.complement || fields.complemento || "").trim();
   const neighborhood = String(customer.neighborhood || customer.bairro || "").trim();
-  const postalCode = formatPostalCodeInput(String(customer.postalCode || "").trim());
+  const postalCode = formatPostalCodeInput(String(customer.postalCode || fields.cep || "").trim());
 
-  const streetLine = [street, number].filter(Boolean).join(", ");
-  const addressLine = [streetLine, complement].filter(Boolean).join(" — ") ||
-    (!parseLegacyCityState(legacyAddress) ? legacyAddress : "");
+  const fallbackStreet = !parseLegacyCityState(legacyAddress) ? legacyAddress : "";
+  const streetLine = street
+    ? [street, number].filter(Boolean).join(", ")
+    : fallbackStreet && number && !new RegExp(
+        `(^|[^a-zA-Z0-9])${number.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-zA-Z0-9])`,
+        "i",
+      ).test(fallbackStreet)
+      ? `${fallbackStreet}, ${number}`
+      : fallbackStreet;
+  const addressLine = [streetLine, complement].filter(Boolean).join(" — ");
   const cityState = city && state ? `${city}/${state}` : city || state;
   const locality = [neighborhood, cityState].filter(Boolean).join(" · ");
 
@@ -85,10 +93,30 @@ export function getCustomerAddressForLabel(
     return "";
   }
 
-  const customer = findCustomerForOrder(
-    { customerName: normalizedName },
-    customers,
-  ) as Customer | null;
+  const leadingCode = normalizedName.match(/^\s*[\[(]?\s*(\d+)\s*[\])]?/);
+  const lookupCode = leadingCode?.[1];
+  const customerByCode = lookupCode === undefined || lookupCode === null || lookupCode === ""
+    ? undefined
+    : customers.find((candidate) => {
+        const fields = candidate as Customer & Record<string, unknown>;
+        const candidateIds = [candidate.id, fields.code].map((value) => String(value ?? "").trim());
+        return candidateIds.includes(String(lookupCode).trim());
+      });
+
+  const cleanName = normalizedName
+    .replace(/^\s*[\[(]?\s*\d+\s*[\])]?\s*[-–—]?\s*/, "")
+    .trim();
+  const normalizeName = (value: unknown) => String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+  const normalizedLookups = new Set([normalizeName(normalizedName), normalizeName(cleanName)]);
+  const customer = customerByCode || customers.find((candidate) =>
+    [candidate.name, candidate.tradeName].some((name) => normalizedLookups.has(normalizeName(name)))
+  );
 
   return customer ? formatCustomerFullAddress(customer) : "";
 }
