@@ -1243,133 +1243,192 @@ ${barcodeBlock}
     const date = new Date(label.timestamp || Date.now());
     const dateStr = date.toLocaleDateString("pt-BR");
     const timeStr = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    const productNameLength = String(label.name || "").length;
-    const portraitTitleFontSize = productNameLength > 180
-      ? 21
-      : productNameLength > 130
-        ? 23
-        : productNameLength > 90
-          ? 26
-          : productNameLength > 55
-            ? 30
-            : 36;
-    const labelDetailsLength = [
-      label.code,
-      label.orderCode,
-      label.color,
-      label.variation,
-      label.size,
-      label.packageType,
-      label.customer,
-      label.customerAddress,
-      label.operatorId,
-    ].map((value) => String(value || "")).join(" ").length;
-    const portraitDetailsFontSize = labelDetailsLength > 420 ? 12 : labelDetailsLength > 300 ? 13 : labelDetailsLength > 200 ? 14 : 15;
+    const name = String(label.name || "-");
+    const nameLength = name.length;
+    const availableTitleWidthPx = 350;
+    const portraitTitleFontSize = [27, 25, 23, 21, 19, 17].find((fontSize) => {
+      const charsPerLine = Math.max(1, Math.floor(availableTitleWidthPx / (fontSize * 0.52)));
+      const lineCount = Math.ceil(nameLength / charsPerLine);
+      return lineCount <= 5 && lineCount * fontSize * 1.04 <= 144;
+    }) || 17;
+    const companyHeaderFontSize = Math.max(
+      11,
+      Math.min(18, Math.floor(255 / Math.max(1, String(companyName || "").length * 0.52)))
+    );
+    const sector = String(label.sectorLabel || "-").toUpperCase();
+    const sectorFontSize = Math.max(
+      8,
+      Math.min(11, Math.floor(78 / Math.max(1, sector.length * 0.58)))
+    );
+    const quantityText = String(label.printQuantity || 0) + " UN";
+    const quantityFontSize = Math.min(
+      31,
+      Math.max(18, Math.floor(145 / Math.max(1, quantityText.length * 0.58)))
+    );
+
+    const customerText = String(label.customer || "-").toUpperCase();
+    const customerAddress = String(label.customerAddress || "").trim();
+    const customerLineCount = Math.min(2, Math.max(1, Math.ceil(customerText.length / 50)));
+    const customerTopMm = 95.625;
+    const customerBottomMm = customerTopMm + customerLineCount * 3.6;
+    const addressLineCount = customerAddress
+      ? Math.min(2, Math.max(1, Math.ceil(("Endereco: " + customerAddress).length / 78)))
+      : 0;
+    const addressTopMm = customerBottomMm + 0.4;
+    const footerRuleTopMm = Math.max(
+      105,
+      customerAddress ? addressTopMm + addressLineCount * 2.5 + 0.5 : customerBottomMm + 0.5
+    );
+    const dateTopMm = footerRuleTopMm + 2.5;
+    const operatorTopMm = dateTopMm + 4.375;
+    const barcodeTopMm = Math.min(131, Math.max(118.125, operatorTopMm + 6.25));
 
     return (
       <div
-        key={`thermal-portrait-${index}-${label.id}`}
-        className="relative flex box-border gap-[3mm] overflow-hidden bg-white p-[4mm] font-sans text-black select-none"
+        key={"thermal-portrait-" + index + "-" + label.id}
+        className="relative box-border overflow-hidden bg-white font-sans text-black select-none"
         style={{
+          position: "relative",
           width: "100mm",
           height: "150mm",
           maxHeight: "150mm",
           pageBreakAfter: "always",
           breakAfter: "page",
-          fontFamily: "sans-serif",
+          fontFamily: "Arial, sans-serif",
         }}
       >
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="min-w-0">
-            <div className="mb-[2mm] flex min-h-[13mm] items-center justify-between gap-2 border-b border-slate-300 pb-[1.5mm]">
-              <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="h-[8mm] w-[8mm] shrink-0" />
-                <div className="flex min-w-0 flex-col leading-tight">
-                  <span className="whitespace-normal break-words text-[12px] font-black uppercase tracking-tight">{companyName}</span>
-                  {companySubtitle && (
-                    <span className="whitespace-normal break-words text-[10px] font-bold uppercase text-slate-600">{companySubtitle}</span>
-                  )}
-                </div>
-              </div>
-              <span className="max-w-[23mm] whitespace-normal break-words rounded bg-slate-100 px-1.5 py-1 text-center text-[10px] font-black uppercase leading-tight">
-                {label.sectorLabel}
-              </span>
-            </div>
-
-            <h3
-              className="mb-[2mm] whitespace-normal break-words font-black leading-[1.04] tracking-tight"
-              style={{ fontSize: `${portraitTitleFontSize}px`, overflowWrap: "anywhere" }}
-            >
-              {label.name}
-            </h3>
-
-            <p
-              className="mb-[2mm] whitespace-normal break-words font-mono font-black leading-snug"
-              style={{ fontSize: `${Math.max(16, portraitDetailsFontSize + 2)}px`, overflowWrap: "anywhere" }}
-            >
-              Cód.: {label.code} | Pedido: {label.orderCode}
-            </p>
-
-            <div
-              className="mb-[2mm] flex flex-col gap-1 rounded border border-black bg-slate-50 px-2 py-1.5 font-black leading-snug"
-              style={{ fontSize: `${portraitDetailsFontSize}px` }}
-            >
-              <span className="min-w-0 whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Cor: {label.color || "-"}</span>
-              <span className="min-w-0 whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Variação: {label.variation || "-"}</span>
-              <span className="min-w-0 whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Tamanho: {label.size || "-"}</span>
-              <span className="min-w-0 whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Embalagem: {label.boxIndex}/{label.boxTotal} ({label.packageType})</span>
-            </div>
-
-            {(label.customer && label.customer !== "-") || label.customerAddress ? (
-              <div
-                className="rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-black leading-snug"
-                style={{ fontSize: `${Math.max(13, portraitDetailsFontSize - 1)}px` }}
-              >
-                {label.customer && label.customer !== "-" && (
-                  <span className="block whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Cliente: {label.customer}</span>
-                )}
-                {label.customerAddress && (
-                  <span className="mt-0.5 block whitespace-normal break-words font-bold text-slate-700" style={{ overflowWrap: "anywhere" }}>
-                    Endereço: {label.customerAddress}
-                  </span>
-                )}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="mt-auto flex items-end justify-between gap-3 border-t border-slate-300 pt-[2mm]">
-            <div className="min-w-0 flex-1 pr-1 font-black leading-snug" style={{ fontSize: `${Math.max(13, portraitDetailsFontSize)}px` }}>
-              <span className="block whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Data: {dateStr} {timeStr}</span>
-              <span className="block whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Operador: {label.operatorId || "-"}</span>
-            </div>
-            <div className="shrink-0 text-right">
-              <span className="mb-1 block text-[11px] font-black uppercase leading-none">QUANTIDADE</span>
-              <strong className="block whitespace-nowrap text-[24px] font-black leading-none">
-                {label.printQuantity} <span className="text-[14px]">UN</span>
-              </strong>
-            </div>
-          </div>
+        <div
+          className="absolute overflow-hidden whitespace-nowrap font-black uppercase"
+          style={{ left: "3.75mm", top: "3.75mm", width: "67mm", fontSize: companyHeaderFontSize, lineHeight: 1 }}
+        >
+          {companyName}
+        </div>
+        <div
+          className="absolute flex items-center justify-center overflow-hidden border-[0.4mm] border-black bg-black px-[1mm] text-center font-black uppercase leading-none text-white"
+          style={{ left: "74.375mm", top: "3.75mm", width: "21.875mm", height: "5.25mm", fontSize: sectorFontSize }}
+        >
+          {sector}
         </div>
 
-        <div className="flex w-[20mm] shrink-0 items-center justify-center overflow-hidden border-l border-slate-300 pl-[1mm]">
+        <div className="absolute bg-black" style={{ left: "3.75mm", top: "12.5mm", width: "92.5mm", height: "0.25mm" }} />
+
+        <h3
+          className="absolute m-0 overflow-hidden font-black uppercase tracking-tight"
+          style={{
+            left: "3.75mm",
+            top: "15mm",
+            width: "92.5mm",
+            height: "38.125mm",
+            maxHeight: "38.125mm",
+            fontSize: portraitTitleFontSize,
+            lineHeight: 1.04,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {name}
+        </h3>
+
+        <div className="absolute bg-black" style={{ left: "3.75mm", top: "53.125mm", width: "92.5mm", height: "0.25mm" }} />
+
+        <div
+          className="absolute overflow-hidden whitespace-nowrap font-mono font-black"
+          style={{ left: "3.75mm", top: "55.625mm", width: "43mm", fontSize: 14, lineHeight: 1.1 }}
+        >
+          Cod.: {label.code || "-"}
+        </div>
+        <div
+          className="absolute overflow-hidden whitespace-nowrap font-mono font-black"
+          style={{ left: "49.375mm", top: "55.625mm", width: "46.875mm", fontSize: 14, lineHeight: 1.1 }}
+        >
+          Pedido: {label.orderCode || "-"}
+        </div>
+        <div
+          className="absolute overflow-hidden whitespace-nowrap font-black uppercase"
+          style={{ left: "3.75mm", top: "61.875mm", width: "92.5mm", fontSize: 14, lineHeight: 1.1 }}
+        >
+          Cor: {label.color || "-"}
+        </div>
+
+        <div
+          className="absolute overflow-hidden whitespace-nowrap font-black"
+          style={{ left: "3.75mm", top: "68.125mm", width: "92.5mm", fontSize: 13, lineHeight: 1.1 }}
+        >
+          Variacao:
+        </div>
+        <div
+          className="absolute overflow-hidden font-black uppercase"
+          style={{ left: "3.75mm", top: "72.5mm", width: "92.5mm", height: "11.875mm", fontSize: 14, lineHeight: 1.1, overflowWrap: "anywhere" }}
+        >
+          {label.variation || "-"}
+        </div>
+
+        <div
+          className="absolute overflow-hidden whitespace-nowrap font-black"
+          style={{ left: "3.75mm", top: "84.375mm", width: "92.5mm", fontSize: 13, lineHeight: 1.1 }}
+        >
+          Tamanho: {label.size || "-"}
+        </div>
+        <div
+          className="absolute overflow-hidden whitespace-nowrap font-black"
+          style={{ left: "3.75mm", top: "89.375mm", width: "92.5mm", fontSize: 13, lineHeight: 1.1 }}
+        >
+          Embalagem: {label.boxIndex}/{label.boxTotal} ({label.packageType || "-"})
+        </div>
+        <div
+          className="absolute overflow-hidden font-black uppercase"
+          style={{ left: "3.75mm", top: "95.625mm", width: "92.5mm", height: customerLineCount * 3.6 + "mm", fontSize: 13, lineHeight: 1.1, overflowWrap: "anywhere" }}
+        >
+          Cliente: {customerText}
+        </div>
+        {customerAddress && (
+          <div
+            className="absolute overflow-hidden font-bold uppercase"
+            style={{ left: "3.75mm", top: addressTopMm + "mm", width: "92.5mm", height: addressLineCount * 2.5 + "mm", fontSize: 9, lineHeight: 1, overflowWrap: "anywhere" }}
+          >
+            Endereco: {customerAddress}
+          </div>
+        )}
+
+        <div className="absolute bg-black" style={{ left: "3.75mm", top: footerRuleTopMm + "mm", width: "92.5mm", height: "0.25mm" }} />
+        <div
+          className="absolute overflow-hidden whitespace-nowrap font-black"
+          style={{ left: "3.75mm", top: dateTopMm + "mm", width: "92.5mm", fontSize: 11, lineHeight: 1.1 }}
+        >
+          Data/Hora: {dateStr} {timeStr}
+        </div>
+        <div
+          className="absolute overflow-hidden whitespace-nowrap font-black uppercase"
+          style={{ left: "3.75mm", top: operatorTopMm + "mm", width: "29mm", fontSize: 11, lineHeight: 1.1 }}
+        >
+          Operador: {label.operatorId || "-"}
+        </div>
+
+        <div
+          className="absolute flex items-center justify-center overflow-hidden"
+          style={{ left: "33.125mm", top: barcodeTopMm + "mm", width: "34mm", height: "19mm" }}
+        >
           {includeImageInLabel && label.imageUrl ? (
-            <img
-              src={label.imageUrl}
-              alt="Produto"
-              className="h-full w-full object-contain"
-              crossOrigin="anonymous"
-            />
+            <img src={label.imageUrl} alt="Produto" className="h-full w-full object-contain" crossOrigin="anonymous" />
           ) : (
-            <div className="flex h-[110mm] w-[16mm] items-center justify-center overflow-visible">
-              <div className="w-[110mm] shrink-0 rotate-90">
-                <LocalSVGBarcode
-                  data={`${label.code}|${label.color}|${label.size}|${label.printQuantity}`}
-                  codeText={label.code}
-                  large
-                />
-              </div>
-            </div>
+            <LocalSVGBarcode
+              data={String(label.code || "") + "|" + String(label.color || "") + "|" + String(label.size || "") + "|" + String(label.printQuantity || "")}
+              codeText={label.code}
+              large
+            />
           )}
+        </div>
+
+        <div
+          className="absolute overflow-hidden whitespace-nowrap font-black uppercase"
+          style={{ left: "3.75mm", top: "140mm", width: "38mm", fontSize: 11, lineHeight: 1 }}
+        >
+          QUANTIDADE
+        </div>
+        <div
+          className="absolute overflow-hidden whitespace-nowrap font-black"
+          style={{ left: "67.5mm", top: "136.25mm", width: "28.75mm", fontSize: quantityFontSize, lineHeight: 1 }}
+        >
+          {quantityText}
         </div>
       </div>
     );
