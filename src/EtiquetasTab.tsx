@@ -1341,7 +1341,7 @@ ${barcodeBlock}
               crossOrigin="anonymous"
             />
           ) : (
-            <div className="flex h-[60mm] w-[12mm] items-center justify-center overflow-visible">
+            <div className="flex h-[60mm] w-[14mm] items-center justify-center overflow-visible">
               <div className="w-[60mm] shrink-0 rotate-90">
                 <LocalSVGBarcode
                   data={`${label.code}|${label.color}|${label.size}|${label.printQuantity}`}
