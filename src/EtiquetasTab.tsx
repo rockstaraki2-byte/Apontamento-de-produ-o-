@@ -1067,7 +1067,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
         const barcodeBlock = hasImage
           ? imageZPLCommand
-          : "^FO535,110^BY2,3,110^BCN,110,Y,N,N^FD" + cleanZplText(code) + "^FS";
+          : "^FO535,110^BY2,3,110^BCN,110,Y,N,N^FD" + code + "^FS";
 
         // Match the approved 100x150 ZPL header while keeping the 100x50 layout unchanged.
         const badgeWidth = isPortrait ? 175 : Math.max(100, Math.min(420, cleanSector.length * 13 + 18));
@@ -1140,7 +1140,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           return blocks.join("\n");
         })();
 
-        const cleanBarcodeCode = cleanZplText(code);
+        const cleanBarcodeCode = String(code ?? "-").replace(/[\^~\\]/g, " ").trim() || "-";
         const portraitBarcodeModuleWidth = Math.max(1, Math.min(3, Math.floor(270 / Math.max(1, 11 * cleanBarcodeCode.length + 35))));
         const portraitBarcodeBlock = hasImage
           ? imageZPLCommand
