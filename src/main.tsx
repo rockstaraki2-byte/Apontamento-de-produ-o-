@@ -1,15 +1,14 @@
-import { StrictMode } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App.tsx";
 import { OrderPdfExportBridge } from "./OrderPdfExportBridge";
-import {
-  isDynamicImportLoadError,
-  shouldAttemptDynamicImportReload,
-} from "./utils/chunkLoadRecovery";
 import "./index.css";
 
 let appServiceWorkerRegistration: ServiceWorkerRegistration | undefined;
+let appUpdateAvailable = false;
+let userRequestedAppUpdate = false;
+const appUpdateEvent = "apontapro:app-update-available";
 
 function checkForAppUpdate() {
   if (
@@ -25,9 +24,18 @@ function checkForAppUpdate() {
   });
 }
 
-registerSW({
+const updateAppServiceWorker = registerSW({
   onOfflineReady() {
     console.log("App pronto para uso offline");
+  },
+  onNeedRefresh() {
+    appUpdateAvailable = true;
+    window.dispatchEvent(new Event(appUpdateEvent));
+  },
+  onNeedReload() {
+    if (!userRequestedAppUpdate) return;
+    userRequestedAppUpdate = false;
+    window.location.reload();
   },
   onRegisteredSW(_serviceWorkerUrl, registration) {
     appServiceWorkerRegistration = registration;
@@ -44,55 +52,55 @@ window.addEventListener("focus", checkForAppUpdate);
 window.addEventListener("online", checkForAppUpdate);
 document.addEventListener("visibilitychange", checkForAppUpdate);
 
-window.addEventListener("vite:preloadError", (event) => {
-  const importError = (event as unknown as { payload?: unknown }).payload;
-  if (!isDynamicImportLoadError(importError)) return;
+function AppUpdatePrompt() {
+  const [isUpdateAvailable, setIsUpdateAvailable] = useState(appUpdateAvailable);
 
-  const recoveryKey = "apontapro:chunk-recovery-last-attempt";
-  let lastAttemptAt: string | null = null;
-  try {
-    lastAttemptAt = sessionStorage.getItem(recoveryKey);
-  } catch {
-    // O bloqueio do armazenamento não deve impedir a atualização da tela.
-  }
+  useEffect(() => {
+    const showUpdatePrompt = () => setIsUpdateAvailable(true);
+    window.addEventListener(appUpdateEvent, showUpdatePrompt);
+    if (appUpdateAvailable) showUpdatePrompt();
+    return () => window.removeEventListener(appUpdateEvent, showUpdatePrompt);
+  }, []);
 
-  if (!shouldAttemptDynamicImportReload(lastAttemptAt)) return;
-  try {
-    sessionStorage.setItem(recoveryKey, String(Date.now()));
-  } catch {
-    // A recarga ainda pode recuperar o aplicativo sem sessionStorage.
-  }
+  if (!isUpdateAvailable) return null;
 
-  void (async () => {
-    try {
-      const registration =
-        appServiceWorkerRegistration ??
-        (await navigator.serviceWorker?.getRegistration());
+  const applyUpdate = () => {
+    userRequestedAppUpdate = true;
+    void updateAppServiceWorker().catch((error) => {
+      userRequestedAppUpdate = false;
+      console.error("Não foi possível aplicar a atualização do aplicativo:", error);
+    });
+  };
 
-      if (registration) {
-        const controllerChange = new Promise<void>((resolve) => {
-          navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), {
-            once: true,
-          });
-        });
-        const updateCheck = registration.update().catch(() => undefined);
-        await Promise.race([
-          updateCheck,
-          new Promise<void>((resolve) => window.setTimeout(resolve, 1000)),
-        ]);
-        registration.waiting?.postMessage({ type: "SKIP_WAITING" });
-        await Promise.race([
-          controllerChange,
-          new Promise<void>((resolve) => window.setTimeout(resolve, 1500)),
-        ]);
-      }
-    } catch (error) {
-      console.warn("Falha ao preparar a atualização após erro de módulo:", error);
-    }
-
-    window.location.reload();
-  })();
-});
+  return (
+    <div
+      className="fixed inset-x-3 bottom-20 z-[200] mx-auto max-w-xl rounded-2xl border border-sky-300/30 bg-[#032D51] p-4 text-white shadow-2xl md:bottom-4"
+      role="status"
+      aria-live="polite"
+    >
+      <p className="font-bold">Nova versão disponível</p>
+      <p className="mt-1 text-sm text-slate-100">
+        O ApontaPRO vai aguardar. Continue trabalhando e atualize quando terminar.
+      </p>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setIsUpdateAvailable(false)}
+          className="rounded-lg px-3 py-2 text-sm font-semibold text-white/80 hover:bg-white/10"
+        >
+          Agora não
+        </button>
+        <button
+          type="button"
+          onClick={applyUpdate}
+          className="rounded-lg bg-sky-400 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-sky-300"
+        >
+          Atualizar agora
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // Registro isolado do Service Worker do Firebase Messaging,
 // separado do sw.js gerado pelo vite-plugin-pwa, evitando conflito de registro.
@@ -107,5 +115,6 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />
     <OrderPdfExportBridge />
+    <AppUpdatePrompt />
   </StrictMode>,
 );
