@@ -1006,7 +1006,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
       
       // Load corporate badge image once to paint high-resolution native logo inside labels
       let logoZPLCommand = "";
-      if (logoUrl) {
+      if (logoUrl && !isPortrait) {
         const logoImg = await imageToZPLHex(logoUrl, 44, 44);
         if (logoImg) {
           logoZPLCommand = `^FO40,15^GFA,${logoImg.byteCount},${logoImg.byteCount},${logoImg.bytesPerRow},${logoImg.hex}^FS`;
@@ -1054,114 +1054,120 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           }
         }
 
-        // Convert image to ZPL Graphic if available and enabled
+        // Product images use the bottom barcode area on portrait labels.
         let imageZPLCommand = "";
         let hasImage = false;
         if (includeImageInLabel && imageUrl) {
-          const zplImg = await imageToZPLHex(imageUrl, isPortrait ? 160 : 240, isPortrait ? 320 : 240);
+          const zplImg = await imageToZPLHex(imageUrl, isPortrait ? 360 : 240, isPortrait ? 130 : 240);
           if (zplImg) {
-            imageZPLCommand = `^FO${isPortrait ? 630 : 540},${isPortrait ? 420 : 80}^GFA,${zplImg.byteCount},${zplImg.byteCount},${zplImg.bytesPerRow},${zplImg.hex}^FS`;
+            imageZPLCommand = "^FO" + (isPortrait ? 265 : 540) + "," + (isPortrait ? 945 : 80) + "^GFA," + zplImg.byteCount + "," + zplImg.byteCount + "," + zplImg.bytesPerRow + "," + zplImg.hex + "^FS";
             hasImage = true;
           }
         }
 
-        const barcodeBlock = hasImage 
+        const barcodeBlock = hasImage
           ? imageZPLCommand
-          : isPortrait
-            ? `^FO630,400^BY2,3,160^BCR,160,Y,N,N^FD${code}^FS`
-            : `^FO535,110^BY2,3,110^BCN,110,Y,N,N^FD${code}^FS`;
+          : "^FO535,110^BY2,3,110^BCN,110,Y,N,N^FD" + code + "^FS";
 
-        // Keep the sector badge and product details inside the printable portrait area.
-        const badgeBoundary = isPortrait ? 600 : 500;
-        const badgeWidth = Math.max(100, Math.min(isPortrait ? 180 : 420, cleanSector.length * 13 + 18));
-        const badgeX = badgeBoundary - badgeWidth;
+        // Match the approved 100x150 ZPL header while keeping the 100x50 layout unchanged.
+        const badgeWidth = isPortrait ? 175 : Math.max(100, Math.min(420, cleanSector.length * 13 + 18));
+        const badgeX = isPortrait ? 595 : 500 - badgeWidth;
         const badgeTextX = badgeX + 10;
-        const sectorBadgeBlock = `^FO${badgeX},15^GB${badgeWidth},34,34,B,3^FS^FO${badgeTextX},23^A0N,18,16^FR^FD${cleanSector}^FS`;
+        const portraitSectorFontSize = [23, 21, 19, 17, 15, 13].find((font) => cleanSector.length * font * 0.58 <= 155) || 13;
+        const sectorBadgeBlock = isPortrait
+          ? "^FO595,30^GB175,42,42,B,3^FS^FO607,40^A0N," + portraitSectorFontSize + ",20^FR^FD" + cleanSector + "^FS"
+          : "^FO" + badgeX + ",15^GB" + badgeWidth + ",34,34,B,3^FS^FO" + badgeTextX + ",23^A0N,18,16^FR^FD" + cleanSector + "^FS";
 
         const logoBlock = logoZPLCommand
           ? logoZPLCommand
           : `^FO40,15^GB44,44,2,B,3^FS`;
 
-        const maxTitleWidth = badgeX - 110;
-        const companyFont = isPortrait ? [32, 28, 24, 20, 18, 16, 14] : [24, 20, 18, 16, 14, 12, 10, 8];
+        const maxTitleWidth = isPortrait ? 545 : badgeX - 110;
+        const companyFont = isPortrait ? [38, 34, 30, 26, 22, 18, 14] : [24, 20, 18, 16, 14, 12, 10, 8];
         const companyFontSize = companyFont.find((font) => {
           const maxChars = Math.max(8, Math.floor(maxTitleWidth / (font * 0.52)));
           const lineCount = wrapZplText(companyClean, maxChars).length;
-          return lineCount * (font + 4) <= (isPortrait ? 56 : 48);
+          return lineCount * (font + 4) <= (isPortrait ? 64 : 48);
         }) || (isPortrait ? 14 : 8);
         const companyLines = wrapZplText(
           companyClean,
           Math.max(8, Math.floor(maxTitleWidth / (companyFontSize * 0.52)))
         );
-        const companyHeader = `^FO100,16^A0N,${companyFontSize},${Math.round(companyFontSize * 0.92)}^FB${maxTitleWidth},${companyLines.length},0,L^FD${companyLines.join("\\&")}^FS`;
+        const companyHeader = isPortrait
+          ? "^FO30,30^A0N," + companyFontSize + "," + Math.round(companyFontSize * 0.92) + "^FB545," + companyLines.length + ",0,L^FD" + companyLines.join("\\&") + "^FS"
+          : "^FO100,16^A0N," + companyFontSize + "," + Math.round(companyFontSize * 0.92) + "^FB" + maxTitleWidth + "," + companyLines.length + ",0,L^FD" + companyLines.join("\\&") + "^FS";
+        let portraitBarcodeY = 945;
         const portraitLabelBody = (() => {
-          const blocks: string[] = ["^FO40,66^GB550,2,2^FS"];
-          let y = 80;
+          const blocks: string[] = [
+            "^FO30,100^GB740,2,2^FS",
+            "^FO30,120^A0N,58,52^FB740,5,4,L,0^FD" + cleanName + "^FS",
+            "^FO30,425^GB740,2,2^FS",
+            "^FO30,445^A0N,30,27^FDCod.: " + cleanZplText(code) + "^FS",
+            "^FO395,445^A0N,30,27^FDPedido: " + cleanOrderCode + "^FS",
+            "^FO30,495^A0N,30,27^FDCor: " + cleanColor + "^FS",
+            "^FO30,545^A0N,27,25^FDVariacao:^FS",
+            "^FO30,580^A0N,29,26^FB740,2,5,L,0^FD" + cleanVariation + "^FS",
+            "^FO30,675^A0N,28,25^FDTamanho: " + cleanSize + "^FS",
+            "^FO30,715^A0N,28,25^FB740,1,0,L,0^FDEmbalagem: " + boxIndex + "/" + boxTotal + " (" + cleanPkg + ")^FS",
+            "^FO30,765^A0N,27,24^FB740,2,5,L,0^FDCliente: " + printableCustomer + "^FS"
+          ];
 
-          const titleFont = [74, 68, 62, 56, 50, 44, 40].find((font) => {
-            const maxChars = Math.max(9, Math.floor(550 / (font * 0.52)));
-            const lineCount = wrapZplText(cleanName, maxChars).length;
-            return lineCount * (font + 9) <= 360;
-          }) || 40;
-          const titleLines = wrapZplText(cleanName, Math.max(9, Math.floor(550 / (titleFont * 0.52))));
-          blocks.push(`^FO40,${y}^A0N,${titleFont},${Math.round(titleFont * 0.92)}^FB550,${titleLines.length},0,L^FD${titleLines.join("\\&")}^FS`);
-          y += titleLines.length * (titleFont + 8) + 8;
+          const customerLineCount = Math.min(2, wrapZplText("Cliente: " + printableCustomer, 50).length);
+          const customerAddressLines = cleanCustomerAddress === "-"
+            ? []
+            : wrapZplText("Endereco: " + cleanCustomerAddress, 76);
+          let dividerY = 840;
+          let dateY = 860;
+          let operatorY = 895;
 
-          const totalDetailsLength = [
-            cleanOrderCode, cleanColor, cleanVariation, cleanSize, cleanSector,
-            cleanPkg, cleanCustomer, cleanCustomerAddress, cleanOperator,
-          ].join(" ").length;
-          const detailFont = totalDetailsLength > 520 ? 20 : totalDetailsLength > 360 ? 22 : 25;
-          const appendPortraitField = (value: string, font: number, gap = 4, width = 550) => {
-            const lines = wrapZplText(value, Math.max(10, Math.floor(width / (font * 0.52))));
-            blocks.push(`^FO40,${y}^A0N,${font},${Math.round(font * 0.92)}^FB${width},${lines.length},0,L^FD${lines.join("\\&")}^FS`);
-            y += lines.length * (font + 6) + gap;
-          };
-          const appendPortraitPair = (left: string, right: string, font: number, gap = 4) => {
-            const columnWidth = 255;
-            const wrap = (value: string) => wrapZplText(value, Math.max(8, Math.floor(columnWidth / (font * 0.52))));
-            const leftLines = wrap(left);
-            const rightLines = wrap(right);
-            blocks.push(`^FO40,${y}^A0N,${font},${Math.round(font * 0.92)}^FB${columnWidth},${leftLines.length},0,L^FD${leftLines.join("\\&")}^FS`);
-            blocks.push(`^FO315,${y}^A0N,${font},${Math.round(font * 0.92)}^FB${columnWidth},${rightLines.length},0,L^FD${rightLines.join("\\&")}^FS`);
-            y += Math.max(leftLines.length, rightLines.length) * (font + 6) + gap;
-          };
+          if (customerAddressLines.length > 0) {
+            const addressY = 765 + customerLineCount * 32 + 4;
+            blocks.push("^FO30," + addressY + "^A0N,18,16^FB740,2,2,L,0^FD" + customerAddressLines.join("\\&") + "^FS");
+            dividerY = Math.max(840, addressY + customerAddressLines.length * 20 + 5);
+            dateY = dividerY + 20;
+            operatorY = dividerY + 55;
+          }
 
-          appendPortraitField(`Cód.: ${cleanZplText(code)} | Pedido: ${cleanOrderCode}`, detailFont, 6);
-          appendPortraitPair(`Cor: ${cleanColor}`, `Variação: ${cleanVariation}`, detailFont, 4);
-          appendPortraitPair(`Tamanho: ${cleanSize}`, `Embalagem: ${boxIndex}/${boxTotal} (${cleanPkg})`, detailFont, 6);
-          if (printableCustomer !== "-") appendPortraitField(`Cliente: ${printableCustomer}`, detailFont, 3);
-          if (cleanCustomerAddress !== "-") appendPortraitField(`Endereço: ${cleanCustomerAddress}`, detailFont, 5);
-          const footerTop = Math.min(1020, Math.max(y + 12, 930));
-          blocks.push(`^FO40,${footerTop}^GB550,2,2^FS`);
-          blocks.push(`^FO40,${footerTop + 14}^A0N,22,20^FB550,1,0,L^FDData/Hora: ${dateStr} ${timeStr}^FS`);
-          blocks.push(`^FO40,${footerTop + 42}^A0N,22,20^FB550,1,0,L^FDOperador: ${cleanOperator}^FS`);
-          blocks.push(`^FO350,${footerTop + 76}^A0N,22,20^FB240,1,0,R^FDQUANTIDADE^FS`);
-          blocks.push(`^FO350,${footerTop + 98}^A0N,46,44^FB240,1,0,R^FD${printQuantity} UN^FS`);
+          blocks.push("^FO30," + dividerY + "^GB740,2,2^FS");
+          blocks.push("^FO30," + dateY + "^A0N,24,22^FDData/Hora: " + dateStr + " " + timeStr + "^FS");
+          blocks.push("^FO30," + operatorY + "^A0N,24,22^FDOperador: " + cleanOperator + "^FS");
+
+          portraitBarcodeY = Math.max(945, operatorY + 35);
+          blocks.push("^FO30,1120^A0N,24,22^FDQUANTIDADE^FS");
+          const quantityText = printQuantity + " UN";
+          const quantityFontSize = Math.min(65, Math.max(36, Math.floor(230 / Math.max(1, quantityText.length * 0.58))));
+          blocks.push("^FO540,1090^A0N," + quantityFontSize + "," + Math.round(quantityFontSize * 0.92) + "^FB230,1,0,L,0^FD" + quantityText + "^FS");
           return blocks.join("\n");
         })();
 
+        const cleanBarcodeCode = String(code ?? "-").replace(/[\^~\\]/g, " ").trim() || "-";
+        const portraitBarcodeModuleWidth = Math.max(1, Math.min(3, Math.floor(270 / Math.max(1, 11 * cleanBarcodeCode.length + 35))));
+        const portraitBarcodeBlock = hasImage
+          ? imageZPLCommand
+          : "^BY" + portraitBarcodeModuleWidth + ",2,130\n^FO265," + portraitBarcodeY + "^BCN,130,Y,N,N^FD" + cleanBarcodeCode + "^FS";
+
         if (isPortrait) {
-          const portraitBarcodeBlock = barcodeBlock;
-
-          return `^XA
-^PW800
-^LL1200
-^CI28
-
-${logoBlock}
-${companyHeader}
-
-${sectorBadgeBlock}
-
-${portraitLabelBody}
-^FO620,12^GB2,1176,2^FS
-${portraitBarcodeBlock}
-
-^PQ1
-^XZ
-`;
+          return [
+            "^XA",
+            "^CI28",
+            "^MMT",
+            "^LH0,0",
+            "^PW800",
+            "^LL1200",
+            "^LS0",
+            "",
+            companyHeader,
+            sectorBadgeBlock,
+            "",
+            portraitLabelBody,
+            portraitBarcodeBlock,
+            "",
+            "^PQ1",
+            "^XZ",
+            ""
+          ].join("\n");
         }
+
         // 100 x 50 mm landscape layout.
         return `^XA
 ^PW800
