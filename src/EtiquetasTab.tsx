@@ -39,11 +39,11 @@ interface EtiquetasTabProps {
   currentUser: User;
 }
 
-type LabelPreviewFormat = "thermal-100x50" | "thermal-100x100" | "a4";
-type ThermalLabelSize = "100x50" | "100x100";
+type LabelPreviewFormat = "thermal-100x50" | "thermal-150x100" | "a4";
+type ThermalLabelSize = "100x50" | "150x100";
 
 // Inline deterministic high-resolution Barcode renderer
-function LocalSVGBarcode({ data, codeText }: { data: string; codeText?: string }) {
+function LocalSVGBarcode({ data, codeText, large = false }: { data: string; codeText?: string; large?: boolean }) {
   const displayCode = React.useMemo(() => {
     if (codeText && codeText !== "S/C") return codeText;
     const parts = data.split("|");
@@ -69,10 +69,10 @@ function LocalSVGBarcode({ data, codeText }: { data: string; codeText?: string }
     <div className="flex flex-col items-center justify-center select-none bg-white p-1 rounded border border-slate-200 w-full shrink-0">
       <svg
         width="100%"
-        height="32"
+        height={large ? "46" : "32"}
         viewBox={`0 0 ${bars.length * 2} 40`}
         preserveAspectRatio="none"
-        className="w-full h-[32px]"
+        className={large ? "w-full h-[46px]" : "w-full h-[32px]"}
       >
         <g fill="#000000">
           {bars.map((width, idx) => {
@@ -92,7 +92,7 @@ function LocalSVGBarcode({ data, codeText }: { data: string; codeText?: string }
           })}
         </g>
       </svg>
-      <span className="text-[10px] font-mono font-black text-black mt-1 uppercase text-center leading-none tracking-wider whitespace-nowrap">
+      <span className={`${large ? "text-[12px]" : "text-[10px]"} font-mono font-black text-black mt-1 uppercase text-center leading-none tracking-wider whitespace-nowrap`}>
         {displayCode}
       </span>
     </div>
@@ -347,7 +347,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
 
   // Hidden print refs
   const thermalPrintContainerRef = useRef<HTMLDivElement | null>(null);
-  const squareThermalPrintContainerRef = useRef<HTMLDivElement | null>(null);
+  const wideThermalPrintContainerRef = useRef<HTMLDivElement | null>(null);
   const a4PrintContainerRef = useRef<HTMLDivElement | null>(null);
 
   const companyInfo = useMemo(() => {
@@ -654,7 +654,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     return list;
   }, [previewLabels]);
 
-  // 1. GENERATE THERMAL PDF (100mm x 50mm or 100mm x 100mm)
+  // 1. GENERATE THERMAL PDF (100mm x 50mm or 150mm x 100mm)
   const handleGenerateThermalPDF = async (size: ThermalLabelSize = "100x50") => {
     if (resolvedLabelsToPrint.length === 0) {
       alert("Nenhum item disponível para emitir etiquetas.");
@@ -663,11 +663,13 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     setIsPrinting(true);
     try {
       await new Promise((resolve) => setTimeout(resolve, 350));
-      const isSquare = size === "100x100";
-      const heightMm = isSquare ? 100 : 50;
-      const canvasHeight = isSquare ? 378 : 189;
-      const element = isSquare
-        ? squareThermalPrintContainerRef.current
+      const isWide = size === "150x100";
+      const widthMm = isWide ? 150 : 100;
+      const heightMm = isWide ? 100 : 50;
+      const canvasWidth = isWide ? 567 : 378;
+      const canvasHeight = isWide ? 378 : 189;
+      const element = isWide
+        ? wideThermalPrintContainerRef.current
         : thermalPrintContainerRef.current;
       if (!element) {
         throw new Error("Elemento do container térmico não foi localizado.");
@@ -683,9 +685,9 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
       }
 
       const pdf = new jsPDF({
-        orientation: isSquare ? "portrait" : "landscape",
+        orientation: "landscape",
         unit: "mm",
-        format: [100, heightMm]
+        format: [widthMm, heightMm]
       });
 
       for (let i = 0; i < children.length; i++) {
@@ -701,24 +703,24 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
           scrollY: 0,
           x: 0,
           y: 0,
-          width: 378,  // width of 100mm at 96 DPI
+          width: canvasWidth,  // canvas width at 96 DPI
           height: canvasHeight,
-          windowWidth: 378,
+          windowWidth: canvasWidth,
           windowHeight: canvasHeight,
         });
 
         const imgData = canvas.toDataURL("image/jpeg", 1.0);
 
         if (i > 0) {
-          pdf.addPage([100, heightMm], isSquare ? "portrait" : "landscape");
+          pdf.addPage([widthMm, heightMm], "landscape");
         }
 
-        pdf.addImage(imgData, "JPEG", 0, 0, 100, heightMm);
+        pdf.addImage(imgData, "JPEG", 0, 0, widthMm, heightMm);
       }
 
-      pdf.save(`Etiquetas_Termicas_${isSquare ? "10x10" : "10x5"}_${Date.now()}.pdf`);
+      pdf.save(`Etiquetas_Termicas_${isWide ? "15x10" : "10x5"}_${Date.now()}.pdf`);
       markLabelsAsPrinted();
-      triggerNotification(`Etiquetas ${isSquare ? "10x10" : "10x5"} geradas com sucesso!`);
+      triggerNotification(`Etiquetas ${isWide ? "15x10" : "10x5"} geradas com sucesso!`);
     } catch (e: any) {
       alert(`Erro ao gerar PDF térmico: ${e.message || e}`);
     } finally {
@@ -822,16 +824,16 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     }
   };
 
-  const handleDirectPrintAll = (type: "thermal" | "thermal100x100" | "a4") => {
+  const handleDirectPrintAll = (type: "thermal" | "thermal150x100" | "a4") => {
     try {
       const isA4 = type === "a4";
-      const isSquare = type === "thermal100x100";
-      const printWidth = isA4 ? "210mm" : "100mm";
-      const printHeight = isA4 ? "297mm" : isSquare ? "100mm" : "50mm";
+      const isWide = type === "thermal150x100";
+      const printWidth = isA4 ? "210mm" : isWide ? "150mm" : "100mm";
+      const printHeight = isA4 ? "297mm" : isWide ? "100mm" : "50mm";
       const container = isA4
         ? a4PrintContainerRef.current
-        : isSquare
-          ? squareThermalPrintContainerRef.current
+        : isWide
+          ? wideThermalPrintContainerRef.current
           : thermalPrintContainerRef.current;
       if (!container) {
         alert("Nenhum item está pronto para impressão.");
@@ -963,7 +965,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
     setIsGeneratingZPL(true);
 
     try {
-      const isSquare = previewFormat === "thermal-100x100";
+      const isWide = previewFormat === "thermal-150x100";
       let zplString = "";
       const cleanZplText = (value: unknown) => removeAccents(String(value ?? "-"))
         .toUpperCase()
@@ -1017,7 +1019,7 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         const timeStr = new Date(label.timestamp || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
         // Remove characters that can be interpreted as ZPL commands, but preserve
-        // all text for 100x100 labels so long values can wrap instead of clipping.
+        // all text for 150x100 labels so long values can wrap instead of clipping.
         const cleanName = cleanZplText(name);
         const cleanCustomer = cleanZplText(customer);
         const cleanCustomerAddress = cleanZplText(label.customerAddress);
@@ -1029,10 +1031,10 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         const cleanSector = cleanZplText(sectorLabel);
         const cleanPkg = cleanZplText(packageType);
 
-        const printableName = isSquare ? cleanName : cleanName.slice(0, 48);
-        const printableCustomer = isSquare ? cleanCustomer : cleanCustomer.slice(0, 36);
-        const printableColor = isSquare ? cleanColor : cleanColor.slice(0, 24);
-        const printableVariation = isSquare ? cleanVariation : variation;
+        const printableName = isWide ? cleanName : cleanName.slice(0, 48);
+        const printableCustomer = isWide ? cleanCustomer : cleanCustomer.slice(0, 36);
+        const printableColor = isWide ? cleanColor : cleanColor.slice(0, 24);
+        const printableVariation = isWide ? cleanVariation : variation;
 
         const companyClean = cleanZplText(companyName);
         let compLine1 = companyClean;
@@ -1058,94 +1060,110 @@ export function EtiquetasTab({ db, currentUser }: EtiquetasTabProps) {
         if (includeImageInLabel && imageUrl) {
           const zplImg = await imageToZPLHex(imageUrl, 240, 240);
           if (zplImg) {
-            imageZPLCommand = `^FO540,${isSquare ? 280 : 80}^GFA,${zplImg.byteCount},${zplImg.byteCount},${zplImg.bytesPerRow},${zplImg.hex}^FS`;
+            imageZPLCommand = `^FO${isWide ? 950 : 540},${isWide ? 280 : 80}^GFA,${zplImg.byteCount},${zplImg.byteCount},${zplImg.bytesPerRow},${zplImg.hex}^FS`;
             hasImage = true;
           }
         }
 
         const barcodeBlock = hasImage 
           ? imageZPLCommand
-          : isSquare
-            ? `^FO550,220^BY2,3,180^BCR,180,Y,N,N^FD${code}^FS`
+          : isWide
+            ? `^FO955,210^BY3,3,220^BCR,220,Y,N,N^FD${code}^FS`
             : `^FO535,110^BY2,3,110^BCN,110,Y,N,N^FD${code}^FS`;
 
-        // Calculate Pill Badge for the Sector (using narrowed sizes to absolutely prevent overlaps with titles!)
-        const badgeWidth = Math.max(100, cleanSector.length * 13 + 18);
-        const badgeX = 500 - badgeWidth;
+        // Place the sector badge against the full-width layout's text boundary.
+        const badgeBoundary = isWide ? 900 : 500;
+        const badgeWidth = Math.max(100, Math.min(isWide ? 240 : 420, cleanSector.length * 13 + 18));
+        const badgeX = badgeBoundary - badgeWidth;
         const badgeTextX = badgeX + 10;
         const sectorBadgeBlock = `^FO${badgeX},15^GB${badgeWidth},34,34,B,3^FS^FO${badgeTextX},23^A0N,18,16^FR^FD${cleanSector}^FS`;
 
-        const logoBlock = logoZPLCommand 
-          ? logoZPLCommand 
+        const logoBlock = logoZPLCommand
+          ? logoZPLCommand
           : `^FO40,15^GB44,44,2,B,3^FS`;
 
         const maxTitleWidth = badgeX - 110;
-        const squareCompanyFont = [24, 20, 18, 16, 14, 12, 10, 8].find((font) => {
+        const companyFont = isWide ? [40, 36, 32, 28, 24, 20, 18] : [24, 20, 18, 16, 14, 12, 10, 8];
+        const companyFontSize = companyFont.find((font) => {
           const maxChars = Math.max(8, Math.floor(maxTitleWidth / (font * 0.52)));
           const lineCount = wrapZplText(companyClean, maxChars).length;
-          return lineCount * (font + 4) <= 48;
-        }) || 8;
-        const squareCompanyLines = wrapZplText(
+          return lineCount * (font + 4) <= (isWide ? 56 : 48);
+        }) || (isWide ? 18 : 8);
+        const companyLines = wrapZplText(
           companyClean,
-          Math.max(8, Math.floor(maxTitleWidth / (squareCompanyFont * 0.52)))
+          Math.max(8, Math.floor(maxTitleWidth / (companyFontSize * 0.52)))
         );
-        const squareCompanyHeader = `^FO100,16^A0N,${squareCompanyFont},${Math.round(squareCompanyFont * 0.92)}^FB${maxTitleWidth},${squareCompanyLines.length},0,L^FD${squareCompanyLines.join("\\&")}^FS`;
-        const squareLabelBody = (() => {
-          const blocks: string[] = ["^FO40,66^GB460,2,2^FS"];
+        const companyHeader = `^FO100,16^A0N,${companyFontSize},${Math.round(companyFontSize * 0.92)}^FB${maxTitleWidth},${companyLines.length},0,L^FD${companyLines.join("\\&")}^FS`;
+        const wideLabelBody = (() => {
+          const blocks: string[] = ["^FO40,66^GB850,2,2^FS"];
           let y = 80;
 
-          // Select the largest title size that keeps the full name within a
-          // flexible area below the company header.
-          const titleFont = [54, 46, 38, 32, 28, 24, 20, 18].find((font) => {
-            const maxChars = Math.max(8, Math.floor(460 / (font * 0.52)));
+          const titleFont = [86, 78, 70, 62, 54, 48, 44].find((font) => {
+            const maxChars = Math.max(10, Math.floor(835 / (font * 0.52)));
             const lineCount = wrapZplText(cleanName, maxChars).length;
-            return lineCount * (font + 8) <= 210;
-          }) || 18;
+            return lineCount * (font + 9) <= 270;
+          }) || 44;
+          const titleLines = wrapZplText(cleanName, Math.max(10, Math.floor(835 / (titleFont * 0.52))));
+          blocks.push(`^FO40,${y}^A0N,${titleFont},${Math.round(titleFont * 0.92)}^FB835,${titleLines.length},0,L^FD${titleLines.join("\\&")}^FS`);
+          y += titleLines.length * (titleFont + 8) + 8;
 
-          const appendField = (value: string, font: number, gap = 3) => {
-            const maxChars = Math.max(8, Math.floor(460 / (font * 0.52)));
-            const lines = wrapZplText(value, maxChars);
-            blocks.push(`^FO40,${y}^A0N,${font},${Math.round(font * 0.92)}^FB460,${lines.length},0,L^FD${lines.join("\\&")}^FS`);
-            y += lines.length * (font + 5) + gap;
+          const totalDetailsLength = [
+            cleanOrderCode, cleanColor, cleanVariation, cleanSize, cleanSector,
+            cleanPkg, cleanCustomer, cleanCustomerAddress, cleanOperator,
+          ].join(" ").length;
+          const detailFont = totalDetailsLength > 520 ? 20 : totalDetailsLength > 360 ? 22 : 25;
+          const appendWideField = (value: string, font: number, gap = 4, width = 835) => {
+            const lines = wrapZplText(value, Math.max(10, Math.floor(width / (font * 0.52))));
+            blocks.push(`^FO40,${y}^A0N,${font},${Math.round(font * 0.92)}^FB${width},${lines.length},0,L^FD${lines.join("\\&")}^FS`);
+            y += lines.length * (font + 6) + gap;
+          };
+          const appendWidePair = (left: string, right: string, font: number, gap = 4) => {
+            const columnWidth = 405;
+            const wrap = (value: string) => wrapZplText(value, Math.max(8, Math.floor(columnWidth / (font * 0.52))));
+            const leftLines = wrap(left);
+            const rightLines = wrap(right);
+            blocks.push(`^FO40,${y}^A0N,${font},${Math.round(font * 0.92)}^FB${columnWidth},${leftLines.length},0,L^FD${leftLines.join("\\&")}^FS`);
+            blocks.push(`^FO470,${y}^A0N,${font},${Math.round(font * 0.92)}^FB${columnWidth},${rightLines.length},0,L^FD${rightLines.join("\\&")}^FS`);
+            y += Math.max(leftLines.length, rightLines.length) * (font + 6) + gap;
           };
 
-          appendField(cleanName, titleFont, 8);
-          blocks.push(`^FO40,${y}^GB460,2,2^FS`);
-          y += 10;
-          appendField(`Cod: ${cleanZplText(code)} | Pedido: ${cleanOrderCode}`, 20, 5);
-          appendField(`Cor: ${cleanColor}`, 18, 2);
-          appendField(`Var.: ${cleanVariation}`, 18, 2);
-          appendField(`Tamanho: ${cleanSize}`, 18, 4);
-          appendField(`${cleanSector}: ${boxIndex}/${boxTotal} (${cleanPkg})`, 18, 4);
-          if (printableCustomer !== "-") appendField(`Cliente: ${printableCustomer}`, 16, 2);
-          if (cleanCustomerAddress !== "-") appendField(`End.: ${cleanCustomerAddress}`, 16, 4);
-          appendField(`Data/Hora: ${dateStr} ${timeStr}`, 16, 2);
-          appendField(`Operador: ${cleanOperator}`, 16, 4);
-          blocks.push("^FO300,690^A0N,22,20^FB190,1,0,R^FDQUANTIDADE^FS");
-          blocks.push(`^FO300,722^A0N,50,48^FB190,1,0,R^FD${printQuantity} UN^FS`);
+          appendWideField(`Cód.: ${cleanZplText(code)} | Pedido: ${cleanOrderCode}`, detailFont, 6);
+          appendWidePair(`Cor: ${cleanColor}`, `Variação: ${cleanVariation}`, detailFont, 4);
+          appendWidePair(`Tamanho: ${cleanSize}`, `Embalagem: ${boxIndex}/${boxTotal} (${cleanPkg})`, detailFont, 6);
+          if (printableCustomer !== "-") appendWideField(`Cliente: ${printableCustomer}`, detailFont, 3);
+          if (cleanCustomerAddress !== "-") appendWideField(`Endereço: ${cleanCustomerAddress}`, detailFont, 5);
+          const dateLines = wrapZplText(`Data/Hora: ${dateStr} ${timeStr}`, 34);
+          const operatorLines = wrapZplText(`Operador: ${cleanOperator}`, 34);
+          const footerTop = Math.min(680, Math.max(y + 12, 550));
+          blocks.push(`^FO40,${footerTop}^GB835,2,2^FS`);
+          blocks.push(`^FO40,${footerTop + 14}^A0N,22,20^FB270,${Math.max(1, dateLines.length)},0,L^FD${dateLines.join("\\&")}^FS`);
+          blocks.push(`^FO320,${footerTop + 14}^A0N,22,20^FB300,${Math.max(1, operatorLines.length)},0,L^FD${operatorLines.join("\\&")}^FS`);
+          blocks.push(`^FO640,${footerTop + 10}^A0N,18,16^FB230,1,0,R^FDQUANTIDADE^FS`);
+          blocks.push(`^FO640,${footerTop + 30}^A0N,46,44^FB230,1,0,R^FD${printQuantity} UN^FS`);
           return blocks.join("\n");
         })();
 
-        if (isSquare) {
+        if (isWide) {
+          const wideBarcodeBlock = barcodeBlock;
+
           return `^XA
-^PW800
+^PW1200
 ^LL800
 ^CI28
 
 ${logoBlock}
-${squareCompanyHeader}
+${companyHeader}
 
 ${sectorBadgeBlock}
 
-${squareLabelBody}
-^FO510,12^GB2,776,2^FS
-${barcodeBlock}
+${wideLabelBody}
+^FO920,12^GB2,776,2^FS
+${wideBarcodeBlock}
 
 ^PQ1
 ^XZ
 `;
         }
-
         // 100 x 50 mm landscape layout.
         return `^XA
 ^PW800
@@ -1217,20 +1235,20 @@ ${barcodeBlock}
     }, 4000);
   };
 
-  const renderSquareThermalLabel = (label: any, index: number) => {
+  const renderWideThermalLabel = (label: any, index: number) => {
     const date = new Date(label.timestamp || Date.now());
     const dateStr = date.toLocaleDateString("pt-BR");
     const timeStr = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     const productNameLength = String(label.name || "").length;
-    const squareTitleFontSize = productNameLength > 140
-      ? 16
-      : productNameLength > 110
-        ? 18
-        : productNameLength > 80
-          ? 21
+    const wideTitleFontSize = productNameLength > 180
+      ? 24
+      : productNameLength > 130
+        ? 28
+        : productNameLength > 90
+          ? 32
           : productNameLength > 55
-            ? 24
-            : 27;
+            ? 36
+            : 42;
     const labelDetailsLength = [
       label.code,
       label.orderCode,
@@ -1242,14 +1260,14 @@ ${barcodeBlock}
       label.customerAddress,
       label.operatorId,
     ].map((value) => String(value || "")).join(" ").length;
-    const squareDetailsFontSize = labelDetailsLength > 280 ? 7 : labelDetailsLength > 190 ? 8 : 9;
+    const wideDetailsFontSize = labelDetailsLength > 420 ? 13 : labelDetailsLength > 300 ? 14 : labelDetailsLength > 200 ? 15 : 16;
 
     return (
       <div
-        key={`thermal-square-${index}-${label.id}`}
-        className="relative flex box-border gap-[3mm] overflow-hidden bg-white p-[4mm] font-sans text-black select-none"
+        key={`thermal-wide-${index}-${label.id}`}
+        className="relative flex box-border gap-[4mm] overflow-hidden bg-white p-[5mm] font-sans text-black select-none"
         style={{
-          width: "100mm",
+          width: "150mm",
           height: "100mm",
           maxHeight: "100mm",
           pageBreakAfter: "always",
@@ -1259,81 +1277,77 @@ ${barcodeBlock}
       >
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="min-w-0">
-            <div className="mb-[1.5mm] flex min-h-[10mm] items-start justify-between gap-2 border-b border-slate-300 pb-[1mm]">
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="h-[6mm] w-[6mm] shrink-0" />
+            <div className="mb-[2mm] flex min-h-[12mm] items-center justify-between gap-3 border-b border-slate-300 pb-[1.5mm]">
+              <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                <CompanyLogo logoUrl={logoUrl} companyName={companyName} className="h-[8mm] w-[8mm] shrink-0" />
                 <div className="flex min-w-0 flex-col leading-tight">
-                  <span className="whitespace-normal break-words text-[9px] font-black uppercase tracking-tight">{companyName}</span>
+                  <span className="whitespace-normal break-words text-[12px] font-black uppercase tracking-tight">{companyName}</span>
                   {companySubtitle && (
-                    <span className="whitespace-normal break-words text-[7px] font-bold uppercase text-slate-600">{companySubtitle}</span>
+                    <span className="whitespace-normal break-words text-[10px] font-bold uppercase text-slate-600">{companySubtitle}</span>
                   )}
                 </div>
               </div>
-              <span className="max-w-[22mm] whitespace-normal break-words rounded bg-slate-100 px-1.5 py-1 text-center text-[8px] font-black uppercase leading-tight">
+              <span className="max-w-[30mm] whitespace-normal break-words rounded bg-slate-100 px-2 py-1.5 text-center text-[11px] font-black uppercase leading-tight">
                 {label.sectorLabel}
               </span>
             </div>
 
             <h3
-              className="mb-[1.5mm] whitespace-normal break-words font-black leading-[1.02] tracking-tight"
-              style={{ fontSize: `${squareTitleFontSize}px`, overflowWrap: "anywhere" }}
+              className="mb-[2mm] whitespace-normal break-words font-black leading-[1.04] tracking-tight"
+              style={{ fontSize: `${wideTitleFontSize}px`, overflowWrap: "anywhere" }}
             >
               {label.name}
             </h3>
 
             <p
-              className="mb-[1.5mm] whitespace-normal break-words font-mono font-black leading-tight"
-              style={{ fontSize: `${Math.max(8, squareDetailsFontSize + 2)}px`, overflowWrap: "anywhere" }}
+              className="mb-[2mm] whitespace-normal break-words font-mono font-black leading-snug"
+              style={{ fontSize: `${Math.max(16, wideDetailsFontSize + 2)}px`, overflowWrap: "anywhere" }}
             >
-              Cod: {label.code} | Pedido: {label.orderCode}
+              Cód.: {label.code} | Pedido: {label.orderCode}
             </p>
 
             <div
-              className="mb-[1.5mm] flex flex-col gap-0.5 rounded border border-black bg-slate-50 px-2 py-1.5 font-black leading-tight"
-              style={{ fontSize: `${squareDetailsFontSize}px` }}
+              className="mb-[2mm] grid grid-cols-2 gap-x-4 gap-y-1.5 rounded border border-black bg-slate-50 px-2.5 py-2 font-black leading-snug"
+              style={{ fontSize: `${wideDetailsFontSize}px` }}
             >
-              <span className="whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Cor: {label.color || "-"}</span>
-              <span className="whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Var.: {label.variation || "-"}</span>
-              <span className="whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Tamanho: {label.size || "-"}</span>
+              <span className="min-w-0 whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Cor: {label.color || "-"}</span>
+              <span className="min-w-0 whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Variação: {label.variation || "-"}</span>
+              <span className="min-w-0 whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Tamanho: {label.size || "-"}</span>
+              <span className="min-w-0 whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Embalagem: {label.boxIndex}/{label.boxTotal} ({label.packageType})</span>
             </div>
 
-            <p
-              className="whitespace-normal break-words font-black uppercase leading-tight tracking-wide"
-              style={{ fontSize: `${squareDetailsFontSize}px`, overflowWrap: "anywhere" }}
-            >
-              Embalagem: {label.boxIndex}/{label.boxTotal} ({label.packageType})
-            </p>
-
-            {label.customer && label.customer !== "-" && (
+            {(label.customer && label.customer !== "-") || label.customerAddress ? (
               <div
-                className="mt-[1.5mm] rounded border border-slate-200 bg-slate-50 px-1.5 py-1 font-black leading-tight"
-                style={{ fontSize: `${Math.max(7, squareDetailsFontSize - 1)}px` }}
+                className="rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-black leading-snug"
+                style={{ fontSize: `${Math.max(13, wideDetailsFontSize - 1)}px` }}
               >
-                <span className="block whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Cliente: {label.customer}</span>
+                {label.customer && label.customer !== "-" && (
+                  <span className="block whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Cliente: {label.customer}</span>
+                )}
                 {label.customerAddress && (
                   <span className="mt-0.5 block whitespace-normal break-words font-bold text-slate-700" style={{ overflowWrap: "anywhere" }}>
                     Endereço: {label.customerAddress}
                   </span>
                 )}
               </div>
-            )}
+            ) : null}
           </div>
 
-          <div className="mt-auto flex items-end justify-between gap-2 border-t border-slate-300 pt-[1.5mm]">
-            <div className="min-w-0 flex-1 pr-1 font-black leading-tight" style={{ fontSize: `${Math.max(7, squareDetailsFontSize)}px` }}>
-              <span className="block">Data: {dateStr} {timeStr}</span>
+          <div className="mt-auto flex items-end justify-between gap-3 border-t border-slate-300 pt-[2mm]">
+            <div className="min-w-0 flex-1 pr-1 font-black leading-snug" style={{ fontSize: `${Math.max(13, wideDetailsFontSize)}px` }}>
+              <span className="block whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Data: {dateStr} {timeStr}</span>
               <span className="block whitespace-normal break-words" style={{ overflowWrap: "anywhere" }}>Operador: {label.operatorId || "-"}</span>
             </div>
             <div className="shrink-0 text-right">
-              <span className="mb-1 block text-[8px] font-black uppercase leading-none">QTD</span>
-              <strong className="block whitespace-nowrap text-[16px] font-black leading-none">
-                {label.printQuantity} <span className="text-[10px]">UN</span>
+              <span className="mb-1 block text-[11px] font-black uppercase leading-none">QUANTIDADE</span>
+              <strong className="block whitespace-nowrap text-[24px] font-black leading-none">
+                {label.printQuantity} <span className="text-[14px]">UN</span>
               </strong>
             </div>
           </div>
         </div>
 
-        <div className="flex w-[16mm] shrink-0 items-center justify-center overflow-hidden border-l border-slate-200 pl-[1mm]">
+        <div className="flex w-[24mm] shrink-0 items-center justify-center overflow-hidden border-l border-slate-300 pl-[1.5mm]">
           {includeImageInLabel && label.imageUrl ? (
             <img
               src={label.imageUrl}
@@ -1342,11 +1356,12 @@ ${barcodeBlock}
               crossOrigin="anonymous"
             />
           ) : (
-            <div className="flex h-[60mm] w-[14mm] items-center justify-center overflow-visible">
-              <div className="w-[60mm] shrink-0 rotate-90">
+            <div className="flex h-[82mm] w-[14mm] items-center justify-center overflow-visible">
+              <div className="w-[82mm] shrink-0 rotate-90">
                 <LocalSVGBarcode
                   data={`${label.code}|${label.color}|${label.size}|${label.printQuantity}`}
                   codeText={label.code}
+                  large
                 />
               </div>
             </div>
@@ -1378,7 +1393,7 @@ ${barcodeBlock}
               Impressão de Etiquetas de Processo
             </h2>
           <p className="text-black text-xs mt-1">
-            Gere etiquetas térmicas 10x5 ou 10x10 cm, grade A4 e comandos Zebra ZPL para os setores vinculados.
+            Gere etiquetas térmicas 10x5 ou 15x10 cm, grade A4 e comandos Zebra ZPL para os setores vinculados.
           </p>
         </div>
         
@@ -2108,10 +2123,10 @@ ${barcodeBlock}
                         Térmica 10x5cm
                       </button>
                       <button
-                        onClick={() => setPreviewFormat("thermal-100x100")}
-                        className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase transition cursor-pointer ${previewFormat === "thermal-100x100" ? "bg-teal-600 text-white" : "text-slate-300 hover:text-white"}`}
+                        onClick={() => setPreviewFormat("thermal-150x100")}
+                        className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase transition cursor-pointer ${previewFormat === "thermal-150x100" ? "bg-teal-600 text-white" : "text-slate-300 hover:text-white"}`}
                       >
-                        Térmica 10x10cm
+                        Térmica 15x10cm
                       </button>
                       <button
                         onClick={() => setPreviewFormat("a4")}
@@ -2191,13 +2206,13 @@ ${barcodeBlock}
                         </div>
                       </div>
                     ))
-                  ) : previewFormat === "thermal-100x100" ? (
+                  ) : previewFormat === "thermal-150x100" ? (
                     resolvedLabelsToPrint.map((lbl, idx) => (
                       <div
                         key={`prev-thm-square-${idx}-${lbl.id}`}
                         className="w-full flex justify-center overflow-x-auto"
                       >
-                        {renderSquareThermalLabel(lbl, idx)}
+                        {renderWideThermalLabel(lbl, idx)}
                       </div>
                     ))
                   ) : (
@@ -2286,7 +2301,7 @@ ${barcodeBlock}
                   <Copy size={14} className={isGeneratingZPL ? "animate-spin" : ""} />
                   {isGeneratingZPL
                     ? "Gerando ZPL c/ Imagens..."
-                    : `Copiar ZPL ${previewFormat === "thermal-100x100" ? "10x10" : "10x5"} (Zebra)`}
+                    : `Copiar ZPL ${previewFormat === "thermal-150x100" ? "15x10" : "10x5"} (Zebra)`}
                 </button>
                 {/* A4 Grid PDF */}
                 <button
@@ -2324,23 +2339,23 @@ ${barcodeBlock}
                   <Printer size={14} />
                   Imprimir (Térmico 10x5)
                 </button>
-                {/* 100 x 100 thermal PDF */}
+                {/* 150 x 100 thermal PDF */}
                 <button
                   disabled={isPrinting}
-                  onClick={() => handleGenerateThermalPDF("100x100")}
+                  onClick={() => handleGenerateThermalPDF("150x100")}
                   className="bg-cyan-700 hover:bg-cyan-600 text-white font-black text-xs px-5 py-2.5 rounded-xl transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md flex items-center gap-1.5 shadow-cyan-500/20"
                 >
                   <Printer size={14} className={isPrinting ? "animate-spin" : ""} />
-                  Gerar PDF Térmico 10x10
+                  Gerar PDF Térmico 15x10
                 </button>
-                {/* Direct print 100 x 100 thermal */}
+                {/* Direct print 150 x 100 thermal */}
                 <button
                   disabled={isPrinting}
-                  onClick={() => handleDirectPrintAll("thermal100x100")}
+                  onClick={() => handleDirectPrintAll("thermal150x100")}
                   className="bg-teal-700 hover:bg-teal-600 text-white font-black text-xs px-4 py-2.5 rounded-xl transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md flex items-center gap-1.5 shadow-teal-500/20"
                 >
                   <Printer size={14} />
-                  Imprimir (Térmico 10x10)
+                  Imprimir (Térmico 15x10)
                 </button>
               </div>
             </div>
@@ -2525,8 +2540,8 @@ ${barcodeBlock}
           backgroundColor: "#ffffff",
         }}
       >
-        <div ref={squareThermalPrintContainerRef} id="thermal-100x100-printable-wrapper" className="bg-white">
-          {resolvedLabelsToPrint.map((label, index) => renderSquareThermalLabel(label, index))}
+        <div ref={wideThermalPrintContainerRef} id="thermal-150x100-printable-wrapper" className="bg-white">
+          {resolvedLabelsToPrint.map((label, index) => renderWideThermalLabel(label, index))}
         </div>
       </div>
 
