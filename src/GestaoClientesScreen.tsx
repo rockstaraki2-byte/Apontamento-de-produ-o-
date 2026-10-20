@@ -1412,13 +1412,14 @@ export function GestaoClientesScreen({
       </div>
 
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] overflow-y-auto overscroll-contain bg-slate-900/50 p-4">
+          <div className="flex min-h-full items-start justify-center sm:items-center">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-xl shadow-xl max-w-lg w-full overflow-hidden"
+            className="my-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-xl"
           >
-            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+            <div className="shrink-0 p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <h2 className="font-bold text-gray-800 flex items-center gap-2">
                 <Users size={18} className="text-blue-600" />
                 Adicionar Novo Cliente
@@ -1430,7 +1431,7 @@ export function GestaoClientesScreen({
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleAddCustomer} className="p-5 space-y-4">
+            <form onSubmit={handleAddCustomer} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 space-y-4" style={{ WebkitOverflowScrolling: "touch" }}>
               <div>
                 <label className="block text-xs font-bold text-gray-600 mb-1">
                   Código do Cliente (Opcional - deixe vazio para gerar automaticamente)
@@ -1598,6 +1599,7 @@ export function GestaoClientesScreen({
               </div>
             </form>
           </motion.div>
+          </div>
         </div>
       )}
     </div>
