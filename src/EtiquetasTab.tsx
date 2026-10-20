@@ -1285,7 +1285,7 @@ ${barcodeBlock}
     const customerLineHeightMm = 4.375;
     const addressFontSize = 11;
     const addressLineHeightMm = 3.2;
-    const customerLineCount = Math.min(2, Math.max(1, Math.ceil(customerText.length / 45)));
+    const customerLineCount = Math.min(2, Math.max(1, Math.ceil(("Cliente: " + customerText).length / 45)));
     const customerTopMm = 95.625;
     const customerBottomMm = customerTopMm + customerLineCount * customerLineHeightMm;
     const addressLineCount = customerAddress
