@@ -30,6 +30,7 @@ import type { Carga, ExpeditionRoute, Order, User } from "./types";
 import { canManageExpedition } from "./expeditionAccess";
 import { findCustomerForOrder, normalizeString } from "./searchUtils";
 import { LoadSuggestionsTab } from "./LoadSuggestionsTab";
+import { GoogleCalendarSyncControl } from "./GoogleCalendarSyncControl";
 import { PdfPreviewModal } from "./PdfPreviewModal";
 import {
   formatLoadOrderItemDescription,
@@ -1218,6 +1219,16 @@ export function ProgramacaoCargasScreen({
           <button onClick={() => openNewLoad()} className="h-9 px-3 rounded-lg bg-emerald-600 text-white text-xs font-extrabold flex items-center gap-1.5 hover:bg-emerald-700"><Plus size={15} /> Nova carga</button>
         </div>
       </div>
+
+      {canManage && db.activeTenantId === "imperio" && (
+        <GoogleCalendarSyncControl
+          activeTenantId={db.activeTenantId}
+          currentUser={currentUser}
+          cargas={db.cargas || []}
+          orders={db.orders || []}
+          cargasSyncState={db.cargasSync.state}
+        />
+      )}
 
       <div className="flex rounded-xl overflow-hidden border border-slate-200 bg-white shadow-sm flex-wrap">
         {[

@@ -29,7 +29,8 @@
     "teksystem:firebird:prompt": "powershell -ExecutionPolicy Bypass -File tools/teksystem-firebird-probe.ps1",
     "pdf-agent": "node tools/order-pdf-agent.mjs",
     "pdf-agent:setup": "node tools/order-pdf-agent.mjs --setup",
-    "deploy:guard": "node scripts/guard-production-deploy.mjs"
+    "deploy:guard": "node scripts/guard-production-deploy.mjs",
+    "test:google-calendar": "tsx --test tests/googleCalendarSync.test.ts"
   },
   "dependencies": {
     "@babel/parser": "^8.0.4",
