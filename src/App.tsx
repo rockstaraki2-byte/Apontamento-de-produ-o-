@@ -79,6 +79,7 @@ import {
   Minimize,
 } from "lucide-react";
 import { useDatabase } from "./useDatabase";
+import { OrderPdfExportBridge } from "./OrderPdfExportBridge";
 import type { User, OrderStatus, Role, Order, AppNotification, Carga } from "./types";
 import { DEMO_USER, isDemoModeEnabled } from "./demoData";
 import { calculateWorkingMillis } from "./timeUtils";
@@ -16146,6 +16147,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="apontapro-shell flex flex-col h-screen-safe w-screen bg-slate-50 overflow-hidden font-sans antialiased">
+        <OrderPdfExportBridge currentUser={currentUser} db={db} />
         {/* Real-time Toast Alerts Stack */}
         <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
           {toasts.map((toast) => (
