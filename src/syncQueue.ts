@@ -28,6 +28,10 @@ const DB_NAME = "SyncQueueDatabase";
 const STORE_NAME = "sync_queue";
 const DB_VERSION = 1;
 
+// Share one queue writer across all hook instances in this browser tab.
+const inFlightQueueItems = new Map<number, Promise<void>>();
+let queueProcessingTail: Promise<void> = Promise.resolve();
+
 function getDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -201,6 +205,22 @@ export async function getQueue(): Promise<QueueItem[]> {
   }
 }
 
+async function getQueueItem(id: number): Promise<QueueItem | undefined> {
+  const database = await getDB();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(STORE_NAME, "readonly");
+    const request = transaction.objectStore(STORE_NAME).get(id);
+    let item: QueueItem | undefined;
+    request.onsuccess = () => {
+      item = request.result as QueueItem | undefined;
+    };
+    request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => resolve(item);
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error("Não foi possível ler o registro da fila local."));
+  });
+}
+
 export async function removeFromQueue(id: number): Promise<void> {
   const database = await getDB();
   return new Promise((resolve, reject) => {
@@ -228,7 +248,32 @@ export async function updateQueueItem(id: number, updates: Partial<QueueItem>): 
   });
 }
 
-export async function processQueueItem(item: QueueItem): Promise<void> {
+/**
+ * Process one saved queue item at a time. Multiple screens can request a retry
+ * while the automatic worker is already handling the same IndexedDB item; share
+ * the in-flight promise and re-read the queue before writing so stale snapshots
+ * cannot replay an item that another worker has already acknowledged.
+ */
+export function processQueueItem(item: QueueItem): Promise<void> {
+  const existing = inFlightQueueItems.get(item.id);
+  if (existing) return existing;
+
+  const operation = queueProcessingTail.then(async () => {
+    const queuedItem = await getQueueItem(item.id);
+    if (!queuedItem) return;
+    await processQueueItemNow(queuedItem);
+  });
+  const trackedOperation = operation.finally(() => {
+    if (inFlightQueueItems.get(item.id) === trackedOperation) {
+      inFlightQueueItems.delete(item.id);
+    }
+  });
+  inFlightQueueItems.set(item.id, trackedOperation);
+  queueProcessingTail = trackedOperation.catch(() => undefined);
+  return trackedOperation;
+}
+
+async function processQueueItemNow(item: QueueItem): Promise<void> {
   const { type, payload } = item;
   switch (type) {
     case "ADD_LOGS": {

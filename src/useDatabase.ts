@@ -247,6 +247,7 @@ export function useDatabase(currentUser?: User | null) {
   const runSync = async (force = false) => {
     if (isDemoMode) return;
     if (force) {
+      const networkWasDisabledForQuota = quotaExceededRef.current;
       quotaExceededRef.current = false;
       setQuotaExceeded(false);
       storageQuotaExceededRef.current = false;
@@ -257,11 +258,15 @@ export function useDatabase(currentUser?: User | null) {
         firestoreReadRetryTimerRef.current = null;
       }
       setPermissionError(null);
-      try {
-        await enableNetwork(db);
-        console.log("Firestore network re-enabled manually.");
-      } catch (e) {
-        console.error("Failed to re-enable network manually:", e);
+      // Do not restart Firestore's listen stream for a routine queue retry.
+      // Only resume it if this app previously disabled it after a quota error.
+      if (networkWasDisabledForQuota) {
+        try {
+          await enableNetwork(db);
+          console.log("Firestore network re-enabled after a quota pause.");
+        } catch (e) {
+          console.error("Failed to re-enable network after a quota pause:", e);
+        }
       }
     }
 
