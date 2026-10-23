@@ -205,6 +205,22 @@ export async function getQueue(): Promise<QueueItem[]> {
   }
 }
 
+async function getQueueItem(id: number): Promise<QueueItem | undefined> {
+  const database = await getDB();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(STORE_NAME, "readonly");
+    const request = transaction.objectStore(STORE_NAME).get(id);
+    let item: QueueItem | undefined;
+    request.onsuccess = () => {
+      item = request.result as QueueItem | undefined;
+    };
+    request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => resolve(item);
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error("Não foi possível ler o registro da fila local."));
+  });
+}
+
 export async function removeFromQueue(id: number): Promise<void> {
   const database = await getDB();
   return new Promise((resolve, reject) => {
@@ -243,7 +259,7 @@ export function processQueueItem(item: QueueItem): Promise<void> {
   if (existing) return existing;
 
   const operation = queueProcessingTail.then(async () => {
-    const queuedItem = (await getQueue()).find((queued) => queued.id === item.id);
+    const queuedItem = await getQueueItem(item.id);
     if (!queuedItem) return;
     await processQueueItemNow(queuedItem);
   });
