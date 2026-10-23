@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
+    { "source": "/api/import-orders-22sep-1500-7c91e2", "destination": "/api/pedidos/importar?__legacy_order_import=1" },
     { "source": "/", "destination": "/index.html" },
     { "source": "/:path((?!api/|assets/).*)", "destination": "/index.html" }
   ],

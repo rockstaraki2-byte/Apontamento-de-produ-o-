@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
-import { processOrderImport } from "./_lib/orderImportCore.js";
-import { FirestoreOrderImportRepository } from "./_lib/orderImportFirestore.js";
+import { processOrderImport } from "./orderImportCore.js";
+import { FirestoreOrderImportRepository } from "./orderImportFirestore.js";
 
 const tenantId = "imperio";
 
@@ -92,7 +92,7 @@ const orders: any[] = [
   }
 ];
 
-export default async function handler(req: any, res: any) {
+export async function handleLegacyOrderImport(req: any, res: any) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ sucesso: false, erro: "METHOD_NOT_ALLOWED" });
