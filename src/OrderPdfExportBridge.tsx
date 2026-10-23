@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useDatabase } from "./useDatabase";
+import React, { useEffect, useMemo } from "react";
+import type { useDatabase } from "./useDatabase";
+type DatabaseState = ReturnType<typeof useDatabase>;
 import type { Order, User } from "./types";
 import { findCustomerForOrder } from "./searchUtils";
 
@@ -153,8 +154,7 @@ function closePrintModal() {
   closeButton?.click();
 }
 
-function AutomationController({ currentUser }: { currentUser: User }) {
-  const db = useDatabase(currentUser);
+function AutomationController({ currentUser, db }: { currentUser: User; db: DatabaseState }) {
 
   const groupedOrders = useMemo<Map<string, Order[]>>(() => {
     const groups = new Map<string, Order[]>();
@@ -315,36 +315,7 @@ function AutomationController({ currentUser }: { currentUser: User }) {
   return null;
 }
 
-export function OrderPdfExportBridge() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-
-  useEffect(() => {
-    const syncUser = () => {
-      try {
-        const raw = localStorage.getItem("imperio_logged_user");
-        const next = raw ? (JSON.parse(raw) as User) : null;
-        setCurrentUser((previous) => {
-          if (!next && !previous) return previous;
-          if (!next) return null;
-          if (
-            previous?.id === next.id &&
-            previous?.tenantId === next.tenantId &&
-            previous?.role === next.role
-          ) {
-            return previous;
-          }
-          return next;
-        });
-      } catch {
-        setCurrentUser(null);
-      }
-    };
-
-    syncUser();
-    const timer = window.setInterval(syncUser, 750);
-    return () => window.clearInterval(timer);
-  }, []);
-
+export function OrderPdfExportBridge({ currentUser, db }: { currentUser: User | null; db: DatabaseState }) {
   if (!currentUser) return null;
-  return <AutomationController currentUser={currentUser} />;
+  return <AutomationController currentUser={currentUser} db={db} />;
 }
