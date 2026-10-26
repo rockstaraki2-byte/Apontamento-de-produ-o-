@@ -759,9 +759,14 @@ export function useDatabase(currentUser?: User | null) {
       onError: (error: any) => void,
       includeMetadataChanges = false,
     ) => {
+      const isImperioPaintingHistory =
+        activeTenantId === "imperio" &&
+        currentUser?.role === "PINTURA" &&
+        collectionName === "logs";
       if (
         roleScopedCollections &&
-        !roleScopedCollections.includes(collectionName)
+        !roleScopedCollections.includes(collectionName) &&
+        !isImperioPaintingHistory
       ) {
         return () => {};
       }
