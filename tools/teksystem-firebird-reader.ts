@@ -3,6 +3,7 @@ import process from "node:process";
 import * as Firebird from "node-firebird";
 import type { Database, Options } from "node-firebird";
 import { validateAndNormalizeTekSystemSync, type TekSystemSyncPayload } from "../api/_lib/teksystemSync.js";
+import { orderLineTargetsHash, type OrderLineTarget } from "../api/_lib/teksystemOrderPresenceHash.js";
 import { readCompleteEntities, readOrderPresenceSnapshot } from "./teksystem-firebird-v2.js";
 
 type EntityName = "clientes" | "produtos" | "pedidos" | "faturamentos" | "romaneios" | "faturamentoDiario" | "faturamentoPorRepresentante";
@@ -146,7 +147,7 @@ Variáveis de conexão:
   TEKSYSTEM_HOST, TEKSYSTEM_DATABASE_PORT, TEKSYSTEM_DATABASE_PATH
   TEKSYSTEM_COMPANY_ID, TEKSYSTEM_PROTOCOL
   TEKSYSTEM_COMPANY_IDS (padrão: 0,1)
-  --order-codes-file arquivo com { "codes": [...], "targetHash": "..." } habilita snapshot direcionado
+  --order-codes-file arquivo com códigos e hashes das linhas vinculadas habilita snapshot direcionado
 `);
 }
 
@@ -172,7 +173,7 @@ async function runExport(args: string[]) {
   const invalid = entities.filter((entity) => !ALL_ENTITIES.includes(entity));
   if (invalid.length) throw new Error(`Entidades inválidas: ${invalid.join(", ")}`);
   const orderCodesFile = argumentValue(args, "--order-codes-file");
-  let orderPresenceTarget: { codes: string[]; targetHash: string } | undefined;
+  let orderPresenceTarget: { codes: string[]; targetHash: string; lineTargets?: OrderLineTarget[]; lineTargetHash?: string } | undefined;
   if (orderCodesFile) {
     const parsed = JSON.parse(await fs.readFile(orderCodesFile, "utf8"));
     if (!parsed || !Array.isArray(parsed.codes) || typeof parsed.targetHash !== "string" || !/^[a-f0-9]{64}$/.test(parsed.targetHash)) {
@@ -182,7 +183,30 @@ async function runExport(args: string[]) {
     if (codes.some((code: string) => !code || code.length > 80) || new Set(codes).size !== codes.length || codes.length > 25_000) {
       throw new Error("Lista de códigos para reconciliação inválida ou acima de 25.000 itens.");
     }
-    orderPresenceTarget = { codes, targetHash: parsed.targetHash };
+    let lineTargets: OrderLineTarget[] | undefined;
+    let lineTargetHash: string | undefined;
+    if (parsed.lineTargets !== undefined || parsed.lineTargetHash !== undefined) {
+      if (!Array.isArray(parsed.lineTargets) || parsed.lineTargets.length > 50_000 ||
+        typeof parsed.lineTargetHash !== "string" || !/^[a-f0-9]{64}$/.test(parsed.lineTargetHash)) {
+        throw new Error("Lista de linhas para reconciliação está inválida.");
+      }
+      const seenLineTargets = new Set<string>();
+      lineTargets = parsed.lineTargets.map((target: any) => {
+        const companyId = Number(target?.companyId);
+        const orderCode = String(target?.orderCode ?? "").trim();
+        const lineHash = String(target?.lineHash ?? "");
+        const key = `${companyId}:${orderCode}`;
+        if (![0, 1].includes(companyId) || !orderCode || orderCode.length > 80 ||
+          !/^[a-f0-9]{64}$/.test(lineHash) || seenLineTargets.has(key)) {
+          throw new Error("Lista de linhas para reconciliação contém alvo inválido ou duplicado.");
+        }
+        seenLineTargets.add(key);
+        return { companyId, orderCode, lineHash };
+      });
+      if (orderLineTargetsHash(lineTargets) !== parsed.lineTargetHash) throw new Error("Hash de alvos das linhas não corresponde à lista recebida.");
+      lineTargetHash = parsed.lineTargetHash;
+    }
+    orderPresenceTarget = { codes, targetHash: parsed.targetHash, ...(lineTargets ? { lineTargets } : {}), ...(lineTargetHash ? { lineTargetHash } : {}) };
   }
 
   const db = await attach();
@@ -200,7 +224,7 @@ async function runExport(args: string[]) {
     );
     const includesCompleteOrderSnapshot = entities.includes("pedidos") && entities.includes("romaneios");
     const orderPresence = includesCompleteOrderSnapshot && orderPresenceTarget
-      ? await readOrderPresenceSnapshot(db, sourceDefaults().companyIds, orderPresenceTarget.codes)
+      ? await readOrderPresenceSnapshot(db, sourceDefaults().companyIds, orderPresenceTarget.codes, orderPresenceTarget.lineTargets)
       : undefined;
     const payload: TekSystemSyncPayload = {
       syncId: `teksystem-firebird-${Date.now()}`,
@@ -216,6 +240,7 @@ async function runExport(args: string[]) {
       ...(orderPresence && orderPresenceTarget ? {
         orderPresenceCheckedCodes: orderPresenceTarget.codes,
         orderPresenceTargetHash: orderPresenceTarget.targetHash,
+        ...(orderPresenceTarget.lineTargetHash ? { orderPresenceLineTargetHash: orderPresenceTarget.lineTargetHash } : {}),
       } : {}),
     };
     const validation = validateAndNormalizeTekSystemSync(payload);
@@ -228,6 +253,7 @@ async function runExport(args: string[]) {
       ...(orderPresence && orderPresenceTarget ? {
         orderPresenceCheckedCodes: orderPresenceTarget.codes,
         orderPresenceTargetHash: orderPresenceTarget.targetHash,
+        ...(orderPresenceTarget.lineTargetHash ? { orderPresenceLineTargetHash: orderPresenceTarget.lineTargetHash } : {}),
       } : {}),
     };
     await fs.writeFile(output, `${JSON.stringify(normalizedExport, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });

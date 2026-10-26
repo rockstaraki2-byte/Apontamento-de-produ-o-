@@ -1,6 +1,7 @@
 import * as Firebird from "node-firebird";
 import type { Database } from "node-firebird";
 import type { TekSystemEntityType } from "../api/_lib/teksystemSync.js";
+import { orderLineIdsHash, type OrderLineTarget } from "../api/_lib/teksystemOrderPresenceHash.js";
 import { mapRepresentativeName, normalizeText } from "../api/_lib/orderImportRules.js";
 import { getSystemRepresentativeByCanonicalName } from "../api/_lib/systemRepresentatives.js";
 
@@ -36,12 +37,88 @@ const ids = (rows: Row[], field: string) => [...new Set(rows.map((r) => key(r[fi
 const baseCode = (code: string) => code.replace(/\..*$/, "");
 const billingTimeZone = "America/Sao_Paulo";
 
+export interface OrderItemStatusField {
+  relationName: string;
+  fieldName: string;
+}
+
+export interface OrderItemStatusProjection {
+  selectSql: string;
+  joinSql: string;
+}
+
+/**
+ * Tek-System installations have different item-level status columns. Read only
+ * metadata-approved identifiers and expose common aliases to the writer.
+ */
+export function buildOrderItemStatusProjection(fields: OrderItemStatusField[]): OrderItemStatusProjection {
+  const allowed = fields.flatMap((field) => {
+    const relationName = String(field.relationName || "").trim().toUpperCase();
+    const fieldName = String(field.fieldName || "").trim().toUpperCase();
+    if (!["DOCUMENTO_ITEM", "DOCUMENTO_ITEM_DETALHE"].includes(relationName) ||
+        !/^[A-Z_][A-Z0-9_$]*$/.test(fieldName)) return [];
+    return [{ relationName, fieldName, alias: relationName === "DOCUMENTO_ITEM_DETALHE" ? "det" : "i" }];
+  });
+  const ordered = (predicate: (fieldName: string) => boolean) => allowed
+    .filter((field) => predicate(field.fieldName))
+    .sort((a, b) => Number(b.alias === "det") - Number(a.alias === "det") || a.fieldName.localeCompare(b.fieldName));
+  const sqlValue = (selected: typeof allowed) => {
+    const expressions = selected.map((field) => `CAST(${field.alias}.${field.fieldName} AS VARCHAR(100))`);
+    return expressions.length > 1 ? `COALESCE(${expressions.join(", ")})` : expressions[0] || "";
+  };
+  const situations = ordered((name) => name.includes("SITUACAO"));
+  const statuses = ordered((name) => name.includes("STATUS") && !name.includes("SITUACAO"));
+  const cancellationDates = ordered((name) => name.includes("CANCEL") && name.includes("DATA"));
+  const cancelledQuantities = ordered((name) => name.includes("CANCEL") && /(QTDE|QTD|QUANTIDADE)/.test(name));
+  const cancellationFlags = ordered((name) => name.includes("CANCEL") &&
+    !name.includes("DATA") && !/(QTDE|QTD|QUANTIDADE)/.test(name));
+
+  const select: string[] = [];
+  if (statuses.length) select.push(`${sqlValue(statuses)} AS statusItem`);
+  if (situations.length) select.push(`${sqlValue(situations)} AS situacaoItem`);
+  if (cancellationFlags.length) select.push(`${sqlValue(cancellationFlags)} AS canceladoItem`);
+  if (cancellationDates.length) select.push(`${sqlValue(cancellationDates)} AS dataCancelamentoItem`);
+  if (cancelledQuantities.length) select.push(`${sqlValue(cancelledQuantities)} AS quantidadeCanceladaItem`);
+  if (situations.length) select.push("sitItem.DESCRICAO_SITUACAO AS situacaoDescricaoItem");
+  return {
+    selectSql: select.join(",\n          "),
+    joinSql: situations.length
+      ? `LEFT JOIN SITUACAO sitItem ON TRIM(CAST(sitItem.CODIGO_SITUACAO AS VARCHAR(100))) = TRIM(${sqlValue(situations)})`
+      : "",
+  };
+}
+
+let itemStatusFieldsPromise: Promise<OrderItemStatusField[]> | undefined;
+async function readOrderItemStatusFields(db: Database): Promise<OrderItemStatusField[]> {
+  if (!itemStatusFieldsPromise) {
+    itemStatusFieldsPromise = readOnlyRows(db, `
+      SELECT TRIM(rf.RDB$RELATION_NAME) AS relationName,
+             TRIM(rf.RDB$FIELD_NAME) AS fieldName
+        FROM RDB$RELATION_FIELDS rf
+       WHERE rf.RDB$RELATION_NAME IN (?, ?)
+         AND (rf.RDB$FIELD_NAME CONTAINING 'STATUS'
+           OR rf.RDB$FIELD_NAME CONTAINING 'SITUACAO'
+           OR rf.RDB$FIELD_NAME CONTAINING 'CANCEL')`, ["DOCUMENTO_ITEM", "DOCUMENTO_ITEM_DETALHE"])
+      .then((rows) => rows.map((row) => ({
+        relationName: key(row.relationname ?? row.RELATIONNAME),
+        fieldName: key(row.fieldname ?? row.FIELDNAME),
+      })))
+      .catch(() => {
+        itemStatusFieldsPromise = undefined;
+        return [];
+      });
+  }
+  return itemStatusFieldsPromise;
+}
+
 /**
  * Returns a complete, compact set of current Tek-System sales-order headers.
  * This query intentionally has no timestamp filter: a hard-deleted order can
  * only be detected by comparing a successful full snapshot with ApontaPRO.
  */
-export async function readOrderPresenceSnapshot(db: Database, companies: number[], requestedCodes: string[]) {
+export async function readOrderPresenceSnapshot(
+  db: Database, companies: number[], requestedCodes: string[], lineTargets: OrderLineTarget[] = [],
+) {
   const companySet = [...new Set(companies.map(Number))].sort((a, b) => a - b);
   if (companySet.length !== 2 || companySet[0] !== 0 || companySet[1] !== 1) {
     throw new Error("O snapshot de presença exige as empresas autorizadas 0 e 1.");
@@ -49,23 +126,42 @@ export async function readOrderPresenceSnapshot(db: Database, companies: number[
   const codes = [...new Set(requestedCodes.map(key).filter(Boolean))];
   if (codes.length > 25_000) throw new Error("A lista de pedidos vinculados excede 25.000 códigos; a reconciliação não foi iniciada.");
   const result: Row[] = [];
+  const lineTargetByKey = new Map(lineTargets.map((target) => [`${Number(target.companyId)}:${String(target.orderCode).trim()}`, target]));
   for (const codeBatch of batches(codes, 400)) {
     result.push(...await readOnlyRows(db, `
-      SELECT DISTINCT d.EMPRESA_DOCFAT AS empresa, d.CODIGO_DOCFAT AS codigopedido,
+      SELECT d.EMPRESA_DOCFAT AS empresa, d.CODIGO_DOCFAT AS codigopedido,
              d.STATUS_DOCFAT AS status, d.SITUACAO_DOCFAT AS situacao,
-             sit.DESCRICAO_SITUACAO AS situacaodescricao
+             sit.DESCRICAO_SITUACAO AS situacaodescricao,
+             COALESCE(det.AUTOINC_DOCITEMDET, i.AUTOINC_DOCITEM) AS detalheid
         FROM DOCUMENTO_FATURA d
         JOIN DOCUMENTO_PEDIDO p ON p.DOCUMENTO_DOCPED = d.CODIGO_DOCFAT
         LEFT JOIN SITUACAO sit ON sit.CODIGO_SITUACAO = d.SITUACAO_DOCFAT
+        LEFT JOIN DOCUMENTO_ITEM i ON i.DOCUMENTO_DOCITEM = d.CODIGO_DOCFAT
+        LEFT JOIN DOCUMENTO_ITEM_DETALHE det ON det.DOCUMENTO_DOCITEMDET = d.CODIGO_DOCFAT
+          AND det.AUTOINCITEM_DOCITEMDET = i.AUTOINC_DOCITEM
        WHERE d.EMPRESA_DOCFAT IN (${placeholders(companies)})
          AND d.CODIGO_DOCFAT IN (${placeholders(codeBatch)})`, [...companies, ...codeBatch]));
   }
-  const rows = result;
-  return rows.map((row) => {
+  const grouped = new Map<string, Row>();
+  for (const row of result) {
+    const empresa = Number(row.empresa);
+    const codigoPedido = key(row.codigopedido);
+    const groupKey = `${empresa}:${codigoPedido}`;
+    const group = grouped.get(groupKey) || { empresa, codigoPedido, status: row.status, situacao: row.situacao,
+      situacaodescricao: row.situacaodescricao, lineIds: new Set<string>() };
+    const lineId = key(row.detalheid);
+    if (lineId) (group.lineIds as Set<string>).add(lineId);
+    grouped.set(groupKey, group);
+  }
+  return [...grouped.values()].map((row) => {
     const status = normalizeText(`${key(row.situacaodescricao)} ${key(row.status)} ${key(row.situacao)}`);
     const lifecycle: "CANCELAMENTO_PARCIAL" | "CANCELADO" | undefined = /CANCEL.{0,12}PARCIAL|PARCIAL.{0,12}CANCEL/.test(status) ? "CANCELAMENTO_PARCIAL"
       : /\bCANCELAD[AO]S?\b|\bCANCELAMENTO\b/.test(status) && !/\bNAO CANCELAD[AO]S?\b/.test(status) ? "CANCELADO" : undefined;
-    return { empresa: Number(row.empresa), codigoPedido: key(row.codigopedido), ...(lifecycle ? { lifecycle } : {}) };
+    const lineIds = [...row.lineIds as Set<string>].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+    const target = lineTargetByKey.get(`${row.empresa}:${row.codigoPedido}`);
+    const lineHash = target ? orderLineIdsHash(lineIds) : undefined;
+    return { empresa: Number(row.empresa), codigoPedido: key(row.codigoPedido), ...(lifecycle ? { lifecycle } : {}),
+      ...(lineHash ? { lineHash, ...(lineHash !== target?.lineHash ? { lineIds } : {}) } : {}) };
   }).filter((row) => row.codigoPedido && [0, 1].includes(row.empresa));
 }
 
@@ -91,6 +187,9 @@ export async function readCompleteEntities(
 ) {
   const result: Record<TekSystemEntityType, Row[]> = { clientes: [], produtos: [], pedidos: [], faturamentos: [], romaneios: [], faturamentoDiario: [], faturamentoPorRepresentante: [] };
   let orderCodes: string[] = [];
+  const itemStatusProjection = entities.includes("pedidos")
+    ? buildOrderItemStatusProjection(await readOrderItemStatusFields(db))
+    : { selectSql: "", joinSql: "" };
   if (entities.includes("pedidos") || entities.includes("romaneios")) {
     const companyClause = `d.EMPRESA_DOCFAT IN (${placeholders(companies)})`;
     if (businessDate && !entities.includes("pedidos")) {
@@ -166,6 +265,7 @@ export async function readCompleteEntities(
           det.OBSERVACAO_DOCITEMDET AS observacoesitem, i.LOTEFABRICACAO_DOCITEM AS lotefabricacao,
           i.DATAHORAALTERACAO_DOCITEM AS itematualizadoem, det.DATAHORAALTERACAO_DOCITEMDET AS detalheatualizadoem,
           d.DATAHORAINCLUSAO_DOCFAT AS cadastradoem, d.DATAHORAALTERACAO_DOCFAT AS atualizadoem
+          ${itemStatusProjection.selectSql ? `, ${itemStatusProjection.selectSql}` : ""}
         FROM DOCUMENTO_FATURA d JOIN DOCUMENTO_PEDIDO p ON p.DOCUMENTO_DOCPED = d.CODIGO_DOCFAT
         LEFT JOIN DOCUMENTO_ITEM i ON i.DOCUMENTO_DOCITEM = d.CODIGO_DOCFAT
         LEFT JOIN DOCUMENTO_ITEM_DETALHE det ON det.DOCUMENTO_DOCITEMDET = d.CODIGO_DOCFAT AND det.AUTOINCITEM_DOCITEMDET = i.AUTOINC_DOCITEM
@@ -178,6 +278,7 @@ export async function readCompleteEntities(
         LEFT JOIN VARIACAO variacao ON variacao.CODIGO_VARIACAO = COALESCE(det.VARIACAO_DOCITEMDET, i.VARIACAO_DOCITEM)
         LEFT JOIN GRADE grade ON grade.AUTOINC_GRADE = COALESCE(det.GRADE_DOCITEMDET, i.GRADE_DOCITEM)
         LEFT JOIN ACABAMENTO acabamento ON acabamento.CODIGO_ACABAMENTO = COALESCE(det.ACABAMENTO_DOCITEMDET, i.ACABAMENTO_DOCITEM)
+        ${itemStatusProjection.joinSql}
         WHERE d.EMPRESA_DOCFAT IN (${placeholders(companies)}) AND d.CODIGO_DOCFAT IN (${placeholders(codes)})
         ORDER BY d.CODIGO_DOCFAT, i.AUTOINC_DOCITEM, det.AUTOINC_DOCITEMDET`, [...companies, ...codes]));
       paymentRows.push(...await readOnlyRows(db, `SELECT prazo.DOCUMENTO_DOCPRAZO AS codigopedido,

@@ -9,6 +9,7 @@ import {
   validateAndNormalizeTekSystemSync,
   type TekSystemSyncPayload,
 } from "../api/_lib/teksystemSync.js";
+import { orderLineTargetsHash, type OrderLineTarget } from "../api/_lib/teksystemOrderPresenceHash.js";
 import { makeSince, splitPayload, type SyncState } from "./teksystem-sync-cycle-utils.js";
 import { callWriter, drainWriter, previewWriter } from "./teksystem-writer-client.js";
 import { checkpointFollowups, finishFollowups } from "./teksystem-followups.mjs";
@@ -233,7 +234,31 @@ async function fetchOrderPresenceTargets(apiUrl: string, apiToken: string, bypas
       if (parsed.targetCodes.length > 25_000 || parsed.targetCodes.some((code: unknown) => typeof code !== "string" || !code.trim() || code.length > 80)) {
         throw new Error("A lista de códigos retornada pela API excede os limites locais de segurança.");
       }
-      return { codes: parsed.targetCodes as string[], targetHash: parsed.targetHash as string, companyIds: parsed.companyIds };
+      let lineTargets: OrderLineTarget[] | undefined;
+      let lineTargetHash: string | undefined;
+      if (parsed.lineTargets !== undefined || parsed.lineTargetHash !== undefined) {
+        if (!Array.isArray(parsed.lineTargets) || parsed.lineTargets.length > 50_000 ||
+          !/^[a-f0-9]{64}$/.test(parsed.lineTargetHash || "")) {
+          throw new Error("A lista de linhas retornada pela API é inválida.");
+        }
+        const seen = new Set<string>();
+        lineTargets = parsed.lineTargets.map((target: any) => {
+          const companyId = Number(target?.companyId);
+          const orderCode = String(target?.orderCode ?? "").trim();
+          const lineHash = String(target?.lineHash ?? "");
+          const key = `${companyId}:${orderCode}`;
+          if (![0, 1].includes(companyId) || !orderCode || orderCode.length > 80 ||
+            !/^[a-f0-9]{64}$/.test(lineHash) || seen.has(key)) {
+            throw new Error("A lista de linhas retornada pela API contém alvo inválido ou duplicado.");
+          }
+          seen.add(key);
+          return { companyId, orderCode, lineHash };
+        });
+        if (orderLineTargetsHash(lineTargets) !== parsed.lineTargetHash) throw new Error("O hash dos alvos de linha retornado pela API não corresponde à lista.");
+        lineTargetHash = parsed.lineTargetHash;
+      }
+      return { codes: parsed.targetCodes as string[], targetHash: parsed.targetHash as string, companyIds: parsed.companyIds,
+        ...(lineTargets ? { lineTargets } : {}), ...(lineTargetHash ? { lineTargetHash } : {}) };
     }
     if (![408, 425, 429, 500, 502, 503, 504].includes(response.status) || attempt === 2) {
       throw new Error(`Não foi possível preparar a leitura dos pedidos vinculados (HTTP ${response.status}): ${parsed?.mensagem || parsed?.erro || "resposta inválida"}`);
@@ -247,7 +272,8 @@ async function postOrderPresenceSnapshot(
   apiUrl: string, apiToken: string, bypassSecret: string, payload: TekSystemSyncPayload, snapshotId: string, dryRun: boolean,
 ) {
   if (payload.source?.orderPresenceSnapshotComplete !== true || !Array.isArray(payload.orderPresence) ||
-    !Array.isArray(payload.orderPresenceCheckedCodes) || !/^[a-f0-9]{64}$/.test(payload.orderPresenceTargetHash || "")) {
+    !Array.isArray(payload.orderPresenceCheckedCodes) || !/^[a-f0-9]{64}$/.test(payload.orderPresenceTargetHash || "") ||
+    (payload.orderPresenceLineTargetHash !== undefined && !/^[a-f0-9]{64}$/.test(payload.orderPresenceLineTargetHash))) {
     throw new Error("O leitor não forneceu o snapshot completo de presença de pedidos; reconciliação/cursor interrompidos por segurança.");
   }
   const body = {
@@ -255,6 +281,7 @@ async function postOrderPresenceSnapshot(
     snapshotId, generatedAt: payload.generatedAt || new Date().toISOString(),
     companyIds: payload.source.companyIds || [0, 1], completeSnapshot: true,
     checkedOrderCodes: payload.orderPresenceCheckedCodes, targetHash: payload.orderPresenceTargetHash,
+    ...(payload.orderPresenceLineTargetHash ? { lineTargetHash: payload.orderPresenceLineTargetHash } : {}),
     orders: payload.orderPresence, dryRun,
   };
   if (Buffer.byteLength(JSON.stringify(body)) > 3_500_000) throw new Error("Snapshot de presença excede o limite seguro; nenhuma reconciliação foi iniciada.");
@@ -392,6 +419,8 @@ async function runSync(args: string[]) {
       canceledAtSource: orderPresence.canceledAtSource || 0,
       partialCancellationReview: orderPresence.partialCancellationReview || 0,
       inconsistentStatusReview: orderPresence.inconsistentStatusReview || 0,
+      cancelledItems: orderPresence.cancelledItems || 0,
+      queuedItemCancellations: orderPresence.queuedItemCancellations || 0,
       queued: orderPresence.queued,
       blocked: orderPresence.blocked,
       reason: orderPresence.reason,

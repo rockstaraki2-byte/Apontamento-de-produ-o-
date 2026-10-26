@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validateAndNormalizeTekSystemSync } from "../api/_lib/teksystemSync.js";
-import { buildWriterJobs, hasTransaction74, planCargaQuantityMutations, planWriterJob, sourcePayment, type WriterCatalog, type WriterJob } from "../api/_lib/teksystemWriter.js";
+import { buildWriterJobs, hasTransaction74, planCargaQuantityMutations, planWriterJob, requiresOrderCancellationContext, sourcePayment, type WriterCatalog, type WriterJob } from "../api/_lib/teksystemWriter.js";
 import { buildImportedOrderDocument } from "../api/_lib/orderImportDocuments.js";
 import { splitPayload } from "../tools/teksystem-sync-cycle-utils.js";
-import { readOnlyRows, readOrderPresenceSnapshot } from "../tools/teksystem-firebird-v2.js";
-import { orderPresenceTargetCodes, orderPresenceTargetHash, planOrderPresenceReconciliation } from "../api/_lib/teksystemOrderPresence.js";
+import { buildOrderItemStatusProjection, readCompleteEntities, readOnlyRows, readOrderPresenceSnapshot } from "../tools/teksystem-firebird-v2.js";
+import { orderPresenceLineTargets, orderPresenceLineTargetsHash, orderPresenceTargetCodes, orderPresenceTargetHash, planOrderLineCancellations, planOrderPresenceReconciliation } from "../api/_lib/teksystemOrderPresence.js";
+import { orderLineIdsHash } from "../api/_lib/teksystemOrderPresenceHash.js";
 import * as Firebird from "node-firebird";
 import { EventEmitter } from "node:events";
 
@@ -316,7 +317,9 @@ test("linha nova de código repetido só é incluída quando as linhas antigas t
 test("não transforma troca/remoção de item antigo em nova linha nem altera quantidade existente", () => {
   const { cat, order, orderJob } = appendFixture();
   orderJob.rows = [orderJob.rows[1]];
-  assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "ITENS_PEDIDO_DIVERGENTES");
+  const cancellationContext = { loaded: true, cargas: [], productionBatches: [], productionAgendas: [], coilCuttingPlans: [], productionSteps: [], logs: [] };
+  const removedLinePlan = planWriterJob(orderJob, cat, [order], now, cancellationContext);
+  assert.equal(removedLinePlan.mutations.find((m) => m.patch.status === "CANCELADO")?.docId, String(order.id));
   orderJob.rows.unshift(sourceRow()); order.totalQuantity = 9;
   assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "QUANTIDADE_COM_OPERACAO_INICIADA");
 });
@@ -343,7 +346,7 @@ test("pedido cancelado, cliente divergente e chaves repetidas não permitem adic
   order.customerId = 5; orderJob.rows[1].detalheid = 900;
   assert.throws(() => planWriterJob(orderJob, cat, [order], now), (e: any) => e.code === "ITEM_DUPLICADO");
 });
-test("cancelamento de origem cancela logicamente somente pedido sem operação e remove vínculos não iniciados", () => {
+test("cancelamento de origem preserva o pedido e remove vínculos de produção ainda não iniciados", () => {
   const order: any = existing();
   const source = { ...sourceRow(), situacaodescricao: "DOCUMENTO CANCELADO" };
   const cancellationJob = { ...jobs()[0], rows: [source] };
@@ -365,16 +368,89 @@ test("cancelamento de origem cancela logicamente somente pedido sem operação e
   assert.deepEqual(cargaPatch.orderIds, []);
   assert.equal((cargaPatch.auditTrail as any[])[0].userId, "teksystem-sync-agent");
 });
-test("cancelamento parcial ou com apontamento fica em revisão sem planejar mutações", () => {
+test("cancelamento parcial sem identificar a linha fica em revisão, mas histórico iniciado é preservado", () => {
   const order: any = existing();
   const context = { loaded: true, cargas: [], productionBatches: [], productionAgendas: [], coilCuttingPlans: [], productionSteps: [], logs: [] };
   const partial = { ...jobs()[0], rows: [{ ...sourceRow(), situacaodescricao: "DOCUMENTO CANCELADO PARCIAL" }] };
   assert.throws(() => planWriterJob(partial, catalog(), [order], now, context), (error: any) => error.code === "CANCELAMENTO_PARCIAL_REQUER_REVISAO");
   const canceled = { ...jobs()[0], rows: [{ ...sourceRow(), situacaodescricao: "DOCUMENTO CANCELADO" }] };
   order.packedQuantity = 1;
-  assert.throws(() => planWriterJob(canceled, catalog(), [order], now, context), (error: any) => error.code === "CANCELAMENTO_COM_OPERACAO_INICIADA");
-  order.packedQuantity = 0;
-  assert.throws(() => planWriterJob(canceled, catalog(), [order], now, { ...context, logs: [{ orderId: order.id }] }), (error: any) => error.code === "CANCELAMENTO_COM_HISTORICO_OPERACIONAL");
+  const startedContext = { ...context,
+    productionBatches: [{ id: 44, docId: "44", tenantId: "imperio", name: "LOTE 44", status: "EM_PRODUCAO", orderIds: [order.id], checkedOrderIds: [order.id], liberatedOrderIds: [order.id] }],
+    logs: [{ orderId: order.id }],
+  };
+  const plan = planWriterJob(canceled, catalog(), [order], now, startedContext);
+  assert.equal(plan.mutations.find((mutation) => mutation.collection === "orders")!.patch.status, "CANCELADO");
+  const batchPatch = plan.mutations.find((mutation) => mutation.collection === "productionBatches")!.patch;
+  assert.deepEqual(batchPatch.orderIds, [order.id]);
+  assert.deepEqual(batchPatch.checkedOrderIds, []);
+  assert.deepEqual(batchPatch.liberatedOrderIds, []);
+});
+test("snapshot completo cancela só a linha ausente e a remove do lote pendente", () => {
+  const first: any = existing();
+  const second: any = { ...first, id: 124, docId: "124", teksystemLineId: "pedido:77:901" };
+  const jobWithOneRemainingLine = { ...jobs()[0], rows: [sourceRow()] };
+  const batch = { id: 44, docId: "44", tenantId: "imperio", name: "LOTE 44", status: "PENDENTE",
+    orderIds: [first.id, second.id], checkedOrderIds: [first.id, second.id], liberatedOrderIds: [second.id] };
+  const context = { loaded: true, cargas: [], productionBatches: [batch], productionAgendas: [], coilCuttingPlans: [], productionSteps: [], logs: [] };
+  assert.equal(requiresOrderCancellationContext(jobWithOneRemainingLine, [first, second]), true);
+  const plan = planWriterJob(jobWithOneRemainingLine, catalog(), [first, second], now, context);
+  assert.equal(plan.action, "CANCELAMENTO_PARCIAL");
+  const canceled = plan.mutations.find((mutation) => mutation.collection === "orders" && mutation.patch.status === "CANCELADO")!;
+  assert.equal(canceled.docId, "124");
+  assert.equal(canceled.patch.status, "CANCELADO");
+  assert.equal(canceled.patch.isActive, false);
+  const batchPatch = plan.mutations.find((mutation) => mutation.collection === "productionBatches")!.patch;
+  assert.deepEqual(batchPatch.orderIds, [first.id]);
+  assert.deepEqual(batchPatch.checkedOrderIds, [first.id]);
+  assert.deepEqual(batchPatch.liberatedOrderIds, []);
+});
+test("cancelamento explícito de item não cancela as outras linhas do mesmo pedido", () => {
+  const first: any = existing();
+  const second: any = { ...first, id: 124, docId: "124", teksystemLineId: "pedido:77:901" };
+  const activeRow = sourceRow();
+  const canceledRow = { ...sourceRow(), externalId: "pedido:77:901", detalheid: 901, statusItem: "CANCELADO" };
+  const jobWithItemStatus = { ...jobs()[0], rows: [activeRow, canceledRow] };
+  const context = { loaded: true, cargas: [], productionBatches: [], productionAgendas: [], coilCuttingPlans: [], productionSteps: [], logs: [] };
+  const plan = planWriterJob(jobWithItemStatus, catalog(), [first, second], now, context);
+  assert.equal(plan.action, "CANCELAMENTO_PARCIAL");
+  assert.equal(plan.mutations.filter((mutation) => mutation.collection === "orders" && mutation.patch.status === "CANCELADO").length, 1);
+  assert.equal(plan.mutations.find((mutation) => mutation.docId === "124")!.patch.status, "CANCELADO");
+  assert.equal(plan.mutations.some((mutation) => mutation.docId === "123" && mutation.patch.status === "CANCELADO"), false);
+  for (const marker of [{ canceladoItem: "S" }, { situacaoDescricaoItem: "Item cancelado" }, { quantidadeCanceladaItem: 10 }]) {
+    const markedRow = { ...sourceRow(), externalId: "pedido:77:901", detalheid: 901, ...marker };
+    const markedPlan = planWriterJob({ ...jobs()[0], rows: [activeRow, markedRow] }, catalog(), [first, second], now, context);
+    assert.equal(markedPlan.mutations.find((mutation) => mutation.docId === "124")!.patch.status, "CANCELADO");
+    assert.equal(markedPlan.mutations.some((mutation) => mutation.docId === "123" && mutation.patch.status === "CANCELADO"), false);
+  }
+});
+test("job de cancelamento só cancela as linhas indicadas e respeita a empresa de origem", () => {
+  const first: any = { ...existing(), teksystemCompanyId: 1 };
+  const second: any = { ...first, id: 124, docId: "124", teksystemLineId: "pedido:77:901" };
+  const otherCompany: any = { ...first, id: 125, docId: "125", teksystemCompanyId: 0, teksystemLineId: "pedido:77:901" };
+  const lineJob: WriterJob = { ...jobs()[0], lineCancellationOnly: true,
+    rows: [{ empresa: 1, codigopedido: 77, detalheid: 901, itemLifecycleAction: "CANCELADO" }] };
+  const context = { loaded: true, cargas: [], productionBatches: [{ id: 44, docId: "44", tenantId: "imperio", status: "PENDENTE", orderIds: [124] }],
+    productionAgendas: [], coilCuttingPlans: [], productionSteps: [], logs: [] };
+  assert.equal(requiresOrderCancellationContext(lineJob, [first, second, otherCompany]), true);
+  const plan = planWriterJob(lineJob, catalog(), [first, second, otherCompany], now, context);
+  const canceled = plan.mutations.filter((mutation) => mutation.collection === "orders" && mutation.patch.status === "CANCELADO");
+  assert.deepEqual(canceled.map((mutation) => mutation.docId), ["124"]);
+  assert.deepEqual(plan.mutations.find((mutation) => mutation.collection === "productionBatches")!.patch.orderIds, []);
+});
+test("snapshot de linhas identifica somente o detalhe ausente no pedido ainda presente", () => {
+  const imported = [
+    { id: 123, teksystemOrderId: "77", teksystemLineId: "pedido:77:900", teksystemCompanyId: 1, importOrigin: "TEKSYSTEM", status: "PENDENTE" },
+    { id: 124, teksystemOrderId: "77", teksystemLineId: "pedido:77:901", teksystemCompanyId: 1, importOrigin: "TEKSYSTEM", status: "PENDENTE" },
+    { id: 125, teksystemOrderId: "77", teksystemLineId: "pedido:77:901", teksystemCompanyId: 0, importOrigin: "TEKSYSTEM", status: "PENDENTE" },
+  ];
+  const lineTargets = orderPresenceLineTargets(imported);
+  assert.equal(lineTargets.length, 2);
+  assert.equal(orderPresenceLineTargetsHash(lineTargets).length, 64);
+  const source = [{ empresa: 1, codigoPedido: "77", lineHash: orderLineIdsHash(["900"]), lineIds: ["900"] }];
+  assert.deepEqual(planOrderLineCancellations(imported, source), [{ companyId: 1, orderCode: "77", lineId: "901" }]);
+  const plan = planOrderPresenceReconciliation("imperio", imported, [], source, "snapshot-lines", now.toISOString());
+  assert.deepEqual(plan.cancelledItemLines, [{ companyId: 1, orderCode: "77", lineId: "901" }]);
 });
 test("exclusão física só é confirmada em dois snapshots independentes e reseta se o pedido reaparecer", () => {
   const imported = [{ id: 123, teksystemOrderId: "77", teksystemLineId: "pedido:77:900", importOrigin: "TEKSYSTEM", status: "PENDENTE" }];
@@ -467,7 +543,8 @@ test("snapshot completo de pedidos lê situação em transação Firebird soment
     assert.equal(isolation, Firebird.ISOLATION_READ_COMMITTED_READ_ONLY); return tx;
   } };
   const snapshot = await readOrderPresenceSnapshot(db, [0, 1], ["77", "78"]);
-  assert.match(sql, /SELECT DISTINCT/i);
+  assert.match(sql, /LEFT JOIN DOCUMENTO_ITEM_DETALHE/i);
+  assert.doesNotMatch(sql, /SELECT DISTINCT/i);
   assert.doesNotMatch(sql, /DATAHORAALTERACAO/i);
   assert.match(sql, /CODIGO_DOCFAT IN/i);
   assert.deepEqual(paramsSeen, [0, 1, "77", "78"]);
@@ -476,4 +553,64 @@ test("snapshot completo de pedidos lê situação em transação Firebird soment
   assert.equal(snapshot[2].lifecycle, undefined);
   assert.equal(committed, true);
   await assert.rejects(readOrderPresenceSnapshot(db, [2], []), /empresas autorizadas 0 e 1/);
+});
+test("projeção de situação do item usa apenas campos Firebird validados", () => {
+  const projection = buildOrderItemStatusProjection([
+    { relationName: "DOCUMENTO_ITEM", fieldName: "STATUS_DOCITEM" },
+    { relationName: "DOCUMENTO_ITEM_DETALHE", fieldName: "SITUACAO_DOCITEMDET" },
+    { relationName: "DOCUMENTO_ITEM_DETALHE", fieldName: "CANCELADO_DOCITEMDET" },
+    { relationName: "DOCUMENTO_ITEM_DETALHE", fieldName: "QTDECANCELADA_DOCITEMDET" },
+    { relationName: "OUTRA_TABELA", fieldName: "CANCELADO" },
+    { relationName: "DOCUMENTO_ITEM", fieldName: "STATUS; DROP TABLE DOCUMENTO_ITEM" },
+  ]);
+  assert.match(projection.selectSql, /AS statusItem/);
+  assert.match(projection.selectSql, /AS situacaoItem/);
+  assert.match(projection.selectSql, /AS situacaoDescricaoItem/);
+  assert.match(projection.selectSql, /AS canceladoItem/);
+  assert.match(projection.selectSql, /AS quantidadeCanceladaItem/);
+  assert.match(projection.joinSql, /LEFT JOIN SITUACAO sitItem/);
+  assert.doesNotMatch(projection.selectSql, /DROP TABLE|OUTRA_TABELA/);
+});
+test("leitor Firebird inclui status individual do item quando a coluna existe", async () => {
+  const statements: string[] = [];
+  const db: any = { transactionAsync: async () => ({
+    queryAsync: async (sql: string) => {
+      statements.push(sql);
+      if (/FROM RDB\$RELATION_FIELDS/i.test(sql)) return [
+        { relationname: "DOCUMENTO_ITEM_DETALHE", fieldname: "SITUACAO_DOCITEMDET" },
+        { relationname: "DOCUMENTO_ITEM_DETALHE", fieldname: "CANCELADO_DOCITEMDET" },
+      ];
+      if (/AS canceladoItem/i.test(sql)) return [{ empresa: 1, codigopedido: 77, detalheid: 901,
+        situacaoitem: 7, situacaodescricaoitem: "Item cancelado", canceladoitem: "S" }];
+      if (/SELECT d\.CODIGO_DOCFAT AS codigopedido/i.test(sql)) return [{ codigopedido: 77 }];
+      return [];
+    },
+    commitAsync: async () => {}, rollbackAsync: async () => {},
+  }) };
+  const result = await readCompleteEntities(db, ["pedidos"], [0, 1]);
+  assert.match(statements.find((sql) => /AS canceladoItem/i.test(sql))!, /sitItem\.DESCRICAO_SITUACAO AS situacaoDescricaoItem/);
+  assert.match(statements.find((sql) => /AS canceladoItem/i.test(sql))!, /LEFT JOIN SITUACAO sitItem/);
+  assert.equal(result.pedidos[0].canceladoitem, "S");
+  assert.equal(result.pedidos[0].situacaodescricaoitem, "Item cancelado");
+});
+test("snapshot Firebird envia IDs da linha apenas quando o hash diverge do alvo", async () => {
+  let committed = false;
+  const rows = [
+    { empresa: 1, codigopedido: 77, status: 1, situacao: 1, situacaodescricao: "Normal", detalheid: 900 },
+    { empresa: 1, codigopedido: 77, status: 1, situacao: 1, situacaodescricao: "Normal", detalheid: 901 },
+    { empresa: 0, codigopedido: 78, status: 1, situacao: 1, situacaodescricao: "Normal", detalheid: 700 },
+  ];
+  const tx: any = { queryAsync: async () => rows, commitAsync: async () => { committed = true; }, rollbackAsync: async () => {} };
+  const db: any = { transactionAsync: async () => tx };
+  const snapshot = await readOrderPresenceSnapshot(db, [0, 1], ["77", "78"], [
+    { companyId: 1, orderCode: "77", lineHash: orderLineIdsHash(["900"]) },
+    { companyId: 0, orderCode: "78", lineHash: orderLineIdsHash(["700"]) },
+  ]);
+  const changed = snapshot.find((row) => row.empresa === 1)!;
+  const same = snapshot.find((row) => row.empresa === 0)!;
+  assert.deepEqual(changed.lineIds, ["900", "901"]);
+  assert.equal(changed.lineHash, orderLineIdsHash(["900", "901"]));
+  assert.equal(same.lineHash, orderLineIdsHash(["700"]));
+  assert.equal(same.lineIds, undefined);
+  assert.equal(committed, true);
 });

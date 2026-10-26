@@ -414,7 +414,7 @@ export function FilaRitmoScreen({
   // PROGRAMMING / PLANNING 
   const handleAddToProgram = (orderId: number, targetQty: number) => {
     const order = db.orders.find((o) => o.id === orderId);
-    if (!order) return;
+    if (!order || !order.isActive || order.status === "CANCELADO") return;
     setProgrammedList((prev) => {
       // Allow multiple entries for the same order if assigned to different operators? Yes.
       return [...prev, {
@@ -497,7 +497,7 @@ export function FilaRitmoScreen({
     let countStarted = 0;
     for (const pItem of programmedList) {
       const order = db.orders.find((o) => o.id === pItem.orderId);
-      if (!order) continue;
+      if (!order || !order.isActive || order.status === "CANCELADO") continue;
       
       // Check if already active
       const isAlreadyActive = db.activePacks.some(
