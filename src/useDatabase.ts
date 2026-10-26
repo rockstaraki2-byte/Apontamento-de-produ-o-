@@ -1471,6 +1471,11 @@ export function useDatabase(currentUser?: User | null) {
     const list = Array.isArray(updatedOrders) ? updatedOrders : [updatedOrders];
     const normalizedList = list.map((o) => {
       let updated = { ...o };
+      const current = orders.find((candidate) => candidate.id === o.id);
+      if (current?.status === "CANCELADO" && (current as any).teksystemLifecycleAction) {
+        updated.status = "CANCELADO";
+        updated.isActive = false;
+      }
       if (updated.representativeName) {
         const searchName = updated.representativeName.toLowerCase();
         if (searchName.includes("mapefor")) {

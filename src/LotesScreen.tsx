@@ -552,6 +552,7 @@ export function LotesScreen({
     orderId: number,
     field: "checkedOrderIds" | "liberatedOrderIds",
   ) => {
+    if (db.orders.find((candidate) => candidate.id === orderId)?.status === "CANCELADO") return;
     const key = `${batch.id}:${orderId}`;
     if (savingBatchItemsRef.current.has(key)) return;
     savingBatchItemsRef.current.add(key);
@@ -1365,12 +1366,13 @@ export function LotesScreen({
 
                           const isChecked = (Array.isArray(b.checkedOrderIds) && b.checkedOrderIds.includes(oid)) || false;
                           const isLiberated = (Array.isArray(b.liberatedOrderIds) && b.liberatedOrderIds.includes(oid)) || false;
+                          const isCanceled = o.status === "CANCELADO";
                           const sectorInfo = getOrderSectorTracking(o, b.id);
 
                           return (
                             <tr
                               key={oid}
-                              className={`hover:bg-slate-50/50 transition-colors ${isLiberated ? "bg-emerald-50/10" : ""}`}
+                              className={`hover:bg-slate-50/50 transition-colors ${isCanceled ? "bg-red-50/70" : isLiberated ? "bg-emerald-50/10" : ""}`}
                             >
                               {/* Order Code */}
                               <td className="p-3.5 pl-5 font-mono font-black text-indigo-700 transition">
@@ -1439,7 +1441,11 @@ export function LotesScreen({
                                       Status / Setor:
                                     </span>
 
-                                    {sectorInfo.isActive ? (
+                                    {isCanceled ? (
+                                      <span className="text-[9px] font-black uppercase inline-block px-1.5 py-0.5 rounded border bg-red-100 text-red-800 border-red-200">
+                                        CANCELADO
+                                      </span>
+                                    ) : sectorInfo.isActive ? (
                                       <div className="bg-amber-500 text-white font-black px-1.5 py-1 rounded shadow-2xs text-[9px] uppercase leading-tight animate-pulse flex flex-col items-center">
                                         <span>⚡ EM PRODUÇÃO</span>
                                         <span className="text-[8px] font-bold text-amber-100 mt-0.5">
@@ -1481,7 +1487,7 @@ export function LotesScreen({
                                   </div>
 
                                   {/* Authorization transition buttons */}
-                                  {canChangeStatus && (
+                                  {canChangeStatus && !isCanceled && (
                                     <div className="flex flex-col gap-1 w-full max-w-[130px]">
                                       <button
                                         onClick={async () => {
@@ -1521,7 +1527,8 @@ export function LotesScreen({
                                 <div className="flex gap-2 justify-end">
                                   <button
                                     onClick={() => handleToggleBatchItem(b, oid, "checkedOrderIds")}
-                                    disabled={savingBatchItems[`${b.id}:${oid}`]}
+                                    disabled={isCanceled || savingBatchItems[`${b.id}:${oid}`]}
+                                    title={isCanceled ? "Item cancelado no Tek-System" : undefined}
                                     aria-busy={!!savingBatchItems[`${b.id}:${oid}`]}
                                     aria-pressed={isChecked}
                                     className={`px-2.5 py-1 text-[10px] font-extrabold rounded-lg cursor-pointer transition active:scale-95 border flex items-center gap-1 ${isChecked ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"}`}
@@ -1531,7 +1538,8 @@ export function LotesScreen({
 
                                   <button
                                     onClick={() => handleToggleBatchItem(b, oid, "liberatedOrderIds")}
-                                    disabled={savingBatchItems[`${b.id}:${oid}`]}
+                                    disabled={isCanceled || savingBatchItems[`${b.id}:${oid}`]}
+                                    title={isCanceled ? "Item cancelado no Tek-System" : undefined}
                                     aria-busy={!!savingBatchItems[`${b.id}:${oid}`]}
                                     aria-pressed={isLiberated}
                                     className={`px-3 py-1.5 text-[10px] font-black rounded-lg cursor-pointer transition active:scale-95 flex items-center gap-1 shadow-xs ${isLiberated ? "bg-[#00b14f] text-white hover:bg-[#009d44]" : "bg-emerald-50 text-[#00b14f] border border-emerald-100 hover:bg-emerald-100/50"}`}

@@ -28,9 +28,16 @@ export interface TekSystemSyncPayload {
   generatedAt?: string;
   source?: TekSystemSourceInfo;
   /** Compact, complete header-only snapshot used only by the local scheduled sync. */
-  orderPresence?: Array<{ empresa: number; codigoPedido: string; lifecycle?: "CANCELADO" | "CANCELAMENTO_PARCIAL" }>;
+  orderPresence?: Array<{
+    empresa: number;
+    codigoPedido: string;
+    lifecycle?: "CANCELADO" | "CANCELAMENTO_PARCIAL";
+    lineHash?: string;
+    lineIds?: string[];
+  }>;
   orderPresenceCheckedCodes?: string[];
   orderPresenceTargetHash?: string;
+  orderPresenceLineTargetHash?: string;
   entities?: Partial<Record<TekSystemEntityType, unknown[]>>;
 }
 

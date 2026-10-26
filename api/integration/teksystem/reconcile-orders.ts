@@ -39,6 +39,9 @@ export default async function handler(req: any, res: any) {
     !Array.isArray(body.checkedOrderCodes) || body.checkedOrderCodes.length > 25_000 || !/^[a-f0-9]{64}$/.test(body.targetHash || "")) {
     return res.status(400).json({ sucesso: false, erro: "SNAPSHOT_INCOMPLETO", mensagem: "A reconciliação exige um snapshot completo identificado e datado." });
   }
+  if (body.lineTargetHash !== undefined && !/^[a-f0-9]{64}$/.test(body.lineTargetHash || "")) {
+    return res.status(400).json({ sucesso: false, erro: "HASH_LINHAS_INVALIDO" });
+  }
   if (!Array.isArray(body.companyIds) || body.companyIds.map(Number).sort().join(",") !== "0,1") {
     return res.status(400).json({ sucesso: false, erro: "ESCOPO_EMPRESA_INVALIDO", mensagem: "O snapshot deve cobrir integralmente as empresas 0 e 1." });
   }
@@ -50,7 +53,7 @@ export default async function handler(req: any, res: any) {
     if (!code || code.length > 80 || checkedCodes.has(code)) return res.status(400).json({ sucesso: false, erro: "ALVOS_INVALIDOS" });
     checkedCodes.add(code);
   }
-  const orders: Array<{ empresa: number; codigoPedido: string; lifecycle?: "CANCELADO" | "CANCELAMENTO_PARCIAL" }> = [];
+  const orders: Array<{ empresa: number; codigoPedido: string; lifecycle?: "CANCELADO" | "CANCELAMENTO_PARCIAL"; lineHash?: string; lineIds?: string[] }> = [];
   for (const row of body.orders) {
     if (!row || typeof row !== "object" || Array.isArray(row)) {
       return res.status(400).json({ sucesso: false, erro: "SNAPSHOT_INVALIDO", mensagem: "O snapshot contém linha inválida." });
@@ -65,13 +68,28 @@ export default async function handler(req: any, res: any) {
     if (lifecycle !== undefined && !["CANCELADO", "CANCELAMENTO_PARCIAL"].includes(lifecycle)) {
       return res.status(400).json({ sucesso: false, erro: "SNAPSHOT_INVALIDO", mensagem: "Situação de pedido inválida no snapshot." });
     }
-    seen.add(key); orders.push({ empresa, codigoPedido, ...(lifecycle ? { lifecycle } : {}) });
+    const lineHash = row.lineHash;
+    if (lineHash !== undefined && (typeof lineHash !== "string" || !/^[a-f0-9]{64}$/.test(lineHash))) {
+      return res.status(400).json({ sucesso: false, erro: "SNAPSHOT_INVALIDO", mensagem: "Hash de linhas inválido no snapshot." });
+    }
+    let lineIds: string[] | undefined;
+    if (row.lineIds !== undefined) {
+      if (!Array.isArray(row.lineIds) || row.lineIds.length > 2_000) {
+        return res.status(400).json({ sucesso: false, erro: "SNAPSHOT_INVALIDO", mensagem: "Lista de linhas excede o limite permitido." });
+      }
+      lineIds = row.lineIds.map((id: unknown) => String(id ?? "").trim());
+      if (lineIds.some((id: string) => !id || id.length > 120) || new Set(lineIds).size !== lineIds.length || !lineHash) {
+        return res.status(400).json({ sucesso: false, erro: "SNAPSHOT_INVALIDO", mensagem: "Lista de linhas inválida ou sem hash." });
+      }
+    }
+    seen.add(key); orders.push({ empresa, codigoPedido, ...(lifecycle ? { lifecycle } : {}),
+      ...(lineHash ? { lineHash } : {}), ...(lineIds ? { lineIds } : {}) });
   }
   try {
     const result = await reconcileTekSystemOrderPresence({
       tenantId, snapshotId: body.snapshotId, generatedAt: new Date(body.generatedAt).toISOString(),
       companyIds: body.companyIds.map(Number), sourceOrders: orders, checkedOrderCodes: [...checkedCodes],
-      targetHash: body.targetHash, dryRun: body.dryRun === true,
+      targetHash: body.targetHash, lineTargetHash: body.lineTargetHash, dryRun: body.dryRun === true,
     });
     const summary = {
       blocked: result.blocked, reason: result.reason, dryRun: result.dryRun,
@@ -80,6 +98,8 @@ export default async function handler(req: any, res: any) {
       canceledAtSource: result.cancelledOrderCodes.length,
       partialCancellationReview: result.partialCancellationCodes.length,
       inconsistentStatusReview: result.inconsistentLifecycleCodes.length,
+      cancelledItems: result.cancelledItemLines.length,
+      queuedItemCancellations: result.queuedItemCancellations ?? 0,
       queued: result.queued ?? 0, stateWrites: result.stateWrites ?? 0,
     };
     return res.status(200).json({ sucesso: true, ...(result.blocked ? { erro: "RECONCILIACAO_SUSPENSA" } : {}), ...summary });

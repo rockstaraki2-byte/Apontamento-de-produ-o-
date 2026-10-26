@@ -9,7 +9,7 @@ import type { NormalizedTekSystemSyncPayload } from "./teksystemSync.js";
 import { syncRecordKey } from "./teksystemSync.js";
 import {
   buildWriterJobs, planCargaQuantityMutations, planWriterJob, signature, stableNumericId, text, WRITER_KINDS, WriterConflict,
-  sourceOrderLifecycle, type OrderCancellationContext, type WriterCatalog, type WriterCatalogEntry, type WriterJob, type WriterKind, type WriterPlan, type WriterRow,
+  requiresOrderCancellationContext, type OrderCancellationContext, type WriterCatalog, type WriterCatalogEntry, type WriterJob, type WriterKind, type WriterPlan, type WriterRow,
 } from "./teksystemWriter.js";
 
 type JobState = "READY" | "PROCESSING" | "APPLIED" | "REVIEW" | "RETRY";
@@ -54,10 +54,6 @@ async function loadOrderCancellationContext(tenantId: string, orders: WriterRow[
   }));
   return { loaded: true, cargas: rows(cargas), productionBatches: rows(productionBatches),
     productionSteps: steps, logs, productionAgendas: agendas, coilCuttingPlans: coilPlans };
-}
-function needsOrderCancellationContext(job: WriterJob): boolean {
-  const lifecycle = sourceOrderLifecycle(job.rows);
-  return job.kind === "pedidos" && (lifecycle === "CANCELADO" || lifecycle === "EXCLUIDO_NO_TEKSYSTEM");
 }
 async function attachCargaMutations(job: WriterJob, plan: WriterPlan) {
   if (job.kind !== "pedidos" || !plan.mutations.some((mutation) => mutation.collection === "orders" &&
@@ -113,6 +109,52 @@ export async function enqueueTekSystemOrderLifecycleJobs(
     if (queued) enqueued += 1;
   }
   return { jobs: new Set(orderCodes).size, enqueued };
+}
+
+export async function enqueueTekSystemOrderItemLifecycleJobs(
+  tenantId: string,
+  targets: Array<{ companyId: number; orderCode: string; lineId: string }>,
+  snapshotId: string,
+  generatedAt: string,
+) {
+  assertTenant(tenantId);
+  const grouped = new Map<string, { companyId: number; orderCode: string; lineIds: Set<string> }>();
+  for (const target of targets) {
+    const companyId = Number(target.companyId);
+    const orderCode = String(target.orderCode || "").trim();
+    const lineId = String(target.lineId || "").trim();
+    if (![0, 1].includes(companyId) || !orderCode || !lineId) continue;
+    const key = `${companyId}:${orderCode}`;
+    const group = grouped.get(key) || { companyId, orderCode, lineIds: new Set<string>() };
+    group.lineIds.add(lineId);
+    grouped.set(key, group);
+  }
+  let enqueued = 0;
+  for (const group of grouped.values()) {
+    const rows = [...group.lineIds].sort((a, b) => a.localeCompare(b)).map((lineId) => ({
+      empresa: group.companyId, codigoPedido: group.orderCode, detalheId: lineId,
+      itemLifecycleAction: "CANCELADO",
+    }));
+    const externalKey = group.orderCode;
+    const job: WriterJob = {
+      id: syncRecordKey(tenantId, "pedidos", `item-cancel:${group.companyId}:${group.orderCode}`),
+      tenantId, kind: "pedidos", externalKey, syncId: snapshotId, generatedAt,
+      rows, orderRows: [], lineCancellationOnly: true,
+      hash: signature({ kind: "pedidos", externalKey, rows, lineCancellationOnly: true }),
+    };
+    const queued = await runTransaction(db, async (tx) => {
+      const ref = jobRef(job.id);
+      const snapshot = await tx.get(ref);
+      const current = snapshot.exists() ? snapshot.data() : undefined;
+      if (current && current.tenantId !== tenantId) throw new WriterConflict("TENANT_INVALIDO", "Trabalho pertence a outra empresa.");
+      if (current?.hash === job.hash || (current && current.generatedAt > generatedAt)) return false;
+      tx.set(ref, { ...job, state: "READY", queueScope: scope(tenantId, "pedidos", "READY"),
+        attempts: 0, retryAt: 0, leaseUntil: 0, leaseOwner: "", issues: [], receivedAt: Date.now(), result: null });
+      return true;
+    });
+    if (queued) enqueued += 1;
+  }
+  return { jobs: grouped.size, enqueued };
 }
 
 export async function writerStatus(tenantId: string) {
@@ -231,7 +273,7 @@ export async function previewWriterPayload(payload: NormalizedTekSystemSyncPaylo
         if (!ordersByCode.has(job.externalKey)) ordersByCode.set(job.externalKey, await loadOrders(job.tenantId, job.externalKey));
         orders = ordersByCode.get(job.externalKey)!;
       }
-      const cancellationContext = needsOrderCancellationContext(job)
+      const cancellationContext = requiresOrderCancellationContext(job, orders)
         ? await loadOrderCancellationContext(job.tenantId, orders)
         : undefined;
       const plan = planWriterJob(job, catalog, orders, new Date(), cancellationContext);
@@ -299,7 +341,7 @@ export async function processWriterQueue(tenantId: string, requestedLimit = 80) 
           const parent = await getDoc(jobRef(syncRecordKey(tenantId, "pedidos", job.externalKey)));
           if (parent.exists() && parent.data().tenantId === tenantId && parent.data().state === "REVIEW") throw new WriterConflict("PEDIDO_REQUER_REVISAO", "O lançamento do pedido precisa de revisão antes do faturamento.");
         }
-        const cancellationContext = needsOrderCancellationContext(job)
+        const cancellationContext = requiresOrderCancellationContext(job, orders)
           ? await loadOrderCancellationContext(tenantId, orders)
           : undefined;
         const plan = planWriterJob(job, catalog, orders, new Date(), cancellationContext);
