@@ -16105,6 +16105,11 @@ export default function App() {
       currentUser.name.toLowerCase().includes("marcos"));
 
   const isScreenAllowed = (screenKey: string) => {
+    if (
+      screenKey === "historico" &&
+      db.activeTenantId === "imperio" &&
+      currentUser.role === "PINTURA"
+    ) return true;
     if (screenKey === "estoque" && canManageImperioStock) return true;
     if (screenKey === "estoque-epi-uniformes") return canManageImperioStock;
     if (screenKey === "torno-cnc-willian" && canAccessTornoWillian) return true;
