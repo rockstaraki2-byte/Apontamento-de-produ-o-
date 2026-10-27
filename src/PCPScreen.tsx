@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { parseQty } from "./quantityUtils";
 import { useDatabase } from "./useDatabase";
-import { User, Sector, ProductFlow, Customer, Order, isSubTabAllowed, getSetoresElegiveisParaItem } from "./types";
+import { User, Sector, ProductFlow, Customer, Order, CoilCuttingPlan, isSubTabAllowed, getSetoresElegiveisParaItem } from "./types";
 import {
   Users,
   Building,
@@ -46,18 +46,122 @@ import {
 } from "./utils/customerAddress";
 
 
+type CoilPlanType = NonNullable<CoilCuttingPlan["type"]>;
+
+const LEGACY_COIL_PLAN_TYPES: CoilPlanType[] = [
+  "PRENSA_RAFAEL",
+  "PRENSA_EDUARDO",
+  "BANHO_QUIMICO",
+  "INJETORA",
+  "TORNO_CNC_WILLIAN",
+  "TORNO_CNC_HENRIQUE",
+  "MONTAGEM_RETRATIL",
+];
+
+function getCoilPlanTypeForSector(sector?: Sector): CoilPlanType {
+  const directType = [sector?.role, sector?.code]
+    .map((value) => String(value || "").trim().toUpperCase())
+    .find((value) => LEGACY_COIL_PLAN_TYPES.includes(value as CoilPlanType));
+  if (directType) return directType as CoilPlanType;
+
+  const normalizedName = `${sector?.name || ""} ${sector?.department || ""}`
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  if (normalizedName.includes("inje")) return "INJETORA";
+  if (normalizedName.includes("torno") && normalizedName.includes("henrique")) return "TORNO_CNC_HENRIQUE";
+  if (normalizedName.includes("torno") && /willian|william/.test(normalizedName)) return "TORNO_CNC_WILLIAN";
+  if (normalizedName.includes("banho quimico")) return "BANHO_QUIMICO";
+  if (normalizedName.includes("montagem") && normalizedName.includes("retratil")) return "MONTAGEM_RETRATIL";
+  if (normalizedName.includes("prensa") && normalizedName.includes("eduardo")) return "PRENSA_EDUARDO";
+  if (normalizedName.includes("prensa") && normalizedName.includes("rafael")) return "PRENSA_RAFAEL";
+
+  return "SETOR_TENANT";
+}
+
+function normalizePlanDate(value?: string): string | undefined {
+  const raw = String(value || "").trim();
+  if (!raw) return undefined;
+
+  const isoMatch = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2].padStart(2, "0")}-${isoMatch[3].padStart(2, "0")}`;
+  }
+
+  const brMatch = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})/);
+  if (brMatch) {
+    return `${brMatch[3]}-${brMatch[2].padStart(2, "0")}-${brMatch[1].padStart(2, "0")}`;
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) return undefined;
+  const localDate = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 10);
+}
+
+function formatPlanDate(value?: string): string {
+  const normalized = normalizePlanDate(value);
+  return normalized ? normalized.split("-").reverse().join("/") : String(value || "");
+}
+
 function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [newPlanName, setNewPlanName] = React.useState("");
-  const [newPlanCoilSearch, setNewPlanCoilSearch] = React.useState("");
-  const [newPlanTargetSearch, setNewPlanTargetSearch] = React.useState("");
-  const [newPlanOrderSearch, setNewPlanOrderSearch] = React.useState("");
-  const [newPlanTargetQuantity, setNewPlanTargetQuantity] = React.useState<number | "">("");
-  const [newPlanType, setNewPlanType] = React.useState<
-    "PRENSA_RAFAEL" | "PRENSA_EDUARDO" | "BANHO_QUIMICO" | "INJETORA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE" | "MONTAGEM_RETRATIL"
-  >("PRENSA_RAFAEL");
-  const [newPlanDate, setNewPlanDate] = React.useState("");
+  const [newPlanSectorId, setNewPlanSectorId] = React.useState<Sector["id"] | "">("");
   const [newPlanMold, setNewPlanMold] = React.useState(false);
   const [newPlanBatchId, setNewPlanBatchId] = React.useState<number | "">("");
+  const [isAddingPlan, setIsAddingPlan] = React.useState(false);
+
+  const availablePlanSectors = React.useMemo(
+    () => (db.sectors || []).filter((sector) => sector.active !== false),
+    [db.sectors],
+  );
+  const selectedPlanSector = React.useMemo(
+    () => availablePlanSectors.find((sector) => String(sector.id) === String(newPlanSectorId)) || null,
+    [availablePlanSectors, newPlanSectorId],
+  );
+  const newPlanType = getCoilPlanTypeForSector(selectedPlanSector || undefined);
+
+  React.useEffect(() => {
+    if (!availablePlanSectors.some((sector) => String(sector.id) === String(newPlanSectorId))) {
+      setNewPlanSectorId(availablePlanSectors[0]?.id ?? "");
+    }
+  }, [availablePlanSectors, newPlanSectorId]);
+
+  const selectedBatch = React.useMemo(
+    () => newPlanBatchId === ""
+      ? null
+      : (db.productionBatches || []).find((batch) => String(batch.id) === String(newPlanBatchId)) || null,
+    [db.productionBatches, newPlanBatchId],
+  );
+
+  const batchOrderCandidates = React.useMemo(() => {
+    if (!selectedBatch) return [];
+
+    return (selectedBatch.orderIds || []).flatMap((orderId) => {
+      const order = (db.orders || []).find((candidate) => Number(candidate.id) === Number(orderId));
+      if (
+        !order ||
+        order.isActive === false ||
+        ["CANCELADO", "EMBALADO", "FATURADO"].includes(String(order.status))
+      ) return [];
+
+      const completedQuantity = Math.max(parseQty(order.producedQuantity), parseQty(order.packedQuantity));
+      const availableQuantity = Math.max(0, parseQty(order.totalQuantity) - completedQuantity);
+      if (availableQuantity <= 0) return [];
+
+      const item = (db.items || []).find((candidate) => candidate.id === order.itemId);
+      const alreadyProgrammed = (db.coilCuttingPlans || []).some((plan) => {
+        if (Number(plan.batchId) !== Number(selectedBatch.id) || Number(plan.orderId) !== Number(order.id)) return false;
+        if (plan.sectorId !== undefined && plan.sectorId !== null) {
+          return String(plan.sectorId) === String(selectedPlanSector?.id);
+        }
+        return plan.type === newPlanType;
+      });
+
+      return [{ order, item, availableQuantity, alreadyProgrammed }];
+    });
+  }, [selectedBatch, db.orders, db.items, db.coilCuttingPlans, selectedPlanSector, newPlanType]);
 
   // Minimizable/collapsible registration block state
   const [isFormCollapsed, setIsFormCollapsed] = React.useState(false); // Default to false (expanded) so it's discoverable, but easily collapsible
@@ -113,111 +217,42 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
     return list;
   }, [db.coilCuttingPlans, db.items, filterSearch, filterStatus, filterStartDate, filterEndDate]);
 
-  // Suggested options (limited to at most 5 records in memory to prevent sluggish keyboards)
-  const suggestedCoils = React.useMemo(() => {
-    const query = newPlanCoilSearch.trim().toLowerCase();
-    if (!query) {
-      const defaultKeywords =
-        newPlanType === "INJETORA"
-          ? ["pp", "resina", "granulado"]
-          : ["bobina", "chapa", "galv"];
-      const filtered = db.items.filter((i) =>
-        defaultKeywords.some(
-          (kw) =>
-            i.name.toLowerCase().includes(kw) ||
-            i.code.toLowerCase().includes(kw),
-        ),
-      );
-      if (filtered.length > 0) return filtered.slice(0, 5);
-      return db.items.slice(0, 5);
+  const handleAddPlan = async () => {
+    if (isAddingPlan || !newPlanName.trim() || !selectedPlanSector || !selectedBatch) return;
+
+    const ordersToProgram = batchOrderCandidates.filter((candidate) => !candidate.alreadyProgrammed);
+    if (ordersToProgram.length === 0) return;
+
+    let createdCount = 0;
+    setIsAddingPlan(true);
+    try {
+      for (const candidate of ordersToProgram) {
+        const { order, availableQuantity } = candidate;
+        await db.addCoilCuttingPlan({
+          name: `${newPlanName.trim()} · Pedido ${order.orderCode || order.id}`,
+          coilItemId: 0,
+          targetItemIds: [order.itemId],
+          status: "PENDENTE",
+          createdAt: Date.now(),
+          type: newPlanType,
+          sectorId: selectedPlanSector.id,
+          plannedExecutionDate: normalizePlanDate(order.deliveryDate) || normalizePlanDate(selectedBatch.deadline),
+          requiresMoldChange: newPlanType === "INJETORA" ? newPlanMold : false,
+          targetQuantity: availableQuantity,
+          orderId: order.id,
+          batchId: selectedBatch.id,
+        });
+        createdCount += 1;
+      }
+    } catch (error) {
+      alert(`Foram programados ${createdCount} de ${ordersToProgram.length} pedidos do lote. Ocorreu um erro ao salvar o próximo item: ${error}`);
+      return;
+    } finally {
+      setIsAddingPlan(false);
     }
-    return db.items
-      .filter((i) => `${i.code} - ${i.name}`.toLowerCase().includes(query))
-      .slice(0, 5);
-  }, [newPlanCoilSearch, db.items, newPlanType]);
 
-  const suggestedTargets = React.useMemo(() => {
-    const query = newPlanTargetSearch.trim().toLowerCase();
-    if (!query) {
-      const defaultKeywords =
-        newPlanType === "INJETORA"
-          ? ["injetado", "plastico", "sapata"]
-          : ["estampado", "metal", "chapa", "suporte"];
-      const filtered = db.items.filter((i) =>
-        defaultKeywords.some(
-          (kw) =>
-            i.name.toLowerCase().includes(kw) ||
-            i.code.toLowerCase().includes(kw),
-        ),
-      );
-      if (filtered.length > 0) return filtered.slice(0, 5);
-      return db.items.slice(0, 5);
-    }
-    return db.items
-      .filter((i) => `${i.code} - ${i.name}`.toLowerCase().includes(query))
-      .slice(0, 5);
-  }, [newPlanTargetSearch, db.items, newPlanType]);
-
-  const selectedCoilId = React.useMemo(() => {
-    const item = db.items.find(
-      (i) =>
-        `${i.code} - ${i.name}`.toLowerCase() ===
-        newPlanCoilSearch.toLowerCase(),
-    );
-    return item ? item.id : null;
-  }, [newPlanCoilSearch, db.items]);
-
-  const suggestedOrders = React.useMemo(() => {
-    const query = newPlanOrderSearch.trim().toLowerCase();
-    if (!query) return [];
-    return db.orders
-      .filter((o) => `${o.orderCode} - ${o.customerName}`.toLowerCase().includes(query))
-      .slice(0, 5);
-  }, [newPlanOrderSearch, db.orders]);
-
-  const selectedTargetId = React.useMemo(() => {
-    const item = db.items.find(
-      (i) =>
-        `${i.code} - ${i.name}`.toLowerCase() ===
-        newPlanTargetSearch.toLowerCase(),
-    );
-    return item ? item.id : null;
-  }, [newPlanTargetSearch, db.items]);
-
-  const selectedOrderId = React.useMemo(() => {
-    const order = db.orders.find(
-      (o) =>
-        `${o.orderCode} - ${o.customerName}`.toLowerCase() ===
-        newPlanOrderSearch.toLowerCase(),
-    );
-    return order ? order.id : undefined;
-  }, [newPlanOrderSearch, db.orders]);
-
-  const handleAddPlan = () => {
-    if (!newPlanName || (!selectedTargetId && !selectedOrderId)) return;
-    
-    // Se não há targetId da listagem, mas há order, use dummy ou pegue o primeiro item
-    const targetIds = selectedTargetId ? [selectedTargetId] : [];
-    
-    db.addCoilCuttingPlan({
-      name: newPlanName,
-      coilItemId: 0,
-      targetItemIds: targetIds,
-      status: "PENDENTE",
-      createdAt: Date.now(),
-      type: newPlanType,
-      plannedExecutionDate: newPlanDate || undefined,
-      requiresMoldChange: newPlanType === "INJETORA" ? newPlanMold : false,
-      targetQuantity: newPlanTargetQuantity ? Number(newPlanTargetQuantity) : undefined,
-      orderId: selectedOrderId,
-      batchId: newPlanBatchId ? Number(newPlanBatchId) : undefined
-    });
+    alert(`${createdCount} ${createdCount === 1 ? "pedido programado" : "pedidos programados"} do lote "${selectedBatch.name}".`);
     setNewPlanName("");
-    setNewPlanCoilSearch("");
-    setNewPlanTargetSearch("");
-    setNewPlanOrderSearch("");
-    setNewPlanTargetQuantity("");
-    setNewPlanDate("");
     setNewPlanMold(false);
     setNewPlanBatchId("");
   };
@@ -225,9 +260,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
   // Edit states for CoilCuttingPlan
   const [editingPlan, setEditingPlan] = React.useState<any | null>(null);
   const [editPlanName, setEditPlanName] = React.useState("");
-  const [editPlanType, setEditPlanType] = React.useState<
-    "PRENSA_RAFAEL" | "PRENSA_EDUARDO" | "BANHO_QUIMICO" | "INJETORA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE" | "MONTAGEM_RETRATIL"
-  >("PRENSA_RAFAEL");
+  const [editPlanType, setEditPlanType] = React.useState<CoilPlanType>("PRENSA_RAFAEL");
   const [editPlanTargetSearch, setEditPlanTargetSearch] = React.useState("");
   const [editPlanStatus, setEditPlanStatus] = React.useState<
     "PENDENTE" | "EM_PRODUCAO" | "CONCLUIDO"
@@ -323,268 +356,172 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
   return (
     <>
       <div className="bg-white rounded-xl shadow-xs border border-gray-200 mb-6 font-sans overflow-hidden">
-      <div 
-        className="p-4 bg-indigo-50/70 border-b border-gray-100 flex justify-between items-center cursor-pointer select-none"
-        onClick={() => setIsFormCollapsed(!isFormCollapsed)}
-      >
-        <h3 className="font-extrabold text-indigo-950 text-sm sm:text-base flex items-center gap-1.5">
-          {newPlanType === "INJETORA"
-            ? "⚙️ Programar Injeção Plástica & Setup de Molde"
-            : "✂️ Programar Novo Corte de Chapa/Bobina"}
-        </h3>
-        <button
-          type="button"
-          className="text-indigo-700 hover:text-indigo-900 font-extrabold text-[10px] uppercase tracking-wider flex items-center gap-1 bg-white border border-indigo-200 px-2.5 py-1.5 rounded-lg shadow-3xs transition cursor-pointer"
+        <div
+          className="p-4 bg-indigo-50/70 border-b border-gray-100 flex justify-between items-center cursor-pointer select-none"
+          onClick={() => setIsFormCollapsed(!isFormCollapsed)}
         >
-          {isFormCollapsed ? "➕ Expandir" : "➖ Minimizar"}
-        </button>
-      </div>
-
-      {!isFormCollapsed && (
-        <div className="p-5">
-          <div className="flex flex-col gap-4">
-        <div>
-          <label className="text-xs font-bold text-gray-650 uppercase block mb-1">
-            Setor Destino da Programação *
-          </label>
-          <select
-            value={newPlanType}
-            onChange={(e) => {
-              const val = e.target.value as any;
-              setNewPlanType(val);
-              if (val !== "INJETORA") setNewPlanMold(false);
-            }}
-            className="border p-2.5 rounded-lg bg-gray-50/50 w-full text-sm font-semibold select-arrow"
+          <h3 className="font-extrabold text-indigo-950 text-sm sm:text-base flex items-center gap-1.5">
+            {newPlanType === "INJETORA"
+              ? "⚙️ Programar Injeção Plástica & Setup de Molde"
+              : newPlanType === "SETOR_TENANT"
+                ? `🏭 Programar lote · ${selectedPlanSector?.name || "Setor do tenant"}`
+                : "✂️ Programar Novo Corte de Chapa/Bobina"}
+          </h3>
+          <button
+            type="button"
+            className="text-indigo-700 hover:text-indigo-900 font-extrabold text-[10px] uppercase tracking-wider flex items-center gap-1 bg-white border border-indigo-200 px-2.5 py-1.5 rounded-lg shadow-3xs transition cursor-pointer"
           >
-            <option value="PRENSA_RAFAEL">
-              Prensa Rafael (Corte de Bobinas Metálicas)
-            </option>
-            <option value="PRENSA_EDUARDO">
-              Prensa Eduardo (Dobra & Prensa)
-            </option>
-            <option value="BANHO_QUIMICO">
-              Banho Químico (Zincagem & Tratamento)
-            </option>
-            <option value="INJETORA">
-              Injetora (Injeção de Peças Plásticas & Moldes)
-            </option>
-            <option value="TORNO_CNC_WILLIAN">
-              Torno CNC Willian
-            </option>
-            <option value="TORNO_CNC_HENRIQUE">
-              Torno CNC Henrique
-            </option>
-            <option value="MONTAGEM_RETRATIL">
-              Montagem Retrátil
-            </option>
-          </select>
+            {isFormCollapsed ? "➕ Expandir" : "➖ Minimizar"}
+          </button>
         </div>
 
-        <div>
-          <label className="text-xs font-bold text-gray-650 uppercase block mb-1">
-            Referência / Título do Processo *
-          </label>
-          <input
-            type="text"
-            placeholder={
-              newPlanType === "INJETORA"
-                ? "Ex: Lote Injeção Presilha Tampa PP 20k"
-                : "Ex: Corte Bobina Chapa 18"
-            }
-            value={newPlanName}
-            onChange={(e) => setNewPlanName(e.target.value)}
-            className="border p-2.5 rounded-lg w-full text-sm placeholder-gray-400 focus:outline-indigo-500"
-          />
-        </div>
+        {!isFormCollapsed && (
+          <div className="p-5">
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs font-bold text-gray-650 uppercase block mb-1">
+                  Setor Destino da Programação *
+                </label>
+                <select
+                  value={newPlanSectorId === "" ? "" : String(newPlanSectorId)}
+                  disabled={Boolean(selectedBatch && availablePlanSectors.some((sector) => String(sector.id) === String(selectedBatch.sectorId)))}
+                  onChange={(event) => {
+                    const sector = availablePlanSectors.find((candidate) => String(candidate.id) === event.target.value);
+                    setNewPlanSectorId(sector?.id ?? "");
+                    if (getCoilPlanTypeForSector(sector) !== "INJETORA") setNewPlanMold(false);
+                  }}
+                  className="border p-2.5 rounded-lg bg-gray-50/50 w-full text-sm font-semibold select-arrow disabled:opacity-70"
+                >
+                  <option value="">-- Selecione um setor deste tenant --</option>
+                  {availablePlanSectors.map((sector) => (
+                    <option key={sector.id} value={String(sector.id)}>
+                      {sector.name}
+                    </option>
+                  ))}
+                </select>
+                {availablePlanSectors.length === 0 && (
+                  <p className="text-xs text-amber-700 mt-1">Nenhum setor ativo está cadastrado para este tenant.</p>
+                )}
+              </div>
 
-        <div>
-          <label className="text-xs font-bold text-gray-650 uppercase block mb-1">
-            Componente Gerado (Estoque) OU Pedido 
-          </label>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="relative">
-              <input
-                type="text"
-                value={newPlanTargetSearch}
-                onChange={(e) => { setNewPlanTargetSearch(e.target.value); setNewPlanOrderSearch(""); }}
-                placeholder="Busque o componente (P/ manter no estoque)..."
-                className="border p-2.5 rounded-lg w-full text-sm bg-indigo-50/50 focus:outline-indigo-500 font-semibold text-slate-800"
-              />
+              <div>
+                <label className="text-xs font-bold text-gray-650 uppercase block mb-1">
+                  Referência / Título do Processo *
+                </label>
+                <input
+                  type="text"
+                  placeholder={newPlanType === "INJETORA" ? "Ex: Lote Injeção Presilha Tampa PP 20k" : "Ex: Produção do lote"}
+                  value={newPlanName}
+                  onChange={(event) => setNewPlanName(event.target.value)}
+                  className="border p-2.5 rounded-lg w-full text-sm placeholder-gray-400 focus:outline-indigo-500"
+                />
+              </div>
 
-              {!selectedTargetId && newPlanTargetSearch.trim().length > 0 && (
-                <div className="absolute left-0 right-0 z-50 mt-1.5 flex flex-col gap-1 border border-slate-100 rounded-lg p-1 bg-white shadow-lg max-h-40 overflow-y-auto">
-                  <span className="text-[10px] font-bold text-slate-400 px-2 pt-0.5 uppercase tracking-wider block bg-slate-50 py-1 border-b">
-                    Catálogo de componentes gerados:
-                  </span>
-                  {suggestedTargets.length === 0 ? (
-                    <span className="text-[11px] text-gray-500 px-2 py-1">
-                      Nenhum correspondente.
+              <div>
+                <label className="text-xs font-bold text-gray-650 uppercase block mb-1">
+                  Vincular a um Lote *
+                </label>
+                <select
+                  value={newPlanBatchId.toString()}
+                  onChange={(event) => {
+                    const value = event.target.value === "" ? "" : Number(event.target.value);
+                    const batch = value === "" ? null : (db.productionBatches || []).find((candidate) => String(candidate.id) === String(value));
+                    setNewPlanBatchId(value);
+                    if (batch) {
+                      const batchSector = availablePlanSectors.find((sector) => String(sector.id) === String(batch.sectorId));
+                      if (batchSector) {
+                        setNewPlanSectorId(batchSector.id);
+                        if (getCoilPlanTypeForSector(batchSector) !== "INJETORA") setNewPlanMold(false);
+                      }
+                      setNewPlanName((current) =>
+                        !current.trim() || current.trim() === selectedBatch?.name
+                          ? batch.name
+                          : current,
+                      );
+                    }
+                  }}
+                  className="border p-2.5 rounded-lg w-full text-sm focus:outline-indigo-500 bg-white"
+                >
+                  <option value="">-- Selecione um lote --</option>
+                  {(db.productionBatches || [])
+                    .filter((batch) => batch.status === "EM_PRODUCAO" || batch.status === "PENDENTE")
+                    .map((batch) => (
+                      <option key={batch.id} value={batch.id}>
+                        Lote: {batch.name} ({batch.status})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {selectedBatch && (
+                <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <div>
+                      <p className="text-xs font-extrabold text-indigo-950 uppercase">Produtos disponíveis para produzir</p>
+                      <p className="text-[11px] text-slate-600">Lote {selectedBatch.name} · Setor {selectedPlanSector?.name || "a selecionar"}</p>
+                    </div>
+                    <span className="text-[10px] font-bold rounded-full border border-indigo-200 bg-white px-2 py-1 text-indigo-800">
+                      {batchOrderCandidates.filter((candidate) => !candidate.alreadyProgrammed).length} para programar
                     </span>
+                  </div>
+
+                  {batchOrderCandidates.length === 0 ? (
+                    <p className="text-xs text-slate-600 py-2">Este lote não possui pedidos ativos com saldo disponível para produção.</p>
                   ) : (
-                    suggestedTargets.map((i) => (
-                      <button
-                        type="button"
-                        key={i.id}
-                        onClick={() => {
-                          setNewPlanTargetSearch(`${i.code} - ${i.name}`);
-                        }}
-                        className="text-left text-xs px-2.5 py-1.5 rounded hover:bg-indigo-650 hover:text-white transition-colors bg-white border border-slate-200/65 font-medium text-slate-700 flex justify-between"
-                      >
-                        <span>{i.name}</span>
-                        <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-1 py-0.5 rounded">{i.code}</span>
-                      </button>
-                    ))
+                    <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto">
+                      {batchOrderCandidates.map(({ order, item, availableQuantity, alreadyProgrammed }) => (
+                        <div key={order.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-white bg-white/90 px-2.5 py-2 text-xs">
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-800 truncate">{item?.name || order.customProductName || `Produto ${order.itemId}`}</p>
+                            <p className="text-[11px] text-slate-500">Pedido {order.orderCode || order.id} · {order.customerName || "Cliente sem nome"}</p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="font-semibold text-slate-700">Saldo: {availableQuantity}</span>
+                            {alreadyProgrammed ? (
+                              <span className="rounded bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-800">Já programado</span>
+                            ) : (
+                              <span className="rounded bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">Prazo: {formatPlanDate(order.deliveryDate || selectedBatch.deadline) || "não informado"}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
-            </div>
 
-            <div className="relative">
-              <input
-                type="text"
-                value={newPlanOrderSearch}
-                onChange={(e) => { setNewPlanOrderSearch(e.target.value); setNewPlanTargetSearch(""); }}
-                placeholder="Ou busque o pedido de produção..."
-                className="border p-2.5 rounded-lg w-full text-sm bg-amber-50/50 focus:outline-amber-500 font-semibold text-slate-800"
-              />
-
-              {!selectedOrderId && newPlanOrderSearch.trim().length > 0 && (
-                <div className="absolute left-0 right-0 z-50 mt-1.5 flex flex-col gap-1 border border-slate-100 rounded-lg p-1 bg-white shadow-lg max-h-40 overflow-y-auto">
-                  <span className="text-[10px] font-bold text-slate-400 px-2 pt-0.5 uppercase tracking-wider block bg-slate-50 py-1 border-b">
-                    Pedidos Encontrados:
-                  </span>
-                  {suggestedOrders.length === 0 ? (
-                    <span className="text-[11px] text-gray-500 px-2 py-1">
-                      Nenhum correspondente.
-                    </span>
-                  ) : (
-                    suggestedOrders.map((o) => (
-                      <button
-                        type="button"
-                        key={o.id}
-                        onClick={() => {
-                          setNewPlanOrderSearch(`${o.orderCode} - ${o.customerName}`);
-                        }}
-                        className="text-left text-xs px-2.5 py-1.5 rounded hover:bg-amber-500 hover:text-white bg-white border border-slate-200/65 font-medium text-slate-700 flex justify-between"
-                      >
-                        <span className="truncate">{o.customerName}</span>
-                        <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-1 py-0.5 rounded">{o.orderCode}</span>
-                      </button>
-                    ))
-                  )}
+              {newPlanType === "INJETORA" && (
+                <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-100 flex items-center">
+                  <label className="flex items-center gap-2.5 text-sm font-bold text-amber-900 cursor-pointer w-full">
+                    <input
+                      type="checkbox"
+                      checked={newPlanMold}
+                      onChange={(event) => setNewPlanMold(event.target.checked)}
+                      className="w-5 h-5 rounded border-amber-300 text-amber-600"
+                    />
+                    <div className="flex flex-col">
+                      <span>Exige troca física de molde / setup?</span>
+                      <span className="text-[10px] text-amber-700 font-normal normal-case">Habilitará checklist de temperatura e segurança na tela do operador.</span>
+                    </div>
+                  </label>
                 </div>
               )}
-            </div>
-          </div>
 
-          {(selectedTargetId || selectedOrderId) ? (
-            <div className={`flex items-center justify-between border rounded-lg p-2 mt-2 ${selectedOrderId ? 'bg-amber-50 border-amber-250' : 'bg-emerald-50 border-emerald-250'}`}>
-              <span className={`text-xs font-bold ${selectedOrderId ? 'text-amber-800' : 'text-emerald-800'}`}>
-                ✓ Selecionado:{" "}
-                {selectedOrderId 
-                  ? db.orders.find((o) => o.id === selectedOrderId)?.customerName
-                  : db.items.find((i) => i.id === selectedTargetId)?.name}
-              </span>
               <button
-                type="button"
-                onClick={() => { setNewPlanTargetSearch(""); setNewPlanOrderSearch(""); }}
-                className={`text-xs font-black px-2 py-0.5 rounded transition ${selectedOrderId ? 'bg-amber-100 hover:bg-amber-200 text-amber-700' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'}`}
+                onClick={handleAddPlan}
+                disabled={isAddingPlan || !newPlanName.trim() || !selectedPlanSector || !selectedBatch || batchOrderCandidates.every((candidate) => candidate.alreadyProgrammed)}
+                className="bg-indigo-600 disabled:opacity-50 text-white p-3 rounded-lg font-bold hover:bg-indigo-700 shadow-sm mt-1 transition text-sm uppercase tracking-wide"
               >
-                Limpar
+                {isAddingPlan ? "Programando..." : "Programar Lote"}
               </button>
             </div>
-          ) : (newPlanTargetSearch || newPlanOrderSearch) ? (
-            <span className="text-xs text-red-600 font-bold mt-1 block">
-              ⚠️ Selecione na lista acima para confirmar.
-            </span>
-          ) : null}
-        </div>
-
-        <div>
-           <label className="text-xs font-bold text-gray-650 uppercase block mb-1">
-             Qtd. a Produzir *
-           </label>
-           <input
-             type="number"
-             min={1}
-             value={newPlanTargetQuantity}
-             onChange={(e) => setNewPlanTargetQuantity(e.target.value === "" ? "" : Number(e.target.value))}
-             placeholder="Quantidade."
-             className="border p-2.5 rounded-lg w-full text-sm font-semibold focus:outline-indigo-500"
-           />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-          <div>
-            <label className="text-xs font-bold text-gray-650 uppercase block mb-1">
-              Data Planejada para Início
-            </label>
-            <input
-              type="date"
-              value={newPlanDate}
-              onChange={(e) => setNewPlanDate(e.target.value)}
-              className="border p-2.5 rounded-lg w-full text-sm focus:outline-indigo-500"
-            />
           </div>
-
-          <div>
-            <label className="text-xs font-bold text-gray-650 uppercase block mb-1">
-              Vincular a um Lote (Opcional)
-            </label>
-            <select
-              value={newPlanBatchId.toString()}
-              onChange={(e) => setNewPlanBatchId(e.target.value === "" ? "" : Number(e.target.value))}
-              className="border p-2.5 rounded-lg w-full text-sm focus:outline-indigo-500 bg-white"
-            >
-              <option value="">-- Sem Lote --</option>
-              {db.productionBatches
-                .filter(b => b.status === "EM_PRODUCAO" || b.status === "PENDENTE")
-                .map((b) => (
-                  <option key={b.id} value={b.id}>
-                    Lote: {b.name} ({b.status})
-                  </option>
-                ))}
-            </select>
-          </div>
-
-        {newPlanType === "INJETORA" && (
-            <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-100 flex items-center h-full">
-              <label className="flex items-center gap-2.5 text-sm font-bold text-amber-900 cursor-pointer w-full">
-                <input
-                  type="checkbox"
-                  checked={newPlanMold}
-                  onChange={(e) => setNewPlanMold(e.target.checked)}
-                  className="w-5 h-5 rounded border-amber-300 text-amber-600"
-                />
-                <div className="flex flex-col">
-                  <span>Exige troca fizicá de molde / setup?</span>
-                  <span className="text-[10px] text-amber-700 font-normal normal-case">
-                    Habilitará checklist de temperatura e segurança na tela do
-                    operador
-                  </span>
-                </div>
-              </label>
-            </div>
-          )}
-        </div>
-
-        <button
-          onClick={handleAddPlan}
-          disabled={!newPlanName || (!selectedTargetId && !selectedOrderId) || !newPlanTargetQuantity}
-          className="bg-indigo-600 disabled:opacity-50 text-white p-3 rounded-lg font-bold hover:bg-indigo-700 shadow-sm mt-3 transition text-sm uppercase tracking-wide"
-        >
-          {newPlanType === "INJETORA"
-            ? "Programar Injeção Plástica"
-            : newPlanType.startsWith("TORNO") ? "Programar Torneamento" : "Programar Lote de Imprensa"}
-        </button>
-          </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
 
       <hr className="my-6 border-slate-200" />
       <h3 className="font-extrabold text-gray-800 text-md mb-4 block uppercase tracking-wider text-xs">
-        Planos Industriais Ativos (Prensa, Torno & Injetora)
+        Planos de Produção Ativos
       </h3>
 
       {/* Plan list filters */}
@@ -670,11 +607,12 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {(filteredPlans || []).map((p) => {
-          const rawMaterial = db.items.find((i) => i.id === p.coilItemId);
+          const linkedOrder = db.orders.find((order) => order.id === p.orderId);
           const targetItem =
-            p.targetItemIds && p.targetItemIds.length > 0
+            (p.targetItemIds && p.targetItemIds.length > 0
               ? db.items.find((i) => i.id === p.targetItemIds[0])
-              : null;
+              : null) || (linkedOrder ? db.items.find((item) => item.id === linkedOrder.itemId) : null);
+          const linkedSector = db.sectors.find((sector) => String(sector.id) === String(p.sectorId));
           const isInjection = p.type === "INJETORA";
 
           const planLogs = (db.logs || []).filter((l) => l.coilPlanId === p.id);
@@ -703,7 +641,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                   <div>
                     🏭 Setor:{" "}
                     <strong className="text-gray-800">
-                      {p.type === "INJETORA"
+                      {linkedSector?.name || (p.type === "INJETORA"
                         ? "Injetora de Plástico"
                         : p.type === "PRENSA_RAFAEL"
                         ? "Prensa Rafael"
@@ -717,16 +655,27 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                         ? "Torno CNC Henrique"
                         : p.type === "MONTAGEM_RETRATIL"
                         ? "Montagem Retrátil"
-                        : "Outro"}
+                        : p.type === "SETOR_TENANT"
+                        ? "Setor do tenant"
+                        : "Outro")}
                     </strong>
                   </div>
+                  {linkedOrder && (
+                    <div>
+                      🧾 Pedido: <strong className="text-gray-800">{linkedOrder.orderCode || linkedOrder.id}</strong>
+                      {linkedOrder.customerName ? ` · ${linkedOrder.customerName}` : ""}
+                    </div>
+                  )}
                   {targetItem && (
                     <div>
-                      📦 Peça Gerada:{" "}
+                      📦 Produto:{" "}
                       <strong className="text-gray-800">
                         {targetItem.name}
                       </strong>
                     </div>
+                  )}
+                  {p.targetQuantity !== undefined && (
+                    <div>🎯 Quantidade programada: <strong className="text-gray-800">{p.targetQuantity}</strong></div>
                   )}
                   {totalProduced > 0 && (
                     <div className="mt-1">
@@ -739,7 +688,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                     <div>
                       📅 Prazo:{" "}
                       <strong className="text-gray-800">
-                        {new Date(p.plannedExecutionDate).toLocaleDateString()}
+                        {formatPlanDate(p.plannedExecutionDate)}
                       </strong>
                     </div>
                   )}
@@ -823,7 +772,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
             {/* Header */}
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-indigo-50/50">
               <h4 className="font-extrabold text-slate-800 text-md flex items-center gap-2">
-                ✏️ Editar Lote de Prensa/Injetora
+                ✏️ Editar Lote de Produção
               </h4>
               <button
                 onClick={() => setEditingPlan(null)}
@@ -869,6 +818,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                   <option value="MONTAGEM_RETRATIL">
                     Montagem Retrátil
                   </option>
+                  <option value="SETOR_TENANT">Setor do tenant</option>
                 </select>
               </div>
 
