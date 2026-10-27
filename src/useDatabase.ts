@@ -3340,7 +3340,7 @@ export function useDatabase(currentUser?: User | null) {
       const id = getUniqueNumericId();
       await setDoc(
         doc(db, "coilCuttingPlans", id.toString()),
-        cleanUndefined({ ...plan, id }),
+        cleanUndefined({ ...plan, id, tenantId: activeTenantId }),
       );
     },
     updateCoilCuttingPlan: async (plan: CoilCuttingPlan) => {
