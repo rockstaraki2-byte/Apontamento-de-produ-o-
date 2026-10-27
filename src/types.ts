@@ -804,12 +804,14 @@ export interface StockMovement {
 
 export interface CoilCuttingPlan {
   id: number;
+  tenantId?: string;
   name: string;
   coilItemId: number; // Raw material item or Base plastic/mold for Injetora
   targetItemIds: number[]; // Intermediate pieces produced
   status: "PENDENTE" | "EM_PRODUCAO" | "CONCLUIDO";
   createdAt: number;
-  type?: "PRENSA_RAFAEL" | "INJETORA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE" | "MONTAGEM_RETRATIL" | "PRENSA_EDUARDO" | "BANHO_QUIMICO";
+  type?: "PRENSA_RAFAEL" | "INJETORA" | "TORNO_CNC_WILLIAN" | "TORNO_CNC_HENRIQUE" | "MONTAGEM_RETRATIL" | "PRENSA_EDUARDO" | "BANHO_QUIMICO" | "SETOR_TENANT";
+  sectorId?: number | string; // Setor ativo do tenant selecionado no cadastro do lote
   plannedExecutionDate?: string; // Formatted date YYYY-MM-DD
   requiresMoldChange?: boolean; // Specific for Injetora
   targetQuantity?: number; // Qtd. a ser produzida
