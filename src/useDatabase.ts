@@ -645,7 +645,8 @@ export function useDatabase(currentUser?: User | null) {
     : loadCache(tenantScopedCacheKey("sectors", activeTenantId), []));
   const assertProductionBatchSector = (sectorId: unknown) => {
     const normalizedSectorId = String(sectorId ?? "").trim();
-    if (!normalizedSectorId || normalizedSectorId === "0" || normalizedSectorId === "999") return;
+    if (!normalizedSectorId || normalizedSectorId === "0") return;
+    if (normalizedSectorId === "999" && activeTenantId === "imperio") return;
 
     const belongsToActiveTenant = sectors.some((sector) => {
       const scopedSector = sector as Sector & { tenantId?: string; companyId?: string };
@@ -3354,9 +3355,7 @@ export function useDatabase(currentUser?: User | null) {
       if (tenantToKeep !== activeTenantId) {
         throw new Error("O lote não pertence à empresa ativa.");
       }
-      if (!current || String(batch.sectorId ?? "") !== String(current.sectorId ?? "")) {
-        assertProductionBatchSector(batch.sectorId);
-      }
+      assertProductionBatchSector(batch.sectorId);
       const updatedBatch = { ...batch, tenantId: activeTenantId };
       if (current && JSON.stringify(current) === JSON.stringify(updatedBatch)) return;
       await setDoc(
