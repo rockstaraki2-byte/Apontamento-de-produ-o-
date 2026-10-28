@@ -1656,7 +1656,7 @@ export function PCPScreen({
     const isGer = currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.id === "gerencia";
     if (
       String(editBatchSectorId) !== "0" &&
-      String(editBatchSectorId) !== "999" &&
+      !(db.activeTenantId === "imperio" && String(editBatchSectorId) === "999") &&
       !tenantSectors.some((sector) => String(sector.id) === String(editBatchSectorId))
     ) {
       alert("O setor selecionado não pertence à empresa ativa.");
