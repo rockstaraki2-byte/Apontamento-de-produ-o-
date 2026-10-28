@@ -125,7 +125,13 @@ import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { signInWithCustomToken, onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, storage } from "./firebase";
 
-import { COLOR_MAP, isSubTabAllowed } from "./types";
+import {
+  ALL_AVAILABLE_SCREENS,
+  COLOR_MAP,
+  getTenantAllowedScreens,
+  isSubTabAllowed,
+  tenantHasScreenSector,
+} from "./types";
 
 const lazyNamed = (
   loader: () => Promise<Record<string, any>>,
@@ -1251,8 +1257,35 @@ function Welcome({
   );
 }
 
+function TenantScreenAccessGate({
+  children,
+  isScreenAllowed,
+}: {
+  children: React.ReactNode;
+  isScreenAllowed: (screenKey: string) => boolean;
+}) {
+  const location = useLocation();
+  const path = location.pathname.replace(/\/+$/, "") || "/";
+  const requiredScreenKey = path === "/status"
+    ? "pedidos"
+    : ALL_AVAILABLE_SCREENS.find((screen) => screen.path === path)?.key;
+
+  if (requiredScreenKey && !isScreenAllowed(requiredScreenKey)) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-slate-600">
+        <Lock size={30} className="text-slate-400" />
+        <h2 className="font-bold text-slate-800">Funcionalidade não habilitada</h2>
+        <p className="max-w-md text-sm">
+          Esta tela não está disponível para a empresa conectada.
+        </p>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
 function LoginScreen({
-  tenants,
   onLogin,
   deferredPrompt,
   setDeferredPrompt,
@@ -1261,7 +1294,6 @@ function LoginScreen({
   isInIframe,
   handleInstallClick,
 }: {
-  tenants?: import('./types').Tenant[];
   onLogin: (u: User) => void;
   deferredPrompt: any;
   setDeferredPrompt: React.Dispatch<React.SetStateAction<any>>;
@@ -1284,55 +1316,15 @@ function LoginScreen({
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "");
 
-  const detectedTenant = React.useMemo(() => {
-    const raw = (usernameInput || "").trim();
-    const typed = normalizeStr(raw);
-    const parts = typed.split(".");
-    if (parts.length > 1) {
-      const suffix = parts[parts.length - 1];
-      const found = tenants?.find(
-        (t) =>
-          t &&
-          t.id &&
-          (normalizeStr(t.id) === suffix ||
-            normalizeStr(t.id).replace(/^empresa_/i, "") === suffix ||
-            normalizeStr(t.name) === suffix)
-      );
-      if (found) return found;
-    }
-    return (
-      tenants?.find((t) => t && t.id === selectedLoginTenantId) ||
-      tenants?.find((t) => t && t.id === "imperio") || {
-        id: "imperio",
-        name: "Império Jomarci",
-        logoUrl: "/icon.png",
-        primaryColor: "#FB9214",
-        systemName: "Apontador de Produção",
-      }
-    );
-  }, [usernameInput, tenants, selectedLoginTenantId]);
-
-  // Synchronize selected login tenant with typed suffix if detected
   useEffect(() => {
-    const raw = (usernameInput || "").trim();
-    const typed = normalizeStr(raw);
-    const parts = typed.split(".");
-    if (parts.length > 1) {
-      const suffix = parts[parts.length - 1];
-      const found = tenants?.find(
-        (t) =>
-          t &&
-          t.id &&
-          (normalizeStr(t.id) === suffix ||
-            normalizeStr(t.id).replace(/^empresa_/i, "") === suffix ||
-            normalizeStr(t.name) === suffix)
-      );
-      if (found && found.id !== selectedLoginTenantId) {
-        setSelectedLoginTenantId(found.id);
-        localStorage.setItem("login_tenant_id", found.id);
-      }
-    }
-  }, [usernameInput, tenants, selectedLoginTenantId]);
+    const parts = normalizeStr(usernameInput).split(".");
+    if (parts.length < 2) return;
+    const suffix = parts[parts.length - 1];
+    const tenantId = ["imp", "imperio"].includes(suffix) ? "imperio" : suffix;
+    if (!/^[a-z0-9_-]{2,40}$/.test(tenantId) || tenantId === selectedLoginTenantId) return;
+    setSelectedLoginTenantId(tenantId);
+    localStorage.setItem("login_tenant_id", tenantId);
+  }, [usernameInput, selectedLoginTenantId]);
 
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState("");
@@ -1347,14 +1339,11 @@ function LoginScreen({
 
     const typed = normalizeStr(username);
     const suffix = typed.split(".").at(-1) || "";
-    const explicitTenant = tenants?.find((tenant) =>
-      normalizeStr(tenant.id) === suffix ||
-      normalizeStr(tenant.id).replace(/^empresa_/i, "") === suffix ||
-      normalizeStr(tenant.name) === suffix,
-    );
     const tenantId = typed === "raul"
       ? "global"
-      : explicitTenant?.id || tenants?.find((tenant) => tenant.id === selectedLoginTenantId)?.id || "imperio";
+      : suffix && typed.includes(".")
+        ? (["imp", "imperio"].includes(suffix) ? "imperio" : suffix)
+        : selectedLoginTenantId || "imperio";
 
     setIsLoggingIn(true);
     setLoginError("");
@@ -1400,7 +1389,7 @@ function LoginScreen({
           />
           <div className="h-px bg-slate-200 w-full mt-2" />
           <span className="text-[0.65rem] text-slate-500 font-bold tracking-[0.1em] text-center uppercase">
-            {normalizeStr(usernameInput) === "raul" ? "Central global · Super Admin" : detectedTenant.name || "Acesso ao Sistema"}
+            {normalizeStr(usernameInput) === "raul" ? "Central global · Super Admin" : "Acesso ao Sistema"}
           </span>
         </div>
 
@@ -16021,7 +16010,6 @@ export default function App() {
   if (!currentUser) {
     return (
       <LoginScreen
-        tenants={db.tenants}
         onLogin={setCurrentUser}
         deferredPrompt={deferredPrompt}
         setDeferredPrompt={setDeferredPrompt}
@@ -16060,6 +16048,15 @@ export default function App() {
   const hasSector = (nameKeyword: string) => {
     return db.sectors.some((s) => s.name.toLowerCase().includes(nameKeyword.toLowerCase()));
   };
+
+  const tenantSectorHints = [
+    ...db.sectors,
+    ...(db.activeTenant?.sectorMetadata || []),
+    ...(db.activeTenant?.sectorNames || []),
+  ];
+  const hasLaserSector = db.activeTenantId === "imperio"
+    ? hasSector("laser") || hasSector("corte")
+    : tenantHasScreenSector("cortelaser", tenantSectorHints);
 
   const hasMachine = (nameKeyword: string) => {
     const machines = db.activeTenant?.machines || [];
@@ -16105,6 +16102,11 @@ export default function App() {
       currentUser.name.toLowerCase().includes("marcos"));
 
   const isScreenAllowed = (screenKey: string) => {
+    if (db.activeTenantId !== "imperio") {
+      const allowedScreens = getTenantAllowedScreens(db.activeTenant, tenantSectorHints);
+      return allowedScreens.includes(screenKey) &&
+        tenantHasScreenSector(screenKey, tenantSectorHints);
+    }
     if (
       screenKey === "historico" &&
       db.activeTenantId === "imperio" &&
@@ -16257,6 +16259,7 @@ export default function App() {
         <main className="flex-1 overflow-hidden w-full max-w-7xl mx-auto flex flex-col min-h-0 bg-slate-50 relative">
           <RouteErrorBoundary>
             <React.Suspense fallback={<ScreenLoadingFallback />}>
+              <TenantScreenAccessGate isScreenAllowed={isScreenAllowed}>
               <Routes>
             <Route
               path="/"
@@ -16587,6 +16590,7 @@ export default function App() {
               />
             )}
               </Routes>
+              </TenantScreenAccessGate>
             </React.Suspense>
           </RouteErrorBoundary>
         </main>
@@ -16769,8 +16773,7 @@ export default function App() {
             currentUser.role === "CORTE_LASER") &&
             (currentUser.id === "raul" ||
               isImperioMarcosProjetista ||
-              hasSector("laser") ||
-              hasSector("corte")) && (
+              hasLaserSector) && (
             <NavLink to="/nests" icon={<Scissors size={24} />} label="Nests" />
           )}
 
@@ -16790,7 +16793,7 @@ export default function App() {
           {isScreenAllowed("cortelaser") && (currentUser.role === "ADMIN" ||
             currentUser.role === "GERENCIA" ||
             currentUser.role === "CORTE_LASER") && 
-            (currentUser.id === "raul" || hasSector("laser") || hasSector("corte")) && (
+            (currentUser.id === "raul" || hasLaserSector) && (
             <NavLink
               to="/cortelaser"
               icon={<Scissors size={24} />}
