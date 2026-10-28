@@ -29,6 +29,7 @@ const normalizeStr = (str: string) =>
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { User, ProductionLog } from "./types";
+import { getTenantAllowedScreens, tenantHasScreenSector } from "./types";
 import { ProdutividadeConfigModal } from "./ProdutividadeConfigModal";
 import { RelatorioCorteLaserTab } from "./RelatorioCorteLaserTab";
 import { MetasProducaoTab } from "./components/MetasProducaoTab";
@@ -756,7 +757,9 @@ export function RelatoriosScreen({
   }, [db.logs, db.users, db.sectors]);
 
   // Simulator State
-  const [simulatorSector, setSimulatorSector] = useState("CORTE_LASER");
+  const [simulatorSector, setSimulatorSector] = useState(() =>
+    db.activeTenantId === "imperio" ? "CORTE_LASER" : String(db.sectors?.[0]?.id || "")
+  );
   const [simulatorQty, setSimulatorQty] = useState(30);
   const [simulatorTimeMinutes, setSimulatorTimeMinutes] = useState(15);
   const [simulatorOperator, setSimulatorOperator] = useState("producao");
@@ -766,8 +769,35 @@ export function RelatoriosScreen({
   const [selectedEpiSectorId, setSelectedEpiSectorId] = useState<number | "">(
     "",
   );
+  const reportSectorHints = [
+    ...(db.activeTenant?.sectorNames || []),
+    ...(db.activeTenant?.sectorMetadata || []),
+    ...(db.sectors || []),
+  ];
+  const canViewLaserReports =
+    db.activeTenantId === "imperio" ||
+    (getTenantAllowedScreens(db.activeTenant, reportSectorHints).includes("cortelaser") &&
+      tenantHasScreenSector("cortelaser", reportSectorHints));
+
+  React.useEffect(() => {
+    if (!canViewLaserReports && reportType === "CORTE_LASER") {
+      setReportType("PRODUTIVIDADE");
+    }
+  }, [canViewLaserReports, reportType]);
+
+  React.useEffect(() => {
+    if (db.activeTenantId === "imperio") return;
+    const availableSectors = (db.sectors || []).map((sector) => String(sector.id));
+    if (!availableSectors.includes(simulatorSector)) {
+      setSimulatorSector(availableSectors[0] || "");
+    }
+  }, [db.activeTenantId, db.sectors, simulatorSector]);
 
   const handleSimulateAddLog = async () => {
+    if (!simulatorSector || (simulatorSector === "CORTE_LASER" && !canViewLaserReports)) {
+      alert("Selecione um setor disponível para a empresa ativa.");
+      return;
+    }
     // Generates a mock order or selects any default order to associate
     const associatedOrder = db.orders[0] || {
       id: 99999,
@@ -1483,12 +1513,14 @@ export function RelatoriosScreen({
             >
               EPIs Diários
             </button>
-            <button
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition cursor-pointer ${reportType === "CORTE_LASER" ? "bg-blue-600 text-white shadow-xs" : "bg-transparent text-gray-600 hover:bg-gray-100"}`}
-              onClick={() => setReportType("CORTE_LASER")}
-            >
-              Corte Laser
-            </button>
+            {canViewLaserReports && (
+              <button
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition cursor-pointer ${reportType === "CORTE_LASER" ? "bg-blue-600 text-white shadow-xs" : "bg-transparent text-gray-600 hover:bg-gray-100"}`}
+                onClick={() => setReportType("CORTE_LASER")}
+              >
+                Corte Laser
+              </button>
+            )}
             <button
               className={`px-4 py-2 text-xs font-bold rounded-lg transition cursor-pointer ${reportType === "METAS" ? "bg-blue-600 text-white shadow-xs" : "bg-transparent text-gray-600 hover:bg-gray-100"}`}
               onClick={() => setReportType("METAS")}
@@ -1966,12 +1998,7 @@ export function RelatoriosScreen({
                         </option>
                       ))
                     ) : (
-                      <>
-                        <option value="CORTE_LASER">Corte a Laser</option>
-                        <option value="SOLDA">Solda</option>
-                        <option value="PINTURA">Pintura</option>
-                        <option value="EMBALAGEM">Embalagem</option>
-                      </>
+                      <option value="" disabled>Nenhum setor cadastrado</option>
                     )}
                   </select>
                 </div>
@@ -2377,7 +2404,7 @@ export function RelatoriosScreen({
             );
           })()}
 
-        {reportType === "CORTE_LASER" && (
+        {reportType === "CORTE_LASER" && canViewLaserReports && (
           <RelatorioCorteLaserTab db={db} />
         )}
 
@@ -2469,12 +2496,7 @@ export function RelatoriosScreen({
                         </option>
                       ))
                     ) : (
-                      <>
-                        <option value="CORTE_LASER">Corte a Laser</option>
-                        <option value="PINTURA">Pintura</option>
-                        <option value="EMBALAGEM">Embalagem</option>
-                        <option value="PRODUCAO">Produção / Montagem</option>
-                      </>
+                      <option value="" disabled>Nenhum setor cadastrado</option>
                     )}
                   </select>
                 </div>

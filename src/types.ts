@@ -111,6 +111,10 @@ export interface Tenant {
   machines?: string[];
   allowedScreens?: string[];
   allowedSubTabs?: string[];
+  screenAccessConfigured?: boolean;
+  subTabAccessConfigured?: boolean;
+  sectorNames?: string[];
+  sectorMetadata?: Array<{ id: number; name: string }>;
   exigirQualidadeNaEmbalagem?: boolean;
   soldaProcesses?: string[];
 }
@@ -162,11 +166,7 @@ export const ALL_AVAILABLE_SUBTABS: SubTabOption[] = [
 
 export function isSubTabAllowed(tenant: Tenant | null | undefined, subTabKey: string): boolean {
   if (!tenant) return true;
-  if (!tenant.allowedSubTabs || tenant.allowedSubTabs.length === 0) return true;
-  if (subTabKey === "pcp:cadastro_fluxos" || subTabKey === "pcp:cadastro_motivos_reprovacao") {
-    return true;
-  }
-  return tenant.allowedSubTabs.includes(subTabKey);
+  return getTenantAllowedSubTabs(tenant).includes(subTabKey);
 }
 
 export interface ScreenOption {
@@ -219,6 +219,191 @@ export const ALL_AVAILABLE_SCREENS: ScreenOption[] = [
   // Gestão
   { key: "financeiro", label: "Financeiro", category: "Gestão", path: "/financeiro" },
 ];
+
+export type TenantSectorHint =
+  | string
+  | { name?: string; department?: string; code?: string; role?: string };
+
+const DEFAULT_TENANT_BASE_SCREENS = [
+  "inicio",
+  "admin",
+  "relatorios",
+  "historico",
+  "pcp",
+  "pedidos",
+  "lotes",
+  "itens",
+  "producao",
+];
+
+const SCREEN_SECTOR_REQUIREMENTS: Record<string, string[]> = {
+  "cortelaser": ["laser"],
+  "orcamentos": ["laser"],
+  "nests": ["laser"],
+  "estoque-laser": ["laser"],
+  "estoque-chapas": ["laser"],
+  "qualidade": ["qualidade", "inspec"],
+  "relatorios-qualidade": ["qualidade", "inspec"],
+  "pintura": ["pintura"],
+  "prensa-eduardo": ["eduardo"],
+  "prensa-rafael": ["rafael"],
+  "torno-cnc-willian": ["willian", "william"],
+  "torno-cnc-henrique": ["henrique"],
+  "injetora": ["injet"],
+  "banho-quimico": ["banho", "zinc", "quimic"],
+  "embalagem": ["embalagem"],
+  "montagem-retratil": ["retratil"],
+};
+
+const DEFAULT_TENANT_BASE_SUBTABS = [
+  "pcp:painel",
+  "pcp:monitoramento",
+  "pcp:etiquetas",
+  "pcp:cadastros",
+  "pcp:lotes",
+  "pcp:cadastro_clientes",
+  "pcp:cadastro_setores",
+  "pcp:cadastro_fluxos",
+  "pcp:cadastro_motivos_reprovacao",
+  "pcp:cadastro_bom",
+  "pcp:cadastro_configuracoes",
+  "pedidos:faturamento",
+  "pedidos:novo",
+];
+
+function normalizeTenantFeatureText(value: unknown): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function getTenantSectorTexts(sectors: TenantSectorHint[] = []): string[] {
+  return sectors.flatMap((sector) =>
+    typeof sector === "string"
+      ? [normalizeTenantFeatureText(sector)]
+      : [sector.name, sector.department, sector.code, sector.role]
+          .filter((value): value is string => typeof value === "string")
+          .map(normalizeTenantFeatureText),
+  ).filter(Boolean);
+}
+
+function getTenantHints(tenant: Tenant, additionalSectors: TenantSectorHint[] = []): TenantSectorHint[] {
+  return [
+    ...(Array.isArray(tenant.sectorNames) ? tenant.sectorNames : []),
+    ...(Array.isArray(tenant.sectorMetadata) ? tenant.sectorMetadata : []),
+    ...additionalSectors,
+  ];
+}
+
+export function tenantHasScreenSector(
+  screenKey: string,
+  sectors: TenantSectorHint[] = [],
+): boolean {
+  const requiredTerms = SCREEN_SECTOR_REQUIREMENTS[screenKey];
+  if (!requiredTerms) return true;
+  const normalizedSectors = getTenantSectorTexts(sectors);
+  return requiredTerms.some((term) => {
+    const normalizedTerm = normalizeTenantFeatureText(term);
+    return normalizedSectors.some((sector) => sector.includes(normalizedTerm));
+  });
+}
+
+export function getDefaultTenantScreens(sectors: TenantSectorHint[] = []): string[] {
+  const screens = [...DEFAULT_TENANT_BASE_SCREENS];
+  for (const screenKey of Object.keys(SCREEN_SECTOR_REQUIREMENTS)) {
+    if (tenantHasScreenSector(screenKey, sectors)) screens.push(screenKey);
+  }
+  return Array.from(new Set(screens));
+}
+
+export function getDefaultTenantSubTabs(sectors: TenantSectorHint[] = []): string[] {
+  const screens = new Set(getDefaultTenantScreens(sectors));
+  const subTabs = [...DEFAULT_TENANT_BASE_SUBTABS];
+
+  if (screens.has("embalagem")) subTabs.push("pcp:evolucao_embalagem");
+  if (
+    screens.has("cortelaser") ||
+    screens.has("prensa-eduardo") ||
+    screens.has("prensa-rafael") ||
+    screens.has("injetora") ||
+    screens.has("banho-quimico") ||
+    screens.has("torno-cnc-willian") ||
+    screens.has("torno-cnc-henrique")
+  ) {
+    subTabs.push("pcp:cadastro_planos_corte");
+  }
+  if (screens.has("orcamentos")) {
+    subTabs.push("orcamentos:lista", "orcamentos:novo");
+  }
+  if (screens.has("estoque")) {
+    subTabs.push("estoque:produtos", "estoque:epis", "estoque:uniformes", "estoque:relatorios");
+  }
+
+  return Array.from(new Set(subTabs));
+}
+
+function isCompleteTenantSelection(selection: string[], options: string[]): boolean {
+  return options.every((key) => selection.includes(key));
+}
+
+export function isTenantScreenAccessConfigured(tenant: Partial<Tenant>): boolean {
+  if (typeof tenant.screenAccessConfigured === "boolean") return tenant.screenAccessConfigured;
+  const selection = Array.isArray(tenant.allowedScreens) ? tenant.allowedScreens : [];
+  return selection.length > 0 &&
+    !isCompleteTenantSelection(selection, ALL_AVAILABLE_SCREENS.map((screen) => screen.key));
+}
+
+export function isTenantSubTabAccessConfigured(tenant: Partial<Tenant>): boolean {
+  if (typeof tenant.subTabAccessConfigured === "boolean") return tenant.subTabAccessConfigured;
+  const selection = Array.isArray(tenant.allowedSubTabs) ? tenant.allowedSubTabs : [];
+  return selection.length > 0 &&
+    !isCompleteTenantSelection(selection, ALL_AVAILABLE_SUBTABS.map((subTab) => subTab.key));
+}
+
+export function getTenantAllowedScreens(
+  tenant: Tenant | null | undefined,
+  additionalSectors: TenantSectorHint[] = [],
+): string[] {
+  if (!tenant) return [];
+  const selection = Array.isArray(tenant.allowedScreens) ? tenant.allowedScreens : [];
+  const configured = isTenantScreenAccessConfigured(tenant);
+
+  if (tenant.id === "imperio" && !configured) {
+    return selection.length > 0
+      ? selection
+      : ALL_AVAILABLE_SCREENS.map((screen) => screen.key);
+  }
+
+  if (!configured) {
+    return getDefaultTenantScreens(getTenantHints(tenant, additionalSectors));
+  }
+
+  return selection;
+}
+
+export function getTenantAllowedSubTabs(
+  tenant: Tenant | null | undefined,
+  additionalSectors: TenantSectorHint[] = [],
+): string[] {
+  if (!tenant) return [];
+  const selection = Array.isArray(tenant.allowedSubTabs) ? tenant.allowedSubTabs : [];
+  const configured = isTenantSubTabAccessConfigured(tenant);
+
+  if (tenant.id === "imperio" && !configured) {
+    return selection.length > 0
+      ? selection
+      : ALL_AVAILABLE_SUBTABS.map((subTab) => subTab.key);
+  }
+
+  if (!configured) {
+    return getDefaultTenantSubTabs(getTenantHints(tenant, additionalSectors));
+  }
+
+  return selection;
+}
 
 export interface Item {
   id: number;

@@ -22,7 +22,10 @@ service cloud.firestore {
     }
 
     match /tenants/{tenantId} {
-      allow read: if true;
+      // A tenant may read only its own configuration document. Global
+      // administration reads the tenant directory through the authenticated API.
+      allow read: if isTenantUser()
+        && request.auth.token.tenantId == tenantId;
       allow write: if false;
     }
 

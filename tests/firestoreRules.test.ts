@@ -29,15 +29,18 @@ after(async () => {
   await environment.cleanup();
 });
 
-test("login anônimo só consulta metadados públicos de empresa", async () => {
+test("login anônimo não lê documentos de configuração de empresas", async () => {
   const db = environment.unauthenticatedContext().firestore();
-  await assertSucceeds(getDoc(doc(db, "tenants", "imperio")));
+  await assertFails(getDoc(doc(db, "tenants", "imperio")));
+  await assertFails(getDocs(collection(db, "tenants")));
   await assertFails(getDoc(doc(db, "users", "gerencia")));
   await assertFails(getDoc(doc(db, "orders", "imperio-1")));
 });
 
 test("usuário Império só lê e grava documentos do próprio tenant", async () => {
   const db = environment.authenticatedContext("operador", { tenantId: "imperio", role: "PRODUCAO" }).firestore();
+  await assertSucceeds(getDoc(doc(db, "tenants", "imperio")));
+  await assertFails(getDoc(doc(db, "tenants", "empresa-teste")));
   await assertSucceeds(getDoc(doc(db, "orders", "imperio-1")));
   await assertFails(getDoc(doc(db, "orders", "other-1")));
   await assertFails(getDoc(doc(db, "orders", "missing-tenant")));
@@ -101,7 +104,7 @@ test("remoção de corte consulta apenas o tenant autenticado e aceita alvo ause
 
 test("Super Admin não lê documentos de usuário ou operação no cliente", async () => {
   const db = environment.authenticatedContext("raul", { tenantId: "global", role: "ADMIN", superAdmin: true }).firestore();
-  await assertSucceeds(getDocs(collection(db, "tenants")));
+  await assertFails(getDocs(collection(db, "tenants")));
   await assertFails(getDocs(collection(db, "users")));
   await assertFails(getDoc(doc(db, "orders", "imperio-1")));
   await assertFails(setDoc(doc(db, "orders", "global-write"), { tenantId: "imperio" }));

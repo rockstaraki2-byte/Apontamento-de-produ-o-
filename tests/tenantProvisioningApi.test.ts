@@ -104,6 +104,15 @@ test("Super Admin cadastra empresa e usuário em ambiente isolado; login emite c
   operatorToken = loginUser;
 });
 
+test("listagem de empresas é exclusiva da API autenticada do Super Admin", async () => {
+  const globalList = await invoke(tenantsHandler, { method: "GET", token: superAdminToken });
+  assert.equal(globalList.statusCode, 200);
+  assert.ok(globalList.body.tenants.some((tenant: any) => tenant.id === "empresa-teste"));
+
+  const tenantList = await invoke(tenantsHandler, { method: "GET", token: tenantAdminToken });
+  assert.equal(tenantList.statusCode, 403);
+});
+
 test("APIs limitam usuários ao tenant e barram empresas fora do Super Admin", async () => {
   const ownUsers = await invoke(usersHandler, { method: "GET", token: tenantAdminToken });
   assert.equal(ownUsers.statusCode, 200);

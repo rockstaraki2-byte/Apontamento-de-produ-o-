@@ -18,7 +18,16 @@ import {
 } from "lucide-react";
 import type { useDatabase } from "../useDatabase";
 import type { Tenant, User, Role } from "../types";
-import { ALL_AVAILABLE_SCREENS, ALL_AVAILABLE_SUBTABS } from "../types";
+import {
+  ALL_AVAILABLE_SCREENS,
+  ALL_AVAILABLE_SUBTABS,
+  getDefaultTenantScreens,
+  getDefaultTenantSubTabs,
+  getTenantAllowedScreens,
+  getTenantAllowedSubTabs,
+  isTenantScreenAccessConfigured,
+  isTenantSubTabAccessConfigured,
+} from "../types";
 
 interface SuperAdminScreenProps {
   db: ReturnType<typeof useDatabase>;
@@ -60,8 +69,10 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
     sectorsInput: "",
     machinesInput: "",
     exigirQualidadeNaEmbalagem: true,
-    allowedScreens: ALL_AVAILABLE_SCREENS.map((s) => s.key),
-    allowedSubTabs: ALL_AVAILABLE_SUBTABS.map((st) => st.key),
+    allowedScreens: getDefaultTenantScreens([]),
+    allowedSubTabs: getDefaultTenantSubTabs([]),
+    screenAccessConfigured: false,
+    subTabAccessConfigured: false,
   });
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -164,10 +175,16 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
       return;
     }
 
+    const parsedSectors = trimmedSectors
+      .split(",")
+      .map((s: string) => s.trim())
+      .filter(Boolean);
     const parsedMachines = (companyForm.machinesInput || "")
       .split(",")
       .map((m: string) => m.trim())
       .filter(Boolean);
+    const screenAccessConfigured = companyForm.screenAccessConfigured === true;
+    const subTabAccessConfigured = companyForm.subTabAccessConfigured === true;
 
     const tenantData: Tenant = {
       id: cleanId,
@@ -177,19 +194,25 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
       systemName: companyForm.systemName?.trim() || "SISTEMA DE PRODUÇÃO",
       machines: parsedMachines,
       exigirQualidadeNaEmbalagem: companyForm.exigirQualidadeNaEmbalagem !== false,
-      allowedScreens: Array.isArray(companyForm.allowedScreens)
-        ? companyForm.allowedScreens
-        : ALL_AVAILABLE_SCREENS.map((s) => s.key),
-      allowedSubTabs: Array.isArray(companyForm.allowedSubTabs)
-        ? companyForm.allowedSubTabs
-        : ALL_AVAILABLE_SUBTABS.map((st) => st.key),
+      screenAccessConfigured,
+      subTabAccessConfigured,
+      allowedScreens: screenAccessConfigured
+        ? (Array.isArray(companyForm.allowedScreens) ? companyForm.allowedScreens : [])
+        : cleanId === "imperio"
+          ? (Array.isArray(companyForm.allowedScreens)
+              ? companyForm.allowedScreens
+              : ALL_AVAILABLE_SCREENS.map((s) => s.key))
+          : getDefaultTenantScreens(parsedSectors),
+      allowedSubTabs: subTabAccessConfigured
+        ? (Array.isArray(companyForm.allowedSubTabs) ? companyForm.allowedSubTabs : [])
+        : cleanId === "imperio"
+          ? (Array.isArray(companyForm.allowedSubTabs)
+              ? companyForm.allowedSubTabs
+              : ALL_AVAILABLE_SUBTABS.map((st) => st.key))
+          : getDefaultTenantSubTabs(parsedSectors),
     };
 
     try {
-      const parsedSectors = trimmedSectors
-        .split(",")
-        .map((s: string) => s.trim())
-        .filter(Boolean);
       if (editCompanyId && cleanId !== editCompanyId) {
         alert("O ID da empresa não pode ser alterado depois da criação.");
         return;
@@ -207,8 +230,10 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
         sectorsInput: "",
         machinesInput: "",
         exigirQualidadeNaEmbalagem: true,
-        allowedScreens: ALL_AVAILABLE_SCREENS.map((s) => s.key),
-        allowedSubTabs: ALL_AVAILABLE_SUBTABS.map((st) => st.key),
+        allowedScreens: getDefaultTenantScreens([]),
+        allowedSubTabs: getDefaultTenantSubTabs([]),
+        screenAccessConfigured: false,
+        subTabAccessConfigured: false,
       });
       alert("Empresa salva com sucesso!");
     } catch (err: any) {
@@ -218,21 +243,24 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
 
   const handleEditCompany = (t: Tenant) => {
     setEditCompanyId(t.id);
-    const tenantSectors = (t as any).sectorMetadata
-      ?.map((sector: any) => sector.name)
-      .filter(Boolean)
-      .join(", ");
+    const metadataSectorNames = Array.isArray(t.sectorMetadata)
+      ? t.sectorMetadata.map((sector) => sector.name).filter(Boolean)
+      : [];
+    const tenantSectorNames = metadataSectorNames.length > 0
+      ? metadataSectorNames
+      : Array.isArray(t.sectorNames)
+        ? t.sectorNames
+        : [];
+    const tenantSectors = tenantSectorNames.join(", ");
     setCompanyForm({
       ...t,
       sectorsInput: tenantSectors || "",
       machinesInput: t.machines?.join(", ") || "",
       exigirQualidadeNaEmbalagem: t.exigirQualidadeNaEmbalagem !== false,
-      allowedScreens: Array.isArray(t.allowedScreens)
-        ? t.allowedScreens
-        : ALL_AVAILABLE_SCREENS.map((s) => s.key),
-      allowedSubTabs: Array.isArray(t.allowedSubTabs)
-        ? t.allowedSubTabs
-        : ALL_AVAILABLE_SUBTABS.map((st) => st.key),
+      allowedScreens: getTenantAllowedScreens(t, tenantSectorNames),
+      allowedSubTabs: getTenantAllowedSubTabs(t, tenantSectorNames),
+      screenAccessConfigured: isTenantScreenAccessConfigured(t),
+      subTabAccessConfigured: isTenantSubTabAccessConfigured(t),
     } as any);
     setIsAddingCompany(true);
   };
@@ -462,7 +490,20 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
                   <textarea
                     placeholder="Ex: Solda, Pintura, Montagem, Embalagem, Corte Laser"
                     value={companyForm.sectorsInput || ""}
-                    onChange={(e) => setCompanyForm({ ...companyForm, sectorsInput: e.target.value })}
+                    onChange={(e) => {
+                      const sectorsInput = e.target.value;
+                      const sectorNames = sectorsInput.split(",").map((name) => name.trim()).filter(Boolean);
+                      setCompanyForm((prev: any) => ({
+                        ...prev,
+                        sectorsInput,
+                        ...(!prev.screenAccessConfigured
+                          ? { allowedScreens: getDefaultTenantScreens(sectorNames) }
+                          : {}),
+                        ...(!prev.subTabAccessConfigured
+                          ? { allowedSubTabs: getDefaultTenantSubTabs(sectorNames) }
+                          : {}),
+                      }));
+                    }}
                     className="w-full border border-slate-200 bg-slate-50/50 rounded-lg p-2.5 text-xs font-medium focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 h-16"
                   />
                   <p className="text-[9px] text-slate-400 mt-1">
@@ -497,6 +538,7 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
                           setCompanyForm((prev: any) => ({
                             ...prev,
                             allowedScreens: ALL_AVAILABLE_SCREENS.map((s) => s.key),
+                            screenAccessConfigured: true,
                           }))
                         }
                         className="text-indigo-600 hover:text-indigo-800 font-bold underline"
@@ -509,6 +551,7 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
                           setCompanyForm((prev: any) => ({
                             ...prev,
                             allowedScreens: [],
+                            screenAccessConfigured: true,
                           }))
                         }
                         className="text-slate-500 hover:text-slate-700 font-bold underline"
@@ -544,11 +587,13 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
                                         setCompanyForm((prev: any) => ({
                                           ...prev,
                                           allowedScreens: [...current, sc.key],
+                                          screenAccessConfigured: true,
                                         }));
                                       } else {
                                         setCompanyForm((prev: any) => ({
                                           ...prev,
                                           allowedScreens: current.filter((k: string) => k !== sc.key),
+                                          screenAccessConfigured: true,
                                         }));
                                       }
                                     }}
@@ -580,6 +625,7 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
                           setCompanyForm((prev: any) => ({
                             ...prev,
                             allowedSubTabs: ALL_AVAILABLE_SUBTABS.map((st) => st.key),
+                            subTabAccessConfigured: true,
                           }))
                         }
                         className="text-indigo-600 hover:text-indigo-800 font-bold underline"
@@ -592,6 +638,7 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
                           setCompanyForm((prev: any) => ({
                             ...prev,
                             allowedSubTabs: [],
+                            subTabAccessConfigured: true,
                           }))
                         }
                         className="text-slate-500 hover:text-slate-700 font-bold underline"
@@ -632,11 +679,13 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
                                         setCompanyForm((prev: any) => ({
                                           ...prev,
                                           allowedSubTabs: [...current, st.key],
+                                          subTabAccessConfigured: true,
                                         }));
                                       } else {
                                         setCompanyForm((prev: any) => ({
                                           ...prev,
                                           allowedSubTabs: current.filter((k: string) => k !== st.key),
+                                          subTabAccessConfigured: true,
                                         }));
                                       }
                                     }}
@@ -746,7 +795,20 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
                       onClick={() => {
                         setIsAddingCompany(false);
                         setEditCompanyId(null);
-                        setCompanyForm({ id: "", name: "", logoUrl: "/icon.png", primaryColor: "#00b14f", systemName: "", sectorsInput: "", machinesInput: "", allowedScreens: ALL_AVAILABLE_SCREENS.map(s => s.key) });
+                        setCompanyForm({
+                          id: "",
+                          name: "",
+                          logoUrl: "/icon.png",
+                          primaryColor: "#00b14f",
+                          systemName: "",
+                          sectorsInput: "",
+                          machinesInput: "",
+                          allowedScreens: getDefaultTenantScreens([]),
+                          allowedSubTabs: getDefaultTenantSubTabs([]),
+                          screenAccessConfigured: false,
+                          subTabAccessConfigured: false,
+                          exigirQualidadeNaEmbalagem: true,
+                        });
                       }}
                       className="px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs transition"
                     >
