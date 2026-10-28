@@ -200,7 +200,7 @@ export function useDatabase(currentUser?: User | null) {
     if (isDemoMode) return;
     const collName = ref.parent?.id;
     if (collName && collName !== "tenants" && collName !== "users") {
-      data = { tenantId: activeTenantId, ...data };
+      data = { ...data, tenantId: activeTenantId };
     }
     return options ? safeSetDocFirebase(ref, data, options) : safeSetDocFirebase(ref, data);
   };
@@ -209,7 +209,7 @@ export function useDatabase(currentUser?: User | null) {
     if (isDemoMode) return;
     const collName = ref.parent?.id;
     if (collName && collName !== "tenants" && collName !== "users") {
-      data = { tenantId: activeTenantId, ...data };
+      data = { ...data, tenantId: activeTenantId };
     }
     return updateDocFirebase(ref, data);
   };
@@ -643,6 +643,19 @@ export function useDatabase(currentUser?: User | null) {
   const [sectors, setSectors] = useState<Sector[]>(() => isDemoMode
     ? DEMO_DATABASE.sectors
     : loadCache(tenantScopedCacheKey("sectors", activeTenantId), []));
+  const assertProductionBatchSector = (sectorId: unknown) => {
+    const normalizedSectorId = String(sectorId ?? "").trim();
+    if (!normalizedSectorId || normalizedSectorId === "0" || normalizedSectorId === "999") return;
+
+    const belongsToActiveTenant = sectors.some((sector) => {
+      const scopedSector = sector as Sector & { tenantId?: string; companyId?: string };
+      return String(sector.id) === normalizedSectorId &&
+        tenantIdMatches(scopedSector.tenantId || scopedSector.companyId, activeTenantId);
+    });
+    if (!belongsToActiveTenant) {
+      throw new Error("O setor selecionado não pertence à empresa ativa.");
+    }
+  };
   const [productFlows, setProductFlows] = useState<ProductFlow[]>([]);
   const [flows, setFlows] = useState<import("./types").Flow[]>([]);
   const [rejectionReasons, setRejectionReasons] = useState<import("./types").RejectionReason[]>([]);
@@ -773,18 +786,41 @@ export function useDatabase(currentUser?: User | null) {
       return onSnapshot(scopedCollection(collectionName), { includeMetadataChanges }, onNext, onError);
     };
 
-    const tenantsQuery = !currentUser || currentUser.tenantId === "global"
-      ? collection(db, "tenants")
-      : query(collection(db, "tenants"), where("id", "==", activeTenantId));
-    const unsubTenants = onSnapshot(
-      tenantsQuery,
-      (snap) => setTenants(
-        snap.docs
-          .map((d) => ({ id: d.id, ...(d.data() as Tenant) }))
-          .filter((tenant) => !isRetiredTenantId(tenant.id)),
-      ),
-      (err) => handleSnapshotError("tenants", err),
-    );
+    let tenantLoadActive = true;
+    let tenantListenerUnsubscribe: () => void = () => {};
+    const unsubTenants = () => {
+      tenantLoadActive = false;
+      tenantListenerUnsubscribe();
+    };
+
+    setTenants([]);
+    if (currentUser?.tenantId === "global") {
+      void callAuthenticatedApi("/api/tenants", "GET")
+        .then((result) => {
+          if (!tenantLoadActive) return;
+          setTenants(
+            Array.isArray(result.tenants)
+              ? (result.tenants as Tenant[]).filter((tenant) => !isRetiredTenantId(tenant.id))
+              : [],
+          );
+        })
+        .catch((error) => {
+          if (tenantLoadActive) handleSnapshotError("tenants", error);
+        });
+    } else if (currentUser) {
+      tenantListenerUnsubscribe = onSnapshot(
+        doc(db, "tenants", activeTenantId),
+        (snapshot) => {
+          if (!tenantLoadActive) return;
+          setTenants(
+            snapshot.exists() && !isRetiredTenantId(snapshot.id)
+              ? [{ ...(snapshot.data() as Tenant), id: snapshot.id }]
+              : [],
+          );
+        },
+        (error) => handleSnapshotError("tenants", error),
+      );
+    }
 
     let usersRequestActive = true;
     const unsubUsers = () => { usersRequestActive = false; };
@@ -2451,17 +2487,48 @@ export function useDatabase(currentUser?: User | null) {
   const filteredPrensaPendingProductions = useMemo(() => prensaPendingProductions.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [prensaPendingProductions, matchesTenant]);
 
   const activeTenant = useMemo(() => {
-    return tenants.find((t) => t.id === activeTenantId) || tenants.find((t) => t.id === "imperio") || { id: "imperio", name: "Império Jomarci", logoUrl: "/icon.png", primaryColor: "#00b14f", systemName: "Apontador de Produção" };
+    const matchedTenant = tenants.find((tenant) => tenant.id === activeTenantId);
+    if (matchedTenant) return matchedTenant;
+    if (activeTenantId === "imperio") {
+      return tenants.find((tenant) => tenant.id === "imperio") || {
+        id: "imperio",
+        name: "Império Jomarci",
+        logoUrl: "/icon.png",
+        primaryColor: "#00b14f",
+        systemName: "Apontador de Produção",
+      };
+    }
+    return {
+      id: activeTenantId,
+      name: activeTenantId === "global" ? "Administração Global" : "Empresa",
+      logoUrl: "/icon.png",
+      primaryColor: "#00b14f",
+      systemName: "Apontador de Produção",
+      allowedScreens: [],
+      allowedSubTabs: [],
+      screenAccessConfigured: false,
+      subTabAccessConfigured: false,
+    };
   }, [tenants, activeTenantId]);
 
   const addTenant = async (tenant: Tenant, sectorNames: string[] = [], update = false) => {
     if (isDemoMode) return;
-    await callAuthenticatedApi("/api/tenants", update ? "PUT" : "POST", { ...tenant, sectorNames });
+    const result = await callAuthenticatedApi("/api/tenants", update ? "PUT" : "POST", { ...tenant, sectorNames });
+    if (result.tenant) {
+      setTenants((current) => {
+        const nextTenant = result.tenant as Tenant;
+        const exists = current.some((entry) => entry.id === nextTenant.id);
+        return exists
+          ? current.map((entry) => entry.id === nextTenant.id ? nextTenant : entry)
+          : [...current, nextTenant];
+      });
+    }
   };
 
   const deleteTenant = async (id: string) => {
     if (isDemoMode) return;
     await callAuthenticatedApi(`/api/tenants?id=${encodeURIComponent(id)}`, "DELETE", { id });
+    setTenants((current) => current.filter((tenant) => tenant.id !== id));
   };
 
   return {
@@ -3269,17 +3336,28 @@ export function useDatabase(currentUser?: User | null) {
       }));
     },
     addProductionBatch: async (batch: Omit<ProductionBatch, "id">) => {
+      const requestedTenantId = (batch as any).tenantId;
+      if (requestedTenantId && requestedTenantId !== activeTenantId) {
+        throw new Error("O lote deve pertencer à empresa ativa.");
+      }
+      assertProductionBatchSector(batch.sectorId);
       const id = getUniqueNumericId();
       await setDoc(
         doc(db, "productionBatches", id.toString()),
-        cleanUndefined({ ...batch, id, tenantId: (batch as any).tenantId || activeTenantId }),
+        cleanUndefined({ ...batch, id, tenantId: activeTenantId }),
       );
       return id;
     },
     updateProductionBatch: async (batch: ProductionBatch) => {
-      const current = productionBatches.find((b) => b.id === batch.id);
+      const current = productionBatches.find((candidate) => candidate.id === batch.id);
       const tenantToKeep = (batch as any).tenantId || (current as any)?.tenantId || activeTenantId;
-      const updatedBatch = { ...batch, tenantId: tenantToKeep };
+      if (tenantToKeep !== activeTenantId) {
+        throw new Error("O lote não pertence à empresa ativa.");
+      }
+      if (!current || String(batch.sectorId ?? "") !== String(current.sectorId ?? "")) {
+        assertProductionBatchSector(batch.sectorId);
+      }
+      const updatedBatch = { ...batch, tenantId: activeTenantId };
       if (current && JSON.stringify(current) === JSON.stringify(updatedBatch)) return;
       await setDoc(
         doc(db, "productionBatches", batch.id.toString()),
