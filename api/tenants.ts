@@ -1,14 +1,35 @@
 import { randomInt } from "node:crypto";
 import { getFirebaseAdmin, isSuperAdmin, requireSession, sendMethodNotAllowed } from "./_lib/firebaseAdmin.js";
+import { getDefaultTenantScreens, getDefaultTenantSubTabs } from "../src/types.js";
 
-const ALLOWED_TENANT_FIELDS = ["name", "logoUrl", "primaryColor", "systemName", "machines", "exigirQualidadeNaEmbalagem", "allowedScreens", "allowedSubTabs", "soldaProcesses"];
+const ALLOWED_TENANT_FIELDS = [
+  "name",
+  "logoUrl",
+  "primaryColor",
+  "systemName",
+  "machines",
+  "exigirQualidadeNaEmbalagem",
+  "allowedScreens",
+  "allowedSubTabs",
+  "screenAccessConfigured",
+  "subTabAccessConfigured",
+  "soldaProcesses",
+];
 
 export default async function handler(req: any, res: any) {
-  if (!["POST", "PUT", "DELETE"].includes(req.method)) return sendMethodNotAllowed(res, ["POST", "PUT", "DELETE"]);
+  if (!["GET", "POST", "PUT", "DELETE"].includes(req.method)) return sendMethodNotAllowed(res, ["GET", "POST", "PUT", "DELETE"]);
   try {
     const claims = await requireSession(req);
     if (!isSuperAdmin(claims as any)) return res.status(403).json({ error: "FORBIDDEN" });
     const { db } = getFirebaseAdmin();
+    if (req.method === "GET") {
+      const snapshot = await db.collection("tenants").get();
+      const tenants = snapshot.docs.map((tenantDoc) => ({
+        ...tenantDoc.data(),
+        id: tenantDoc.id,
+      }));
+      return res.status(200).json({ tenants });
+    }
     const body = req.body || {};
     const id = String(body.id || req.query?.id || "").trim().toLowerCase();
     if (!/^[a-z0-9_-]{2,40}$/.test(id) || id === "global") return res.status(400).json({ error: "INVALID_TENANT" });
@@ -44,6 +65,17 @@ export default async function handler(req: any, res: any) {
     }
     const sectorMetadata = [...existingMetadata];
     const newSectorNames = sectorNames.filter((name) => !sectorMetadata.some((entry) => entry.name.toLowerCase() === name.toLowerCase()));
+
+    if (id !== "imperio") {
+      tenant.screenAccessConfigured = body.screenAccessConfigured === true;
+      tenant.subTabAccessConfigured = body.subTabAccessConfigured === true;
+      if (!tenant.screenAccessConfigured) {
+        tenant.allowedScreens = getDefaultTenantScreens(sectorNames);
+      }
+      if (!tenant.subTabAccessConfigured) {
+        tenant.allowedSubTabs = getDefaultTenantSubTabs(sectorNames);
+      }
+    }
 
     const batch = db.batch();
     for (const name of newSectorNames) {
