@@ -34,6 +34,7 @@ import { CadastroFluxosTab } from "./components/CadastroFluxosTab";
 import { CadastroMotivosTab } from "./components/CadastroMotivosTab";
 import { RepresentativeContactsTab } from "./components/RepresentativeContactsTab";
 import { getAssignableBatchOperators } from "./utils/productionBatchAccess";
+import { tenantIdMatches } from "./tenantIsolation";
 import { CustomerAddressFields } from "./components/CustomerAddressFields";
 import {
   CustomerAddressDraft,
@@ -1074,6 +1075,13 @@ export function PCPScreen({
     () => getAssignableBatchOperators(db.users, db.activeTenantId),
     [db.users, db.activeTenantId],
   );
+  const tenantSectors = useMemo(
+    () => (db.sectors || []).filter((sector) => {
+      const scopedSector = sector as Sector & { tenantId?: string; companyId?: string };
+      return tenantIdMatches(scopedSector.tenantId || scopedSector.companyId, db.activeTenantId);
+    }),
+    [db.sectors, db.activeTenantId],
+  );
 
   const [cadastroTab, setCadastroTab] = useState<
     "CLIENTES" | "SETORES" | "FLUXOS" | "MOTIVOS_REPROVACAO" | "PLANOS_CORTE" | "COLABORADORES" | "CONFIGURACOES" | "REPRESENTANTES" | "COMPOSICAO"
@@ -1230,6 +1238,13 @@ export function PCPScreen({
   const [isGerenciaLote, setIsGerenciaLote] = useState(
     currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.id === "gerencia"
   );
+  const isManagerForBatch =
+    currentUser.role === "ADMIN" ||
+    currentUser.role === "GERENCIA" ||
+    currentUser.id === "gerencia" ||
+    isGerenciaLote;
+  const isImperioManagementBatch =
+    db.activeTenantId === "imperio" && isManagerForBatch;
   const [assignedOperatorIds, setAssignedOperatorIds] = useState<string[]>([]);
 
   const [manuallyEditedBatchName, setManuallyEditedBatchName] = useState(false);
@@ -1254,7 +1269,7 @@ export function PCPScreen({
 
   React.useEffect(() => {
     if (showNewBatchModal && !manuallyEditedBatchName) {
-       const isGer = currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.id === "gerencia" || isGerenciaLote;
+       const isGer = isImperioManagementBatch;
        const batchCount = db.productionBatches.length + 1;
        const paddedCount = String(batchCount).padStart(3, '0');
        let secName = "GERAL";
@@ -1269,7 +1284,7 @@ export function PCPScreen({
        
        setNewBatchName(`${paddedCount} - ${secName}`);
     }
-  }, [showNewBatchModal, newBatchSectorId, isGerenciaLote, currentUser, db.productionBatches.length, db.sectors, manuallyEditedBatchName]);
+  }, [showNewBatchModal, newBatchSectorId, isImperioManagementBatch, currentUser, db.activeTenantId, db.productionBatches.length, db.sectors, manuallyEditedBatchName]);
 
   React.useEffect(() => {
     if (!showNewBatchModal) {
@@ -1448,9 +1463,18 @@ export function PCPScreen({
 
   const handleCreateNewBatch = async () => {
     if (!newBatchName) return;
-    const isGer = currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.id === "gerencia" || isGerenciaLote;
-    
-    if (isGer) {
+    const isManager = isManagerForBatch;
+    const isGer = isImperioManagementBatch;
+    if (
+      !isGer &&
+      String(newBatchSectorId) !== "0" &&
+      !tenantSectors.some((sector) => String(sector.id) === String(newBatchSectorId))
+    ) {
+      alert("Selecione um setor pertencente à empresa ativa.");
+      return;
+    }
+
+    if (isManager) {
       const ordersToUpdate: any[] = [];
       for (const oid of newBatchSelectedOrderIds) {
         const order = db.orders.find((x) => x.id === oid);
@@ -1469,7 +1493,7 @@ export function PCPScreen({
     const assignableOperatorIds = new Set<string>(
       assignableBatchOperators.map((operator) => operator.id),
     );
-    const safeAssignedOperatorIds: string[] = isGer
+    const safeAssignedOperatorIds: string[] = isManager
       ? assignedOperatorIds.filter(
           (id, index, ids) => assignableOperatorIds.has(id) && ids.indexOf(id) === index,
         )
@@ -1630,6 +1654,14 @@ export function PCPScreen({
     }
 
     const isGer = currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.id === "gerencia";
+    if (
+      String(editBatchSectorId) !== "0" &&
+      String(editBatchSectorId) !== "999" &&
+      !tenantSectors.some((sector) => String(sector.id) === String(editBatchSectorId))
+    ) {
+      alert("O setor selecionado não pertence à empresa ativa.");
+      return;
+    }
     if (isGer) {
       const ordersToUpdate: any[] = [];
       for (const oid of editBatchOrderIds) {
@@ -3615,7 +3647,9 @@ export function PCPScreen({
                                 Setor Responsável
                               </span>
                               <strong className="text-slate-800 text-sm">
-                                {b.isGerenciaLote || b.sectorId === 999 ? "⚡ Corte a Laser & Produção (Gerência)" : (sector ? sector.name : "📦 Geral / Sem Setor")}
+                                {b.isGerenciaLote || b.sectorId === 999
+                                  ? `⚡ ${db.activeTenantId === "imperio" ? "Corte a Laser & Produção" : "Produção Geral"} (Gerência)`
+                                  : (sector ? sector.name : "📦 Geral / Sem Setor")}
                               </strong>
                             </div>
                             <div>
@@ -3776,7 +3810,8 @@ export function PCPScreen({
                   <label className="text-xs font-bold text-slate-600 uppercase">
                     B. Setor Inicial
                   </label>
-                  {(currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.id === "gerencia") ? (
+                  {db.activeTenantId === "imperio" &&
+                  (currentUser.role === "ADMIN" || currentUser.role === "GERENCIA" || currentUser.id === "gerencia") ? (
                     <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-xs font-semibold text-indigo-950">
                       🚀 <strong>Corte a Laser & Produção Geral</strong> (Não separado por setor - Lote Gerência)
                     </div>
@@ -3789,7 +3824,7 @@ export function PCPScreen({
                       className="w-full border border-slate-200 p-2.5 rounded-lg text-sm bg-white"
                     >
                       <option value={0}>📦 Geral / Sem Setor Específico</option>
-                      {db.sectors.map((s) => (
+                      {tenantSectors.map((s) => (
                         <option key={s.id} value={s.id}>
                           ⚙️ {s.name}
                         </option>
@@ -4680,7 +4715,7 @@ export function PCPScreen({
                           <option value={0}>
                             📦 Geral / Sem Setor Específico
                           </option>
-                          {db.sectors.map((s) => (
+                          {tenantSectors.map((s) => (
                             <option key={s.id} value={s.id}>
                               ⚙️ {s.name}
                             </option>
