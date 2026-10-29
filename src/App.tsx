@@ -2110,7 +2110,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     setEditingId(it.id);
     setCode(it.code);
     setName(it.name);
-    setUnit(it.unit || (getItemUnit(it) === "PAR" ? "PAR" : "UN"));
+    setUnit(getItemUnit(it));
     setBasePrice(it.basePrice !== undefined ? it.basePrice : "");
     setProductiveCost(it.productiveCost !== undefined ? it.productiveCost : "");
     setProductionPoints(

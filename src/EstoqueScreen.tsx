@@ -39,6 +39,7 @@ import {
   type StockCountImportPlan,
 } from "./utils/stockInventoryCsv";
 import { compareSafeLocaleText } from "./utils/safeLocaleCompare";
+import { getItemUnit } from "./utils/unitUtils";
 
 export function EstoqueScreen({
   db,
@@ -806,7 +807,7 @@ export function EstoqueScreen({
         item: itemsById.get(stock.itemId),
         code: itemsById.get(stock.itemId)?.code || "—",
         description: itemsById.get(stock.itemId)?.name || "Produto sem cadastro",
-        unit: stock.measurementUnit || itemsById.get(stock.itemId)?.unit || "un",
+        unit: getItemUnit(itemsById.get(stock.itemId)),
         reserved: Number(stock.reservedQuantity || 0),
         available: Number(stock.quantity || 0) - Number(stock.reservedQuantity || 0),
       }));
