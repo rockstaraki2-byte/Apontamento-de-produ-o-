@@ -76,7 +76,7 @@ import {
   DEMO_USER,
   isDemoModeEnabled,
 } from "./demoData";
-import { getOrderBillingSummary, isFullySeparated, mergeCargaOrderAllocations } from "./expeditionMetrics";
+import { getOrderBillingSummary, isFullySeparated, mergeCargaOrderAllocations, ORDER_ALLOCATION_ALLOWED_STATUSES } from "./expeditionMetrics";
 import type { CargaOrderAllocationRequest } from "./expeditionMetrics";
 import { canManageExpedition } from "./expeditionAccess";
 
@@ -3504,6 +3504,77 @@ export function useDatabase(currentUser?: User | null) {
         transaction.update(ref, {
           ...cleanUndefined(changed),
           ...(newAudit.length ? { auditTrail: [...(live.auditTrail || []), ...newAudit] } : {}),
+        });
+      });
+    },
+    removeOrderFromCarga: async (
+      id: string,
+      orderId: number,
+      actor: User,
+    ) => {
+      const tenantCarga = filteredCargas.find((carga) => carga.id === id);
+      if (!tenantCarga) {
+        throw new Error("A carga não está mais disponível para alteração nesta empresa.");
+      }
+      if (!Number.isInteger(orderId) || orderId <= 0) {
+        throw new Error("O item do pedido não possui um identificador válido.");
+      }
+      if (!ORDER_ALLOCATION_ALLOWED_STATUSES.has(tenantCarga.status)) {
+        throw new Error("Esta carga não está disponível para remover itens.");
+      }
+      if (!(tenantCarga.orderIds || []).some((id) => Number(id) === orderId)) {
+        throw new Error("Este item já não está vinculado à carga. Atualize a tela e tente novamente.");
+      }
+
+      const auditEntry = {
+        timestamp: Date.now(),
+        userId: actor.id,
+        userName: actor.name,
+        action: "Item " + orderId + " removido da carga",
+      };
+      const removeQuantity = (source?: Record<number, number>) => {
+        const next = { ...(source || {}) };
+        delete next[orderId];
+        return next;
+      };
+
+      if (isDemoMode) {
+        setCargas((previous) =>
+          previous.map((carga) =>
+            carga.id === id
+              ? {
+                  ...carga,
+                  orderIds: (carga.orderIds || []).filter((existingId) => Number(existingId) !== orderId),
+                  orderQuantities: removeQuantity(carga.orderQuantities),
+                  separatedQuantities: removeQuantity(carga.separatedQuantities),
+                  auditTrail: [...(carga.auditTrail || []), auditEntry],
+                }
+              : carga,
+          ),
+        );
+        return;
+      }
+
+      await runTransaction(db, async (transaction) => {
+        const ref = doc(db, "cargas", id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error("A carga foi excluída. Atualize a tela e tente novamente.");
+
+        const live = snapshot.data() as Carga;
+        if (!ORDER_ALLOCATION_ALLOWED_STATUSES.has(live.status)) {
+          throw new Error("Esta carga não está disponível para remover itens.");
+        }
+        const liveOrderIds = live.orderIds || [];
+        const remainingOrderIds = liveOrderIds.filter((existingId) => Number(existingId) !== orderId);
+        if (remainingOrderIds.length === liveOrderIds.length) {
+          throw new Error("Este item já não está vinculado à carga. Atualize a tela e tente novamente.");
+        }
+
+        transaction.update(ref, {
+          orderIds: remainingOrderIds,
+          orderQuantities: removeQuantity(live.orderQuantities),
+          separatedQuantities: removeQuantity(live.separatedQuantities),
+          auditTrail: [...(live.auditTrail || []), auditEntry],
         });
       });
     },

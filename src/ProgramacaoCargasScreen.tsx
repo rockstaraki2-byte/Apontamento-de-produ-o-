@@ -221,6 +221,7 @@ export function ProgramacaoCargasScreen({
   const [orderBillingFilter, setOrderBillingFilter] = useState<"DISPONIVEIS" | "FATURADOS" | "TODOS">("DISPONIVEIS");
   const [visiblePlanningRowCount, setVisiblePlanningRowCount] = useState(100);
   const [isSavingLoad, setIsSavingLoad] = useState(false);
+  const [removingAllocationKey, setRemovingAllocationKey] = useState<string | null>(null);
   const loadSaveInProgressRef = useRef(false);
   const [operationNotice, setOperationNotice] = useState<string | null>(null);
   const [pdfPreview, setPdfPreview] = useState<{ url: string; fileName: string; title: string } | null>(null);
@@ -865,30 +866,26 @@ export function ProgramacaoCargasScreen({
     const invoiced = invoicedForLoad(carga, orderId);
     const confirmation =
       invoiced > 0
-        ? `Este item tem ${invoiced} unidade(s) que o sistema atribui como faturada(s) nesta carga. Remover o item não estorna o faturamento no pedido. Deseja continuar?`
+        ? "Este item tem " + invoiced + " unidade(s) que o sistema atribui como faturada(s) nesta carga. Remover o item não estorna o faturamento no pedido. Deseja continuar?"
         : "Remover este item da carga?";
     if (!confirm(confirmation)) return;
-    const ids = (carga.orderIds || []).filter((id) => id !== orderId);
-    const quantities = { ...(carga.orderQuantities || {}) } as Record<number, number>;
-    const separated = { ...(carga.separatedQuantities || {}) } as Record<number, number>;
-    delete quantities[orderId];
-    delete separated[orderId];
-    const updated = {
-      ...carga,
-      orderIds: ids,
-      orderQuantities: quantities,
-      separatedQuantities: separated,
-      auditTrail: [
-        ...(carga.auditTrail || []),
-        {
-          timestamp: Date.now(),
-          userId: currentUser.id,
-          userName: currentUser.name,
-          action: `Item ${orderId} removido da carga`,
-        },
-      ],
-    };
-    await db.updateCarga(updated);
+
+    setRemovingAllocationKey(carga.id + ":" + orderId);
+    try {
+      await db.removeOrderFromCarga(carga.id, orderId, currentUser);
+      showOperationNotice("Item removido da carga.");
+    } catch (error) {
+      console.error("Não foi possível remover o item da carga:", error);
+      const code = String((error as any)?.code || "");
+      const message = (error as any)?.message;
+      if (code.includes("unavailable") || !navigator.onLine) {
+        alert("Não foi possível confirmar a remoção no servidor. Verifique a conexão e tente novamente.");
+      } else {
+        alert(message || "Não foi possível remover o item. Atualize a tela e tente novamente.");
+      }
+    } finally {
+      setRemovingAllocationKey(null);
+    }
   };
 
   const changeStatus = async (carga: Carga, status: Carga["status"]) => {
@@ -1576,7 +1573,7 @@ export function ProgramacaoCargasScreen({
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">{(() => { const m = loadMetrics(selectedCarga); return <><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.customerCount}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Clientes</span></div><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.orderCount}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Pedidos</span></div><div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><strong className="block text-xl">{m.required}</strong><span className="text-[9px] uppercase text-slate-500 font-bold">Necessário</span></div><div className="p-3 rounded-xl bg-blue-50 border border-blue-100"><strong className="block text-xl text-blue-700">{m.packed}</strong><span className="text-[9px] uppercase text-blue-600 font-bold">Embalado</span></div><div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100"><strong className="block text-xl text-emerald-700">{m.separated}</strong><span className="text-[9px] uppercase text-emerald-600 font-bold">Separado</span></div></>; })()}</div>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="p-3">Cliente</th><th className="p-3">Pedido</th><th className="p-3">Produto</th><th className="p-3 text-right">Qtd. carga</th><th className="p-3 text-right">Faturado</th><th className="p-3 text-right">Embalado</th><th className="p-3 text-right">Separado</th><th className="p-3"></th></tr></thead><tbody className="divide-y divide-slate-100">{(selectedCarga.orderIds || []).map((id) => { const o = ordersById.get(id); const item = o ? itemsById.get(o.itemId) : undefined; const qty = Number(selectedCarga.orderQuantities?.[id] || 0); const invoiced = invoicedForLoad(selectedCarga, id); return <tr key={id}><td className="p-3 text-xs font-bold">{o?.customerName || "-"}</td><td className="p-3 text-xs font-mono">#{o?.orderCode || id}</td><td className="p-3 text-xs"><div className="flex flex-col items-start gap-1"><LoadOrderItemDescription order={o} itemName={item?.name} />{invoiced > 0 && <span className={`inline-flex px-1.5 py-0.5 rounded-full border text-[9px] font-extrabold ${invoiced >= qty ? "bg-purple-50 border-purple-200 text-purple-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>{invoiced >= qty ? "Faturado" : "Faturado parcial"} · {invoiced} un</span>}</div></td><td className="p-3 text-xs font-bold text-right">{qty}</td><td className="p-3 text-xs text-purple-700 font-bold text-right">{invoiced}</td><td className="p-3 text-xs text-blue-700 font-bold text-right">{packedForLoad(selectedCarga, id)}</td><td className="p-3 text-xs text-emerald-700 font-black text-right">{Math.min(qty, Number(selectedCarga.separatedQuantities?.[id] || 0))}</td><td className="p-3 text-right">{EDITABLE_STATUSES.has(selectedCarga.status) && <button onClick={() => removeAllocation(selectedCarga, id)} className="text-[10px] font-bold text-rose-600 hover:underline">Remover</button>}</td></tr>; })}</tbody></table></div>{(selectedCarga.orderIds || []).length === 0 && <div className="p-8 text-center text-sm text-slate-500">Carga ainda sem itens vinculados.</div>}</div>
+              <div className="border border-slate-200 rounded-xl overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead className="bg-slate-50 text-[10px] uppercase text-slate-500"><tr><th className="p-3">Cliente</th><th className="p-3">Pedido</th><th className="p-3">Produto</th><th className="p-3 text-right">Qtd. carga</th><th className="p-3 text-right">Faturado</th><th className="p-3 text-right">Embalado</th><th className="p-3 text-right">Separado</th><th className="p-3"></th></tr></thead><tbody className="divide-y divide-slate-100">{(selectedCarga.orderIds || []).map((id) => { const o = ordersById.get(id); const item = o ? itemsById.get(o.itemId) : undefined; const qty = Number(selectedCarga.orderQuantities?.[id] || 0); const invoiced = invoicedForLoad(selectedCarga, id); return <tr key={id}><td className="p-3 text-xs font-bold">{o?.customerName || "-"}</td><td className="p-3 text-xs font-mono">#{o?.orderCode || id}</td><td className="p-3 text-xs"><div className="flex flex-col items-start gap-1"><LoadOrderItemDescription order={o} itemName={item?.name} />{invoiced > 0 && <span className={`inline-flex px-1.5 py-0.5 rounded-full border text-[9px] font-extrabold ${invoiced >= qty ? "bg-purple-50 border-purple-200 text-purple-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>{invoiced >= qty ? "Faturado" : "Faturado parcial"} · {invoiced} un</span>}</div></td><td className="p-3 text-xs font-bold text-right">{qty}</td><td className="p-3 text-xs text-purple-700 font-bold text-right">{invoiced}</td><td className="p-3 text-xs text-blue-700 font-bold text-right">{packedForLoad(selectedCarga, id)}</td><td className="p-3 text-xs text-emerald-700 font-black text-right">{Math.min(qty, Number(selectedCarga.separatedQuantities?.[id] || 0))}</td><td className="p-3 text-right">{EDITABLE_STATUSES.has(selectedCarga.status) && <button disabled={removingAllocationKey !== null} onClick={() => void removeAllocation(selectedCarga, id)} className="text-[10px] font-bold text-rose-600 hover:underline disabled:opacity-50 disabled:cursor-wait">{removingAllocationKey === selectedCarga.id + ":" + id ? "Removendo..." : "Remover"}</button>}</td></tr>; })}</tbody></table></div>{(selectedCarga.orderIds || []).length === 0 && <div className="p-8 text-center text-sm text-slate-500">Carga ainda sem itens vinculados.</div>}</div>
 
               {(selectedCarga.auditTrail || []).length > 0 && <div><h4 className="text-[10px] uppercase tracking-widest font-extrabold text-slate-500 mb-2">Histórico da carga</h4><div className="space-y-1">{[...(selectedCarga.auditTrail || [])].reverse().slice(0, 10).map((a, idx) => <div key={`${a.timestamp}-${idx}`} className="text-[10px] bg-slate-50 border border-slate-100 rounded-lg p-2 flex justify-between gap-2"><span><strong>{a.userName}</strong> • {a.action}{a.reason ? ` — ${a.reason}` : ""}</span><span className="text-slate-400 whitespace-nowrap">{new Date(a.timestamp).toLocaleString("pt-BR")}</span></div>)}</div></div>}
             </div>
