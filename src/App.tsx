@@ -17170,11 +17170,9 @@ export default function App() {
 
                       const fiscalTypeVal =
                         firstOrd.fiscalType || custObj?.fiscalType || "COM_NF";
-                      let fiscalTypeLabel = "Com Nota Fiscal (COM NF)";
-                      if (fiscalTypeVal === "SEM_NF")
-                        fiscalTypeLabel = "Sem Nota Fiscal (SEM NF)";
-                      if (fiscalTypeVal === "MEIA_NOTA")
-                        fiscalTypeLabel = "Meia Nota Fiscal";
+                      // Sem emissão fiscal usa Família 1; com emissão total ou parcial usa Família 0.
+                      const fiscalTypeLabel =
+                        fiscalTypeVal === "SEM_NF" ? "FAMILIA 1" : "FAMILIA 0";
 
                       const paymentStr =
                         [firstOrd.paymentCondition, firstOrd.paymentTerms]
@@ -17406,7 +17404,7 @@ export default function App() {
                                   <span className={`${isFull ? "text-xs" : "text-[10px]"} font-black text-emerald-800 block mt-0.5 truncate`}>
                                     {orderDiscountPercent && orderDiscountPercent > 0
                                       ? `🏷️ ${orderDiscountPercent}% (-${discountAmount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`
-                                      : "Sem Desconto (0%)"}
+                                      : ""}
                                   </span>
                                 </div>
 
@@ -17417,7 +17415,7 @@ export default function App() {
                                   <span className={`${isFull ? "text-xs" : "text-[10px]"} font-bold text-slate-800 block mt-0.5 truncate`}>
                                     {orderHasRET
                                       ? "🏛️ SIM (Regime Especial de Tributação)"
-                                      : "NÃO (Regime Comum)"}
+                                      : ""}
                                   </span>
                                 </div>
                               </div>
