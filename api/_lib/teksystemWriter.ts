@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { prepareOrder, type AtomicCreateInput } from "./orderImportCore.js";
 import { buildImportedOrderDocument } from "./orderImportDocuments.js";
 import {
-  deriveProductIdentity, mapPaymentMethod, matchProduct, normalizeText, normalizePaymentTerms, normalizeSystemPaymentCondition,
+  decimalToScaledInt, deriveProductIdentity, mapPaymentMethod, matchProduct, normalizeText, normalizePaymentTerms, normalizeSystemPaymentCondition,
   matchRepresentative, type CatalogSnapshot, type OrderImportInput, type OrderItemImportInput,
 } from "./orderImportRules.js";
 import { syncRecordKey, type NormalizedTekSystemSyncPayload } from "./teksystemSync.js";
@@ -19,6 +19,8 @@ export interface WriterJob {
   syncId: string;
   generatedAt: string;
   hash: string;
+  /** Incremented per job kind when previously reviewed source payloads need one reevaluation. */
+  writerRevision?: number;
   rows: WriterRow[];
   orderRows: WriterRow[];
   /** The job contains only explicit cancellation markers, not a full order snapshot. */
@@ -111,11 +113,19 @@ export function buildWriterJobs(payload: NormalizedTekSystemSyncPayload): Writer
   return WRITER_KINDS.flatMap((kind) => [...groups[kind]].map(([externalKey, rows]) => {
     const orderRows = kind === "romaneios" ? orderGroups.get(externalKey) || [] : [];
     const sortedRows = [...rows].sort((a, b) => text(value(a, "externalId")).localeCompare(text(value(b, "externalId"))));
-    const sortedOrderRows = [...orderRows].sort((a, b) => sourceLineKey(a).localeCompare(sourceLineKey(b)));
+    const orderSortKey = (row: WriterRow) => {
+      try { return sourceLineKey(row); }
+      catch (error) {
+        if (error instanceof WriterConflict && error.code === "ITEM_SEM_CHAVE") return `~sem-chave:${text(value(row, "externalId"))}`;
+        throw error;
+      }
+    };
+    const sortedOrderRows = [...orderRows].sort((a, b) => orderSortKey(a).localeCompare(orderSortKey(b)));
     if (Buffer.byteLength(JSON.stringify({ rows: sortedRows, orderRows: sortedOrderRows })) > 850_000) throw new WriterConflict("PEDIDO_MUITO_GRANDE", `Grupo ${kind}:${externalKey} excede o tamanho permitido para processamento.`);
     return {
       id: syncRecordKey(payload.tenantId, kind, externalKey), tenantId: payload.tenantId,
       kind, externalKey, syncId: payload.syncId, generatedAt: payload.generatedAt,
+      ...(kind === "romaneios" ? { writerRevision: 2 } : {}),
       hash: signature({ kind, externalKey, rows: sortedRows, orderRows: sortedOrderRows }),
       rows: sortedRows, orderRows: sortedOrderRows,
     };
@@ -520,7 +530,7 @@ function lineMatchEvidence(row: WriterRow, item: OrderItemImportInput, identity:
 }
 export function bindSourceLines(
   rows: WriterRow[], input: OrderImportInput, orders: WriterRow[], catalog: WriterCatalog,
-  missing?: WriterRow[], allowQuantityMismatch = false, allowSourceIdentityUpdate = false,
+  missing?: WriterRow[], allowQuantityMismatch = false, allowSourceIdentityUpdate = false, requireAllOrders = true,
 ): Array<{ row: WriterRow; order: WriterRow; matchBasis: string[] }> {
   const matches: Array<{ row: WriterRow; order: WriterRow; matchBasis: string[] }> = [];
   const used = new Set<string>();
@@ -599,7 +609,7 @@ export function bindSourceLines(
     if (!allowSourceIdentityUpdate && String(order.customerId || "") && String(order.customerId) !== String(input.cliente!.codigo)) throw new WriterConflict("CLIENTE_PEDIDO_DIVERGENTE", `Cliente do item ${key} diverge entre os sistemas.`);
     used.add(text(order.id)); matches.push({ row, order, matchBasis });
   });
-  if (used.size !== orders.length) throw new WriterConflict("ITENS_PEDIDO_DIVERGENTES", "O ApontaPRO contém itens adicionais para este pedido.");
+  if (requireAllOrders && used.size !== orders.length) throw new WriterConflict("ITENS_PEDIDO_DIVERGENTES", "O ApontaPRO contém itens adicionais para este pedido.");
   return matches;
 }
 export function planOrder(
@@ -832,7 +842,7 @@ export function planOrder(
 export function planCargaQuantityMutations(
   job: WriterJob, plan: WriterPlan, cargas: WriterRow[], now = new Date(),
 ): WriterMutation[] {
-  if (job.kind !== "pedidos") return [];
+  if (job.kind !== "pedidos" && job.kind !== "romaneios") return [];
   const linked = (orderId: number) => cargas.filter((carga) =>
     carga.tenantId === job.tenantId && Array.isArray(carga.orderIds) &&
     carga.orderIds.some((id: unknown) => Number(id) === orderId),
@@ -883,43 +893,125 @@ export function planCargaQuantityMutations(
 }
 export function planBilling(job: WriterJob, catalog: WriterCatalog, orders: WriterRow[], now: Date): WriterPlan {
   if (!orders.length) throw new WriterConflict("PEDIDO_NAO_ENCONTRADO", `Pedido ${job.externalKey} ainda não foi lançado.`, true);
-  const input = orderInput(job.orderRows, catalog, true);
-  const matches = bindSourceLines(job.orderRows, input, orders, catalog);
-  const totals = new Map<string, { quantity: number; rows: WriterRow[] }>();
+  const orderRowsByKey = new Map<string, WriterRow>();
+  for (const row of job.orderRows) {
+    let key: string;
+    try { key = sourceLineKey(row); }
+    catch (error) {
+      if (error instanceof WriterConflict && error.code === "ITEM_SEM_CHAVE") continue;
+      throw error;
+    }
+    if (orderRowsByKey.has(key)) throw new WriterConflict("ITEM_DUPLICADO", `A linha de origem ${key} aparece mais de uma vez no pedido.`);
+    orderRowsByKey.set(key, row);
+  }
+  const totals = new Map<string, { quantity: number; rows: WriterRow[]; sourceRow: WriterRow }>();
   const seen = new Set<string>();
   for (const row of job.rows) {
     const externalId = text(value(row, "externalId"));
     if (!externalId || seen.has(externalId)) throw new WriterConflict("ROMANEIO_DUPLICADO", "Identificador de item de romaneio ausente ou repetido.");
     seen.add(externalId);
     const key = sourceLineKey(row);
-    if (!matches.some((m) => sourceLineKey(m.row) === key)) throw new WriterConflict("ROMANEIO_SEM_ITEM", `Romaneio sem item de pedido correspondente: ${key}.`);
     const quantity = number(value(row, "quantidadeFaturada"), externalId);
-    const total = totals.get(key) || { quantity: 0, rows: [] };
+    const orderSource = orderRowsByKey.get(key);
+    const slipCode = text(value(row, "codigoItem")).toUpperCase();
+    const sourceCode = text(orderSource ? value(orderSource, "codigoItem") : "").toUpperCase();
+    const slipCustomer = text(value(row, "clienteCodigo") ?? value(row, "cliente"));
+    const sourceCustomer = text(orderSource ? value(orderSource, "cliente") : "");
+    if (orderSource && ((slipCode && sourceCode && slipCode !== sourceCode) ||
+        (slipCustomer && sourceCustomer && slipCustomer !== sourceCustomer))) {
+      throw new WriterConflict("ROMANEIO_LINHA_DIVERGENTE", `Código do item ou cliente do romaneio diverge da linha ${key} do pedido.`);
+    }
+    // Romaneios retain the stable document-detail key and ordered quantity
+    // when a cancelled line disappears from the current order snapshot.
+    const sourceRow = orderSource && text(value(orderSource, "codigoItem")) ? orderSource : {
+      ...row,
+      cliente: value(row, "cliente") ?? value(row, "clienteCodigo"),
+      quantidade: value(row, "quantidadePedido"),
+      corDescricao: value(row, "corDescricao"),
+      gradeDescricao: value(row, "gradeDescricao"),
+      variacaoDescricao: value(row, "variacaoDescricao"),
+    };
+    const total = totals.get(key) || { quantity: 0, rows: [], sourceRow };
+    const totalCustomer = text(value(total.sourceRow, "cliente") ?? value(total.sourceRow, "clienteCodigo"));
+    const rowCustomer = text(value(sourceRow, "cliente") ?? value(sourceRow, "clienteCodigo"));
+    if (sourceOrderCode(total.sourceRow) !== sourceOrderCode(sourceRow) ||
+        text(value(total.sourceRow, "codigoItem")).toUpperCase() !== text(value(sourceRow, "codigoItem")).toUpperCase() ||
+        (totalCustomer && rowCustomer && totalCustomer !== rowCustomer)) {
+      throw new WriterConflict("ROMANEIO_LINHA_DIVERGENTE", `Os romaneios trazem códigos de item ou cliente divergentes para ${key}.`);
+    }
     total.quantity = Math.round((total.quantity + quantity) * 10_000) / 10_000;
     total.rows.push(row); totals.set(key, total);
   }
   const mutations: WriterMutation[] = [];
   const billed: WriterRow[] = [];
-  for (const { row, order } of matches) {
-    const source = totals.get(sourceLineKey(row)) || { quantity: 0, rows: [] };
+  const usedOrders = new Set<string>();
+  for (const [lineKey, source] of totals) {
+    const row = source.sourceRow;
+    const item: OrderItemImportInput = {
+      codigoOriginal: text(value(row, "codigoItem")),
+      cor: text(value(row, "corDescricao")) || "-",
+      tamanho: text(value(row, "gradeDescricao")) || "-",
+      variacao: Number(value(row, "variacao") ?? 0) === 0 ? "-" : text(value(row, "variacaoDescricao")) || "-",
+      quantidade: value(row, "quantidade") ?? value(row, "quantidadePedido"),
+      precoUnitario: value(row, "precoUnitario") ?? 0,
+      descontoPercentual: 0,
+    };
+    const clientCode = text(value(row, "cliente") ?? value(row, "clienteCodigo"));
+    if (!clientCode) throw new WriterConflict("ROMANEIO_SEM_CLIENTE", `Romaneio sem cliente para ${lineKey}.`);
+    const input: OrderImportInput = { cliente: { codigo: clientCode }, itens: [item] };
+    const candidates = orders.filter((order) => !usedOrders.has(text(order.id)));
+    const match = bindSourceLines([row], input, candidates, catalog, undefined, true, false, false)[0];
+    if (!match) throw new WriterConflict("ROMANEIO_SEM_ITEM", `Romaneio sem item de pedido correspondente: ${lineKey}.`);
+    const order = match.order;
+    usedOrders.add(text(order.id));
+    const sourceQuantityCandidates = [value(source.sourceRow, "quantidade"),
+      ...source.rows.map((r) => value(r, "quantidadePedido"))]
+      .map((v) => v === undefined || v === null || v === "" ? null : number(v, lineKey))
+      .filter((v): v is number => v !== null);
+    const sourceQuantities = [...new Set(sourceQuantityCandidates.map((v) => Math.round(v * 10_000) / 10_000))];
+    if (sourceQuantities.length !== 1 || sourceQuantities[0] <= 0) {
+      throw new WriterConflict("QUANTIDADE_ORIGEM_AUSENTE", `Não foi possível confirmar uma quantidade única do pedido no Tek-System para ${lineKey}.`);
+    }
+    const sourceQuantity = sourceQuantities[0];
     const target = source.quantity;
-    const current = number(order.invoicedQuantity || (order.status === "FATURADO" ? order.totalQuantity : 0), sourceLineKey(row));
-    if (target > number(order.totalQuantity, sourceLineKey(row)) + 0.0001) throw new WriterConflict("FATURAMENTO_EXCEDE_PEDIDO", `Romaneios superam a quantidade do item ${sourceLineKey(row)}.`);
-    if (target + 0.0001 < current) throw new WriterConflict("ESTORNO_REQUER_REVISAO", `Tek-System informa ${target}, mas o ApontaPRO já registra ${current} no item ${sourceLineKey(row)}.`);
-    if (target <= current + 0.0001) continue;
-    if (order.status === "CANCELADO") throw new WriterConflict("PEDIDO_CANCELADO", "Item cancelado no ApontaPRO requer revisão antes do faturamento.");
+    const current = number(order.invoicedQuantity || (order.status === "FATURADO" ? order.totalQuantity : 0), lineKey);
+    if (target > sourceQuantity + 0.0001) throw new WriterConflict("FATURAMENTO_EXCEDE_PEDIDO", `Romaneios superam a quantidade atual do item ${lineKey} no Tek-System.`);
+    if (target + 0.0001 < current) throw new WriterConflict("ESTORNO_REQUER_REVISAO", `Tek-System informa ${target}, mas o ApontaPRO já registra ${current} no item ${lineKey}.`);
+    const isCanceled = order.status === "CANCELADO";
+    if (isCanceled && target > number(order.totalQuantity, lineKey) + 0.0001) {
+      throw new WriterConflict("FATURAMENTO_EXCEDE_PEDIDO_CANCELADO", `O romaneio excede a quantidade preservada no item cancelado ${lineKey}; requer revisão.`);
+    }
+    const quantityChanged = Math.abs(number(order.totalQuantity, lineKey) - sourceQuantity) > 0.0001;
+    let quantityPatch: WriterRow = {};
+    if (quantityChanged && !isCanceled) {
+      const sourceQuantityScaled = decimalToScaledInt(sourceQuantity, 4);
+      if (sourceQuantityScaled === null || sourceQuantityScaled <= 0n || sourceQuantityScaled > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new WriterConflict("QUANTIDADE_ORIGEM_INVALIDA", `Quantidade do Tek-System inválida para ${lineKey}.`);
+      }
+      const activity = [current, target, "packedQuantity", "producedQuantity", "paintedQuantity", "cutQuantity"]
+        .map((field) => typeof field === "string" ? number(order[field] || 0, lineKey) : field as number);
+      if (sourceQuantity + 0.0001 < Math.max(...activity)) {
+        throw new WriterConflict("QUANTIDADE_FONTE_MENOR_QUE_OPERACAO", `A quantidade atual no Tek-System ficou abaixo do que já foi faturado, embalado ou produzido em ${lineKey}; requer conferência.`);
+      }
+      quantityPatch = { totalQuantity: sourceQuantity, quantityScaled: Number(sourceQuantityScaled) };
+    }
+    if (target <= current + 0.0001) {
+      if (Object.keys(quantityPatch).length) mutations.push({ collection: "orders", docId: text(order.docId || order.id), before: order, patch: quantityPatch });
+      continue;
+    }
     const dates = source.rows.filter((r) => Number(value(r, "quantidadeFaturada")) > 0).map((r) => new Date(text(value(r, "liberadoFaturamentoEm") || value(r, "emitidoEm") || value(r, "atualizadoEm"))).getTime()).filter(Number.isFinite);
     if (!dates.length) throw new WriterConflict("DATA_FATURAMENTO_AUSENTE", "Romaneio faturado sem data válida.");
     const invoicedAt = Math.max(...dates);
-    const complete = target + 0.0001 >= Number(order.totalQuantity);
+    const complete = target + 0.0001 >= sourceQuantity;
     const invoiceLogId = Number(order.invoiceLogId) || stableNumericId(job.tenantId, "faturamento", text(order.id));
     const orderPatch = {
-      invoicedQuantity: target, status: complete ? "FATURADO" : "FATURADO_PARCIAL", isActive: !complete,
+      ...quantityPatch,
+      invoicedQuantity: target, status: isCanceled ? order.status : complete ? "FATURADO" : "FATURADO_PARCIAL", isActive: isCanceled ? false : !complete,
       invoicedAt, invoiceLogId, invoicedBy: "teksystem-writer-agent",
       billingPreviousStatus: order.billingPreviousStatus || order.status || "PENDENTE",
       billingPreviousIsActive: order.billingPreviousIsActive ?? Boolean(order.isActive),
       billingPreviousIsUrgent: order.billingPreviousIsUrgent ?? Boolean(order.isUrgent),
-      ...(complete ? { isUrgent: false } : {}),
+      ...(!isCanceled && complete ? { isUrgent: false } : {}),
       teksystemInvoicedQuantity: target, teksystemBillingSyncId: job.syncId,
       teksystemBillingSourceIds: source.rows.map((r) => text(value(r, "externalId"))),
     };
@@ -932,7 +1024,7 @@ export function planBilling(job: WriterJob, catalog: WriterCatalog, orders: Writ
     } });
     billed.push({ orderId: order.id, quantidadeAnterior: current, quantidadeFaturada: target, acrescimo: target - current, status: orderPatch.status });
   }
-  return { action: mutations.length ? "FATURADO" : "SEM_ALTERACAO", mutations, details: { codigoPedido: job.externalKey, itens: billed, timestamp: now.getTime() } };
+  return { action: billed.length ? "FATURADO" : mutations.length ? "ATUALIZADO" : "SEM_ALTERACAO", mutations, details: { codigoPedido: job.externalKey, itens: billed, timestamp: now.getTime() } };
 }
 export function planWriterJob(
   job: WriterJob, catalog: WriterCatalog, orders: WriterRow[], now = new Date(),

@@ -81,6 +81,7 @@ test("PDF é atualizado quando pagamento muda; vínculo técnico isolado não di
 });
 test("romaneio aplica total cumulativo e repetição não duplica faturamento", () => {
   const order = existing(); const billing = jobs()[1];
+  assert.equal(billing.writerRevision, 2);
   const first = planWriterJob(billing, catalog(), [order], now);
   assert.equal(first.mutations[0].patch.invoicedQuantity, 4); assert.equal(first.mutations[0].patch.status, "FATURADO_PARCIAL");
   assert.equal(first.mutations[1].docId, "faturamento_123"); assert.equal(first.mutations[1].patch.skipInventoryUpdate, true);
@@ -95,6 +96,73 @@ test("estornos e excesso exigem revisão sem alterar o pedido", () => {
   assert.throws(() => planWriterJob(jobs()[1], catalog(), [order], now), (e: any) => e.code === "ESTORNO_REQUER_REVISAO");
   const billing = jobs()[1]; billing.rows[0].quantidadefaturada = 11;
   assert.throws(() => planWriterJob(billing, catalog(), [existing()], now), (e: any) => e.code === "FATURAMENTO_EXCEDE_PEDIDO");
+});
+test("faturamento por linha não é bloqueado por outro item removido do pedido", () => {
+  const source = payload();
+  const removedLine = { ...sourceRow(), detalheid: 901, externalId: "pedido:77:901", quantidade: 10 };
+  source.entities.pedidos = [sourceRow(), removedLine];
+  source.entities.romaneios = [{ ...sourceRow(), externalId: "romaneio:10:20", quantidadefaturada: 4 }];
+  const normalized = validateAndNormalizeTekSystemSync(source).payload!;
+  const [orderJob, billingJob] = buildWriterJobs(normalized).filter((entry) => ["pedidos", "romaneios"].includes(entry.kind));
+  const created = planWriterJob(orderJob, catalog(), [], now).createOrder!;
+  const orders = [
+    buildImportedOrderDocument(created, 0, 123, "boleto", "cadastro"),
+    buildImportedOrderDocument(created, 1, 124, "boleto", "cadastro"),
+  ];
+  billingJob.orderRows = [sourceRow()];
+  const plan = planWriterJob(billingJob, catalog(), orders, now);
+  assert.equal(plan.action, "FATURADO");
+  assert.equal(plan.mutations[0].docId, "123");
+  assert.equal(plan.mutations[0].patch.invoicedQuantity, 4);
+  assert.equal(plan.mutations.some((mutation) => mutation.docId === "124"), false);
+});
+test("linha de cabeçalho sem chave não bloqueia outras linhas faturadas", () => {
+  const order = existing();
+  const billing = jobs()[1];
+  billing.orderRows = [{ codigopedido: 77, empresa: 1, cliente: 5, externalId: "pedido:77:cabecalho" }, sourceRow()];
+  const plan = planWriterJob(billing, catalog(), [order], now);
+  assert.equal(plan.action, "FATURADO");
+  assert.equal(plan.mutations[0].patch.invoicedQuantity, 4);
+});
+test("romaneio de linha removida usa chave estável e quantidade do próprio documento", () => {
+  const source: any = payload();
+  const removedLine = { ...sourceRow(), detalheid: 901, externalId: "pedido:77:901", quantidade: 10 };
+  source.entities.pedidos = [sourceRow(), removedLine];
+  source.entities.romaneios = [{ ...removedLine, cliente: undefined, clientecodigo: 5, quantidadepedido: 3,
+    externalId: "romaneio:10:21", quantidadefaturada: 2 }];
+  const normalized = validateAndNormalizeTekSystemSync(source).payload!;
+  const [orderJob, billingJob] = buildWriterJobs(normalized).filter((entry) => ["pedidos", "romaneios"].includes(entry.kind));
+  const created = planWriterJob(orderJob, catalog(), [], now).createOrder!;
+  const orders = [
+    buildImportedOrderDocument(created, 0, 123, "boleto", "cadastro"),
+    buildImportedOrderDocument(created, 1, 124, "boleto", "cadastro"),
+  ];
+  billingJob.orderRows = [sourceRow()];
+  const plan = planWriterJob(billingJob, catalog(), orders, now);
+  assert.equal(plan.action, "FATURADO");
+  assert.equal(plan.mutations[0].docId, "124");
+  assert.equal(plan.mutations[0].patch.totalQuantity, 3);
+  assert.equal(plan.mutations[0].patch.invoicedQuantity, 2);
+  assert.equal(plan.mutations[0].patch.status, "FATURADO_PARCIAL");
+});
+test("quantidade menor da origem atualiza faturamento sem ultrapassar produção registrada", () => {
+  const order = existing(); order.totalQuantity = 10; order.packedQuantity = 5;
+  const billing = jobs()[1]; billing.orderRows[0].quantidade = 8;
+  billing.rows[0].quantidadepedido = 8; billing.rows[0].quantidadefaturada = 4;
+  const plan = planWriterJob(billing, catalog(), [order], now);
+  assert.equal(plan.mutations[0].patch.totalQuantity, 8);
+  assert.equal(plan.mutations[0].patch.invoicedQuantity, 4);
+  order.packedQuantity = 9;
+  assert.throws(() => planWriterJob(billing, catalog(), [order], now), (e: any) => e.code === "QUANTIDADE_FONTE_MENOR_QUE_OPERACAO");
+});
+test("romaneio já lançado é contabilizado sem reativar um item cancelado", () => {
+  const order = existing(); order.status = "CANCELADO"; order.isActive = false;
+  const plan = planWriterJob(jobs()[1], catalog(), [order], now);
+  assert.equal(plan.action, "FATURADO");
+  assert.equal(plan.mutations[0].patch.invoicedQuantity, 4);
+  assert.equal(plan.mutations[0].patch.status, "CANCELADO");
+  assert.equal(plan.mutations[0].patch.isActive, false);
+  assert.equal(plan.mutations.some((mutation) => mutation.collection === "logs"), true);
 });
 test("id já vinculado não permite trocar produto silenciosamente", () => {
   const order = existing(); order.itemId = 200;

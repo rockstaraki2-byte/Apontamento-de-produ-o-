@@ -56,7 +56,7 @@ async function loadOrderCancellationContext(tenantId: string, orders: WriterRow[
     productionSteps: steps, logs, productionAgendas: agendas, coilCuttingPlans: coilPlans };
 }
 async function attachCargaMutations(job: WriterJob, plan: WriterPlan) {
-  if (job.kind !== "pedidos" || !plan.mutations.some((mutation) => mutation.collection === "orders" &&
+  if ((job.kind !== "pedidos" && job.kind !== "romaneios") || !plan.mutations.some((mutation) => mutation.collection === "orders" &&
       (Object.hasOwn(mutation.patch, "totalQuantity") || Object.hasOwn(mutation.patch, "deliveryDate")))) return;
   const tenantCargas = rows(await getDocs(query(collection(db, "cargas"), where("tenantId", "==", job.tenantId))));
   plan.mutations.push(...planCargaQuantityMutations(job, plan, tenantCargas));
@@ -72,7 +72,10 @@ export async function enqueueTekSystemWriter(payload: NormalizedTekSystemSyncPay
       const snapshot = await tx.get(ref);
       const current = snapshot.exists() ? snapshot.data() : undefined;
       if (current && current.tenantId !== job.tenantId) throw new WriterConflict("TENANT_INVALIDO", "Trabalho pertence a outra empresa.");
-      if (current?.hash === job.hash || (current && current.generatedAt > job.generatedAt)) return false;
+      if (current && current.generatedAt > job.generatedAt) return false;
+      const reviewNeedsNewPolicy = job.kind === "romaneios" && current?.state === "REVIEW" &&
+        Number(current.writerRevision || 1) < Number(job.writerRevision || 1);
+      if (current?.hash === job.hash && !reviewNeedsNewPolicy) return false;
       tx.set(ref, { ...job, state: "READY", queueScope: scope(job.tenantId, job.kind, "READY"),
         attempts: 0, retryAt: 0, leaseUntil: 0, leaseOwner: "", issues: [],
         receivedAt: Date.now(), result: null });
