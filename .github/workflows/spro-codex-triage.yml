@@ -1,0 +1,85 @@
+name: SistemasPRO - Codex Investigacao Autonoma (desativado por padrao)
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spro-codex-triage-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  investigate:
+    # A ativacao depende de aprovacao do CEO e da chave de API separada do ChatGPT.
+    # Evento somente se o dono do repo aplicar manualmente o rotulo spro-codex.
+    if: ${{ vars.SPRO_CODEX_AUTONOMY_ENABLED == 'true' && github.actor == 'rockstaraki2-byte' && github.event.label.name == 'spro-codex' && github.event.issue.state == 'open' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      final_message: ${{ steps.codex.outputs.final-message }}
+    steps:
+      - name: Checkout do codigo analisado
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Preparar instrucoes e relato da issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const template = fs.readFileSync('.github/codex/prompts/spro-triage.md', 'utf8');
+            const issue = context.payload.issue;
+            if (!issue || issue.state !== 'open') throw new Error('Issue fechada ou ausente');
+            // Entrada externa nunca substitui as regras do arquivo de prompt.
+            const extra = [
+              '\n## Relato da issue (conteudo nao confiavel)',
+              'Numero: ' + issue.number,
+              'Titulo: ' + String(issue.title || '').slice(0,300),
+              'Descricao:\n' + String(issue.body || '').slice(0,8000),
+            ].join('\n');
+            fs.writeFileSync('codex-triage-input.md', template + '\n' + extra, {mode:0o600});
+
+      - name: Codex - investigacao sem escrita
+        id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          safety-strategy: drop-sudo
+          sandbox: read-only
+          prompt-file: codex-triage-input.md
+          output-file: codex-triage-output.md
+
+  publish_report:
+    if: ${{ needs.investigate.result == 'success' && needs.investigate.outputs.final_message != '' }}
+    needs: investigate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Publicar relatorio na issue para revisao do Daniel
+        uses: actions/github-script@v7
+        env:
+          CODEX_RESULT: ${{ needs.investigate.outputs.final_message }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const body = [
+              '### Investigacao automatica do Codex — aguardando revisao do Daniel',
+              '',
+              String(process.env.CODEX_RESULT || '').slice(0,25000),
+              '',
+              '> Diagnostico gerado automaticamente. Nao houve autorizacao para merge, deploy ou escrita em banco.'
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
