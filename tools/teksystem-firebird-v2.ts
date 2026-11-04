@@ -36,6 +36,8 @@ const key = (v: unknown) => String(v ?? "").trim();
 const ids = (rows: Row[], field: string) => [...new Set(rows.map((r) => key(r[field])).filter(Boolean))];
 const baseCode = (code: string) => code.replace(/\..*$/, "");
 const billingTimeZone = "America/Sao_Paulo";
+// Cutover: do not backfill assistance documents that were already present when this flow was authorized.
+const assistanceImportStartAt = new Date("2026-11-04T17:42:36-03:00");
 
 export interface OrderItemStatusField {
   relationName: string;
@@ -140,6 +142,7 @@ export async function readOrderPresenceSnapshot(
         LEFT JOIN DOCUMENTO_ITEM_DETALHE det ON det.DOCUMENTO_DOCITEMDET = d.CODIGO_DOCFAT
           AND det.AUTOINCITEM_DOCITEMDET = i.AUTOINC_DOCITEM
        WHERE d.EMPRESA_DOCFAT IN (${placeholders(companies)})
+         AND d.TIPO_DOCFAT IN (1, 2)
          AND d.CODIGO_DOCFAT IN (${placeholders(codeBatch)})`, [...companies, ...codeBatch]));
   }
   const grouped = new Map<string, Row>();
@@ -191,7 +194,7 @@ export async function readCompleteEntities(
     ? buildOrderItemStatusProjection(await readOrderItemStatusFields(db))
     : { selectSql: "", joinSql: "" };
   if (entities.includes("pedidos") || entities.includes("romaneios")) {
-    const companyClause = `d.EMPRESA_DOCFAT IN (${placeholders(companies)})`;
+    const companyClause = `d.EMPRESA_DOCFAT IN (${placeholders(companies)}) AND d.TIPO_DOCFAT = 1`;
     if (businessDate && !entities.includes("pedidos")) {
       orderCodes = ids(await readOnlyRows(db, `
         SELECT DISTINCT det.DOCUMENTO_DOCITEMDET AS codigopedido
@@ -279,7 +282,7 @@ export async function readCompleteEntities(
         LEFT JOIN GRADE grade ON grade.AUTOINC_GRADE = COALESCE(det.GRADE_DOCITEMDET, i.GRADE_DOCITEM)
         LEFT JOIN ACABAMENTO acabamento ON acabamento.CODIGO_ACABAMENTO = COALESCE(det.ACABAMENTO_DOCITEMDET, i.ACABAMENTO_DOCITEM)
         ${itemStatusProjection.joinSql}
-        WHERE d.EMPRESA_DOCFAT IN (${placeholders(companies)}) AND d.CODIGO_DOCFAT IN (${placeholders(codes)})
+        WHERE d.EMPRESA_DOCFAT IN (${placeholders(companies)}) AND d.TIPO_DOCFAT = 1 AND d.CODIGO_DOCFAT IN (${placeholders(codes)})
         ORDER BY d.CODIGO_DOCFAT, i.AUTOINC_DOCITEM, det.AUTOINC_DOCITEMDET`, [...companies, ...codes]));
       paymentRows.push(...await readOnlyRows(db, `SELECT prazo.DOCUMENTO_DOCPRAZO AS codigopedido,
         prazo.FORMAPAGTO_DOCPRAZO AS formapagamento, fp.DESCRICAO_FPAG AS formapagamentodescricao,
@@ -297,12 +300,108 @@ export async function readCompleteEntities(
         WHERE c.DOCUMENTO_DOCCOM IN (${placeholders(codes)})
           AND c.PRINCIPAL_DOCCOM = 'S'`, codes));
     }
+    const assistanceDateFilter = businessDate ? " AND CAST(d.DTEMISSAO_DOCFAT AS DATE) = CAST(? AS DATE)" : "";
+    const assistanceRows = await readOnlyRows(db, `
+      SELECT d.CODIGO_DOCFAT AS codigoassistencia, d.EMPRESA_DOCFAT AS empresa,
+        d.CLIENTE_DOCFAT AS cliente, cliente.RAZAOSOCIAL_PESSOA AS clientenome,
+        cliente.NOMEFANTASIA_PESSOA AS clientenomefantasia, d.DTEMISSAO_DOCFAT AS emitidoem,
+        d.STATUS_DOCFAT AS status, d.SITUACAO_DOCFAT AS situacao,
+        sit.DESCRICAO_SITUACAO AS situacaodescricao, d.TRANSACAO_DOCFAT AS transacaovenda,
+        d.OBSERVACAO_DOCFAT AS observacoes, d.TIPO_DOCFAT AS tipodocumento, d.OPCAO_DOCFAT AS opcaodocumento,
+        p.TABELACONDICAO_DOCPED AS tabelacondicaopagamento,
+        tc.DESCRICAO_TABELA_COND AS descricaocondicaopagamento,
+        p.PESSOACONSUMIDOR_DOCPED AS codigoconsumidor,
+        p.NOMEPESSOACONSUMIDOR_DOCPED AS nomeconsumidor,
+        p.DTVENDA_DOCPED AS datavenda, p.DTPROMESSAENTREGA_DOCPED AS promessaentrega,
+        p.DTPREVISAOFATURAMENTO_DOCPED AS previsaofaturamento,
+        i.AUTOINC_DOCITEM AS itemid, det.AUTOINC_DOCITEMDET AS detalheid,
+        COALESCE(det.ITEM_DOCITEMDET, i.ITEM_DOCITEM) AS codigoitem,
+        item.DESCRICAO_ITEM AS descricaoitem,
+        COALESCE(det.COR_DOCITEMDET, i.COR_DOCITEM) AS cor,
+        COALESCE(det.VARIACAO_DOCITEMDET, i.VARIACAO_DOCITEM) AS variacao,
+        COALESCE(det.GRADE_DOCITEMDET, i.GRADE_DOCITEM) AS grade,
+        cor.DESCRICAO_COR AS cordescricao, variacao.DESCRICAO_VARIACAO AS variacaodescricao,
+        grade.GRADE_GRADE AS gradedescricao, acabamento.DESCRICAO_ACABAMENTO AS acabamentodescricao,
+        COALESCE(det.QTDEPEDIDO_DOCITEMDET, i.QTDEPEDIDO_DOCITEM) AS quantidade,
+        COALESCE(det.QTDEFATURADO_DOCITEMDET, i.QTDEFATURADO_DOCITEM) AS quantidadefaturada,
+        COALESCE(det.QTDEABERTA_DOCITEMDET, i.QTDEABERTA_DOCITEM) AS quantidadeaberta,
+        COALESCE(det.VLRUNITARIOBRUTO_DOCITEMDET, i.VLRUNITARIOBRUTO_DOCITEM) AS precounitariobruto,
+        COALESCE(det.VLRUNITARIOLIQUIDO_DOCITEMDET, i.VLRUNITARIOLIQUIDO_DOCITEM) AS precounitario,
+        COALESCE(det.VLRTOTALBRUTO_DOCITEMDET, i.VLRTOTALBRUTO_DOCITEM) AS valorbruto,
+        COALESCE(det.VLRTOTALLIQUIDO_DOCITEMDET, i.VLRTOTALLIQUIDO_DOCITEM) AS valorliquido,
+        i.FAMILIA_DOCITEM AS familiacodigo, familia.DESCRICAO_FAMILIA AS familiadescricao,
+        det.NUMITEMPED_DOCITEMDET AS numeroitempedido,
+        det.OBSERVACAO_DOCITEMDET AS observacoesitem, i.LOTEFABRICACAO_DOCITEM AS lotefabricacao,
+        i.TIPOASSISTENCIA_DOCITEM AS tipoassistencia,
+        CASE i.TIPOASSISTENCIA_DOCITEM WHEN 1 THEN 'REPARO' WHEN 2 THEN 'TROCA' WHEN 3 THEN 'REPOSICAO' ELSE 'NAO INFORMADO' END AS tipoassistenciadescricao,
+        i.MOTIVO_DOCITEM AS motivoassistencia, i.CODIGO_SAC_DOCITEM AS codigosac,
+        i.ETIQUETA_DOCITEM AS etiqueta, i.LOTEFABRICACAO_DOCITEM AS loteassistencia,
+        sac.PROTOCOLO_SAC AS sacprotocolo, sac.ASSUNTO_SAC AS sacassunto,
+        sac.MOTIVO_SAC AS sacmotivo, sac.SITUACAO_SAC AS sacsituacao,
+        sac.TEXTO_SAC AS sactexto,
+        det.QTDERECOLHIDO_DOCITEMDET AS quantidaderecolhida,
+        det.QTDEABERTAREC_DOCITEMDET AS quantidadeabertarecolhimento,
+        det.QTDEDESCONSIDERAREC_DOCITEMDET AS quantidadedesconsideradarecolhimento,
+        i.DATAHORAALTERACAO_DOCITEM AS itematualizadoem, det.DATAHORAALTERACAO_DOCITEMDET AS detalheatualizadoem,
+        d.DATAHORAINCLUSAO_DOCFAT AS cadastradoem, d.DATAHORAALTERACAO_DOCFAT AS atualizadoem
+      FROM DOCUMENTO_FATURA d
+      LEFT JOIN DOCUMENTO_PEDIDO p ON p.DOCUMENTO_DOCPED = d.CODIGO_DOCFAT
+      LEFT JOIN DOCUMENTO_ITEM i ON i.DOCUMENTO_DOCITEM = d.CODIGO_DOCFAT
+      LEFT JOIN DOCUMENTO_ITEM_DETALHE det ON det.DOCUMENTO_DOCITEMDET = d.CODIGO_DOCFAT AND det.AUTOINCITEM_DOCITEMDET = i.AUTOINC_DOCITEM
+      LEFT JOIN PESSOA cliente ON cliente.CODIGO_PESSOA = d.CLIENTE_DOCFAT
+      LEFT JOIN SITUACAO sit ON sit.CODIGO_SITUACAO = d.SITUACAO_DOCFAT
+      LEFT JOIN TABELA_CONDICAO tc ON tc.CODIGO_TABELA_COND = p.TABELACONDICAO_DOCPED
+      LEFT JOIN ITEM item ON item.CODIGO_ITEM = COALESCE(det.ITEM_DOCITEMDET, i.ITEM_DOCITEM)
+      LEFT JOIN FAMILIA familia ON familia.CODIGO_FAMILIA = i.FAMILIA_DOCITEM
+      LEFT JOIN COR cor ON cor.CODIGO_COR = COALESCE(det.COR_DOCITEMDET, i.COR_DOCITEM)
+      LEFT JOIN VARIACAO variacao ON variacao.CODIGO_VARIACAO = COALESCE(det.VARIACAO_DOCITEMDET, i.VARIACAO_DOCITEM)
+      LEFT JOIN GRADE grade ON grade.AUTOINC_GRADE = COALESCE(det.GRADE_DOCITEMDET, i.GRADE_DOCITEM)
+      LEFT JOIN ACABAMENTO acabamento ON acabamento.CODIGO_ACABAMENTO = COALESCE(det.ACABAMENTO_DOCITEMDET, i.ACABAMENTO_DOCITEM)
+      LEFT JOIN SGQ_SAC sac ON sac.CODIGO_SAC = i.CODIGO_SAC_DOCITEM
+      WHERE d.EMPRESA_DOCFAT IN (${placeholders(companies)})
+        AND d.TIPO_DOCFAT = 2 AND d.OPCAO_DOCFAT = 1
+        AND d.DATAHORAINCLUSAO_DOCFAT >= ?${assistanceDateFilter}
+      ORDER BY d.CODIGO_DOCFAT, i.AUTOINC_DOCITEM, det.AUTOINC_DOCITEMDET`,
+    [...companies, assistanceImportStartAt, ...(businessDate ? [businessDate.value] : [])]);
+    const normalizedAssistances = assistanceRows.map((row) => {
+      const sourceCode = key(row.codigoassistencia);
+      const company = Number(row.empresa);
+      const codigoPedido = `ASSISTENCIA-${company}-${sourceCode}`;
+      const tipoAssistencia = key(row.tipoassistenciadescricao);
+      const sacStatus = key(row.sacsituacao);
+      const operationalNotes = [
+        tipoAssistencia ? `Tipo de assistência: ${tipoAssistencia}` : "",
+        key(row.codigosac) ? `SAC: ${key(row.codigosac)}` : "",
+        key(row.sacprotocolo) ? `Protocolo SAC: ${key(row.sacprotocolo)}` : "",
+        key(row.sacassunto) ? `Assunto SAC (código): ${key(row.sacassunto)}` : "",
+        key(row.sacmotivo) ? `Motivo SAC (código): ${key(row.sacmotivo)}` : "",
+        sacStatus ? `Situação SAC (código): ${sacStatus}` : "",
+        key(row.sactexto) ? `Relato SAC: ${key(row.sactexto)}` : "",
+        key(row.nomeconsumidor) ? `Consumidor: ${key(row.nomeconsumidor)}` : "",
+        key(row.motivoassistencia) ? `Motivo: ${key(row.motivoassistencia)}` : "",
+        key(row.etiqueta) ? `Etiqueta: ${key(row.etiqueta)}` : "",
+        key(row.loteassistencia) ? `Lote de origem: ${key(row.loteassistencia)}` : "",
+        key(row.quantidaderecolhida) ? `Quantidade recolhida: ${key(row.quantidaderecolhida)}` : "",
+        key(row.quantidadeabertarecolhimento) ? `Recolhimento em aberto: ${key(row.quantidadeabertarecolhimento)}` : "",
+      ].filter(Boolean);
+      return {
+        ...row,
+        codigoPedido,
+        codigoDocumentoOrigem: sourceCode,
+        tituloPedido: `${sourceCode} - Assistência`,
+        tipoDocumento: "ASSISTENCIA",
+        observacoes: [key(row.observacoes), `Assistência Tek-System ${sourceCode}`].filter(Boolean).join("\n"),
+        observacoesitem: [key(row.observacoesitem), ...operationalNotes].filter(Boolean).join("\n"),
+        prazos: [], representantes: [], consultoresVendas: [],
+        externalId: `pedido:${codigoPedido}:${row.detalheid || row.itemid || "cabecalho"}`,
+      };
+    });
     result.pedidos = orderRows.map((r) => ({ ...r,
       prazos: paymentRows.filter((p) => key(p.codigopedido) === key(r.codigopedido)),
       representantes: representativeRows.filter((p) => key(p.codigopedido) === key(r.codigopedido)),
       consultoresVendas: salesConsultantRows.filter((p) => key(p.codigopedido) === key(r.codigopedido)),
       externalId: `pedido:${r.codigopedido}:${r.detalheid || r.itemid || "cabecalho"}`,
-    }));
+    })).concat(normalizedAssistances);
   }
   if (entities.includes("romaneios")) {
     for (const codes of batches(orderCodes)) result.romaneios.push(...await readOnlyRows(db, `
@@ -327,6 +426,7 @@ export async function readCompleteEntities(
       LEFT JOIN ITEM item ON item.CODIGO_ITEM = COALESCE(det.ITEM_DOCITEMDET, di.ITEM_DOCITEM)
       LEFT JOIN FAMILIA familia ON familia.CODIGO_FAMILIA = ci.FAMILIA_CARITE
       WHERE c.EMPRESA_CARGA IN (${placeholders(companies)}) AND d.EMPRESA_DOCFAT IN (${placeholders(companies)})
+        AND d.TIPO_DOCFAT = 1
         AND d.CODIGO_DOCFAT IN (${placeholders(codes)})`, [...companies, ...companies, ...codes]));
     result.romaneios = result.romaneios.map((r) => ({ ...r, externalId: `romaneio:${r.cargaid}:${r.cargaitemid}` }));
   }

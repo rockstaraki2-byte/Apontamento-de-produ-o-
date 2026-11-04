@@ -28,6 +28,7 @@ function orderSourceCode(order: Record<string, any>): string {
 }
 
 function linkedTekSystemOrder(order: Record<string, any>): boolean {
+  if (String(order.teksystemDocumentType || "").toUpperCase() === "ASSISTENCIA") return false;
   return Boolean(orderSourceCode(order)) &&
     (String(order.importOrigin || "").toUpperCase() === "TEKSYSTEM" || Boolean(order.teksystemLineId));
 }

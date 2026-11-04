@@ -7,7 +7,7 @@ export function buildImportedOrderDocument(
 ) {
   const line = input.prepared.lines[index];
   return {
-    id, tenantId: input.tenantId, orderCode: input.prepared.codigoPedido,
+    id, tenantId: input.tenantId, orderCode: input.teksystem?.displayOrderCode || input.prepared.codigoPedido,
     itemId: line.itemId, color: line.color, size: line.size, variation: line.variation,
     customerName: input.prepared.customerName, customerId: input.prepared.customerId,
     representativeName: input.prepared.representativeName || "", representativeId: input.prepared.representativeId || "",
@@ -27,6 +27,10 @@ export function buildImportedOrderDocument(
     ...(input.teksystem ? {
       teksystemLineId: input.teksystem.lineIds[index], teksystemOrderId: input.prepared.codigoPedido,
       teksystemCompanyId: input.teksystem.companyId, teksystemCustomerCode: input.teksystem.customerCode,
+      ...(input.teksystem.documentType === "ASSISTENCIA" ? {
+        teksystemDocumentType: "ASSISTENCIA",
+        teksystemSourceDocumentCode: input.teksystem.sourceDocumentCode || "",
+      } : {}),
       teksystemOrderObservations: String(input.prepared.orderNotes || "")
         .replace(/\[Pagamento Tek-System\][\s\S]*?\[\/Pagamento Tek-System\]/g, "").trim(),
     } : {}),

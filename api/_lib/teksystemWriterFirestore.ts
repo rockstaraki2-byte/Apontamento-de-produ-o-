@@ -36,7 +36,12 @@ async function loadCatalog(tenantId: string, kind?: WriterKind): Promise<WriterC
 }
 async function loadOrders(tenantId: string, code: string): Promise<WriterRow[]> {
   assertTenant(tenantId);
-  return rows(await getDocs(query(collection(db, "orders"), where("tenantId", "==", tenantId), where("orderCode", "==", code))));
+  const [byDisplayCode, byTekSystemId] = await Promise.all([
+    getDocs(query(collection(db, "orders"), where("tenantId", "==", tenantId), where("orderCode", "==", code))),
+    getDocs(query(collection(db, "orders"), where("tenantId", "==", tenantId), where("teksystemOrderId", "==", code))),
+  ]);
+  const loaded = [...rows(byDisplayCode), ...rows(byTekSystemId)];
+  return [...new Map(loaded.map((order) => [text(order.docId || order.id), order])).values()];
 }
 async function loadOrderCancellationContext(tenantId: string, orders: WriterRow[]): Promise<OrderCancellationContext> {
   assertTenant(tenantId);

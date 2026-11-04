@@ -751,12 +751,19 @@ export function planOrder(
         throw new WriterConflict("PEDIDO_FATURADO_REQUER_REVISAO", `Dados comerciais da linha ${key} mudaram após faturamento. Requer revisão.`);
       }
       const sourceObservations = text(value(sourceHead, "observacoes"));
+      const isAssistance = text(value(sourceHead, "tipoDocumento")).toUpperCase() === "ASSISTENCIA";
+      const displayOrderCode = text(value(sourceHead, "tituloPedido")) || job.externalKey;
       const notes = withPaymentNote(
         withSourceNotes(order.notes, sourceObservations, order.teksystemOrderObservations), payment.note,
       );
       const patch = {
         teksystemLineId: key, teksystemOrderId: job.externalKey,
         teksystemCompanyId: value(row, "empresa"), teksystemCustomerCode: text(value(row, "cliente")),
+        ...(isAssistance ? {
+          orderCode: displayOrderCode,
+          teksystemDocumentType: "ASSISTENCIA",
+          teksystemSourceDocumentCode: text(value(sourceHead, "codigoDocumentoOrigem")),
+        } : {}),
         customerId: input.cliente!.codigo, customerName: input.cliente!.nome,
         paymentCondition: normalizeSystemPaymentCondition(payment.method),
         paymentTerms: payment.terms.length ? `${payment.terms.join("/")} Dias` : "", paymentTermsDays: payment.terms,
@@ -835,7 +842,12 @@ export function planOrder(
       tenantId: job.tenantId, origem: "TEKSYSTEM", solicitadoPor: "teksystem-writer-agent",
       prepared: prepared.prepared, createdAt: Number.isFinite(date) ? date : now.getTime(), importedAt: now.getTime(),
       teksystem: { jobId: job.id, jobHash: job.hash, companyId: value(activeRows[0], "empresa"),
-        customerCode: text(value(activeRows[0], "cliente")), lineIds: activeRows.map(sourceLineKey) },
+        customerCode: text(value(activeRows[0], "cliente")), lineIds: activeRows.map(sourceLineKey),
+        ...(text(value(activeRows[0], "tipoDocumento")).toUpperCase() === "ASSISTENCIA" ? {
+          displayOrderCode: text(value(activeRows[0], "tituloPedido")) || job.externalKey,
+          documentType: "ASSISTENCIA" as const,
+          sourceDocumentCode: text(value(activeRows[0], "codigoDocumentoOrigem")),
+        } : {}) },
     },
   });
 }
