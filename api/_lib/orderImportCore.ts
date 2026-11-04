@@ -84,6 +84,9 @@ export interface AtomicCreateInput {
     companyId: number;
     customerCode: string;
     lineIds: string[];
+    displayOrderCode?: string;
+    documentType?: "ASSISTENCIA";
+    sourceDocumentCode?: string;
   };
 }
 

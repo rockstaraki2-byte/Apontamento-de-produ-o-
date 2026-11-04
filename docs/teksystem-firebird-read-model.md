@@ -64,6 +64,23 @@ pedido é identificado pela existência do filho `DOCUMENTO_PEDIDO`:
 O `externalId` proposto para o Apontador é `DOCUMENTO_FATURA.CODIGO_DOCFAT`;
 os itens usam a combinação do documento com `DOCUMENTO_ITEM.AUTOINC_DOCITEM`.
 
+### 3.1 Assistências
+
+Assistências também usam `DOCUMENTO_FATURA`, com `TIPO_DOCFAT = 2`, e compartilham
+as tabelas de cliente, itens e detalhes com pedidos de venda. O leitor importa
+somente documentos emitidos (`OPCAO_DOCFAT = 1`) cuja inclusão seja posterior ao
+corte fixo `2026-11-04 17:42:36 -03:00`; não há retrocarga do histórico anterior.
+O código técnico usa empresa e código de origem para não colidir com pedido de
+venda. A exibição no ApontaPRO fica como `<código> - Assistência`.
+
+`DOCUMENTO_ITEM.TIPOASSISTENCIA_DOCITEM` é preservado nas observações da linha:
+1 = reparo, 2 = troca, 3 = reposição. SAC, motivo, etiqueta, lote de origem e
+quantidade recolhida também são carregados quando estão preenchidos. A situação
+do SAC é preservada como código, sem presumir a legenda de cada valor. O fluxo
+operacional começa como `PENDENTE` no ApontaPRO e usa as etapas normais de
+produção. A reconciliação de exclusões de pedidos de venda não considera essas
+assistências como vendas.
+
 ### 4. Faturamentos
 
 - `DOCUMENTO_FATURA`: cabeçalho comercial, cliente, datas e valores.
