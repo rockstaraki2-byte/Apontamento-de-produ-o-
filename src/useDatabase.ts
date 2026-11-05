@@ -4001,7 +4001,10 @@ export function useDatabase(currentUser?: User | null) {
       if (!existing) {
         throw new Error("O registro de manutenção não pertence à empresa ativa ou não está disponível.");
       }
-      await updateDoc(doc(db, "maintenanceOrders", id), cleanUndefined(updates));
+      const safeUpdates: Partial<MaintenanceOrder> = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.tenantId;
+      await updateDoc(doc(db, "maintenanceOrders", id), cleanUndefined(safeUpdates));
     },
     addMaintenanceWorkLog: async (
       workLog: Omit<MaintenanceWorkLog, "id" | "tenantId">,
@@ -4030,7 +4033,11 @@ export function useDatabase(currentUser?: User | null) {
       if (!existing) {
         throw new Error("O apontamento não pertence à empresa ativa ou não está disponível.");
       }
-      await updateDoc(doc(db, "maintenanceWorkLogs", id), cleanUndefined(updates));
+      const safeUpdates: Partial<MaintenanceWorkLog> = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.tenantId;
+      delete safeUpdates.maintenanceOrderId;
+      await updateDoc(doc(db, "maintenanceWorkLogs", id), cleanUndefined(safeUpdates));
     },
 
     performanceQuestions: filteredPerformanceQuestions,
