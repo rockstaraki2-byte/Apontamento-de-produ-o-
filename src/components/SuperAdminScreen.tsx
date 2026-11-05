@@ -133,6 +133,7 @@ function GlobalSuperAdminScreen({ db, currentUser }: SuperAdminScreenProps) {
   const rolesList: { value: Role; label: string }[] = [
     { value: "ADMIN", label: "Administrador (Acesso Total)" },
     { value: "GERENCIA", label: "Gerência" },
+    { value: "MANUTENCAO", label: "Manutenção" },
     { value: "PCP", label: "PCP" },
     { value: "QUALIDADE", label: "Controle de Qualidade / Inspeção" },
     { value: "PRODUCAO", label: "Produção (Montagem, Solda, etc)" },
