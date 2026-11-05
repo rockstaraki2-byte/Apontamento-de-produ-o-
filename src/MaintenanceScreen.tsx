@@ -239,13 +239,33 @@ export function MaintenanceScreen({
       return;
     }
     const now = Date.now();
+    const isManualInterruption =
+      order.source === "MANUAL" &&
+      order.recordType === "INTERRUPCAO" &&
+      !order.interruptionEndedAt;
+    const interruptionStartedAt =
+      order.interruptionStartedAt || order.startedAt || order.createdAt;
     try {
       await db.updateMaintenanceOrder(order.id, {
         status,
         technicianId: currentUser.id,
         technicianName: currentUser.name,
         ...(status === "EM_ATENDIMENTO" && !order.startedAt ? { startedAt: now } : {}),
-        ...(status === "CONCLUIDA" ? { completedAt: now } : {}),
+        ...(status === "CONCLUIDA"
+          ? {
+              completedAt: now,
+              ...(isManualInterruption
+                ? {
+                    interruptionStartedAt,
+                    interruptionEndedAt: now,
+                    interruptionDurationMinutes: Math.max(
+                      0,
+                      Math.round((now - interruptionStartedAt) / 60_000),
+                    ),
+                  }
+                : {}),
+            }
+          : {}),
       });
     } catch (error) {
       console.error(error);
