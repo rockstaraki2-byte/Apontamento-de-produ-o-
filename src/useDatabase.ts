@@ -28,6 +28,8 @@ import type {
   SystemSettings,
   TornoEvent,
   MachineStop,
+  MaintenanceOrder,
+  MaintenanceWorkLog,
   PerformanceQuestion,
   PerformanceReview,
   Tenant,
@@ -148,6 +150,7 @@ const ROLE_SCOPED_LISTENER_COLLECTIONS: Record<string, readonly string[]> = {
   TORNO_CNC_WILLIAN: ["items", "orders", "activePacks", "logs", "coilCuttingPlans", "customers", "productionBatches", "notifications", "sectors"],
   TORNO_CNC_HENRIQUE: ["items", "orders", "activePacks", "logs", "coilCuttingPlans", "customers", "productionBatches", "notifications", "sectors"],
   CORTE_LASER: ["items", "activePacks", "nestTasks", "sheetStocks", "stocks", "notifications", "sectors"],
+  MANUTENCAO: ["machineStops", "maintenanceOrders", "maintenanceWorkLogs", "sectors"],
 };
 
 const USERS_LOAD_TIMEOUT_ERROR =
@@ -688,6 +691,8 @@ export function useDatabase(currentUser?: User | null) {
   // New collections for CNC Torno, Machine stops, and performance evaluations
   const [tornoEvents, setTornoEvents] = useState<TornoEvent[]>([]);
   const [machineStops, setMachineStops] = useState<MachineStop[]>([]);
+  const [maintenanceOrders, setMaintenanceOrders] = useState<MaintenanceOrder[]>([]);
+  const [maintenanceWorkLogs, setMaintenanceWorkLogs] = useState<MaintenanceWorkLog[]>([]);
   const [performanceQuestions, setPerformanceQuestions] = useState<
     PerformanceQuestion[]
   >([]);
@@ -1117,6 +1122,22 @@ export function useDatabase(currentUser?: User | null) {
       (err) => handleSnapshotError("machineStops", err),
     );
 
+    const unsubMaintenanceOrders = listenTenantCollection("maintenanceOrders",
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) }) as MaintenanceOrder);
+        setMaintenanceOrders(list);
+      },
+      (err) => handleSnapshotError("maintenanceOrders", err),
+    );
+
+    const unsubMaintenanceWorkLogs = listenTenantCollection("maintenanceWorkLogs",
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) }) as MaintenanceWorkLog);
+        setMaintenanceWorkLogs(list);
+      },
+      (err) => handleSnapshotError("maintenanceWorkLogs", err),
+    );
+
     const unsubPerformanceQuestions = listenTenantCollection("performanceQuestions",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as PerformanceQuestion);
@@ -1224,6 +1245,8 @@ export function useDatabase(currentUser?: User | null) {
       unsubPriceHistories,
       unsubTornoEvents,
       unsubMachineStops,
+      unsubMaintenanceOrders,
+      unsubMaintenanceWorkLogs,
       unsubPerformanceQuestions,
       unsubPerformanceReviews,
       unsubAttendances,
@@ -1274,6 +1297,8 @@ export function useDatabase(currentUser?: User | null) {
       unsubPriceHistories();
       unsubTornoEvents();
       unsubMachineStops();
+      unsubMaintenanceOrders();
+      unsubMaintenanceWorkLogs();
       unsubPerformanceQuestions();
       unsubPerformanceReviews();
       unsubAttendances();
@@ -2479,6 +2504,8 @@ export function useDatabase(currentUser?: User | null) {
   );
   const filteredTornoEvents = useMemo(() => tornoEvents.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [tornoEvents, matchesTenant]);
   const filteredMachineStops = useMemo(() => machineStops.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [machineStops, matchesTenant]);
+  const filteredMaintenanceOrders = useMemo(() => maintenanceOrders.filter((x) => x.tenantId === activeTenantId), [maintenanceOrders, activeTenantId]);
+  const filteredMaintenanceWorkLogs = useMemo(() => maintenanceWorkLogs.filter((x) => x.tenantId === activeTenantId), [maintenanceWorkLogs, activeTenantId]);
   const filteredPerformanceQuestions = useMemo(() => performanceQuestions.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [performanceQuestions, matchesTenant]);
   const filteredPerformanceReviews = useMemo(() => performanceReviews.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [performanceReviews, matchesTenant]);
   const filteredAttendances = useMemo(() => attendances.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [attendances, matchesTenant]);
@@ -3846,14 +3873,142 @@ export function useDatabase(currentUser?: User | null) {
 
     machineStops: filteredMachineStops,
     addMachineStop: async (stop: Omit<MachineStop, "id">) => {
-      const id = Date.now().toString();
-      await setDoc(
-        doc(db, "machineStops", id),
-        cleanUndefined({ ...stop, id }),
-      );
+      const tenantId = activeTenantId;
+      if (!tenantId || tenantId === "global") {
+        throw new Error("O registro de parada exige uma empresa ativa.");
+      }
+
+      const id = "stop_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+      if (isDemoMode) return id;
+
+      const timestamp = Number(stop.timestamp) || Date.now();
+      const stopRecord: MachineStop = { ...stop, id, tenantId };
+      const batch = writeBatch(db);
+      batch.set(doc(db, "machineStops", id), cleanUndefined(stopRecord));
+
+      if (stop.reason === "MANUTENÇÃO" || stop.reason === "QUEBRA") {
+        const orderId = "maintenance_" + id;
+        const endedAt = stop.status === "RESOLVIDO" ? stop.resolvedAt : undefined;
+        const order: MaintenanceOrder = {
+          id: orderId,
+          tenantId,
+          source: "PARADA_OPERADOR",
+          recordType: "INTERVENCAO",
+          machineName: stop.machineName,
+          sectorId: stop.sectorId,
+          sectorName: stop.sectorName,
+          category: "CORRETIVA",
+          priority: stop.reason === "QUEBRA" ? "ALTA" : "NORMAL",
+          description: stop.description || stop.otherReasonDescription || stop.reason,
+          status: stop.status === "RESOLVIDO" ? "CONCLUIDA" : "ABERTA",
+          createdAt: timestamp,
+          requesterId: stop.operatorId,
+          requesterName: stop.operatorName,
+          machineStopId: id,
+          interruptionStartedAt: timestamp,
+          interruptionEndedAt: endedAt,
+          interruptionDurationMinutes: stop.status === "RESOLVIDO" ? stop.durationMinutes : undefined,
+          completedAt: stop.status === "RESOLVIDO" ? endedAt : undefined,
+        };
+        batch.set(doc(db, "maintenanceOrders", orderId), cleanUndefined(order));
+      }
+
+      await batch.commit();
+      return id;
     },
     updateMachineStop: async (id: string, updates: Partial<MachineStop>) => {
+      const existingStop = filteredMachineStops.find(
+        (stop) => stop.id === id && stop.tenantId === activeTenantId,
+      );
+      if (!existingStop) {
+        throw new Error("A parada não pertence à empresa ativa ou não está disponível.");
+      }
+
       await updateDoc(doc(db, "machineStops", id), cleanUndefined(updates));
+
+      if (updates.status === "RESOLVIDO") {
+        const relatedOrder = filteredMaintenanceOrders.find(
+          (order) => order.machineStopId === id && order.tenantId === activeTenantId,
+        );
+        if (relatedOrder) {
+          const interruptionEndedAt = updates.resolvedAt || Date.now();
+          await updateDoc(doc(db, "maintenanceOrders", relatedOrder.id), cleanUndefined({
+            interruptionEndedAt,
+            interruptionDurationMinutes:
+              updates.durationMinutes ?? Math.max(0, Math.round((interruptionEndedAt - existingStop.timestamp) / 60000)),
+          }));
+        }
+      }
+    },
+    maintenanceOrders: filteredMaintenanceOrders,
+    maintenanceWorkLogs: filteredMaintenanceWorkLogs,
+    addMaintenanceOrder: async (
+      order: Omit<MaintenanceOrder, "id" | "tenantId">,
+      initialWorkLog?: Omit<MaintenanceWorkLog, "id" | "tenantId" | "maintenanceOrderId">,
+    ) => {
+      const tenantId = activeTenantId;
+      if (!tenantId || tenantId === "global") {
+        throw new Error("O registro de manutenção exige uma empresa ativa.");
+      }
+
+      const id = "maintenance_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+      if (isDemoMode) return id;
+
+      const scopedOrder: MaintenanceOrder = { ...order, id, tenantId };
+      const batch = writeBatch(db);
+      batch.set(doc(db, "maintenanceOrders", id), cleanUndefined(scopedOrder));
+
+      if (initialWorkLog) {
+        const logId = "maintenance_log_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+        const scopedLog: MaintenanceWorkLog = {
+          ...initialWorkLog,
+          id: logId,
+          tenantId,
+          maintenanceOrderId: id,
+        };
+        batch.set(doc(db, "maintenanceWorkLogs", logId), cleanUndefined(scopedLog));
+      }
+
+      await batch.commit();
+      return id;
+    },
+    updateMaintenanceOrder: async (id: string, updates: Partial<MaintenanceOrder>) => {
+      const existing = filteredMaintenanceOrders.find(
+        (order) => order.id === id && order.tenantId === activeTenantId,
+      );
+      if (!existing) {
+        throw new Error("O registro de manutenção não pertence à empresa ativa ou não está disponível.");
+      }
+      await updateDoc(doc(db, "maintenanceOrders", id), cleanUndefined(updates));
+    },
+    addMaintenanceWorkLog: async (
+      workLog: Omit<MaintenanceWorkLog, "id" | "tenantId">,
+    ) => {
+      const tenantId = activeTenantId;
+      if (!tenantId || tenantId === "global") {
+        throw new Error("O apontamento exige uma empresa ativa.");
+      }
+      const relatedOrder = filteredMaintenanceOrders.find(
+        (order) => order.id === workLog.maintenanceOrderId && order.tenantId === tenantId,
+      );
+      if (!relatedOrder) {
+        throw new Error("A ordem não pertence à empresa ativa.");
+      }
+
+      const id = "maintenance_log_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+      if (isDemoMode) return id;
+      const scopedLog: MaintenanceWorkLog = { ...workLog, id, tenantId };
+      await setDoc(doc(db, "maintenanceWorkLogs", id), cleanUndefined(scopedLog));
+      return id;
+    },
+    updateMaintenanceWorkLog: async (id: string, updates: Partial<MaintenanceWorkLog>) => {
+      const existing = filteredMaintenanceWorkLogs.find(
+        (log) => log.id === id && log.tenantId === activeTenantId,
+      );
+      if (!existing) {
+        throw new Error("O apontamento não pertence à empresa ativa ou não está disponível.");
+      }
+      await updateDoc(doc(db, "maintenanceWorkLogs", id), cleanUndefined(updates));
     },
 
     performanceQuestions: filteredPerformanceQuestions,
