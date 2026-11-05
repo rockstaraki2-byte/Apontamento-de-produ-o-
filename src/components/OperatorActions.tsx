@@ -188,15 +188,25 @@ export function TornoActionsWidget({
 export function MachineStopWidget({
   db,
   currentUser,
-  machineName = currentUser.name,
 }: {
   db: ReturnType<typeof useDatabase>;
   currentUser: User;
-  machineName?: string;
 }) {
+  const machineOptions = [...new Set([
+    ...(db.activeTenant?.machines || []),
+    ...(currentUser.machines || []),
+  ].map((machine) => String(machine).trim()).filter(Boolean))];
+  const machineOptionsKey = machineOptions.join("|");
+  const availableSectors = db.sectors.filter((sector) => sector.active !== false);
+  const linkedSectorIds = currentUser.sectorIds || [];
   const [isOpen, setIsOpen] = useState(false);
   const [reason, setReason] = useState<"MANUTENÇÃO" | "QUEBRA" | "OUTRO">("MANUTENÇÃO");
   const [otherReason, setOtherReason] = useState("");
+  const [description, setDescription] = useState("");
+  const [selectedMachine, setSelectedMachine] = useState(
+    machineOptions.length === 1 ? machineOptions[0] : "",
+  );
+  const [selectedSectorId, setSelectedSectorId] = useState("");
   const [manualDuration, setManualDuration] = useState<number | "">("");
   const [manualDate, setManualDate] = useState("");
   const [manualTime, setManualTime] = useState("");
@@ -207,23 +217,29 @@ export function MachineStopWidget({
   });
   const [elapsedMs, setElapsedMs] = useState(0);
 
-  const targetMachine = machineName || currentUser.role || currentUser.name;
+  useEffect(() => {
+    if (!selectedMachine && machineOptions.length === 1) setSelectedMachine(machineOptions[0]);
+  }, [machineOptionsKey, selectedMachine]);
 
-  // Identify active stop strictly for this operator and this specific machine
-  const myStops = db.machineStops
-    .filter(
-      (s) =>
-        s.operatorId === currentUser.id &&
-        (!s.machineName || s.machineName === targetMachine || s.machineName === machineName)
-    )
-    .sort((a, b) => b.timestamp - a.timestamp);
+  useEffect(() => {
+    if (!selectedSectorId && availableSectors.length > 0) {
+      const preferredSector = availableSectors.find((sector) =>
+        linkedSectorIds.some((id) => String(id) === String(sector.id)),
+      ) || availableSectors[0];
+      setSelectedSectorId(String(preferredSector.id));
+    }
+  }, [availableSectors.length, linkedSectorIds.join("|"), selectedSectorId]);
 
   const activeStop = db.machineStops.find(
-    (s) =>
-      s.operatorId === currentUser.id &&
-      (!s.machineName || s.machineName === targetMachine || s.machineName === machineName) &&
-      s.status === "ATIVO"
+    (stop) => stop.operatorId === currentUser.id && stop.status === "ATIVO",
   );
+  const myStops = db.machineStops
+    .filter((stop) => stop.operatorId === currentUser.id)
+    .sort((a, b) => b.timestamp - a.timestamp);
+
+  const sectorId = selectedSectorId || undefined;
+  const selectedSector = availableSectors.find((sector) => String(sector.id) === selectedSectorId);
+  const sectorName = selectedSector?.name;
 
   // Side Effect to read activeStop state and sync stopwatch
   useEffect(() => {
@@ -256,7 +272,12 @@ export function MachineStopWidget({
   }, [timerState]);
 
   const handleStartStop = async () => {
-    if (activeStop) return; // already active
+    if (activeStop) return;
+    const selectedMachineName = selectedMachine.trim();
+    if (!selectedMachineName) {
+      alert("Selecione ou informe a máquina/equipamento.");
+      return;
+    }
 
     let customReasonText = "";
     if (reason === "OUTRO") {
@@ -266,13 +287,20 @@ export function MachineStopWidget({
         return;
       }
     }
+    if (reason !== "OUTRO" && !description.trim()) {
+      alert("Descreva brevemente o problema ou serviço solicitado.");
+      return;
+    }
 
     try {
       await db.addMachineStop({
         operatorId: currentUser.id,
         operatorName: currentUser.name,
         role: currentUser.role,
-        machineName: machineName || currentUser.role,
+        machineName: selectedMachineName,
+        sectorId,
+        sectorName,
+        description: description.trim() || undefined,
         reason,
         otherReasonDescription: customReasonText || undefined,
         timestamp: Date.now(),
@@ -280,6 +308,7 @@ export function MachineStopWidget({
         status: "ATIVO",
       });
       setOtherReason("");
+      setDescription("");
     } catch (err) {
       console.error(err);
       alert("Erro ao iniciar parada de máquina.");
@@ -330,21 +359,36 @@ export function MachineStopWidget({
     }
 
     try {
+      const selectedMachineName = selectedMachine.trim();
+      if (!selectedMachineName) {
+        alert("Selecione ou informe a máquina/equipamento.");
+        return;
+      }
+      if (reason !== "OUTRO" && !description.trim()) {
+        alert("Descreva brevemente o problema ou serviço realizado.");
+        return;
+      }
+
+      const resolvedAt = parsedTimestamp + Number(manualDuration) * 60 * 1000;
       await db.addMachineStop({
         operatorId: currentUser.id,
         operatorName: currentUser.name,
         role: currentUser.role,
-        machineName: machineName || currentUser.role,
+        machineName: selectedMachineName,
+        sectorId,
+        sectorName,
+        description: description.trim() || undefined,
         reason,
         otherReasonDescription: customReasonText || undefined,
         timestamp: parsedTimestamp,
         durationMinutes: Number(manualDuration),
         status: "RESOLVIDO",
-        resolvedAt: parsedTimestamp + Number(manualDuration) * 60 * 1000,
+        resolvedAt,
       });
 
       setManualDuration("");
       setOtherReason("");
+      setDescription("");
       setShowManualForm(false);
       alert("Parada histórica registrada com sucesso!");
     } catch (err) {
@@ -392,7 +436,7 @@ export function MachineStopWidget({
                 <span className="text-3xl font-mono font-black text-red-700">{formatDuration(elapsedMs)}</span>
                 <span className="text-xs text-slate-500 mt-1">
                   Motivo: <strong className="text-red-800">{activeStop.reason}</strong> 
-                  {activeStop.otherReasonDescription ? ` (${activeStop.otherReasonDescription})` : ""}
+                  {activeStop.description ? ` (${activeStop.description})` : activeStop.otherReasonDescription ? ` (${activeStop.otherReasonDescription})` : ""}
                 </span>
               </div>
               <button
@@ -410,6 +454,46 @@ export function MachineStopWidget({
                   <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
                     Iniciar Nova Parada em Tempo Real
                   </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label className="space-y-1 text-[10px] font-bold text-slate-500">
+                      Máquina / equipamento *
+                      <input
+                        list="machine-stop-options"
+                        required
+                        value={selectedMachine}
+                        onChange={(e) => setSelectedMachine(e.target.value)}
+                        placeholder="Selecione ou digite a máquina"
+                        className="w-full text-xs p-2 rounded-lg border border-slate-200 bg-white font-medium text-slate-700"
+                      />
+                    </label>
+                    <label className="space-y-1 text-[10px] font-bold text-slate-500">
+                      Setor
+                      <select
+                        value={selectedSectorId}
+                        onChange={(e) => setSelectedSectorId(e.target.value)}
+                        className="w-full text-xs p-2 rounded-lg border border-slate-200 bg-white font-medium text-slate-700"
+                      >
+                        <option value="">Sem setor</option>
+                        {availableSectors.map((sector) => (
+                          <option key={sector.id} value={String(sector.id)}>{sector.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <datalist id="machine-stop-options">
+                    {machineOptions.map((machine) => <option key={machine} value={machine} />)}
+                  </datalist>
+                  <label className="block space-y-1 text-[10px] font-bold text-slate-500">
+                    Descrição do problema / serviço solicitado
+                    <textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={2}
+                      required={reason !== "OUTRO"}
+                      placeholder="Ex.: máquina parou, ruído no motor, ajuste necessário..."
+                      className="w-full text-xs p-2 rounded-lg border border-slate-200 bg-white font-medium text-slate-700"
+                    />
+                  </label>
                   <div className="grid grid-cols-3 gap-1.5">
                     {(["MANUTENÇÃO", "QUEBRA", "OUTRO"] as const).map((r) => (
                       <button
@@ -475,6 +559,46 @@ export function MachineStopWidget({
                     </button>
                   </div>
 
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label className="space-y-1 text-[10px] font-bold text-slate-500">
+                      Máquina / equipamento *
+                      <input
+                        list="machine-stop-options"
+                        required
+                        value={selectedMachine}
+                        onChange={(e) => setSelectedMachine(e.target.value)}
+                        placeholder="Selecione ou digite a máquina"
+                        className="w-full text-xs p-2 bg-white rounded-lg border border-slate-200"
+                      />
+                    </label>
+                    <label className="space-y-1 text-[10px] font-bold text-slate-500">
+                      Setor
+                      <select
+                        value={selectedSectorId}
+                        onChange={(e) => setSelectedSectorId(e.target.value)}
+                        className="w-full text-xs p-2 bg-white rounded-lg border border-slate-200"
+                      >
+                        <option value="">Sem setor</option>
+                        {availableSectors.map((sector) => (
+                          <option key={sector.id} value={String(sector.id)}>{sector.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <label className="block space-y-1 text-[10px] font-bold text-slate-500">
+                    Descrição do problema / serviço realizado
+                    <textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={2}
+                      required={reason !== "OUTRO"}
+                      placeholder="Informe o motivo da parada"
+                      className="w-full text-xs p-2 bg-white rounded-lg border border-slate-200"
+                    />
+                  </label>
+                  <datalist id="machine-stop-options">
+                    {machineOptions.map((machine) => <option key={machine} value={machine} />)}
+                  </datalist>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-500">Duração (Minutos)</label>
@@ -584,6 +708,9 @@ export function MachineStopWidget({
                         }`}>
                           {stop.status === "ATIVO" ? "🔴 EM ANDAMENTO" : stop.reason === "QUEBRA" ? "💥 QUEBRA" : stop.reason === "MANUTENÇÃO" ? "🔧 MANUTENÇÃO" : "📝 OUTRO"}
                         </span>
+                        {stop.description && (
+                          <span className="text-[10px] text-slate-500 italic max-w-[160px] truncate">{stop.description}</span>
+                        )}
                         {stop.otherReasonDescription && (
                           <span className="text-[10px] text-slate-500 italic max-w-[120px] truncate">
                             {stop.otherReasonDescription}
