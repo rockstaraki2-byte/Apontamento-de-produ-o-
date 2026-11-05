@@ -38,7 +38,8 @@ export type Role =
   | "ENCARREGADO"
   | "TORNO_CNC_WILLIAN"
   | "TORNO_CNC_HENRIQUE"
-  | "QUALIDADE";
+  | "QUALIDADE"
+  | "MANUTENCAO";
 
 export interface NestTask {
   id: number;
@@ -197,6 +198,7 @@ export const ALL_AVAILABLE_SCREENS: ScreenOption[] = [
 
   // Produção e Setores
   { key: "producao", label: "Painel da Produção", category: "Produção e Setores", path: "/producao" },
+  { key: "manutencao", label: "Manutenção", category: "Produção e Setores", path: "/manutencao" },
   { key: "qualidade", label: "Módulo de Qualidade / Inspeção", category: "Produção e Setores", path: "/qualidade" },
   { key: "relatorios-qualidade", label: "Relatórios de Qualidade & Retrabalho", category: "Geral", path: "/relatorios-qualidade" },
   { key: "cortelaser", label: "Setor Corte Laser", category: "Produção e Setores", path: "/cortelaser" },
@@ -234,6 +236,7 @@ const DEFAULT_TENANT_BASE_SCREENS = [
   "lotes",
   "itens",
   "producao",
+  "manutencao",
 ];
 
 const SCREEN_SECTOR_REQUIREMENTS: Record<string, string[]> = {
@@ -1137,16 +1140,75 @@ export interface TornoEvent {
 
 export interface MachineStop {
   id: string;
+  tenantId?: string;
   operatorId: string;
   operatorName: string;
   role: string;
   machineName: string;
+  sectorId?: number | string;
+  sectorName?: string;
+  description?: string;
   reason: "MANUTENÇÃO" | "QUEBRA" | "OUTRO";
   otherReasonDescription?: string;
   timestamp: number;
   durationMinutes: number;
   status: "ATIVO" | "RESOLVIDO";
   resolvedAt?: number;
+}
+
+export type MaintenanceOrderStatus =
+  | "ABERTA"
+  | "EM_ATENDIMENTO"
+  | "AGUARDANDO_PECA"
+  | "CONCLUIDA";
+
+export interface MaintenanceOrder {
+  id: string;
+  tenantId: string;
+  source: "PARADA_OPERADOR" | "MANUAL";
+  recordType: "INTERVENCAO" | "SERVICO" | "INTERRUPCAO";
+  machineName: string;
+  sectorId?: number | string;
+  sectorName?: string;
+  category: "CORRETIVA" | "PREVENTIVA" | "INSPECAO" | "AJUSTE" | "OUTRO";
+  priority: "BAIXA" | "NORMAL" | "ALTA" | "URGENTE";
+  description: string;
+  status: MaintenanceOrderStatus;
+  createdAt: number;
+  requesterId: string;
+  requesterName: string;
+  technicianId?: string;
+  technicianName?: string;
+  machineStopId?: string;
+  startedAt?: number;
+  completedAt?: number;
+  interruptionStartedAt?: number;
+  interruptionEndedAt?: number;
+  interruptionDurationMinutes?: number;
+}
+
+export interface MaintenancePartRequest {
+  id: string;
+  name: string;
+  quantity: number;
+  unitCost?: number;
+  status: "SOLICITADA" | "ENTREGUE" | "UTILIZADA" | "CANCELADA";
+  requestedAt: number;
+}
+
+export interface MaintenanceWorkLog {
+  id: string;
+  tenantId: string;
+  maintenanceOrderId: string;
+  technicianId: string;
+  technicianName: string;
+  description: string;
+  startedAt: number;
+  endedAt?: number;
+  durationMinutes?: number;
+  status: "EM_ANDAMENTO" | "CONCLUIDO";
+  createdAt: number;
+  partsRequested?: MaintenancePartRequest[];
 }
 
 export interface PerformanceQuestion {
