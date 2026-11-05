@@ -54,6 +54,7 @@ import {
   Settings,
   Users,
   Hammer,
+  Wrench,
   Beaker,
   Package,
   X,
@@ -143,6 +144,7 @@ const lazyNamed = (
   });
 
 const ProducaoScreen = lazyNamed(() => import("./ProducaoScreen"), "ProducaoScreen");
+const MaintenanceScreen = lazyNamed(() => import("./MaintenanceScreen"), "MaintenanceScreen");
 const PinturaScreen = lazyNamed(() => import("./PinturaScreen"), "PinturaScreen");
 const CorteLaserScreen = lazyNamed(() => import("./CorteLaserScreen"), "CorteLaserScreen");
 const RelatoriosScreen = lazyNamed(() => import("./RelatoriosScreen"), "RelatoriosScreen");
@@ -328,7 +330,9 @@ function Welcome({
 
     if (!alreadyRedirected) {
       sessionStorage.setItem(hasRedirectedKey, "true");
-      if (role === "PCP" || role === "ADMIN" || currentUser.id === "romario" || currentUser.name.toLowerCase().includes("romario") || currentUser.id === "dinei" || currentUser.name.toLowerCase().includes("dinei")) {
+      if (role === "MANUTENCAO") {
+        navigate("/manutencao");
+      } else if (role === "PCP" || role === "ADMIN" || currentUser.id === "romario" || currentUser.name.toLowerCase().includes("romario") || currentUser.id === "dinei" || currentUser.name.toLowerCase().includes("dinei")) {
         navigate("/pedidos");
       } else if (role === "GERENCIA") {
         navigate("/relatorios");
@@ -16102,6 +16106,9 @@ export default function App() {
       currentUser.name.toLowerCase().includes("marcos"));
 
   const isScreenAllowed = (screenKey: string) => {
+    if (screenKey === "manutencao") {
+      return db.activeTenantId !== "global" && ["ADMIN", "GERENCIA", "MANUTENCAO"].includes(currentUser.role);
+    }
     if (db.activeTenantId !== "imperio") {
       const allowedScreens = getTenantAllowedScreens(db.activeTenant, tenantSectorHints);
       return allowedScreens.includes(screenKey) &&
@@ -16242,7 +16249,7 @@ export default function App() {
               </button>
             )}
             <span className="hidden sm:inline">
-              {currentUser.name} ({currentUser.role})
+              {currentUser.name} ({currentUser.role === "MANUTENCAO" ? "MANUTENÇÃO" : currentUser.role})
             </span>
             <span className="sm:hidden">{currentUser.name.split(" ")[0]}</span>
             <button
@@ -16461,6 +16468,14 @@ export default function App() {
               <Route
                 path="/producao"
                 element={<ProducaoScreen db={db} currentUser={currentUser} />}
+              />
+            )}
+            {(currentUser.role === "ADMIN" ||
+              currentUser.role === "GERENCIA" ||
+              currentUser.role === "MANUTENCAO") && (
+              <Route
+                path="/manutencao"
+                element={<MaintenanceScreen db={db} currentUser={currentUser} />}
               />
             )}
             <Route
@@ -16787,6 +16802,13 @@ export default function App() {
               to="/producao"
               icon={<Activity size={24} />}
               label="Produção"
+            />
+          )}
+          {isScreenAllowed("manutencao") && (
+            <NavLink
+              to="/manutencao"
+              icon={<Wrench size={24} />}
+              label="Manutenção"
             />
           )}
 
