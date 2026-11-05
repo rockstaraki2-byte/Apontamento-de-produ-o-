@@ -1995,7 +1995,7 @@ export function ProducaoScreen({
       <ProductivityCard db={db} currentUser={currentUser} />
 
       {/* Apontamento de Paradas de Máquina */}
-      <MachineStopWidget db={db} currentUser={currentUser} machineName={currentUser.name} />
+      <MachineStopWidget db={db} currentUser={currentUser} />
 
       {/* Offline Sync Status Banner */}
       {db.syncQueueCount !== undefined && (
