@@ -3924,21 +3924,43 @@ export function useDatabase(currentUser?: User | null) {
         throw new Error("A parada não pertence à empresa ativa ou não está disponível.");
       }
 
-      await updateDoc(doc(db, "machineStops", id), cleanUndefined(updates));
+      const safeUpdates: Partial<MachineStop> = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.tenantId;
 
       if (updates.status === "RESOLVIDO") {
-        const relatedOrder = filteredMaintenanceOrders.find(
-          (order) => order.machineStopId === id && order.tenantId === activeTenantId,
-        );
-        if (relatedOrder) {
-          const interruptionEndedAt = updates.resolvedAt || Date.now();
-          await updateDoc(doc(db, "maintenanceOrders", relatedOrder.id), cleanUndefined({
-            interruptionEndedAt,
-            interruptionDurationMinutes:
-              updates.durationMinutes ?? Math.max(0, Math.round((interruptionEndedAt - existingStop.timestamp) / 60000)),
-          }));
-        }
+        const stopRef = doc(db, "machineStops", id);
+        const linkedOrderRef = doc(db, "maintenanceOrders", "maintenance_" + id);
+        const interruptionEndedAt = updates.resolvedAt || Date.now();
+        const interruptionDurationMinutes =
+          updates.durationMinutes ??
+          Math.max(0, Math.round((interruptionEndedAt - existingStop.timestamp) / 60000));
+
+        await runTransaction(db, async (transaction) => {
+          const [stopSnapshot, linkedOrderSnapshot] = await Promise.all([
+            transaction.get(stopRef),
+            transaction.get(linkedOrderRef),
+          ]);
+          if (!stopSnapshot.exists() || stopSnapshot.data().tenantId !== activeTenantId) {
+            throw new Error("A parada não pertence à empresa ativa ou não está disponível.");
+          }
+
+          transaction.update(stopRef, cleanUndefined(safeUpdates));
+          if (
+            linkedOrderSnapshot.exists() &&
+            linkedOrderSnapshot.data().tenantId === activeTenantId &&
+            linkedOrderSnapshot.data().machineStopId === id
+          ) {
+            transaction.update(linkedOrderRef, cleanUndefined({
+              interruptionEndedAt,
+              interruptionDurationMinutes,
+            }));
+          }
+        });
+        return;
       }
+
+      await updateDoc(doc(db, "machineStops", id), cleanUndefined(safeUpdates));
     },
     maintenanceOrders: filteredMaintenanceOrders,
     maintenanceWorkLogs: filteredMaintenanceWorkLogs,
