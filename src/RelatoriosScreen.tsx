@@ -44,7 +44,7 @@ export function RelatoriosScreen({
   currentUser: User;
 }) {
   const [reportType, setReportType] = useState<
-    "PRODUTIVIDADE" | "RASTREAMENTO" | "ESTOQUE" | "EPIS" | "CORTE_LASER" | "METAS" | "MEDIAS" | "PRODUCAO_DIARIA" | "PARADAS"
+    "PRODUTIVIDADE" | "RASTREAMENTO" | "ESTOQUE" | "EPIS" | "CORTE_LASER" | "METAS" | "MEDIAS" | "PRODUCAO_DIARIA" | "PARADAS" | "MANUTENCAO"
   >("PRODUTIVIDADE");
   const [selectedOrderCode, setSelectedOrderCode] = useState<string>("TODAS");
   const [visibleLogsCount, setVisibleLogsCount] = useState(30);
@@ -65,12 +65,33 @@ export function RelatoriosScreen({
   const [paradaEndDate, setParadaEndDate] = useState<string>("");
   const [paradaSearchTerm, setParadaSearchTerm] = useState<string>("");
 
+  const [maintenanceStartDate, setMaintenanceStartDate] = useState("");
+  const [maintenanceEndDate, setMaintenanceEndDate] = useState("");
+  const [maintenanceSearchTerm, setMaintenanceSearchTerm] = useState("");
+
   const formatMinutesToHours = (totalMinutes: number) => {
     const hours = Math.floor(totalMinutes / 60);
     const mins = totalMinutes % 60;
     if (hours === 0) return `${mins} min`;
     return `${hours}h ${mins.toString().padStart(2, "0")}min`;
   };
+
+  const maintenanceStatusLabel = (status: string) => ({
+    ABERTA: "Aberta",
+    EM_ATENDIMENTO: "Em atendimento",
+    AGUARDANDO_PECA: "Aguardando peça",
+    CONCLUIDA: "Concluída",
+    EM_ANDAMENTO: "Em andamento",
+    CONCLUIDO: "Concluído",
+    SOLICITADA: "Solicitada",
+    ENTREGUE: "Entregue",
+    UTILIZADA: "Utilizada",
+    CANCELADA: "Cancelada",
+  }[status] || status);
+  const formatMaintenanceDate = (value?: number) =>
+    value ? new Date(value).toLocaleString("pt-BR") : "—";
+  const formatCurrency = (value: number) =>
+    value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   const uniqueMachineNames = useMemo(() => {
     const set = new Set<string>();
@@ -187,6 +208,80 @@ export function RelatoriosScreen({
     paradaStartDate,
     paradaEndDate,
     paradaSearchTerm,
+  ]);
+
+  const maintenanceAnalytics = useMemo(() => {
+    const startMs = maintenanceStartDate
+      ? new Date(`${maintenanceStartDate}T00:00:00`).getTime()
+      : 0;
+    const endMs = maintenanceEndDate
+      ? new Date(`${maintenanceEndDate}T23:59:59.999`).getTime()
+      : Number.POSITIVE_INFINITY;
+    const search = normalizeStr(maintenanceSearchTerm.trim());
+    const withinRange = (value: number) =>
+      Number.isFinite(value) && value >= startMs && value <= endMs;
+    const orderById = new Map(db.maintenanceOrders.map((order) => [order.id, order] as const));
+    const matchesSearch = (value: string) => !search || normalizeStr(value).includes(search);
+
+    const filteredOrders = db.maintenanceOrders
+      .filter((order) => withinRange(order.createdAt))
+      .filter((order) => matchesSearch(
+        `${order.machineName} ${order.sectorName || ""} ${order.description} ${order.requesterName} ${order.technicianName || ""} ${order.category}`,
+      ))
+      .sort((a, b) => b.createdAt - a.createdAt);
+    const filteredWorkLogs = db.maintenanceWorkLogs
+      .filter((log) => withinRange(log.startedAt))
+      .filter((log) => {
+        const order = orderById.get(log.maintenanceOrderId);
+        return matchesSearch(
+          `${log.description} ${log.technicianName} ${order?.machineName || ""} ${order?.sectorName || ""} ${(log.partsRequested || []).map((part) => part.name).join(" ")}`,
+        );
+      })
+      .sort((a, b) => b.startedAt - a.startedAt);
+    const partRequests = filteredWorkLogs.flatMap((log) => (log.partsRequested || []).map((part) => ({
+      ...part,
+      log,
+      order: orderById.get(log.maintenanceOrderId),
+    })));
+    const serviceMinutes = filteredWorkLogs.reduce(
+      (total, log) => total + (
+        log.durationMinutes ??
+        (log.status === "EM_ANDAMENTO"
+          ? Math.max(0, Math.round((Date.now() - log.startedAt) / 60_000))
+          : 0)
+      ),
+      0,
+    );
+    const downtimeMinutes = filteredOrders.reduce((total, order) => {
+      if (order.interruptionDurationMinutes !== undefined) {
+        return total + order.interruptionDurationMinutes;
+      }
+      if (order.interruptionStartedAt && !order.interruptionEndedAt) {
+        return total + Math.max(0, Math.round((Date.now() - order.interruptionStartedAt) / 60_000));
+      }
+      return total;
+    }, 0);
+    return {
+      filteredOrders,
+      filteredWorkLogs,
+      partRequests,
+      orderById,
+      openCount: filteredOrders.filter((order) => order.status !== "CONCLUIDA").length,
+      waitingPartsCount: filteredOrders.filter((order) => order.status === "AGUARDANDO_PECA").length,
+      serviceMinutes,
+      downtimeMinutes,
+      totalPartsCost: partRequests.reduce((total, part) => total + (part.status === "CANCELADA" ? 0 : (part.unitCost || 0) * (part.quantity || 0)), 0),
+      pricedPartsCount: partRequests.filter((part) => part.unitCost !== undefined).length,
+      requestedPartsCount: partRequests.filter((part) => part.status === "SOLICITADA").length,
+      deliveredPartsCount: partRequests.filter((part) => part.status === "ENTREGUE").length,
+      usedPartsCount: partRequests.filter((part) => part.status === "UTILIZADA").length,
+    };
+  }, [
+    db.maintenanceOrders,
+    db.maintenanceWorkLogs,
+    maintenanceStartDate,
+    maintenanceEndDate,
+    maintenanceSearchTerm,
   ]);
 
   // Advanced sector-wise productivity logic that compares the latest collection with the prior average
@@ -778,12 +873,16 @@ export function RelatoriosScreen({
     db.activeTenantId === "imperio" ||
     (getTenantAllowedScreens(db.activeTenant, reportSectorHints).includes("cortelaser") &&
       tenantHasScreenSector("cortelaser", reportSectorHints));
+  const canViewMaintenanceReports = ["ADMIN", "GERENCIA", "LEITURA"].includes(currentUser.role);
 
   React.useEffect(() => {
-    if (!canViewLaserReports && reportType === "CORTE_LASER") {
+    if (
+      (!canViewLaserReports && reportType === "CORTE_LASER") ||
+      (!canViewMaintenanceReports && reportType === "MANUTENCAO")
+    ) {
       setReportType("PRODUTIVIDADE");
     }
-  }, [canViewLaserReports, reportType]);
+  }, [canViewLaserReports, canViewMaintenanceReports, reportType]);
 
   React.useEffect(() => {
     if (db.activeTenantId === "imperio") return;
@@ -1255,6 +1354,8 @@ export function RelatoriosScreen({
       titleStr = "Relatorio de Medias de Producao (Acompanhamento)";
     } else if (reportType === "PARADAS") {
       titleStr = "Relatorio de Apontamento de Paradas de Maquinas";
+    } else if (reportType === "MANUTENCAO") {
+      titleStr = "Relatorio de Manutencao";
     } else {
       titleStr = "Historico de Movimentacoes de Estoque";
     }
@@ -1393,6 +1494,66 @@ export function RelatoriosScreen({
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: [220, 38, 38] },
       });
+    } else if (reportType === "MANUTENCAO") {
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text(
+        `Solicitações: ${maintenanceAnalytics.filteredOrders.length} | Em aberto: ${maintenanceAnalytics.openCount} | Serviços: ${maintenanceAnalytics.filteredWorkLogs.length} | Tempo de serviço: ${formatMinutesToHours(maintenanceAnalytics.serviceMinutes)} | Máquina parada: ${formatMinutesToHours(maintenanceAnalytics.downtimeMinutes)}`,
+        14,
+        29,
+      );
+      doc.text(
+        `Peças: ${maintenanceAnalytics.partRequests.length} | Solicitadas: ${maintenanceAnalytics.requestedPartsCount} | Entregues: ${maintenanceAnalytics.deliveredPartsCount} | Utilizadas: ${maintenanceAnalytics.usedPartsCount} | Custo informado: ${formatCurrency(maintenanceAnalytics.totalPartsCost)}`,
+        14,
+        34,
+      );
+      doc.setFontSize(10);
+      doc.setTextColor(0);
+      autoTable(doc, {
+        head: [["Data", "Máquina", "Setor", "Solicitação / Categoria", "Solicitante", "Atendente", "Status"]],
+        body: maintenanceAnalytics.filteredOrders.map((order) => [
+          formatMaintenanceDate(order.createdAt),
+          order.machineName || "—",
+          order.sectorName || "—",
+          `${order.description} / ${order.category}`,
+          order.requesterName || "—",
+          order.technicianName || "—",
+          maintenanceStatusLabel(order.status),
+        ]),
+        startY: 39,
+        styles: { fontSize: 7, cellPadding: 2 },
+      });
+      let nextY = ((doc as any).lastAutoTable?.finalY || 39) + 9;
+      doc.text("Serviços apontados", 14, nextY);
+      autoTable(doc, {
+        head: [["Data", "Máquina", "Técnico", "Serviço", "Status", "Duração"]],
+        body: maintenanceAnalytics.filteredWorkLogs.map((log) => [
+          formatMaintenanceDate(log.startedAt),
+          maintenanceAnalytics.orderById.get(log.maintenanceOrderId)?.machineName || "—",
+          log.technicianName || "—",
+          log.description,
+          maintenanceStatusLabel(log.status),
+          formatMinutesToHours(log.durationMinutes || (log.status === "EM_ANDAMENTO" ? Math.max(0, Math.round((Date.now() - log.startedAt) / 60_000)) : 0)),
+        ]),
+        startY: nextY + 3,
+        styles: { fontSize: 7, cellPadding: 2 },
+      });
+      nextY = ((doc as any).lastAutoTable?.finalY || nextY + 3) + 9;
+      doc.text("Peças e solicitações", 14, nextY);
+      autoTable(doc, {
+        head: [["Data", "Máquina", "Peça", "Qtd.", "Status", "Custo unit.", "Custo total"]],
+        body: maintenanceAnalytics.partRequests.map((entry) => [
+          formatMaintenanceDate(entry.requestedAt || entry.log.startedAt),
+          entry.order?.machineName || "—",
+          entry.name,
+          String(entry.quantity),
+          maintenanceStatusLabel(entry.status),
+          entry.unitCost === undefined ? "—" : formatCurrency(entry.unitCost),
+          entry.unitCost === undefined ? "—" : formatCurrency(entry.unitCost * entry.quantity),
+        ]),
+        startY: nextY + 3,
+        styles: { fontSize: 7, cellPadding: 2 },
+      });
     } else {
       const tableData = stockMovementsFormatted.map((m) => [
         m.date,
@@ -1423,6 +1584,7 @@ export function RelatoriosScreen({
 
   const exportCSV = () => {
     let csvContent = "\uFEFF"; // Add UTF-8 BOM for Excel compatibility with accents
+    const csvCell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
 
     if (reportType === "PRODUTIVIDADE") {
       csvContent +=
@@ -1462,6 +1624,59 @@ export function RelatoriosScreen({
             ? Math.max(1, Math.round((Date.now() - s.timestamp) / 60000))
             : s.durationMinutes || 0;
         csvContent += `"${dateStr}","${s.machineName || s.role || ""}","${s.operatorName || s.operatorId || ""}","${s.reason}","${s.otherReasonDescription || ""}","${s.status}",${dur}\n`;
+      });
+    } else if (reportType === "MANUTENCAO") {
+      csvContent += "=== RESUMO DE MANUTENÇÃO ===\n";
+      csvContent += `Solicitações,${maintenanceAnalytics.filteredOrders.length}\n`;
+      csvContent += `Solicitações em aberto,${maintenanceAnalytics.openCount}\n`;
+      csvContent += `Aguardando peças,${maintenanceAnalytics.waitingPartsCount}\n`;
+      csvContent += `Serviços apontados,${maintenanceAnalytics.filteredWorkLogs.length}\n`;
+      csvContent += `Tempo de serviço (min),${maintenanceAnalytics.serviceMinutes}\n`;
+      csvContent += `Tempo de máquina parada (min),${maintenanceAnalytics.downtimeMinutes}\n`;
+      csvContent += `Peças solicitadas,${maintenanceAnalytics.requestedPartsCount}\n`;
+      csvContent += `Peças entregues,${maintenanceAnalytics.deliveredPartsCount}\n`;
+      csvContent += `Peças utilizadas,${maintenanceAnalytics.usedPartsCount}\n`;
+      csvContent += `Custo informado das peças,${maintenanceAnalytics.totalPartsCost.toFixed(2)}\n\n`;
+      csvContent += "=== SOLICITAÇÕES ===\n";
+      csvContent += "Data,Máquina,Setor,Descrição,Categoria,Solicitante,Atendente,Status\n";
+      maintenanceAnalytics.filteredOrders.forEach((order) => {
+        csvContent += [
+          formatMaintenanceDate(order.createdAt),
+          order.machineName,
+          order.sectorName || "",
+          order.description,
+          order.category,
+          order.requesterName,
+          order.technicianName || "",
+          maintenanceStatusLabel(order.status),
+        ].map(csvCell).join(",") + "\n";
+      });
+      csvContent += "\n=== SERVIÇOS ===\n";
+      csvContent += "Data,Máquina,Técnico,Descrição,Status,Duração (min)\n";
+      maintenanceAnalytics.filteredWorkLogs.forEach((log) => {
+        const duration = log.durationMinutes || (log.status === "EM_ANDAMENTO" ? Math.max(0, Math.round((Date.now() - log.startedAt) / 60_000)) : 0);
+        csvContent += [
+          formatMaintenanceDate(log.startedAt),
+          maintenanceAnalytics.orderById.get(log.maintenanceOrderId)?.machineName || "",
+          log.technicianName,
+          log.description,
+          maintenanceStatusLabel(log.status),
+          duration,
+        ].map(csvCell).join(",") + "\n";
+      });
+      csvContent += "\n=== PEÇAS E SOLICITAÇÕES ===\n";
+      csvContent += "Data,Máquina,Peça,Quantidade,Status,Custo Unitário,Custo Total,Técnico\n";
+      maintenanceAnalytics.partRequests.forEach((entry) => {
+        csvContent += [
+          formatMaintenanceDate(entry.requestedAt || entry.log.startedAt),
+          entry.order?.machineName || "",
+          entry.name,
+          entry.quantity,
+          maintenanceStatusLabel(entry.status),
+          entry.unitCost ?? "",
+          entry.unitCost === undefined ? "" : (entry.unitCost * entry.quantity).toFixed(2),
+          entry.log.technicianName,
+        ].map(csvCell).join(",") + "\n";
       });
     } else {
       csvContent +=
@@ -1545,6 +1760,14 @@ export function RelatoriosScreen({
             >
               🛑 Apontamento de Paradas
             </button>
+            {canViewMaintenanceReports && (
+              <button
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition cursor-pointer ${reportType === "MANUTENCAO" ? "bg-blue-600 text-white shadow-xs" : "bg-transparent text-gray-600 hover:bg-gray-100"}`}
+                onClick={() => setReportType("MANUTENCAO")}
+              >
+                <Wrench size={13} className="inline mr-1" /> Manutenção
+              </button>
+            )}
           </div>
         </div>
 
@@ -3249,6 +3472,221 @@ export function RelatoriosScreen({
             </div>
           </div>
         )}
+
+        {reportType === "MANUTENCAO" && canViewMaintenanceReports && (
+          <div className="flex flex-1 flex-col gap-5 animate-in fade-in duration-200">
+            <div className="rounded-xl border-l-4 border-blue-600 bg-blue-50 p-4 text-xs text-blue-900 shadow-xs">
+              <h3 className="flex items-center gap-2 text-sm font-bold text-blue-900">
+                <Wrench size={16} className="text-blue-700" />
+                Manutenções, solicitações e peças
+              </h3>
+              <p className="mt-1 text-blue-800">
+                Acompanhamento dos chamados, serviços executados, tempo de máquina parada e peças solicitadas nesta empresa.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+              <div className="rounded-xl border border-amber-200 bg-white p-3 shadow-xs">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Solicitações</p>
+                <p className="mt-1 text-xl font-black text-slate-900">{maintenanceAnalytics.filteredOrders.length}</p>
+              </div>
+              <div className="rounded-xl border border-rose-200 bg-white p-3 shadow-xs">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Em aberto</p>
+                <p className="mt-1 text-xl font-black text-rose-700">{maintenanceAnalytics.openCount}</p>
+              </div>
+              <div className="rounded-xl border border-blue-200 bg-white p-3 shadow-xs">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Tempo de serviço</p>
+                <p className="mt-1 text-xl font-black text-blue-700">{formatMinutesToHours(maintenanceAnalytics.serviceMinutes)}</p>
+              </div>
+              <div className="rounded-xl border border-purple-200 bg-white p-3 shadow-xs">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Máquina parada</p>
+                <p className="mt-1 text-xl font-black text-purple-700">{formatMinutesToHours(maintenanceAnalytics.downtimeMinutes)}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-200 bg-white p-3 shadow-xs">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Peças / custo informado</p>
+                <p className="mt-1 text-xl font-black text-emerald-700">{maintenanceAnalytics.partRequests.length}</p>
+                <p className="text-[10px] text-slate-500">{formatCurrency(maintenanceAnalytics.totalPartsCost)}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs md:grid-cols-4">
+              <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600 md:col-span-2">
+                Buscar
+                <div className="relative">
+                  <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+                  <input
+                    type="search"
+                    value={maintenanceSearchTerm}
+                    onChange={(event) => setMaintenanceSearchTerm(event.target.value)}
+                    placeholder="Máquina, setor, solicitante, técnico, serviço ou peça"
+                    className="w-full rounded-lg border border-slate-300 py-2 pl-8 pr-3 text-xs font-normal text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                Data inicial
+                <input
+                  type="date"
+                  value={maintenanceStartDate}
+                  onChange={(event) => setMaintenanceStartDate(event.target.value)}
+                  className="rounded-lg border border-slate-300 px-2 py-2 text-xs font-normal text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                Data final
+                <input
+                  type="date"
+                  value={maintenanceEndDate}
+                  onChange={(event) => setMaintenanceEndDate(event.target.value)}
+                  className="rounded-lg border border-slate-300 px-2 py-2 text-xs font-normal text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </label>
+              {(maintenanceSearchTerm || maintenanceStartDate || maintenanceEndDate) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMaintenanceSearchTerm("");
+                    setMaintenanceStartDate("");
+                    setMaintenanceEndDate("");
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 hover:text-blue-900 md:col-span-4 md:justify-self-end"
+                >
+                  <RotateCcw size={13} /> Limpar filtros
+                </button>
+              )}
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+              <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                <h3 className="text-xs font-extrabold uppercase tracking-wide text-slate-700">
+                  Solicitações de manutenção ({maintenanceAnalytics.filteredOrders.length})
+                </h3>
+              </div>
+              <div className="overflow-x-auto">
+                {maintenanceAnalytics.filteredOrders.length === 0 ? (
+                  <p className="p-6 text-center text-xs text-slate-500">Nenhuma solicitação encontrada para os filtros selecionados.</p>
+                ) : (
+                  <table className="w-full min-w-[850px] text-left text-xs text-slate-600">
+                    <thead className="bg-slate-100 text-[10px] uppercase text-slate-600">
+                      <tr>
+                        <th className="px-3 py-2.5">Abertura</th>
+                        <th className="px-3 py-2.5">Máquina</th>
+                        <th className="px-3 py-2.5">Setor</th>
+                        <th className="px-3 py-2.5">Solicitação</th>
+                        <th className="px-3 py-2.5">Solicitante</th>
+                        <th className="px-3 py-2.5">Atendente</th>
+                        <th className="px-3 py-2.5">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {maintenanceAnalytics.filteredOrders.map((order) => (
+                        <tr key={order.id} className="hover:bg-slate-50">
+                          <td className="whitespace-nowrap px-3 py-2.5">{formatMaintenanceDate(order.createdAt)}</td>
+                          <td className="px-3 py-2.5 font-bold text-slate-800">{order.machineName || "—"}</td>
+                          <td className="px-3 py-2.5">{order.sectorName || "—"}</td>
+                          <td className="max-w-xs px-3 py-2.5">
+                            <span className="block font-semibold text-slate-800">{order.description}</span>
+                            <span className="text-[10px] text-slate-500">{order.category} · {order.source === "PARADA_OPERADOR" ? "Operador" : "Manual"}</span>
+                          </td>
+                          <td className="px-3 py-2.5">{order.requesterName || "—"}</td>
+                          <td className="px-3 py-2.5">{order.technicianName || "—"}</td>
+                          <td className="whitespace-nowrap px-3 py-2.5">
+                            <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-700">{maintenanceStatusLabel(order.status)}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+              <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                <h3 className="text-xs font-extrabold uppercase tracking-wide text-slate-700">
+                  Serviços apontados ({maintenanceAnalytics.filteredWorkLogs.length})
+                </h3>
+              </div>
+              <div className="overflow-x-auto">
+                {maintenanceAnalytics.filteredWorkLogs.length === 0 ? (
+                  <p className="p-6 text-center text-xs text-slate-500">Nenhum serviço encontrado para os filtros selecionados.</p>
+                ) : (
+                  <table className="w-full min-w-[720px] text-left text-xs text-slate-600">
+                    <thead className="bg-slate-100 text-[10px] uppercase text-slate-600">
+                      <tr>
+                        <th className="px-3 py-2.5">Início</th>
+                        <th className="px-3 py-2.5">Máquina</th>
+                        <th className="px-3 py-2.5">Técnico</th>
+                        <th className="px-3 py-2.5">Serviço realizado</th>
+                        <th className="px-3 py-2.5">Status</th>
+                        <th className="px-3 py-2.5 text-right">Duração</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {maintenanceAnalytics.filteredWorkLogs.map((log) => {
+                        const duration = log.durationMinutes || (log.status === "EM_ANDAMENTO" ? Math.max(0, Math.round((Date.now() - log.startedAt) / 60_000)) : 0);
+                        return (
+                          <tr key={log.id} className="hover:bg-slate-50">
+                            <td className="whitespace-nowrap px-3 py-2.5">{formatMaintenanceDate(log.startedAt)}</td>
+                            <td className="px-3 py-2.5 font-bold text-slate-800">{maintenanceAnalytics.orderById.get(log.maintenanceOrderId)?.machineName || "—"}</td>
+                            <td className="px-3 py-2.5">{log.technicianName || "—"}</td>
+                            <td className="px-3 py-2.5">{log.description}</td>
+                            <td className="px-3 py-2.5">{maintenanceStatusLabel(log.status)}</td>
+                            <td className="px-3 py-2.5 text-right font-bold">{formatMinutesToHours(duration)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+              <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                <h3 className="text-xs font-extrabold uppercase tracking-wide text-slate-700">
+                  Peças e solicitações ({maintenanceAnalytics.partRequests.length})
+                </h3>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  Custos são estimados somente quando o custo unitário foi informado no apontamento.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                {maintenanceAnalytics.partRequests.length === 0 ? (
+                  <p className="p-6 text-center text-xs text-slate-500">Nenhuma peça foi solicitada nos registros filtrados.</p>
+                ) : (
+                  <table className="w-full min-w-[700px] text-left text-xs text-slate-600">
+                    <thead className="bg-slate-100 text-[10px] uppercase text-slate-600">
+                      <tr>
+                        <th className="px-3 py-2.5">Solicitada em</th>
+                        <th className="px-3 py-2.5">Máquina</th>
+                        <th className="px-3 py-2.5">Peça / material</th>
+                        <th className="px-3 py-2.5 text-right">Quantidade</th>
+                        <th className="px-3 py-2.5">Status</th>
+                        <th className="px-3 py-2.5 text-right">Custo informado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {maintenanceAnalytics.partRequests.map((entry) => (
+                        <tr key={`${entry.log.id}-${entry.id}`} className="hover:bg-slate-50">
+                          <td className="whitespace-nowrap px-3 py-2.5">{formatMaintenanceDate(entry.requestedAt || entry.log.startedAt)}</td>
+                          <td className="px-3 py-2.5 font-bold text-slate-800">{entry.order?.machineName || "—"}</td>
+                          <td className="px-3 py-2.5">{entry.name}</td>
+                          <td className="px-3 py-2.5 text-right">{entry.quantity}</td>
+                          <td className="px-3 py-2.5">{maintenanceStatusLabel(entry.status)}</td>
+                          <td className="px-3 py-2.5 text-right">
+                            {entry.unitCost === undefined ? "—" : formatCurrency(entry.unitCost * entry.quantity)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
       </ScrollContainer>
 
       {isConfigModalOpen && (

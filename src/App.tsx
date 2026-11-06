@@ -16107,7 +16107,7 @@ export default function App() {
 
   const isScreenAllowed = (screenKey: string) => {
     if (screenKey === "manutencao") {
-      return db.activeTenantId !== "global" && ["ADMIN", "GERENCIA", "MANUTENCAO"].includes(currentUser.role);
+      return db.activeTenantId !== "global" && ["ADMIN", "GERENCIA", "LEITURA", "MANUTENCAO"].includes(currentUser.role);
     }
     if (db.activeTenantId !== "imperio") {
       const allowedScreens = getTenantAllowedScreens(db.activeTenant, tenantSectorHints);
@@ -16472,6 +16472,7 @@ export default function App() {
             )}
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "GERENCIA" ||
+              currentUser.role === "LEITURA" ||
               currentUser.role === "MANUTENCAO") && (
               <Route
                 path="/manutencao"
@@ -16990,7 +16991,7 @@ export default function App() {
             <NavLink
               to="/historico"
               icon={<History size={24} />}
-              label="Histórico"
+              label="Hist. Produção"
             />
           )}
         </nav>
