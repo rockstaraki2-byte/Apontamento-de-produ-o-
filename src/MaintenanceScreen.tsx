@@ -198,6 +198,7 @@ export function MaintenanceScreen({
   currentUser: User;
 }) {
   const [tab, setTab] = useState<MaintenanceTab>("FILA");
+  const canManageMaintenance = currentUser.role === "MANUTENCAO";
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -225,8 +226,15 @@ export function MaintenanceScreen({
     [db.maintenanceOrders],
   );
   const openOrders = orders.filter((order) => order.status !== "CONCLUIDA");
-  const historyOrders = orders.filter((order) => order.status === "CONCLUIDA");
   const workLogs = db.maintenanceWorkLogs;
+  const completedOrderIds = new Set(
+    workLogs
+      .filter((log) => log.status === "CONCLUIDO")
+      .map((log) => log.maintenanceOrderId),
+  );
+  const historyOrders = orders.filter(
+    (order) => order.status === "CONCLUIDA" || completedOrderIds.has(order.id),
+  );
 
   useEffect(() => {
     if (!manualMachine && machines.length > 0) setManualMachine(machines[0]);
@@ -522,7 +530,7 @@ export function MaintenanceScreen({
                           {log.status === "EM_ANDAMENTO" ? "Em andamento" : formatMinutes(log.durationMinutes)}
                         </p>
                       </div>
-                      {log.status === "EM_ANDAMENTO" && (
+                      {canManageMaintenance && log.status === "EM_ANDAMENTO" && (
                         <button
                           type="button"
                           onClick={() => void finishWorkLog(log)}
@@ -540,16 +548,22 @@ export function MaintenanceScreen({
                               {part.name} · {part.quantity}
                               {part.unitCost !== undefined ? " · R$ " + part.unitCost.toFixed(2) + "/un." : ""}
                             </span>
-                            <select
-                              value={part.status}
-                              onChange={(event) => void updatePartStatus(log, part.id, event.target.value as MaintenancePartRequest["status"])}
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600"
-                            >
-                              <option value="SOLICITADA">{partStatusLabel("SOLICITADA")}</option>
-                              <option value="ENTREGUE">{partStatusLabel("ENTREGUE")}</option>
-                              <option value="UTILIZADA">{partStatusLabel("UTILIZADA")}</option>
-                              <option value="CANCELADA">{partStatusLabel("CANCELADA")}</option>
-                            </select>
+                            {canManageMaintenance ? (
+                              <select
+                                value={part.status}
+                                onChange={(event) => void updatePartStatus(log, part.id, event.target.value as MaintenancePartRequest["status"])}
+                                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600"
+                              >
+                                <option value="SOLICITADA">{partStatusLabel("SOLICITADA")}</option>
+                                <option value="ENTREGUE">{partStatusLabel("ENTREGUE")}</option>
+                                <option value="UTILIZADA">{partStatusLabel("UTILIZADA")}</option>
+                                <option value="CANCELADA">{partStatusLabel("CANCELADA")}</option>
+                              </select>
+                            ) : (
+                              <span className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">
+                                {partStatusLabel(part.status)}
+                              </span>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -559,7 +573,7 @@ export function MaintenanceScreen({
               </div>
             )}
 
-            {order.status !== "CONCLUIDA" && (
+            {canManageMaintenance && order.status !== "CONCLUIDA" && (
               <div className="flex flex-wrap gap-2">
                 {order.status === "ABERTA" && (
                   <button
@@ -844,31 +858,33 @@ export function MaintenanceScreen({
             <div className="rounded-xl bg-blue-50 p-2 text-blue-800"><Wrench size={22} /></div>
             <div>
               <h1 className="text-xl font-extrabold text-slate-900">Manutenção</h1>
-              <p className="text-xs text-slate-500">Solicitações, serviços e histórico por máquina</p>
+              <p className="text-xs text-slate-500">{canManageMaintenance ? "Solicitações, serviços e histórico por máquina" : "Visão de consulta das solicitações, serviços e histórico"}</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => openMaintenanceEntry()}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-extrabold text-white shadow-sm hover:bg-blue-800 sm:w-auto"
-          >
-            <Plus size={17} /> Iniciar manutenção
-          </button>
+          {canManageMaintenance && (
+            <button
+              type="button"
+              onClick={() => openMaintenanceEntry()}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-extrabold text-white shadow-sm hover:bg-blue-800 sm:w-auto"
+            >
+              <Plus size={17} /> Iniciar manutenção
+            </button>
+          )}
         </div>
       </header>
 
-      <div className="grid shrink-0 grid-cols-1 gap-3 px-4 py-4 sm:grid-cols-3 sm:px-6">
-        <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-500"><AlertTriangle size={15} className="text-amber-600" /> Solicitações abertas</div>
-          <p className="mt-2 text-2xl font-black text-slate-900">{openOrders.length}</p>
+      <div className="grid shrink-0 grid-cols-3 gap-2 px-3 py-3 sm:gap-3 sm:px-6">
+        <div title="Solicitações de manutenção ainda não concluídas" className="min-w-0 rounded-xl border border-amber-100 bg-white p-2.5 shadow-sm sm:rounded-2xl sm:p-4">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 sm:gap-2 sm:text-xs"><AlertTriangle size={14} className="shrink-0 text-amber-600" /> <span className="truncate sm:hidden">Abertas</span><span className="hidden truncate sm:inline">Solicitações abertas</span></div>
+          <p className="mt-1 text-lg font-black leading-tight text-slate-900 sm:mt-2 sm:text-2xl">{openOrders.length}</p>
         </div>
-        <div className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-500"><Clock3 size={15} className="text-blue-700" /> Tempo de serviço apontado</div>
-          <p className="mt-2 text-2xl font-black text-slate-900">{formatMinutes(laborMinutes)}</p>
+        <div title="Tempo total de serviço apontado pelos manutentores" className="min-w-0 rounded-xl border border-blue-100 bg-white p-2.5 shadow-sm sm:rounded-2xl sm:p-4">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 sm:gap-2 sm:text-xs"><Clock3 size={14} className="shrink-0 text-blue-700" /> <span className="truncate sm:hidden">Serviço</span><span className="hidden truncate sm:inline">Tempo de serviço apontado</span></div>
+          <p className="mt-1 text-lg font-black leading-tight text-slate-900 sm:mt-2 sm:text-2xl">{formatMinutes(laborMinutes)}</p>
         </div>
-        <div className="rounded-2xl border border-rose-100 bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-500"><Activity size={15} className="text-rose-600" /> Tempo de máquina parada</div>
-          <p className="mt-2 text-2xl font-black text-slate-900">{formatMinutes(downtimeMinutes)}</p>
+        <div title="Tempo acumulado de máquina parada" className="min-w-0 rounded-xl border border-rose-100 bg-white p-2.5 shadow-sm sm:rounded-2xl sm:p-4">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 sm:gap-2 sm:text-xs"><Activity size={14} className="shrink-0 text-rose-600" /> <span className="truncate sm:hidden">Parada</span><span className="hidden truncate sm:inline">Tempo de máquina parada</span></div>
+          <p className="mt-1 text-lg font-black leading-tight text-slate-900 sm:mt-2 sm:text-2xl">{formatMinutes(downtimeMinutes)}</p>
         </div>
       </div>
 
@@ -883,7 +899,7 @@ export function MaintenanceScreen({
           onClick={() => setTab("HISTORICO")}
           className={`rounded-xl px-4 py-2 text-xs font-extrabold ${tab === "HISTORICO" ? "bg-blue-700 text-white" : "border border-slate-200 bg-white text-slate-600"}`}
         >
-          Histórico
+          Hist. manutenção
         </button>
       </nav>
 
@@ -904,7 +920,7 @@ export function MaintenanceScreen({
                   ? "Os atendimentos concluídos ficam disponíveis neste histórico."
                   : "Paradas de manutenção e quebra dos operadores aparecem aqui automaticamente."}
               </p>
-              {tab === "FILA" && (
+              {tab === "FILA" && canManageMaintenance && (
                 <button
                   type="button"
                   onClick={() => openMaintenanceEntry()}
