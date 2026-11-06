@@ -111,11 +111,32 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [newPlanSectorId, setNewPlanSectorId] = React.useState<Sector["id"] | "">("");
   const [newPlanMold, setNewPlanMold] = React.useState(false);
   const [newPlanBatchId, setNewPlanBatchId] = React.useState<number | "">("");
+  const [newPlanAssignedUserId, setNewPlanAssignedUserId] = React.useState("");
+  const [selectedOrderIds, setSelectedOrderIds] = React.useState<number[]>([]);
+  const selectionScopeRef = React.useRef("");
   const [isAddingPlan, setIsAddingPlan] = React.useState(false);
 
   const availablePlanSectors = React.useMemo(
-    () => (db.sectors || []).filter((sector) => sector.active !== false),
-    [db.sectors],
+    () => (db.sectors || []).filter((sector) => {
+      const scopedSector = sector as Sector & { tenantId?: string; companyId?: string };
+      return sector.active !== false &&
+        tenantIdMatches(scopedSector.tenantId || scopedSector.companyId, db.activeTenantId);
+    }),
+    [db.sectors, db.activeTenantId],
+  );
+  const availablePlanUsers = React.useMemo(
+    () => (db.users || []).filter((user) => {
+      const scopedUser = user as User & { companyId?: string };
+      return tenantIdMatches(scopedUser.tenantId || scopedUser.companyId, db.activeTenantId);
+    }),
+    [db.users, db.activeTenantId],
+  );
+  const availablePlanBatches = React.useMemo(
+    () => (db.productionBatches || []).filter((batch) => {
+      const scopedBatch = batch as typeof batch & { companyId?: string };
+      return tenantIdMatches(scopedBatch.tenantId || scopedBatch.companyId, db.activeTenantId);
+    }),
+    [db.productionBatches, db.activeTenantId],
   );
   const selectedPlanSector = React.useMemo(
     () => availablePlanSectors.find((sector) => String(sector.id) === String(newPlanSectorId)) || null,
@@ -129,11 +150,17 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
     }
   }, [availablePlanSectors, newPlanSectorId]);
 
+  React.useEffect(() => {
+    if (newPlanAssignedUserId && !availablePlanUsers.some((user) => user.id === newPlanAssignedUserId)) {
+      setNewPlanAssignedUserId("");
+    }
+  }, [availablePlanUsers, newPlanAssignedUserId]);
+
   const selectedBatch = React.useMemo(
     () => newPlanBatchId === ""
       ? null
-      : (db.productionBatches || []).find((batch) => String(batch.id) === String(newPlanBatchId)) || null,
-    [db.productionBatches, newPlanBatchId],
+      : availablePlanBatches.find((batch) => String(batch.id) === String(newPlanBatchId)) || null,
+    [availablePlanBatches, newPlanBatchId],
   );
 
   const batchOrderCandidates = React.useMemo(() => {
@@ -163,6 +190,35 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
       return [{ order, item, availableQuantity, alreadyProgrammed }];
     });
   }, [selectedBatch, db.orders, db.items, db.coilCuttingPlans, selectedPlanSector, newPlanType]);
+
+  const selectableBatchOrderCandidates = React.useMemo(
+    () => batchOrderCandidates.filter((candidate) => !candidate.alreadyProgrammed),
+    [batchOrderCandidates],
+  );
+  const planSelectionScope = selectedBatch
+    ? `${selectedBatch.id}:${selectedPlanSector?.id ?? "none"}`
+    : "";
+  const selectablePlanOrderIds = selectableBatchOrderCandidates.map((candidate) => Number(candidate.order.id));
+  const selectedPlanOrderIds = selectablePlanOrderIds.filter((orderId) => selectedOrderIds.includes(orderId));
+  const allSelectablePlansSelected = selectablePlanOrderIds.length > 0 &&
+    selectedPlanOrderIds.length === selectablePlanOrderIds.length;
+
+  React.useEffect(() => {
+    if (!planSelectionScope) {
+      selectionScopeRef.current = "";
+      setSelectedOrderIds([]);
+      return;
+    }
+    if (
+      selectionScopeRef.current === planSelectionScope ||
+      selectableBatchOrderCandidates.length === 0
+    ) return;
+
+    selectionScopeRef.current = planSelectionScope;
+    setSelectedOrderIds(
+      selectableBatchOrderCandidates.map((candidate) => Number(candidate.order.id)),
+    );
+  }, [planSelectionScope, selectableBatchOrderCandidates]);
 
   // Minimizable/collapsible registration block state
   const [isFormCollapsed, setIsFormCollapsed] = React.useState(false); // Default to false (expanded) so it's discoverable, but easily collapsible
@@ -221,9 +277,12 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
   const handleAddPlan = async () => {
     if (isAddingPlan || !newPlanName.trim() || !selectedPlanSector || !selectedBatch) return;
 
-    const ordersToProgram = batchOrderCandidates.filter((candidate) => !candidate.alreadyProgrammed);
+    const ordersToProgram = batchOrderCandidates.filter((candidate) =>
+      !candidate.alreadyProgrammed && selectedPlanOrderIds.includes(Number(candidate.order.id)),
+    );
     if (ordersToProgram.length === 0) return;
 
+    const assignedUserId = availablePlanUsers.find((user) => user.id === newPlanAssignedUserId)?.id;
     let createdCount = 0;
     setIsAddingPlan(true);
     try {
@@ -242,20 +301,22 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
           targetQuantity: availableQuantity,
           orderId: order.id,
           batchId: selectedBatch.id,
+          assignedUserId,
         });
         createdCount += 1;
       }
     } catch (error) {
-      alert(`Foram programados ${createdCount} de ${ordersToProgram.length} pedidos do lote. Ocorreu um erro ao salvar o próximo item: ${error}`);
+      alert(`Foram programados ${createdCount} de ${ordersToProgram.length} itens do lote. Ocorreu um erro ao salvar o próximo item: ${error}`);
       return;
     } finally {
       setIsAddingPlan(false);
     }
 
-    alert(`${createdCount} ${createdCount === 1 ? "pedido programado" : "pedidos programados"} do lote "${selectedBatch.name}".`);
+    alert(`${createdCount} ${createdCount === 1 ? "item programado" : "itens programados"} do lote "${selectedBatch.name}".`);
     setNewPlanName("");
     setNewPlanMold(false);
     setNewPlanBatchId("");
+    setNewPlanAssignedUserId("");
   };
 
   // Edit states for CoilCuttingPlan
@@ -269,6 +330,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [editPlanDate, setEditPlanDate] = React.useState("");
   const [editPlanMold, setEditPlanMold] = React.useState(false);
   const [editPlanBatchId, setEditPlanBatchId] = React.useState<number | "">("");
+  const [editPlanAssignedUserId, setEditPlanAssignedUserId] = React.useState("");
 
   const editSuggestedTargets = React.useMemo(() => {
     const query = editPlanTargetSearch.trim().toLowerCase();
@@ -312,6 +374,10 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
     setEditPlanDate(plan.plannedExecutionDate || "");
     setEditPlanMold(plan.requiresMoldChange || false);
     setEditPlanBatchId(plan.batchId || "");
+    const assignedUserId = String(plan.assignedUserId || "");
+    setEditPlanAssignedUserId(
+      availablePlanUsers.some((user) => user.id === assignedUserId) ? assignedUserId : "",
+    );
 
     const targetItem =
       plan.targetItemIds && plan.targetItemIds.length > 0
@@ -339,10 +405,12 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
       plannedExecutionDate: editPlanDate || undefined,
       requiresMoldChange: editPlanType === "INJETORA" ? editPlanMold : false,
       targetItemIds: [targetId],
-      batchId: editPlanBatchId ? Number(editPlanBatchId) : undefined
+      batchId: editPlanBatchId ? Number(editPlanBatchId) : undefined,
+      assignedUserId: availablePlanUsers.find((user) => user.id === editPlanAssignedUserId)?.id || "",
     });
     setEditingPlan(null);
     setEditPlanBatchId("");
+    setEditPlanAssignedUserId("");
   };
 
   const handleDeletePlan = async (id: number) => {
@@ -385,7 +453,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                 </label>
                 <select
                   value={newPlanSectorId === "" ? "" : String(newPlanSectorId)}
-                  disabled={Boolean(selectedBatch && availablePlanSectors.some((sector) => String(sector.id) === String(selectedBatch.sectorId)))}
+                  disabled={isAddingPlan || Boolean(selectedBatch && availablePlanSectors.some((sector) => String(sector.id) === String(selectedBatch.sectorId)))}
                   onChange={(event) => {
                     const sector = availablePlanSectors.find((candidate) => String(candidate.id) === event.target.value);
                     setNewPlanSectorId(sector?.id ?? "");
@@ -413,6 +481,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                   type="text"
                   placeholder={newPlanType === "INJETORA" ? "Ex: Lote Injeção Presilha Tampa PP 20k" : "Ex: Produção do lote"}
                   value={newPlanName}
+                  disabled={isAddingPlan}
                   onChange={(event) => setNewPlanName(event.target.value)}
                   className="border p-2.5 rounded-lg w-full text-sm placeholder-gray-400 focus:outline-indigo-500"
                 />
@@ -424,9 +493,10 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                 </label>
                 <select
                   value={newPlanBatchId.toString()}
+                  disabled={isAddingPlan}
                   onChange={(event) => {
                     const value = event.target.value === "" ? "" : Number(event.target.value);
-                    const batch = value === "" ? null : (db.productionBatches || []).find((candidate) => String(candidate.id) === String(value));
+                    const batch = value === "" ? null : availablePlanBatches.find((candidate) => String(candidate.id) === String(value));
                     setNewPlanBatchId(value);
                     if (batch) {
                       const batchSector = availablePlanSectors.find((sector) => String(sector.id) === String(batch.sectorId));
@@ -444,7 +514,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                   className="border p-2.5 rounded-lg w-full text-sm focus:outline-indigo-500 bg-white"
                 >
                   <option value="">-- Selecione um lote --</option>
-                  {(db.productionBatches || [])
+                  {availablePlanBatches
                     .filter((batch) => batch.status === "EM_PRODUCAO" || batch.status === "PENDENTE")
                     .map((batch) => (
                       <option key={batch.id} value={batch.id}>
@@ -454,6 +524,28 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                 </select>
               </div>
 
+              <div>
+                <label className="text-xs font-bold text-gray-650 uppercase block mb-1">
+                  Responsável pela Programação (opcional)
+                </label>
+                <select
+                  value={newPlanAssignedUserId}
+                  disabled={isAddingPlan}
+                  onChange={(event) => setNewPlanAssignedUserId(event.target.value)}
+                  className="border p-2.5 rounded-lg bg-white w-full text-sm focus:outline-indigo-500"
+                >
+                  <option value="">-- Sem responsável --</option>
+                  {availablePlanUsers.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  A lista mostra somente usuários do tenant atual.
+                </p>
+              </div>
+
               {selectedBatch && (
                 <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -461,9 +553,19 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                       <p className="text-xs font-extrabold text-indigo-950 uppercase">Produtos disponíveis para produzir</p>
                       <p className="text-[11px] text-slate-600">Lote {selectedBatch.name} · Setor {selectedPlanSector?.name || "a selecionar"}</p>
                     </div>
-                    <span className="text-[10px] font-bold rounded-full border border-indigo-200 bg-white px-2 py-1 text-indigo-800">
-                      {batchOrderCandidates.filter((candidate) => !candidate.alreadyProgrammed).length} para programar
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold rounded-full border border-indigo-200 bg-white px-2 py-1 text-indigo-800">
+                        {selectedPlanOrderIds.length} de {selectableBatchOrderCandidates.length} selecionados
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOrderIds(allSelectablePlansSelected ? [] : selectablePlanOrderIds)}
+                        disabled={isAddingPlan || selectablePlanOrderIds.length === 0}
+                        className="text-[10px] font-bold rounded-full border border-indigo-200 bg-white px-2 py-1 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                      >
+                        {allSelectablePlansSelected ? "Limpar seleção" : "Selecionar todos"}
+                      </button>
+                    </div>
                   </div>
 
                   {batchOrderCandidates.length === 0 ? (
@@ -472,10 +574,26 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                     <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto">
                       {batchOrderCandidates.map(({ order, item, availableQuantity, alreadyProgrammed }) => (
                         <div key={order.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-white bg-white/90 px-2.5 py-2 text-xs">
-                          <div className="min-w-0">
-                            <p className="font-bold text-slate-800 truncate">{item?.name || order.customProductName || `Produto ${order.itemId}`}</p>
-                            <p className="text-[11px] text-slate-500">Pedido {order.orderCode || order.id} · {order.customerName || "Cliente sem nome"}</p>
-                          </div>
+                          <label className="min-w-0 flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={!alreadyProgrammed && selectedOrderIds.includes(Number(order.id))}
+                              disabled={alreadyProgrammed || isAddingPlan}
+                              onChange={(event) => {
+                                const orderId = Number(order.id);
+                                setSelectedOrderIds((current) => event.target.checked
+                                  ? Array.from(new Set([...current, orderId]))
+                                  : current.filter((selectedId) => selectedId !== orderId),
+                                );
+                              }}
+                              className="h-4 w-4 shrink-0 rounded border-indigo-300 text-indigo-600"
+                              aria-label={`Programar item do pedido ${order.orderCode || order.id}`}
+                            />
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-800 truncate">{item?.name || order.customProductName || `Produto ${order.itemId}`}</p>
+                              <p className="text-[11px] text-slate-500">Pedido {order.orderCode || order.id} · {order.customerName || "Cliente sem nome"}</p>
+                            </div>
+                          </label>
                           <div className="flex items-center gap-2 shrink-0">
                             <span className="font-semibold text-slate-700">Saldo: {availableQuantity}</span>
                             {alreadyProgrammed ? (
@@ -510,10 +628,14 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
 
               <button
                 onClick={handleAddPlan}
-                disabled={isAddingPlan || !newPlanName.trim() || !selectedPlanSector || !selectedBatch || batchOrderCandidates.every((candidate) => candidate.alreadyProgrammed)}
+                disabled={isAddingPlan || !newPlanName.trim() || !selectedPlanSector || !selectedBatch || selectedPlanOrderIds.length === 0}
                 className="bg-indigo-600 disabled:opacity-50 text-white p-3 rounded-lg font-bold hover:bg-indigo-700 shadow-sm mt-1 transition text-sm uppercase tracking-wide"
               >
-                {isAddingPlan ? "Programando..." : "Programar Lote"}
+                {isAddingPlan
+                  ? "Programando..."
+                  : selectedPlanOrderIds.length > 0
+                    ? `Programar ${selectedPlanOrderIds.length} ${selectedPlanOrderIds.length === 1 ? "item selecionado" : "itens selecionados"}`
+                    : "Selecione os itens para programar"}
               </button>
             </div>
           </div>
@@ -613,7 +735,8 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
             (p.targetItemIds && p.targetItemIds.length > 0
               ? db.items.find((i) => i.id === p.targetItemIds[0])
               : null) || (linkedOrder ? db.items.find((item) => item.id === linkedOrder.itemId) : null);
-          const linkedSector = db.sectors.find((sector) => String(sector.id) === String(p.sectorId));
+          const linkedSector = availablePlanSectors.find((sector) => String(sector.id) === String(p.sectorId));
+          const assignedUser = availablePlanUsers.find((user) => user.id === p.assignedUserId);
           const isInjection = p.type === "INJETORA";
 
           const planLogs = (db.logs || []).filter((l) => l.coilPlanId === p.id);
@@ -661,6 +784,11 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                         : "Outro")}
                     </strong>
                   </div>
+                  {p.assignedUserId && (
+                    <div>
+                      👤 Responsável: <strong className="text-gray-800">{assignedUser?.name || "Usuário não disponível neste tenant"}</strong>
+                    </div>
+                  )}
                   {linkedOrder && (
                     <div>
                       🧾 Pedido: <strong className="text-gray-800">{linkedOrder.orderCode || linkedOrder.id}</strong>
@@ -694,7 +822,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                     </div>
                   )}
                   {p.batchId && (() => {
-                    const linkedBatch = db.productionBatches.find(b => b.id === p.batchId);
+                    const linkedBatch = availablePlanBatches.find(b => b.id === p.batchId);
                     if (linkedBatch) {
                       return (
                         <div className="mt-1">
@@ -852,6 +980,27 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
 
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase block mb-1">
+                  Responsável pela Programação
+                </label>
+                <select
+                  value={editPlanAssignedUserId}
+                  onChange={(event) => setEditPlanAssignedUserId(event.target.value)}
+                  className="border p-2 rounded-lg bg-gray-50/50 w-full text-sm font-semibold"
+                >
+                  <option value="">-- Sem responsável --</option>
+                  {availablePlanUsers.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Somente usuários do tenant atual podem ser atribuídos.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">
                   {editPlanType === "INJETORA"
                     ? "Peça Plástica Injetada Gerada"
                     : "Componente Metálico Estampado Gerado"}
@@ -935,7 +1084,7 @@ function PlanosCorteTab({ db }: { db: ReturnType<typeof useDatabase> }) {
                     className="border p-2 rounded-lg w-full text-sm font-semibold bg-white"
                   >
                     <option value="">-- Sem Lote --</option>
-                    {db.productionBatches
+                    {availablePlanBatches
                       .filter(b => b.status === "EM_PRODUCAO" || b.status === "PENDENTE" || b.id === editPlanBatchId)
                       .map((b) => (
                         <option key={b.id} value={b.id}>
