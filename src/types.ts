@@ -1005,6 +1005,7 @@ export interface CoilCuttingPlan {
   targetQuantity?: number; // Qtd. a ser produzida
   orderId?: number; // Para associar a um pedido específico
   batchId?: number; // Para associar a um lote de produção manual
+  assignedUserId?: string; // Usuário do tenant responsável pela programação
 }
 
 export type ExpeditionShift = "MANHA" | "TARDE";
