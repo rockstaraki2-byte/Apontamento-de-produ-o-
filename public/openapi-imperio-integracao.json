@@ -1,0 +1,220 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Império Acessórios - Pedidos e Faturamento",
+    "version": "1.0.0",
+    "description": "API para validar/criar pedidos e validar/confirmar faturamentos no sistema Apontamento de Produção. Sempre valide antes de executar ações de escrita."
+  },
+  "servers": [
+    {
+      "url": "https://apontamento-de-producao.vercel.app"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "ClientePedido": {
+        "type": "object",
+        "properties": {
+          "codigo": { "type": ["string", "number", "null"] },
+          "nome": { "type": ["string", "null"] }
+        }
+      },
+      "ItemPedido": {
+        "type": "object",
+        "properties": {
+          "codigoOriginal": { "type": ["string", "number", "null"] },
+          "codigoProduto": { "type": ["string", "number", "null"] },
+          "descricao": { "type": ["string", "null"] },
+          "familia": { "type": ["string", "null"] },
+          "cor": { "type": ["string", "null"] },
+          "tamanho": { "type": ["string", "null"] },
+          "variacao": { "type": ["string", "null"] },
+          "quantidade": { "type": ["string", "number", "null"] },
+          "precoUnitario": { "type": ["string", "number", "null"] },
+          "descontoPercentual": { "type": ["string", "number", "null"] },
+          "observacoes": { "type": ["string", "null"] }
+        }
+      },
+      "PedidoImportacao": {
+        "type": "object",
+        "properties": {
+          "codigoPedido": { "type": ["string", "number", "null"] },
+          "cliente": { "$ref": "#/components/schemas/ClientePedido" },
+          "representante": { "type": ["string", "null"] },
+          "formaPagamento": { "type": ["string", "null"] },
+          "prazos": {
+            "oneOf": [
+              { "type": "array", "items": { "type": ["string", "number"] } },
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "null" }
+            ]
+          },
+          "comNotaFiscal": { "type": ["boolean", "null"] },
+          "dataLimite": { "type": ["string", "null"] },
+          "promEntrega": { "type": ["string", "null"] },
+          "previsao": { "type": ["string", "null"] },
+          "possuiRET": { "type": ["boolean", "null"] },
+          "transacaoVenda": { "type": ["string", "number", "null"] },
+          "observacoes": { "type": ["string", "null"] },
+          "itens": {
+            "type": ["array", "null"],
+            "items": { "$ref": "#/components/schemas/ItemPedido" }
+          }
+        }
+      },
+      "ImportacaoPedidosRequest": {
+        "type": "object",
+        "required": ["pedidos"],
+        "properties": {
+          "origem": { "type": ["string", "null"], "default": "CHATGPT" },
+          "tenantId": { "type": ["string", "null"], "default": "imperio" },
+          "solicitadoPor": { "type": ["string", "null"] },
+          "pedidos": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PedidoImportacao" }
+          }
+        }
+      },
+      "LinhaFaturamento": {
+        "type": "object",
+        "required": ["quantidade"],
+        "properties": {
+          "lineId": { "type": ["string", "number", "null"], "description": "Identificador estável da linha dentro do documento. Recomendado para idempotência." },
+          "codigoPedido": { "type": ["string", "number", "null"] },
+          "cliente": { "type": ["string", "null"] },
+          "itemId": { "type": ["string", "number", "null"] },
+          "codigoProduto": { "type": ["string", "number", "null"] },
+          "descricao": { "type": ["string", "null"] },
+          "cor": { "type": ["string", "null"] },
+          "tamanho": { "type": ["string", "null"] },
+          "variacao": { "type": ["string", "null"] },
+          "quantidade": { "type": ["string", "number"] },
+          "numeroNota": { "type": ["string", "number", "null"] },
+          "observacoes": { "type": ["string", "null"] }
+        },
+        "anyOf": [
+          { "required": ["codigoPedido"] },
+          { "required": ["cliente"] }
+        ]
+      },
+      "FaturamentoRequest": {
+        "type": "object",
+        "required": ["documentKey"],
+        "properties": {
+          "origem": { "type": ["string", "null"], "default": "CHATGPT" },
+          "tenantId": { "type": ["string", "null"], "default": "imperio" },
+          "solicitadoPor": { "type": ["string", "null"] },
+          "documentKey": { "type": "string", "description": "Identificador estável do documento, por exemplo NF, romaneio ou hash do arquivo." },
+          "allowBreakReservations": { "type": ["boolean", "null"], "default": false },
+          "expectedPreviewHash": { "type": ["string", "null"], "description": "Na confirmação, use o previewHash retornado pela validação." },
+          "faturamentos": {
+            "type": ["array", "null"],
+            "maxItems": 50,
+            "items": { "$ref": "#/components/schemas/LinhaFaturamento" }
+          },
+          "faturarPedidosInteiros": {
+            "type": ["array", "null"],
+            "maxItems": 50,
+            "items": { "type": ["string", "number"] }
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    { "bearerAuth": [] }
+  ],
+  "paths": {
+    "/api/pedidos/importar/validar": {
+      "post": {
+        "operationId": "validarLancamentoPedidos",
+        "summary": "Valida pedidos antes do lançamento",
+        "description": "Use quando um pedido do documento de faturamento não existir. Não grava no banco.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ImportacaoPedidosRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Validação concluída" },
+          "207": { "description": "Validação com pendências" },
+          "400": { "description": "Payload inválido" },
+          "401": { "description": "Não autorizado" }
+        }
+      }
+    },
+    "/api/pedidos/importar": {
+      "post": {
+        "operationId": "lancarPedidos",
+        "summary": "Cria pedidos validados",
+        "description": "Cria pedidos ausentes. Execute a validação antes de chamar esta ação.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ImportacaoPedidosRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Importação concluída" },
+          "207": { "description": "Importação parcial ou com pendências" },
+          "400": { "description": "Payload inválido" },
+          "401": { "description": "Não autorizado" }
+        }
+      }
+    },
+    "/api/pedidos/faturamento/validar": {
+      "post": {
+        "operationId": "validarFaturamento",
+        "summary": "Pré-valida faturamento sem gravar",
+        "description": "Obrigatório antes da confirmação. Retorna pedido/item localizado, quantidades atual e faturada, necessidade de ajuste, conflitos de reserva, pendências e previewHash.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FaturamentoRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Prévia válida" },
+          "207": { "description": "Prévia com linhas que exigem revisão" },
+          "400": { "description": "Payload inválido" },
+          "401": { "description": "Não autorizado" }
+        }
+      }
+    },
+    "/api/pedidos/faturamento": {
+      "post": {
+        "operationId": "confirmarFaturamento",
+        "summary": "Confirma o faturamento validado",
+        "description": "Ação de escrita. Envie expectedPreviewHash da prévia. Atualiza pedido, estoque, reserva, componentes, movimentações, logs e auditoria de forma transacional.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FaturamentoRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Faturamento confirmado ou nenhuma nova baixa necessária" },
+          "409": { "description": "Prévia desatualizada ou estado do pedido mudou" },
+          "422": { "description": "Existem pendências que impedem confirmação" },
+          "401": { "description": "Não autorizado" }
+        }
+      }
+    }
+  }
+}
