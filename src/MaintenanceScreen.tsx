@@ -101,7 +101,7 @@ function PartRequestFields({
     <fieldset className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <legend className="text-sm font-extrabold text-slate-800">Peças solicitadas</legend>
+          <h3 className="text-sm font-extrabold text-slate-800">Peças solicitadas</h3>
           <p className="mt-1 text-xs text-slate-500">
             Cada peça fica registrada separadamente, com quantidade, custo e status.
           </p>
@@ -921,5 +921,4 @@ export function MaintenanceScreen({
       </div>
     </section>
   );
-}
 }
