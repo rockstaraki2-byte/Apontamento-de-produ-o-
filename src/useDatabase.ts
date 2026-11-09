@@ -153,11 +153,70 @@ const ROLE_SCOPED_LISTENER_COLLECTIONS: Record<string, readonly string[]> = {
   MANUTENCAO: ["machineStops", "maintenanceOrders", "maintenanceWorkLogs", "sectors"],
 };
 
+const ALL_OPERATIONAL_LISTENER_COLLECTIONS = [
+  "items", "orders", "logs", "attributes", "activePacks", "nestTasks",
+  "notifications", "stocks", "stock_movements", "employees", "epiDistributions",
+  "uniforms", "uniformDistributions", "customers", "sectors", "productFlows",
+  "flows", "rejectionReasons", "productionSteps", "productionBatches",
+  "productionAgendas", "coilCuttingPlans", "cargas", "expeditionRoutes",
+  "productionSchedules", "extraHours", "systemSettings", "teksystemBillingMonthlyTotals",
+  "teksystemBillingRepresentativeMonthlyTotals", "agentReports", "priceHistories",
+  "tornoEvents", "machineStops", "maintenanceOrders", "maintenanceWorkLogs",
+  "performanceQuestions", "performanceReviews", "attendances", "laserQuotes",
+  "sheetStocks", "sheetStockMovements", "prensaPendingProductions",
+] as const;
+
+const ROUTE_SCOPED_LISTENER_COLLECTIONS: Record<string, readonly string[]> = {
+  "/": ["orders", "notifications", "sectors", "systemSettings"],
+  "/admin": ALL_OPERATIONAL_LISTENER_COLLECTIONS,
+  "/relatorios": ["items", "orders", "logs", "activePacks", "customers", "productionBatches", "productionAgendas", "productionSchedules", "cargas", "expeditionRoutes", "extraHours", "attendances", "priceHistories", "notifications", "sectors", "systemSettings"],
+  "/status": ["orders", "notifications", "sectors", "systemSettings"],
+  "/itens": ["items", "attributes", "productFlows", "flows", "customers", "stocks", "priceHistories", "sectors", "systemSettings"],
+  "/pedidos": ["items", "orders", "customers", "activePacks", "productionBatches", "productionSchedules", "notifications", "sectors", "systemSettings"],
+  "/nests": ["items", "orders", "activePacks", "nestTasks", "stocks", "sheetStocks", "notifications", "sectors", "systemSettings"],
+  "/estoque": ["items", "stocks", "stock_movements", "sheetStocks", "sheetStockMovements", "sectors", "systemSettings"],
+  "/estoque-epis": ["items", "stocks", "stock_movements", "employees", "epiDistributions", "uniforms", "uniformDistributions", "sectors", "systemSettings"],
+  "/estoque-laser": ["items", "nestTasks", "stocks", "stock_movements", "sheetStocks", "sheetStockMovements", "sectors", "systemSettings"],
+  "/estoque-chapas": ["items", "sheetStocks", "sheetStockMovements", "sectors", "systemSettings"],
+  "/orcamentos": ["items", "attributes", "customers", "laserQuotes", "priceHistories", "sectors", "systemSettings"],
+  "/prensa-eduardo": ["items", "orders", "activePacks", "logs", "productionSteps", "productionBatches", "productionAgendas", "productionSchedules", "notifications", "sectors", "systemSettings"],
+  "/torno-cnc-willian": ["items", "orders", "activePacks", "logs", "coilCuttingPlans", "customers", "productionBatches", "tornoEvents", "notifications", "sectors", "systemSettings"],
+  "/torno-cnc-henrique": ["items", "orders", "activePacks", "logs", "coilCuttingPlans", "customers", "productionBatches", "tornoEvents", "notifications", "sectors", "systemSettings"],
+  "/prensa-rafael": ["items", "orders", "activePacks", "logs", "productionSteps", "productionBatches", "productionAgendas", "productionSchedules", "notifications", "sectors", "systemSettings"],
+  "/injetora": ["items", "orders", "activePacks", "logs", "productionSteps", "productionBatches", "productionAgendas", "productionSchedules", "notifications", "sectors", "systemSettings"],
+  "/banho-quimico": ["items", "orders", "activePacks", "logs", "productionSteps", "productionBatches", "productionAgendas", "notifications", "sectors", "systemSettings"],
+  "/embalagem": ["items", "orders", "activePacks", "logs", "productionSteps", "productionBatches", "productionAgendas", "cargas", "notifications", "sectors", "systemSettings"],
+  "/producao": ["items", "orders", "activePacks", "logs", "productionSteps", "productionBatches", "productionAgendas", "productionSchedules", "flows", "productFlows", "notifications", "sectors", "systemSettings"],
+  "/manutencao": ["employees", "machineStops", "maintenanceOrders", "maintenanceWorkLogs", "sectors", "systemSettings"],
+  "/montagem-retratil": ["items", "orders", "activePacks", "logs", "productionSteps", "productionBatches", "notifications", "sectors", "systemSettings"],
+  "/cortelaser": ["items", "activePacks", "nestTasks", "stocks", "sheetStocks", "sheetStockMovements", "productionBatches", "productionSteps", "notifications", "sectors", "systemSettings"],
+  "/pintura": ["items", "orders", "attributes", "activePacks", "logs", "productionSteps", "stocks", "notifications", "sectors", "systemSettings"],
+  "/historico": ["items", "orders", "logs", "activePacks", "productionBatches", "notifications", "sectors", "systemSettings"],
+  "/representante": ["items", "orders", "customers", "notifications", "priceHistories", "teksystemBillingMonthlyTotals", "teksystemBillingRepresentativeMonthlyTotals", "sectors", "systemSettings"],
+  "/qualidade": ["items", "orders", "logs", "rejectionReasons", "productionSteps", "productionBatches", "performanceQuestions", "performanceReviews", "notifications", "sectors", "systemSettings"],
+  "/relatorios-qualidade": ["items", "orders", "logs", "rejectionReasons", "productionSteps", "productionBatches", "performanceQuestions", "performanceReviews", "notifications", "sectors", "systemSettings"],
+  "/pcp": ["items", "orders", "customers", "activePacks", "logs", "productFlows", "flows", "productionSteps", "productionBatches", "productionAgendas", "productionSchedules", "cargas", "agentReports", "notifications", "sectors", "systemSettings"],
+  "/gestao-clientes": ["items", "orders", "customers", "notifications", "sectors", "systemSettings"],
+  "/lotes": ["items", "orders", "activePacks", "productionBatches", "productionAgendas", "productionSchedules", "notifications", "sectors", "systemSettings"],
+  "/cargas": ["items", "orders", "customers", "cargas", "expeditionRoutes", "notifications", "sectors", "systemSettings"],
+  "/cargas-tv": ["items", "orders", "customers", "cargas", "expeditionRoutes", "notifications", "sectors", "systemSettings"],
+  "/financeiro": ["orders", "customers", "cargas", "teksystemBillingMonthlyTotals", "teksystemBillingRepresentativeMonthlyTotals", "notifications", "sectors", "systemSettings"],
+  "/superadmin": [],
+};
+
+function getRouteListenerCollectionSet(path: string): ReadonlySet<string> {
+  const normalizedPath = path.split("?")[0] || "/";
+  return new Set(ROUTE_SCOPED_LISTENER_COLLECTIONS[normalizedPath] ?? ALL_OPERATIONAL_LISTENER_COLLECTIONS);
+}
+
 const USERS_LOAD_TIMEOUT_ERROR =
   "O carregamento dos acessos demorou mais de 12 segundos. O login local foi liberado; verifique a conexão e tente reconectar.";
 
-export function useDatabase(currentUser?: User | null) {
+export function useDatabase(currentUser?: User | null, activePath = "/") {
   const isDemoMode = isDemoModeEnabled();
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+  const routeSubscriptionSyncRef = useRef<() => void>(() => {});
 
   const safeSetDocFirebase = async (
     reference: DocumentReference,
@@ -706,6 +765,7 @@ export function useDatabase(currentUser?: User | null) {
   const [prensaPendingProductions, setPrensaPendingProductions] = useState<import("./types").PrensaPendingProduction[]>([]);
 
   useEffect(() => {
+    routeSubscriptionSyncRef.current = () => {};
     if (isDemoMode) {
       const data = DEMO_DATABASE;
       setTenants(data.tenants);
@@ -772,6 +832,23 @@ export function useDatabase(currentUser?: User | null) {
     const roleScopedCollections = currentUser
       ? ROLE_SCOPED_LISTENER_COLLECTIONS[currentUser.role]
       : undefined;
+    // Load collections only when a route needs them; keep opened listeners for
+    // this session so returning to a route does not trigger another initial read.
+    const tenantCollectionSubscriptions = new Map<string, {
+      roleAllowed: boolean;
+      subscribe: () => () => void;
+      unsubscribe?: () => void;
+    }>();
+    const syncRouteScopedListeners = () => {
+      const routeAllowedCollections = getRouteListenerCollectionSet(activePathRef.current);
+      tenantCollectionSubscriptions.forEach((subscription, collectionName) => {
+        const shouldListen = subscription.roleAllowed && routeAllowedCollections.has(collectionName);
+        if (shouldListen && !subscription.unsubscribe) {
+          subscription.unsubscribe = subscription.subscribe();
+        }
+      });
+    };
+    routeSubscriptionSyncRef.current = syncRouteScopedListeners;
     const listenTenantCollection = (
       collectionName: string,
       onNext: (snapshot: any) => void,
@@ -782,14 +859,27 @@ export function useDatabase(currentUser?: User | null) {
         activeTenantId === "imperio" &&
         currentUser?.role === "PINTURA" &&
         collectionName === "logs";
-      if (
-        roleScopedCollections &&
-        !roleScopedCollections.includes(collectionName) &&
-        !isImperioPaintingHistory
-      ) {
+      const roleAllowed = !roleScopedCollections ||
+        roleScopedCollections.includes(collectionName) ||
+        isImperioPaintingHistory;
+      if (!roleAllowed) {
         return () => {};
       }
-      return onSnapshot(scopedCollection(collectionName), { includeMetadataChanges }, onNext, onError);
+      const subscription = {
+        roleAllowed,
+        subscribe: () => onSnapshot(
+          scopedCollection(collectionName),
+          { includeMetadataChanges },
+          onNext,
+          onError,
+        ),
+        unsubscribe: undefined as (() => void) | undefined,
+      };
+      tenantCollectionSubscriptions.set(collectionName, subscription);
+      return () => {
+        subscription.unsubscribe?.();
+        subscription.unsubscribe = undefined;
+      };
     };
 
     let tenantLoadActive = true;
@@ -1212,6 +1302,8 @@ export function useDatabase(currentUser?: User | null) {
       );
     }
 
+    syncRouteScopedListeners();
+
     firestoreListenerUnsubsRef.current = [
       unsubTenants,
       unsubUsers,
@@ -1257,6 +1349,7 @@ export function useDatabase(currentUser?: User | null) {
     ];
 
     return () => {
+      routeSubscriptionSyncRef.current = () => {};
       firestoreListenerUnsubsRef.current = [];
       window.removeEventListener("online", handleOnline);
       if (interval !== null) window.clearInterval(interval);
@@ -1308,6 +1401,10 @@ export function useDatabase(currentUser?: User | null) {
       unsubPrensaPending();
     };
   }, [currentUser, isDemoMode, activeTenantId, firestoreRestartToken]);
+
+  useEffect(() => {
+    routeSubscriptionSyncRef.current();
+  }, [activePath]);
 
   const updateStocks = async (updatedStocks: StockEntry[]) => {
     const changed = updatedStocks.filter((updated) => {

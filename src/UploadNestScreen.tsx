@@ -24,6 +24,28 @@ import {
 import { useDatabase } from "./useDatabase";
 import type { User, NestTask, ProductionLog } from "./types";
 import { normalizeString } from "./searchUtils";
+import { createProductImagePath, uploadImageDataUrlToStorage } from "./utils/firebaseImageStorage";
+
+async function uploadNestTaskImages<T extends {
+  thumbnailBase64?: string;
+  nestName?: string;
+  partName?: string;
+}>(tasks: T[]): Promise<T[]> {
+  const preparedTasks: T[] = [];
+  for (const [index, task] of tasks.entries()) {
+    const thumbnail = task.thumbnailBase64;
+    if (thumbnail?.startsWith("data:image/")) {
+      const imageUrl = await uploadImageDataUrlToStorage(
+        thumbnail,
+        createProductImagePath(`${task.nestName || "nest"}_${task.partName || "piece"}_${index}.jpg`),
+      );
+      preparedTasks.push({ ...task, thumbnailBase64: imageUrl });
+    } else {
+      preparedTasks.push(task);
+    }
+  }
+  return preparedTasks;
+}
 
 export function UploadNestScreen({
   db,
@@ -747,7 +769,7 @@ export function UploadNestScreen({
         return;
       }
 
-      await db.addNestTasks(tasksToSave);
+      await db.addNestTasks(await uploadNestTaskImages(tasksToSave));
       alert(
         `${tasksToSave.length} peça(s) adicionadas ao nesting manual com sucesso!`,
       );
@@ -766,7 +788,7 @@ export function UploadNestScreen({
         isActive: Number(formCutQty) < Number(formTotalQty),
         thumbnailBase64: selectedPieceImage || undefined,
       };
-      await db.updateNestTasks([updated]);
+      await db.updateNestTasks(await uploadNestTaskImages([updated]));
     }
     closeForm();
     } catch (error: any) {
@@ -1971,7 +1993,7 @@ export function UploadNestScreen({
                     }
                     try {
                       setIsUploading(true);
-                      await db.addNestTasks(validTasks);
+                      await db.addNestTasks(await uploadNestTaskImages(validTasks));
                       setPreviewTasks(null);
                       alert(
                         `Sucesso! Foram enfileiradas ${validTasks.length} tarefas de Nesting para o laser.`,

@@ -122,9 +122,13 @@ import {
   CompactScreenHeader,
 } from "./components/Layout";
 
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { signInWithCustomToken, onAuthStateChanged, signOut } from "firebase/auth";
-import { auth, storage } from "./firebase";
+import { auth } from "./firebase";
+import {
+  createProductImagePath,
+  uploadImageDataUrlToStorage,
+  uploadImageFileToStorage,
+} from "./utils/firebaseImageStorage";
 
 import {
   ALL_AVAILABLE_SCREENS,
@@ -289,6 +293,12 @@ function NavLink({
       <span className="text-xs mt-1 font-medium">{label}</span>
     </Link>
   );
+}
+
+function RoutePathSync({ onPathChange }: { onPathChange: (path: string) => void }) {
+  const { pathname } = useLocation();
+  useEffect(() => onPathChange(pathname), [pathname, onPathChange]);
+  return null;
 }
 
 function Welcome({
@@ -1606,50 +1616,48 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
   const [batchImageResult, setBatchImageResult] = useState("");
   const [isUploadingBatch, setIsUploadingBatch] = useState(false);
 
-  const handleAttrImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAttrImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsUploadingAttrImage(true);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 600;
-        const MAX_HEIGHT = 600;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx?.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
-        setAttrImageUrl(dataUrl);
-        setIsUploadingAttrImage(false);
-      };
-    };
-    reader.readAsDataURL(file);
+    try {
+      const url = await uploadImageFileToStorage(
+        file,
+        createProductImagePath(`cor_${file.name}`),
+        { maxDimension: 600, quality: 0.8 },
+      );
+      setAttrImageUrl(url);
+    } catch (error) {
+      console.error("Falha no upload da imagem da cor:", error);
+      alert("Não foi possível enviar a imagem. Verifique sua conexão e tente novamente.");
+    } finally {
+      setIsUploadingAttrImage(false);
+    }
   };
 
   const handleCadastrarAttr = async (type: "COLOR" | "VARIATION" | "SIZE") => {
     if (!attrValue.trim()) {
       alert("⚠️ Por favor, digite o nome/descrição para o cadastro.");
       return;
+    }
+
+    let imageToSave = attrImageUrl;
+    if (type === "COLOR" && imageToSave.startsWith("data:image/")) {
+      setIsUploadingAttrImage(true);
+      try {
+        imageToSave = await uploadImageDataUrlToStorage(
+          imageToSave,
+          createProductImagePath(`cor_${attrValue}.jpg`),
+        );
+      } catch (error) {
+        console.error("Falha ao migrar imagem antiga para o Storage:", error);
+        alert("Não foi possível salvar a imagem no Storage. O cadastro não foi alterado.");
+        return;
+      } finally {
+        setIsUploadingAttrImage(false);
+      }
+      setAttrImageUrl(imageToSave);
     }
 
     if (attrEditingId) {
@@ -1659,7 +1667,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           ...existing,
           value: attrValue.trim().toUpperCase(),
           code: attrCode.trim().toUpperCase() || undefined,
-          imageUrl: type === "COLOR" ? (attrImageUrl || undefined) : undefined,
+          imageUrl: type === "COLOR" ? (imageToSave || undefined) : undefined,
         });
       }
       setAttrEditingId(null);
@@ -1668,7 +1676,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
         type,
         value: attrValue.trim().toUpperCase(),
         code: attrCode.trim().toUpperCase() || undefined,
-        imageUrl: type === "COLOR" ? (attrImageUrl || undefined) : undefined,
+        imageUrl: type === "COLOR" ? (imageToSave || undefined) : undefined,
       });
     }
 
@@ -1891,6 +1899,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
 
     let successCount = 0;
     let notFoundCount = 0;
+    let failedCount = 0;
 
     for (let i = 0; i < batchImageFiles.length; i++) {
       const file = batchImageFiles[i];
@@ -1908,94 +1917,16 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
 
       if (matchedItem) {
         try {
-          const storageRef = ref(
-            storage,
-            `products/${Date.now()}_${file.name}`,
+          const imageUrl = await uploadImageFileToStorage(
+            file,
+            createProductImagePath(file.name),
+            { maxDimension: 450, quality: 0.7 },
           );
-          await new Promise((resolve) => {
-            const uploadTask = uploadBytesResumable(storageRef, file);
-            uploadTask.on(
-              "state_changed",
-              null,
-              (err) => {
-                console.warn(
-                  "Storage upload failed in batch, falling back to compressed local Base64 for file: " +
-                    file.name,
-                  err,
-                );
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                  const img = new Image();
-                  img.onload = () => {
-                    const canvas = document.createElement("canvas");
-                    const MAX_WIDTH = 450;
-                    const MAX_HEIGHT = 450;
-                    let width = img.width;
-                    let height = img.height;
-                    if (
-                      width > height ? width > MAX_WIDTH : height > MAX_HEIGHT
-                    ) {
-                      const ratio =
-                        width > height
-                          ? MAX_WIDTH / width
-                          : MAX_HEIGHT / height;
-                      width *= ratio;
-                      height *= ratio;
-                    }
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext("2d");
-                    if (ctx) {
-                      ctx.drawImage(img, 0, 0, width, height);
-                      const compressed = canvas.toDataURL("image/jpeg", 0.7);
-                      db.updateItem({ ...matchedItem, imageUrl: compressed });
-                      successCount++;
-                      resolve(null);
-                    } else {
-                      db.updateItem({
-                        ...matchedItem,
-                        imageUrl: reader.result as string,
-                      });
-                      successCount++;
-                      resolve(null);
-                    }
-                  };
-                  img.src = reader.result as string;
-                };
-                reader.onerror = () => {
-                  resolve(null); // resolve anyway to avoid block
-                };
-                reader.readAsDataURL(file);
-              },
-              async () => {
-                try {
-                  const downloadURL = await getDownloadURL(
-                    uploadTask.snapshot.ref,
-                  );
-                  db.updateItem({ ...matchedItem, imageUrl: downloadURL });
-                  successCount++;
-                  resolve(null);
-                } catch (err) {
-                  console.error(
-                    "Download URL failed, using base64 direct fallback",
-                    err,
-                  );
-                  const reader = new FileReader();
-                  reader.onloadend = () => {
-                    db.updateItem({
-                      ...matchedItem,
-                      imageUrl: reader.result as string,
-                    });
-                    successCount++;
-                    resolve(null);
-                  };
-                  reader.readAsDataURL(file);
-                }
-              },
-            );
-          });
+          await db.updateItem({ ...matchedItem, imageUrl });
+          successCount++;
         } catch (err) {
           console.error("Failed to upload image", file.name, err);
+          failedCount++;
         }
       } else {
         notFoundCount++;
@@ -2007,7 +1938,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     }
 
     setBatchImageResult(
-      `Concluído! ${successCount} imagens associadas com sucesso. ${notFoundCount} não encontraram produtos.`,
+      `Concluído! ${successCount} imagens associadas com sucesso. ${notFoundCount} não encontraram produtos. ${failedCount} falharam no envio ao Storage.`,
     );
     setIsUploadingBatch(false);
 
@@ -2018,7 +1949,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     }, 5000);
   };
 
-  const handleCadastrar = () => {
+  const handleCadastrar = async () => {
     if (!code) {
       alert("⚠️ Erro de formulário: O campo 'Código' é obrigatório.");
       console.warn("Item save prevented: missing 'code' field.");
@@ -2059,13 +1990,57 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     const itemType =
       activeTab === "PECAS" ? "PECA" : activeTab === "EPIS" ? "EPI" : "PRODUTO";
 
-    if (editingId) {
-      const existing = db.items.find((i) => i.id === editingId);
-      if (existing) {
-        db.updateItem({
-          ...existing,
+    if (isUploadingImage) return;
+    const existingItem = editingId
+      ? db.items.find((item) => item.id === editingId)
+      : undefined;
+    let imageToSave = imageUrl || existingItem?.imageUrl || "";
+    if (imageToSave.startsWith("data:image/")) {
+      setIsUploadingImage(true);
+      setImageUploadProgress(0);
+      try {
+        imageToSave = await uploadImageDataUrlToStorage(
+          imageToSave,
+          createProductImagePath(`${code || "item"}_${editingId || "novo"}.jpg`),
+        );
+        setImageUrl(imageToSave);
+        setImageUploadProgress(100);
+      } catch (error) {
+        console.error("Falha ao migrar imagem antiga para o Storage:", error);
+        alert("Não foi possível salvar a imagem no Storage. O item não foi alterado.");
+        return;
+      } finally {
+        setIsUploadingImage(false);
+      }
+    }
+
+    try {
+      if (editingId) {
+        const existing = existingItem;
+        if (existing) {
+          await db.updateItem({
+            ...existing,
+            code,
+            name,
+            unit: unit || "UN",
+            basePrice: basePrice === "" ? undefined : basePrice,
+            unitPrice: basePrice === "" ? undefined : basePrice,
+            productiveCost: productiveCost === "" ? undefined : productiveCost,
+            productionPoints:
+              productionPoints === "" ? undefined : productionPoints,
+            type: itemType,
+            imageUrl: imageToSave,
+            standardCycles,
+            fluxos: itemFluxos,
+            requiresLaserCut: itemType === "PRODUTO" && requiresLaserCut,
+          });
+        }
+        setEditingId(null);
+      } else {
+        await db.addItem({
           code,
           name,
+          notes: "",
           unit: unit || "UN",
           basePrice: basePrice === "" ? undefined : basePrice,
           unitPrice: basePrice === "" ? undefined : basePrice,
@@ -2073,30 +2048,15 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
           productionPoints:
             productionPoints === "" ? undefined : productionPoints,
           type: itemType,
-          imageUrl: imageUrl || existing.imageUrl || "",
+          imageUrl: imageToSave,
           standardCycles,
           fluxos: itemFluxos,
           requiresLaserCut: itemType === "PRODUTO" && requiresLaserCut,
         });
       }
-      setEditingId(null);
-    } else {
-      db.addItem({
-        code,
-        name,
-        notes: "",
-        unit: unit || "UN",
-        basePrice: basePrice === "" ? undefined : basePrice,
-        unitPrice: basePrice === "" ? undefined : basePrice,
-        productiveCost: productiveCost === "" ? undefined : productiveCost,
-        productionPoints:
-          productionPoints === "" ? undefined : productionPoints,
-        type: itemType,
-        imageUrl: imageUrl || "",
-        standardCycles,
-        fluxos: itemFluxos,
-        requiresLaserCut: itemType === "PRODUTO" && requiresLaserCut,
-      });
+    } catch (error) {
+      console.error("Falha ao salvar o item:", error);
+      return;
     }
     setCode("");
     setName("");
@@ -2131,58 +2091,24 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
+    if (!file) return;
 
     setIsUploadingImage(true);
-    setImageUploadProgress(50);
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 800; // Updated typical size
-        const MAX_HEIGHT = 800;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
-          setImageUrl(compressedBase64);
-        } else {
-          setImageUrl((event.target?.result as string) || "");
-        }
-        setIsUploadingImage(false);
-        setImageUploadProgress(100);
-      };
-      img.onerror = () => {
-        setIsUploadingImage(false);
-      };
-      if (typeof event.target?.result === "string") {
-        img.src = event.target.result;
-      }
-    };
-    reader.onerror = () => {
+    setImageUploadProgress(0);
+    try {
+      const url = await uploadImageFileToStorage(
+        file,
+        createProductImagePath(file.name),
+        { onProgress: setImageUploadProgress },
+      );
+      setImageUrl(url);
+    } catch (error) {
+      console.error("Falha no upload da imagem do item:", error);
+      alert("Não foi possível enviar a imagem ao Storage. Ela não foi salva; tente novamente.");
+    } finally {
       setIsUploadingImage(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleDelete = (id: number) => {
@@ -2595,6 +2521,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                 )}
                 <button
                   type="button"
+                  disabled={isUploadingAttrImage}
                   onClick={() =>
                     handleCadastrarAttr(
                       activeTab === "CORES"
@@ -2604,9 +2531,9 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
                         : "SIZE"
                     )
                   }
-                  className="px-6 py-2 bg-indigo-600 text-white font-bold text-xs rounded shadow hover:bg-indigo-700 transition cursor-pointer"
+                  className="px-6 py-2 bg-indigo-600 text-white font-bold text-xs rounded shadow hover:bg-indigo-700 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {attrEditingId
+                  {isUploadingAttrImage ? "Enviando imagem..." : attrEditingId
                     ? "Atualizar"
                     : `Salvar ${activeTab === "CORES" ? "Cor" : activeTab === "VARIACOES" ? "Variação" : "Tamanho"}`}
                 </button>
@@ -2990,9 +2917,10 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
             <div className="flex gap-2 mt-2">
               <button
                 onClick={handleCadastrar}
-                className="flex-1 bg-blue-600 text-white font-bold p-2 rounded hover:bg-blue-700 transition shadow-sm text-sm"
+                disabled={isUploadingImage}
+                className="flex-1 bg-blue-600 text-white font-bold p-2 rounded hover:bg-blue-700 transition shadow-sm text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {editingId ? "Salvar Alterações" : "Adicionar Item"}
+                {isUploadingImage ? "Enviando imagem..." : editingId ? "Salvar Alterações" : "Adicionar Item"}
               </button>
               {editingId && (
                 <button
@@ -15351,7 +15279,8 @@ export default function App() {
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => isDemoMode ? DEMO_USER : null);
   const [authReady, setAuthReady] = useState(isDemoMode);
-  const db = useDatabase(currentUser);
+  const [activeDataPath, setActiveDataPath] = useState("/");
+  const db = useDatabase(currentUser, activeDataPath);
 
   useEffect(() => {
     if (isDemoMode) {
@@ -16160,6 +16089,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <RoutePathSync onPathChange={setActiveDataPath} />
       <div className="apontapro-shell flex flex-col h-screen-safe w-screen bg-slate-50 overflow-hidden font-sans antialiased">
         <OrderPdfExportBridge currentUser={currentUser} db={db} />
         {/* Real-time Toast Alerts Stack */}

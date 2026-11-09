@@ -11,9 +11,8 @@ import {
 import * as pdfjsLib from "pdfjs-dist";
 // @ts-ignore
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { storage } from "./firebase";
 import { useDatabase } from "./useDatabase";
+import { createProductImagePath, uploadImageFileToStorage } from "./utils/firebaseImageStorage";
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
@@ -129,6 +128,7 @@ export function CatalogImportModal({
     }
 
     let uploadedCount = 0;
+    let failedCount = 0;
 
     for (let i = 0; i < activeMatches.length; i++) {
       const item = activeMatches[i];
@@ -143,51 +143,24 @@ export function CatalogImportModal({
 
       try {
         const fileCode = dbItem.code || item.code || `item_${dbItem.id}`;
-        const storageRef = ref(
-          storage,
-          `products/${Date.now()}_${fileCode}.jpg`,
+        const url = await uploadImageFileToStorage(
+          item.blob,
+          createProductImagePath(`${fileCode}.jpg`),
+          { maxDimension: 800, quality: 0.72 },
         );
-
-        await new Promise((resolve, reject) => {
-          const task = uploadBytesResumable(storageRef, item.blob!);
-          task.on(
-            "state_changed",
-            null,
-            async (err) => {
-              try {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                  db.updateItem({
-                    ...dbItem,
-                    imageUrl: reader.result as string,
-                  });
-                  item.status = "UPLOADED";
-                  resolve(null);
-                };
-                reader.readAsDataURL(item.blob!);
-              } catch (e) {
-                reject(err);
-              }
-            },
-            async () => {
-              const url = await getDownloadURL(task.snapshot.ref);
-              db.updateItem({ ...dbItem, imageUrl: url });
-              item.status = "UPLOADED";
-              resolve(null);
-            },
-          );
-        });
-
+        await db.updateItem({ ...dbItem, imageUrl: url });
+        item.status = "UPLOADED";
         uploadedCount++;
         setProgress(Math.round(((i + 1) / activeMatches.length) * 100));
       } catch (err) {
         console.error("Erro upload:", err);
+        failedCount++;
       }
     }
 
     setProcessing(false);
     alert(
-      `Importação concluída! ${uploadedCount} imagens foram associadas com sucesso.`,
+      `Importação concluída! ${uploadedCount} imagens foram associadas com sucesso. ${failedCount} falharam no envio ao Storage.`,
     );
     onClose();
   };
