@@ -145,7 +145,7 @@ export function CatalogImportModal({
         const fileCode = dbItem.code || item.code || `item_${dbItem.id}`;
         const url = await uploadImageFileToStorage(
           item.blob,
-          createProductImagePath(`${fileCode}.jpg`),
+          createProductImagePath(db.activeTenantId, `${fileCode}.jpg`),
           { maxDimension: 800, quality: 0.72 },
         );
         await db.updateItem({ ...dbItem, imageUrl: url });

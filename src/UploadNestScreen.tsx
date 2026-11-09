@@ -30,14 +30,14 @@ async function uploadNestTaskImages<T extends {
   thumbnailBase64?: string;
   nestName?: string;
   partName?: string;
-}>(tasks: T[]): Promise<T[]> {
+}>(tenantId: string, tasks: T[]): Promise<T[]> {
   const preparedTasks: T[] = [];
   for (const [index, task] of tasks.entries()) {
     const thumbnail = task.thumbnailBase64;
     if (thumbnail?.startsWith("data:image/")) {
       const imageUrl = await uploadImageDataUrlToStorage(
         thumbnail,
-        createProductImagePath(`${task.nestName || "nest"}_${task.partName || "piece"}_${index}.jpg`),
+        createProductImagePath(tenantId, `${task.nestName || "nest"}_${task.partName || "piece"}_${index}.jpg`),
       );
       preparedTasks.push({ ...task, thumbnailBase64: imageUrl });
     } else {
@@ -769,7 +769,7 @@ export function UploadNestScreen({
         return;
       }
 
-      await db.addNestTasks(await uploadNestTaskImages(tasksToSave));
+      await db.addNestTasks(await uploadNestTaskImages(db.activeTenantId, tasksToSave));
       alert(
         `${tasksToSave.length} peça(s) adicionadas ao nesting manual com sucesso!`,
       );
@@ -788,7 +788,7 @@ export function UploadNestScreen({
         isActive: Number(formCutQty) < Number(formTotalQty),
         thumbnailBase64: selectedPieceImage || undefined,
       };
-      await db.updateNestTasks(await uploadNestTaskImages([updated]));
+      await db.updateNestTasks(await uploadNestTaskImages(db.activeTenantId, [updated]));
     }
     closeForm();
     } catch (error: any) {
@@ -1993,7 +1993,7 @@ export function UploadNestScreen({
                     }
                     try {
                       setIsUploading(true);
-                      await db.addNestTasks(await uploadNestTaskImages(validTasks));
+                      await db.addNestTasks(await uploadNestTaskImages(db.activeTenantId, validTasks));
                       setPreviewTasks(null);
                       alert(
                         `Sucesso! Foram enfileiradas ${validTasks.length} tarefas de Nesting para o laser.`,

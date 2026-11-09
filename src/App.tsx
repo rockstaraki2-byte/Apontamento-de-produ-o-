@@ -1624,7 +1624,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     try {
       const url = await uploadImageFileToStorage(
         file,
-        createProductImagePath(`cor_${file.name}`),
+        createProductImagePath(db.activeTenantId, `cor_${file.name}`),
         { maxDimension: 600, quality: 0.8 },
       );
       setAttrImageUrl(url);
@@ -1648,7 +1648,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
       try {
         imageToSave = await uploadImageDataUrlToStorage(
           imageToSave,
-          createProductImagePath(`cor_${attrValue}.jpg`),
+          createProductImagePath(db.activeTenantId, `cor_${attrValue}.jpg`),
         );
       } catch (error) {
         console.error("Falha ao migrar imagem antiga para o Storage:", error);
@@ -1919,7 +1919,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
         try {
           const imageUrl = await uploadImageFileToStorage(
             file,
-            createProductImagePath(file.name),
+            createProductImagePath(db.activeTenantId, file.name),
             { maxDimension: 450, quality: 0.7 },
           );
           await db.updateItem({ ...matchedItem, imageUrl });
@@ -2001,7 +2001,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
       try {
         imageToSave = await uploadImageDataUrlToStorage(
           imageToSave,
-          createProductImagePath(`${code || "item"}_${editingId || "novo"}.jpg`),
+          createProductImagePath(db.activeTenantId, `${code || "item"}_${editingId || "novo"}.jpg`),
         );
         setImageUrl(imageToSave);
         setImageUploadProgress(100);
@@ -2099,7 +2099,7 @@ function ItensScreen({ db }: { db: ReturnType<typeof useDatabase> }) {
     try {
       const url = await uploadImageFileToStorage(
         file,
-        createProductImagePath(file.name),
+        createProductImagePath(db.activeTenantId, file.name),
         { onProgress: setImageUploadProgress },
       );
       setImageUrl(url);
