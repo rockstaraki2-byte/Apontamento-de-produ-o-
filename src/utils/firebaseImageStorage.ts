@@ -58,10 +58,14 @@ async function uploadBlob(
   });
 }
 
-export function createProductImagePath(fileName: string): string {
+export function createProductImagePath(tenantId: string, fileName: string): string {
+  if (!/^[a-z0-9_-]{2,40}$/.test(tenantId) || tenantId === "global") {
+    throw new Error("É necessário um tenant ativo válido para enviar imagens.");
+  }
+
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
   const randomSuffix = Math.random().toString(36).slice(2, 10);
-  return `products/${Date.now()}_${randomSuffix}_${safeName.replace(/\.[^.]+$/, "") || "image"}.jpg`;
+  return `tenants/${tenantId}/products/${Date.now()}_${randomSuffix}_${safeName.replace(/\.[^.]+$/, "") || "image"}.jpg`;
 }
 
 export async function uploadImageFileToStorage(

@@ -1,0 +1,24 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isTenantUser(tenantId) {
+      return request.auth != null
+        && request.auth.token.tenantId is string
+        && request.auth.token.tenantId.size() > 0
+        && request.auth.token.tenantId != "global"
+        && request.auth.token.tenantId == tenantId;
+    }
+
+    match /tenants/{tenantId}/products/{fileName} {
+      allow read: if isTenantUser(tenantId);
+      allow create, update: if isTenantUser(tenantId)
+        && fileName.size() <= 160
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType == "image/jpeg";
+    }
+
+    // Legacy/global paths are intentionally inaccessible. All unmatched paths
+    // are denied by default.
+  }
+}
