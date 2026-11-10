@@ -1821,50 +1821,52 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
       pack.id = Date.now() + Math.floor(Math.random() * 1000);
     }
     try {
-      const matchBatch = productionBatches.find((b) => {
-        if (b.status === "CONCLUIDO") return false;
+      const matchBatch = pack.associatedBatchId
+        ? undefined
+        : productionBatches.find((b) => {
+            if (b.status === "CONCLUIDO") return false;
 
-        const batchOrders = orders.filter((o) => b.orderIds.includes(o.id));
-        return batchOrders.some((order) => {
-          const isLiberated = b.liberatedOrderIds?.includes(order.id);
-          if (!isLiberated) return false;
+            const batchOrders = orders.filter((o) => b.orderIds.includes(o.id));
+            return batchOrders.some((order) => {
+              const isLiberated = b.liberatedOrderIds?.includes(order.id);
+              if (!isLiberated) return false;
 
-          if (pack.itemId && pack.itemId !== 0) {
-            const matchesId = order.itemId === pack.itemId;
-            const matchesColor =
-              !pack.color ||
-              pack.color === "-" ||
-              !order.color ||
-              order.color === "-" ||
-              order.color === pack.color;
-            const matchesSize =
-              !pack.size ||
-              pack.size === "-" ||
-              !order.size ||
-              order.size === "-" ||
-              order.size === pack.size;
-            const matchesVariation =
-              !pack.variation ||
-              pack.variation === "-" ||
-              !order.variation ||
-              order.variation === "-" ||
-              order.variation === pack.variation;
-            return matchesId && matchesColor && matchesSize && matchesVariation;
-          } else {
-            const packName = (pack.customProductName || pack.partName || "")
-              .toLowerCase()
-              .trim();
-            const orderName = (order.customProductName || "")
-              .toLowerCase()
-              .trim();
-            return (
-              packName &&
-              orderName &&
-              (orderName.includes(packName) || packName.includes(orderName))
-            );
-          }
-        });
-      });
+              if (pack.itemId && pack.itemId !== 0) {
+                const matchesId = order.itemId === pack.itemId;
+                const matchesColor =
+                  !pack.color ||
+                  pack.color === "-" ||
+                  !order.color ||
+                  order.color === "-" ||
+                  order.color === pack.color;
+                const matchesSize =
+                  !pack.size ||
+                  pack.size === "-" ||
+                  !order.size ||
+                  order.size === "-" ||
+                  order.size === pack.size;
+                const matchesVariation =
+                  !pack.variation ||
+                  pack.variation === "-" ||
+                  !order.variation ||
+                  order.variation === "-" ||
+                  order.variation === pack.variation;
+                return matchesId && matchesColor && matchesSize && matchesVariation;
+              } else {
+                const packName = (pack.customProductName || pack.partName || "")
+                  .toLowerCase()
+                  .trim();
+                const orderName = (order.customProductName || "")
+                  .toLowerCase()
+                  .trim();
+                return (
+                  packName &&
+                  orderName &&
+                  (orderName.includes(packName) || packName.includes(orderName))
+                );
+              }
+            });
+          });
 
       if (matchBatch) {
         const confirmMsg = `Aba de Confirmação:\nIdentificamos que este item pertence ao Lote "${matchBatch.name}" (liberado pela gerência/PCP).\nDeseja associar o início deste trabalho a este lote?`;
@@ -2144,6 +2146,7 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
 
     // Auto-complete associated or matching open batch when logs are added
     newLogs.forEach((unboundLog) => {
+      if (unboundLog.skipBatchAutoComplete) return;
       try {
         let itemId: number | undefined;
         let color = unboundLog.paintedColor || "";
@@ -3459,6 +3462,28 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
             : ids.filter((id) => id !== orderId),
         };
       }));
+    },
+    setProductionBatchStatus: async (
+      batchId: number,
+      status: ProductionBatch["status"],
+    ) => {
+      const batch = filteredProductionBatches.find(
+        (candidate) => candidate.id === batchId,
+      );
+      if (!batch) {
+        throw new Error("O lote não pertence à empresa ativa.");
+      }
+      if (batch.status === status) return;
+      if (!isDemoMode) {
+        await updateDocFirebase(doc(db, "productionBatches", String(batchId)), {
+          status,
+        });
+      }
+      setProductionBatches((previous) =>
+        previous.map((candidate) =>
+          candidate.id === batchId ? { ...candidate, status } : candidate,
+        ),
+      );
     },
     addProductionBatch: async (batch: Omit<ProductionBatch, "id">) => {
       const requestedTenantId = (batch as any).tenantId;

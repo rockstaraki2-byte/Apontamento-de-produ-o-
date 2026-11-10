@@ -6,14 +6,17 @@ import {
   CheckCircle,
   Activity,
   Layers,
+  Package,
+  ChevronRight,
+  Play,
 } from "lucide-react";
 import { useDatabase } from "./useDatabase";
-import type { User, CoilCuttingPlan } from "./types";
-import { LoteGeralWidget } from "./components/LoteGeralWidget";
+import type { User, ProductionBatch, Order } from "./types";
 import { DailySummaryWidget } from "./components/DailySummaryWidget";
 import { ScreenLayout, ScrollContainer } from "./components/Layout";
 import { ProductivityCard } from "./components/ProductivityCard";
 import { MachineStopWidget } from "./components/OperatorActions";
+import { getVisibleProductionBatches } from "./utils/productionBatchAccess";
 
 export function PrensaRafaelScreen({
   db,
@@ -27,6 +30,8 @@ export function PrensaRafaelScreen({
   >("LIST_ACTIVE");
 
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+  const [expandedBatchId, setExpandedBatchId] = useState<number | null>(null);
+  const [batchSearchTerm, setBatchSearchTerm] = useState("");
 
   // Finish inputs
   const [consumedCoils, setConsumedCoils] = useState<number | "">("");
@@ -119,6 +124,78 @@ export function PrensaRafaelScreen({
         (p.type === screenType || (!p.type && screenType === "PRENSA_RAFAEL")),
     ) || [];
 
+  const pendingProductionBatches = React.useMemo(() => {
+    if (screenType !== "PRENSA_RAFAEL") return [];
+
+    const permittedSectorIds = new Set(
+      [
+        ...(currentUser.sectorIds || []),
+        ...(db.sectors || [])
+          .filter(
+            (sector) =>
+              sector.role === "PRENSA_RAFAEL" ||
+              sector.rolesIncluded?.includes("PRENSA_RAFAEL") ||
+              ["prensa", "prensa rafael"].includes(
+                (sector.name || "").trim().toLowerCase(),
+              ),
+          )
+          .map((sector) => sector.id),
+      ].map(String),
+    );
+
+    return getVisibleProductionBatches(
+      db.productionBatches,
+      currentUser,
+      db.activeTenantId,
+    ).filter((batch) => {
+      if (batch.status === "CONCLUIDO") return false;
+      const orderIds = batch.orderIds || [];
+      const hasOpenOrder = orderIds.some((orderId) => {
+        const order = db.orders.find((candidate) => candidate.id === orderId);
+        return (
+          !order ||
+          order.totalQuantity > (order.producedQuantity || 0)
+        );
+      });
+      if (orderIds.length > 0 && !hasOpenOrder) return false;
+      const isAssignedToUser =
+        batch.operatorId === currentUser.id ||
+        batch.assignedOperatorIds?.includes(currentUser.id) === true;
+      const isGerenciaBatch =
+        batch.isGerenciaLote === true || batch.sectorId === 999;
+
+      return (
+        isAssignedToUser ||
+        (!isGerenciaBatch && permittedSectorIds.has(String(batch.sectorId)))
+      );
+    });
+  }, [
+    currentUser,
+    db.activeTenantId,
+    db.orders,
+    db.productionBatches,
+    db.sectors,
+    screenType,
+  ]);
+
+  const filteredProductionBatches = React.useMemo(() => {
+    const query = batchSearchTerm.trim().toLowerCase();
+    if (!query) return pendingProductionBatches;
+
+    return pendingProductionBatches.filter((batch) => {
+      if ((batch.name || "").toLowerCase().includes(query)) return true;
+      return (batch.orderIds || []).some((orderId) => {
+        const order = db.orders.find((candidate) => candidate.id === orderId);
+        const item = order
+          ? db.items.find((candidate) => candidate.id === order.itemId)
+          : undefined;
+        return [order?.orderCode, order?.customerName, item?.name]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(query));
+      });
+    });
+  }, [batchSearchTerm, db.items, db.orders, pendingProductionBatches]);
+
   const startPlan = (planId: number) => {
     const p = pendingPlans.find((plan) => plan.id === planId);
     if (!p) return;
@@ -151,6 +228,60 @@ export function PrensaRafaelScreen({
     setView("LIST_ACTIVE");
   };
 
+  const startProductionBatch = async (batch: ProductionBatch, order: Order) => {
+    if (
+      !db.activeTenantId ||
+      currentUser.tenantId !== db.activeTenantId ||
+      batch.tenantId !== db.activeTenantId ||
+      !pendingProductionBatches.some((candidate) => candidate.id === batch.id)
+    ) {
+      return;
+    }
+
+    const remaining = Math.max(
+      0,
+      order.totalQuantity - (order.producedQuantity || 0),
+    );
+    if (remaining <= 0) return;
+
+    if (
+      activeTasksList.some(
+        (task) =>
+          task.operatorId === currentUser.id &&
+          task.associatedBatchId === batch.id &&
+          task.orderId === order.id,
+      )
+    ) {
+      alert("Você já iniciou este pedido deste lote!");
+      return;
+    }
+
+    const item = db.items.find((candidate) => candidate.id === order.itemId);
+    await db.addActivePack({
+      id: Date.now(),
+      itemId: order.itemId,
+      color: order.color || "-",
+      size: order.size || "-",
+      variation: order.variation || "-",
+      operatorId: currentUser.id,
+      startTime: Date.now(),
+      type: "PRENSA_RAFAEL",
+      partName: item?.name || order.customProductName || "Produto",
+      customerName: order.customerName,
+      orderCode: order.orderCode,
+      orderId: order.id,
+      associatedBatchId: batch.id,
+      associatedBatchName: batch.name,
+      partialQuantity: remaining,
+      tenantId: db.activeTenantId || currentUser.tenantId,
+    });
+
+    if (batch.status === "PENDENTE") {
+      await db.setProductionBatchStatus(batch.id, "EM_PRODUCAO");
+    }
+    setView("LIST_ACTIVE");
+  };
+
   const openFinishScreen = (packId: number) => {
     const t = db.activePacks.find((p) => p.id === packId);
     if (t) {
@@ -159,18 +290,110 @@ export function PrensaRafaelScreen({
     }
   };
 
-  const handleFinishCoil = (isPartial: boolean = false) => {
+  const handleFinishCoil = async (isPartial: boolean = false) => {
     const activeTask = activeTasksList.find(
       (t) => t.taskId === selectedPlanId || t.id === selectedPlanId,
     );
     if (!activeTask || !producedQuantity) return;
 
     const prod = Number(producedQuantity);
+    if (!Number.isFinite(prod) || prod <= 0) return;
     const endTime = Date.now();
     const durationMillis = endTime - activeTask.startTime;
 
+    if (activeTask.associatedBatchId && activeTask.orderId) {
+      const batch = db.productionBatches.find(
+        (candidate) => candidate.id === activeTask.associatedBatchId,
+      );
+      const order = db.orders.find(
+        (candidate) => candidate.id === activeTask.orderId,
+      );
+      if (
+        !batch ||
+        !order ||
+        currentUser.tenantId !== db.activeTenantId ||
+        batch.tenantId !== db.activeTenantId ||
+        !batch.orderIds.includes(order.id)
+      ) {
+        alert("O lote ou pedido não está mais disponível na empresa ativa.");
+        return;
+      }
+
+      const currentProduced = order.producedQuantity || 0;
+      const remaining = Math.max(0, order.totalQuantity - currentProduced);
+      if (remaining <= 0 || prod > remaining) {
+        alert(`A quantidade informada deve ser menor ou igual ao restante (${remaining} peças).`);
+        return;
+      }
+
+      const updatedOrder = {
+        ...order,
+        producedQuantity: currentProduced + prod,
+      };
+      const remainingAfter = Math.max(
+        0,
+        order.totalQuantity - updatedOrder.producedQuantity,
+      );
+
+      await db.addLogs([
+        {
+          id: Date.now(),
+          operatorId: currentUser.id,
+          quantityProcessed: prod,
+          type: "PRENSA_RAFAEL",
+          timestamp: endTime,
+          durationMillis,
+          orderId: order.id,
+          itemId: order.itemId,
+          associatedBatchId: batch.id,
+          associatedBatchName: batch.name,
+          skipBatchAutoComplete: true,
+        },
+      ]);
+      await db.updateOrders(updatedOrder);
+
+      const orderCompleted = remainingAfter === 0;
+      const keepActive = isPartial && !orderCompleted;
+      if (keepActive) {
+        await db.addActivePack({
+          ...activeTask,
+          startTime: Date.now(),
+          partialQuantity: remainingAfter,
+        });
+      } else {
+        await db.removeActivePack(activeTask.id, true);
+        if (orderCompleted) {
+          await db.setProductionBatchOrderFlag(
+            batch.id,
+            order.id,
+            "checkedOrderIds",
+            true,
+          );
+          const batchIsComplete = batch.orderIds.every(
+            (orderId) =>
+              orderId === order.id ||
+              batch.checkedOrderIds?.includes(orderId) === true,
+          );
+          if (batchIsComplete) {
+            await db.setProductionBatchStatus(batch.id, "CONCLUIDO");
+          }
+        }
+      }
+
+      db.addNotification({
+        message: `Prensa Rafael: ${prod} peças apontadas para ${order.orderCode || `OS ${order.id}`} (Lote ${batch.name}).`,
+        read: false,
+        tenantId: db.activeTenantId,
+      });
+      setConsumedCoils("");
+      setProducedQuantity("");
+      setSelectedPlanId(null);
+      setView("LIST_ACTIVE");
+      return;
+    }
+
     if (!activeTask.taskId) {
-      db.addLogs([
+      await db.addLogs([
         {
           id: Date.now(),
           operatorId: currentUser.id,
@@ -184,10 +407,10 @@ export function PrensaRafaelScreen({
         },
       ]);
       if (isPartial) {
-        db.addActivePack({ ...activeTask, startTime: Date.now() });
+        await db.addActivePack({ ...activeTask, startTime: Date.now() });
         alert(`Apontamento parcial inserido! Contagem do lote continua.`);
       } else {
-        db.removeActivePack(activeTask.id);
+        await db.removeActivePack(activeTask.id);
       }
       setProducedQuantity("");
       setSelectedPlanId(null);
@@ -200,7 +423,7 @@ export function PrensaRafaelScreen({
     const consumed = 0; // Removed as per request
 
     // 1. Log the production
-    db.addLogs([
+    await db.addLogs([
       {
         id: Date.now(),
         operatorId: currentUser.id,
@@ -228,7 +451,7 @@ export function PrensaRafaelScreen({
     }
 
     if (isPartial) {
-      db.addActivePack({ ...activeTask, startTime: Date.now() });
+      await db.addActivePack({ ...activeTask, startTime: Date.now() });
       db.addNotification({
         message: `Apontamento Parcial Prensa Rafael: ${prod} peças computadas. O lote ${plan.name} continua.`,
         read: false,
@@ -237,9 +460,9 @@ export function PrensaRafaelScreen({
       alert(`Apontamento parcial concluído com sucesso!`);
     } else {
       // 3. Update the plan status to CONCLUIDO
-      db.updateCoilCuttingPlan({ ...plan, status: "CONCLUIDO" });
+      await db.updateCoilCuttingPlan({ ...plan, status: "CONCLUIDO" });
       // 4. Cleanup
-      db.removeActivePack(activeTask.id);
+      await db.removeActivePack(activeTask.id);
       db.addNotification({
         message: `Corte Finalizado (Prensa Rafael): ${producedQuantity} peças geradas (Plano: ${plan.name}).`,
         read: false,
@@ -262,16 +485,147 @@ export function PrensaRafaelScreen({
         >
           <ArrowLeft size={20} /> Voltar
         </button>
-        <h2 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
-          <Layers className="text-indigo-600" /> Selecionar Plano de Corte
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <Layers className="text-indigo-600" /> Lotes e Planos do PCP
+          </h2>
+          <span className="text-xs bg-indigo-100 text-indigo-800 font-extrabold px-2.5 py-1 rounded-full">
+            {pendingProductionBatches.length + pendingPlans.length} disponíveis
+          </span>
+        </div>
 
         <div className="flex-1 overflow-y-auto w-full">
-          {pendingPlans.length === 0 ? (
+          {pendingProductionBatches.length === 0 && pendingPlans.length === 0 && (
             <p className="text-gray-500 text-center mt-4 border p-6 rounded bg-gray-50">
-              O PCP não programou nenhum corte de bobina pendente.
+              O PCP não programou lotes ou planos pendentes para esta estação.
             </p>
-          ) : (
+          )}
+
+          {pendingProductionBatches.length > 0 && (
+            <section className="mb-6">
+              <h3 className="font-bold text-sm text-gray-700 mb-2 flex items-center gap-2">
+                <Package size={16} className="text-indigo-600" /> Lotes industriais ({filteredProductionBatches.length})
+              </h3>
+              <div className="relative mb-3">
+                <Search
+                  size={16}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                />
+                <input
+                  type="search"
+                  value={batchSearchTerm}
+                  onChange={(event) => setBatchSearchTerm(event.target.value)}
+                  placeholder="Buscar lote, pedido, cliente ou produto..."
+                  className="border border-indigo-200 pl-9 pr-3 py-2 rounded-xl text-sm w-full focus:outline-indigo-500 bg-white"
+                />
+              </div>
+              {filteredProductionBatches.length === 0 ? (
+                <p className="text-gray-500 text-center border border-dashed p-5 rounded bg-gray-50 text-sm">
+                  Nenhum lote corresponde à busca.
+                </p>
+              ) : (
+                <div className="grid gap-2.5">
+                  {filteredProductionBatches.map((batch) => {
+                    const isExpanded = expandedBatchId === batch.id;
+                    const batchOrders = (db.orders || []).filter((order) =>
+                      (batch.orderIds || []).includes(order.id),
+                    );
+                    const activeOrders = batchOrders.filter(
+                      (order) =>
+                        order.totalQuantity - (order.producedQuantity || 0) > 0,
+                    );
+
+                    return (
+                      <div
+                        key={batch.id}
+                        className="bg-white border border-indigo-200 rounded-xl shadow-sm overflow-hidden"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedBatchId(isExpanded ? null : batch.id)
+                          }
+                          className="w-full p-3.5 flex items-center justify-between text-left bg-slate-50/70 hover:bg-indigo-50/50 transition"
+                        >
+                          <span className="min-w-0 flex flex-col pr-3">
+                            <span className="font-bold text-sm text-gray-900 truncate">
+                              📦 {batch.name}
+                            </span>
+                            <span className="text-[11px] text-gray-500 mt-1">
+                              {activeOrders.length} {activeOrders.length === 1 ? "pedido pendente" : "pedidos pendentes"}
+                              {batch.deadline && ` · Prazo: ${new Date(batch.deadline).toLocaleDateString()}`}
+                            </span>
+                          </span>
+                          <span className="flex items-center gap-2 shrink-0">
+                            <span className={`text-[9px] font-extrabold px-2 py-1 rounded uppercase ${batch.status === "EM_PRODUCAO" ? "bg-amber-100 text-amber-800" : "bg-indigo-100 text-indigo-800"}`}>
+                              {batch.status === "EM_PRODUCAO" ? "Em produção" : "Pendente"}
+                            </span>
+                            <ChevronRight
+                              size={16}
+                              className={`text-indigo-600 transition ${isExpanded ? "rotate-90" : ""}`}
+                            />
+                          </span>
+                        </button>
+
+                        {isExpanded && (
+                          <div className="p-3 border-t border-slate-100 grid gap-2">
+                            {batchOrders.length === 0 ? (
+                              <p className="text-xs text-gray-500 italic">
+                                Este lote não possui pedidos vinculados.
+                              </p>
+                            ) : (
+                              batchOrders.map((order) => {
+                                const item = db.items.find(
+                                  (candidate) => candidate.id === order.itemId,
+                                );
+                                const remaining = Math.max(
+                                  0,
+                                  order.totalQuantity - (order.producedQuantity || 0),
+                                );
+
+                                return (
+                                  <div
+                                    key={order.id}
+                                    className="p-2.5 rounded-lg border border-slate-200 flex items-center justify-between gap-2"
+                                  >
+                                    <span className="min-w-0 flex flex-col">
+                                      <span className="font-bold text-xs text-slate-900 truncate">
+                                        {item?.name || order.customProductName || "Produto"}
+                                      </span>
+                                      <span className="text-[10px] text-slate-500 truncate">
+                                        OS: <strong>{order.orderCode || `#${order.id}`}</strong> · {order.customerName}
+                                      </span>
+                                      <span className="text-[10px] text-indigo-700 font-medium">
+                                        Restante: <strong>{remaining} pçs</strong>
+                                      </span>
+                                    </span>
+                                    <button
+                                      type="button"
+                                      disabled={remaining <= 0}
+                                      onClick={() => startProductionBatch(batch, order)}
+                                      className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-[11px] px-2.5 py-1.5 rounded-md shrink-0 flex items-center gap-1"
+                                    >
+                                      <Play size={12} fill="currentColor" /> Iniciar
+                                    </button>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
+
+          {pendingPlans.length > 0 && (
+            <section>
+              <h3 className="font-bold text-sm text-gray-700 mb-2 flex items-center gap-2">
+                <Scissors size={16} className="text-indigo-600" /> Planos de corte de bobina ({pendingPlans.length})
+              </h3>
             <div className="grid gap-3">
               {pendingPlans.map((plan) => {
                 const targetItem =
@@ -345,6 +699,7 @@ export function PrensaRafaelScreen({
                 );
               })}
             </div>
+            </section>
           )}
         </div>
       </div>
@@ -356,6 +711,15 @@ export function PrensaRafaelScreen({
     const activePack = activeTasksList.find(
       (t) => t.id === selectedPlanId || t.taskId === selectedPlanId,
     );
+    const linkedOrder = activePack?.orderId
+      ? db.orders.find((order) => order.id === activePack.orderId)
+      : undefined;
+    const linkedBatch = activePack?.associatedBatchId
+      ? db.productionBatches.find(
+          (batch) => batch.id === activePack.associatedBatchId,
+        )
+      : undefined;
+    const isBatchProduction = Boolean(linkedOrder && linkedBatch);
 
     // Fallbacks if manual (no plan)
     const activeTaskItemId = activePack?.itemId;
@@ -364,15 +728,34 @@ export function PrensaRafaelScreen({
 
     const title = plan
       ? plan.name
-      : activePack?.customProductName || "Corte Manual";
+      : activePack?.customProductName || activePack?.partName || "Corte Manual";
     const subtitle = plan
       ? `Peça Gerada: ${targetItem ? targetItem.name : "Não especificada"}`
+      : isBatchProduction
+        ? `Lote: ${linkedBatch?.name} · OS: ${linkedOrder?.orderCode || linkedOrder?.id} · ${linkedOrder?.customerName}`
       : manualItem 
         ? `Peça Gerada: ${manualItem.name}`
         : `Cliente/Projeto: ${activePack?.thirdPartyName}`;
 
     const planLogs = plan ? (db.logs || []).filter((l) => l.coilPlanId === plan.id) : [];
-    const totalProduced = planLogs.reduce((acc, curr) => acc + (curr.quantityProcessed || 0), 0);
+    const batchLogs = isBatchProduction
+      ? (db.logs || []).filter(
+          (log) =>
+            log.associatedBatchId === linkedBatch?.id &&
+            log.orderId === linkedOrder?.id &&
+            log.type === "PRENSA_RAFAEL",
+        )
+      : [];
+    const totalProduced = [...planLogs, ...batchLogs].reduce(
+      (acc, curr) => acc + (curr.quantityProcessed || 0),
+      0,
+    );
+    const batchRemaining = linkedOrder
+      ? Math.max(
+          0,
+          linkedOrder.totalQuantity - (linkedOrder.producedQuantity || 0),
+        )
+      : undefined;
 
     return (
       <div className="flex flex-col h-full p-2 max-w-lg mx-auto w-full overflow-y-auto">
@@ -399,18 +782,22 @@ export function PrensaRafaelScreen({
           <div className="bg-slate-50 border border-slate-200 p-4 rounded-lg flex flex-col gap-4">
             <div className="flex flex-col gap-1 text-left">
               <label className="text-sm font-semibold text-gray-700">
-                Peças Intermediárias Geradas{" "}
+                {isBatchProduction ? "Peças Produzidas" : "Peças Intermediárias Geradas"}{" "}
                 <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
+                min={1}
+                max={batchRemaining}
                 value={producedQuantity}
                 onChange={(e) => setProducedQuantity(Number(e.target.value))}
                 placeholder="Ex: 1500"
                 className="border border-indigo-300 ring-4 ring-indigo-50 p-3 rounded-lg text-2xl font-bold text-center focus:outline-indigo-600 focus:ring-indigo-100 bg-white text-indigo-900"
               />
               <span className="text-[10px] text-slate-500 leading-tight mt-1">
-                Quantidade de peças que serão lançadas no estoque intermediário.
+                {isBatchProduction
+                  ? `Restante neste pedido: ${batchRemaining} peças.`
+                  : "Quantidade de peças que serão lançadas no estoque intermediário."}
               </span>
             </div>
           </div>
@@ -428,7 +815,7 @@ export function PrensaRafaelScreen({
               disabled={!producedQuantity}
               className="bg-indigo-600 text-white font-extrabold p-4 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 shadow-md flex justify-center items-center gap-2 uppercase tracking-wide text-sm"
             >
-              <CheckCircle size={18} /> Validar Corte e Estoque
+              <CheckCircle size={18} /> {isBatchProduction ? "Finalizar Pedido" : "Validar Corte e Estoque"}
             </button>
           </div>
         </div>
@@ -536,7 +923,7 @@ export function PrensaRafaelScreen({
             onClick={() => setView("SELECT_PLAN")}
             className="flex-1 bg-indigo-600 text-white p-3.5 rounded-xl text-xs font-bold hover:bg-indigo-700 shadow-sm flex items-center justify-center gap-2 transition uppercase"
           >
-            <Layers size={18} /> Ver Planos de Corte (PCP)
+            <Layers size={18} /> Lotes e Planos do PCP
           </button>
         </div>
 
@@ -545,11 +932,11 @@ export function PrensaRafaelScreen({
           <DailySummaryWidget db={db} currentUser={currentUser} />
 
           <h3 className="font-semibold text-gray-700 mb-3 border-b pb-2 flex items-center gap-2 text-sm mt-2">
-            <Activity size={16} /> Cortes em Andamento
+            <Activity size={16} /> Produção em Andamento
           </h3>
           {activeTasksList.length === 0 ? (
             <p className="text-gray-500 text-center mt-6 text-sm">
-              Nenhum corte de bobina iniciado.
+              Nenhum corte ou lote iniciado.
             </p>
           ) : (
             <div className="grid gap-2">
@@ -565,6 +952,11 @@ export function PrensaRafaelScreen({
                         <Scissors size={12} className="text-indigo-600" />{" "}
                         {pack.partName}
                       </span>
+                      {pack.associatedBatchName && (
+                        <span className="text-[10px] text-indigo-700 mt-0.5">
+                          {pack.associatedBatchName} · {pack.orderCode || "Pedido"}
+                        </span>
+                      )}
                       <span className="text-[10px] text-indigo-700 font-mono mt-0.5 font-bold">
                         {Date.now() - pack.startTime > 60000
                           ? `${Math.floor((Date.now() - pack.startTime) / 60000)} min decorridos`
