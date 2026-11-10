@@ -588,6 +588,7 @@ export interface ProductionLog {
   timestamp: number;
   durationMillis: number;
   skipInventoryUpdate?: boolean;
+  skipBatchAutoComplete?: boolean;
   
   // Custom fields for new roles
   measurementUnit?: "PÇS" | "SACOS" | "CAIXAS" | "KG"; // Banho Químico
@@ -715,6 +716,7 @@ export interface ActiveTask {
   processName?: string;
   partName?: string;
   taskId?: number;
+  orderId?: number;
   thirdPartyName?: string;
   customProductName?: string;
   paintedColor?: string;

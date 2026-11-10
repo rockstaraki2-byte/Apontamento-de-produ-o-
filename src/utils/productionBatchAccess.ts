@@ -47,7 +47,10 @@ export function getVisibleProductionBatches(
   return tenantBatches.filter((batch) => {
     const isGerenciaBatch = batch.isGerenciaLote === true || batch.sectorId === 999;
     if (!isGerenciaBatch) return true;
-    return Array.isArray(batch.assignedOperatorIds) &&
-      batch.assignedOperatorIds.includes(currentUser.id);
+    return (
+      batch.operatorId === currentUser.id ||
+      (Array.isArray(batch.assignedOperatorIds) &&
+        batch.assignedOperatorIds.includes(currentUser.id))
+    );
   });
 }
