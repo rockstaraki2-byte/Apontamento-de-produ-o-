@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { collection, getDocs, query, where } from "../_lib/adminFirestore.js";
 import { getFirebaseAdmin } from "../_lib/firebaseAdmin.js";
+import { handleDailyInvoicedReports } from "../_lib/dailyInvoicedReports.js";
 
 type DailyTotal = {
   amountCents?: unknown;
@@ -64,8 +65,12 @@ function isAuthorized(provided: string, expected: string): boolean {
  * The CSV intentionally includes only dates covered by the validated snapshot.
  */
 export async function GET(request: Request): Promise<Response> {
-  const expectedToken = process.env.APONTAPRO_SHEETS_API_TOKEN || "";
   const url = new URL(request.url);
+  if (url.searchParams.get("__daily_invoiced_reports") === "1") {
+    return handleDailyInvoicedReports(request);
+  }
+
+  const expectedToken = process.env.APONTAPRO_SHEETS_API_TOKEN || "";
   const suppliedToken = url.searchParams.get("token") || "";
 
   if (!expectedToken) {
