@@ -503,7 +503,6 @@ export async function GET(request: Request): Promise<Response> {
       logsByOrder.set(key, previous);
     }
 
-    const invoicedQuantityByOrder = new Map<string, number>();
     const groups = new Map<string, BillingGroup>();
     for (const order of orders) {
       const isInvoiced =
@@ -526,7 +525,6 @@ export async function GET(request: Request): Promise<Response> {
       }
       if (quantity <= 0) continue;
 
-      invoicedQuantityByOrder.set(String(order.id), quantity);
       const representativeName = resolveRepresentativeName(order, customers);
       const key = representativeName;
       const group = groups.get(key) || {
