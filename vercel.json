@@ -39,5 +39,10 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/cron/daily-invoiced-reports.ts": {
+      "maxDuration": 60
+    }
+  }
 }
