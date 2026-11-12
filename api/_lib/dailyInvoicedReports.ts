@@ -10,8 +10,8 @@ import {
   runTransaction,
   setDoc,
   where,
-} from "../_lib/adminFirestore.js";
-import { getFirebaseAdmin } from "../_lib/firebaseAdmin.js";
+} from "./adminFirestore.js";
+import { getFirebaseAdmin } from "./firebaseAdmin.js";
 
 const TENANT_ID = "imperio";
 const RECIPIENT_EMAIL = "gerencia.imperiojomarci@gmail.com";
@@ -431,7 +431,7 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export async function GET(request: Request): Promise<Response> {
+export async function handleDailyInvoicedReports(request: Request): Promise<Response> {
   const expectedSecret = process.env.CRON_SECRET || "";
   if (!expectedSecret) {
     return Response.json({ error: "CRON_SECRET não configurado." }, { status: 503 });
