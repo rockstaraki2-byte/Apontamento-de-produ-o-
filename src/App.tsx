@@ -16041,9 +16041,7 @@ export default function App() {
     }
     if (db.activeTenantId !== "imperio") {
       const allowedScreens = getTenantAllowedScreens(db.activeTenant, tenantSectorHints);
-      const legacyTubularQuoteAccess =
-        screenKey === "orcamentos-tubulares" && allowedScreens.includes("orcamentos");
-      return (allowedScreens.includes(screenKey) || legacyTubularQuoteAccess) &&
+      return allowedScreens.includes(screenKey) &&
         tenantHasScreenSector(screenKey, tenantSectorHints);
     }
     if (

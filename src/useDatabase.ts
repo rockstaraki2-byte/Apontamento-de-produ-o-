@@ -4230,12 +4230,26 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
       if (!activeTenantId || activeTenantId === "global") {
         throw new Error("O orçamento tubular exige uma empresa ativa.");
       }
-      const safeUpdates = { ...updates, id, tenantId: activeTenantId };
-      await setDoc(doc(db, "tubularQuotes", id), cleanUndefined(safeUpdates), { merge: true });
+      const existing = filteredTubularQuotes.find(
+        (quote) => quote.id === id && quote.tenantId === activeTenantId,
+      );
+      if (!existing) {
+        throw new Error("O orçamento não pertence à empresa ativa ou não está disponível.");
+      }
+      const safeUpdates: Partial<TubularQuote> = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.tenantId;
+      await updateDoc(doc(db, "tubularQuotes", id), cleanUndefined(safeUpdates));
     },
     deleteTubularQuote: async (id: string) => {
       if (!activeTenantId || activeTenantId === "global") {
         throw new Error("O orçamento tubular exige uma empresa ativa.");
+      }
+      const existing = filteredTubularQuotes.find(
+        (quote) => quote.id === id && quote.tenantId === activeTenantId,
+      );
+      if (!existing) {
+        throw new Error("O orçamento não pertence à empresa ativa ou não está disponível.");
       }
       await safeDeleteDoc(doc(db, "tubularQuotes", id));
     },

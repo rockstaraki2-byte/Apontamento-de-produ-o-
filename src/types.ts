@@ -238,7 +238,6 @@ const DEFAULT_TENANT_BASE_SCREENS = [
   "itens",
   "producao",
   "manutencao",
-  "orcamentos-tubulares",
 ];
 
 const SCREEN_SECTOR_REQUIREMENTS: Record<string, string[]> = {
