@@ -1361,8 +1361,10 @@ export interface LaserQuote {
   createdBy: string;            // E.g. "Marcos (Projetista)"
   createdAt: number;            // Timestamp
   items: LaserQuoteItem[];
-  totalWithMaterial: number;    // Soma dos itens com material
-  totalWithoutMaterial: number; // Soma dos itens sem material
+  totalWithMaterial: number;    // Total final com material, após desconto quando aplicado
+  totalWithoutMaterial: number; // Total final sem material, após desconto quando aplicado
+  discountType?: "PERCENT" | "VALUE";
+  discountValue?: number;
   totalWeightKg: number;        // Peso total do material do lote em KG
   totalBendingCost?: number;    // Custo total de dobra
   extraCosts?: number;          // Custos adicionais fixos (mão de obra, frete, etc.) em R$ rateados nos unitários
