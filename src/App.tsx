@@ -180,6 +180,7 @@ const LogisticaScreen = lazyNamed(() => import("./LogisticaScreen"), "LogisticaS
 const ProgramacaoCargasScreen = lazyNamed(() => import("./ProgramacaoCargasScreen"), "ProgramacaoCargasScreen");
 const ExpedicaoTVScreen = lazyNamed(() => import("./ExpedicaoTVScreen"), "ExpedicaoTVScreen");
 const OrcamentoLaserScreen = lazyNamed(() => import("./OrcamentoLaserScreen"), "OrcamentoLaserScreen");
+const OrcamentoTubularScreen = lazyNamed(() => import("./OrcamentoTubularScreen"), "OrcamentoTubularScreen");
 const MontagemRetratilScreen = lazyNamed(() => import("./MontagemRetratilScreen"), "MontagemRetratilScreen");
 const OrderEditModal = lazyNamed(() => import("./components/OrderEditModal"), "OrderEditModal");
 const CatalogImportModal = lazyNamed(() => import("./CatalogImportModal"), "CatalogImportModal");
@@ -16040,7 +16041,9 @@ export default function App() {
     }
     if (db.activeTenantId !== "imperio") {
       const allowedScreens = getTenantAllowedScreens(db.activeTenant, tenantSectorHints);
-      return allowedScreens.includes(screenKey) &&
+      const legacyTubularQuoteAccess =
+        screenKey === "orcamentos-tubulares" && allowedScreens.includes("orcamentos");
+      return (allowedScreens.includes(screenKey) || legacyTubularQuoteAccess) &&
         tenantHasScreenSector(screenKey, tenantSectorHints);
     }
     if (
@@ -16084,7 +16087,8 @@ export default function App() {
     }
     const allowed = db.activeTenant?.allowedScreens;
     if (!allowed || allowed.length === 0) return true;
-    return allowed.includes(screenKey);
+    return allowed.includes(screenKey) ||
+      (screenKey === "orcamentos-tubulares" && allowed.includes("orcamentos"));
   };
 
   return (
@@ -16314,6 +16318,18 @@ export default function App() {
                 }
               />
             )}
+            {isScreenAllowed("orcamentos-tubulares") &&
+              (currentUser.role === "ADMIN" ||
+                currentUser.role === "PCP" ||
+                currentUser.role === "GERENCIA" ||
+                currentUser.role === "PROJETISTA" ||
+                currentUser.id === "romario" ||
+                currentUser.name.toLowerCase().includes("romario")) && (
+                <Route
+                  path="/orcamentos-tubulares"
+                  element={<OrcamentoTubularScreen db={db} currentUser={currentUser} />}
+                />
+              )}
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "GERENCIA" ||
               currentUser.role === "PRENSA_EDUARDO") && (
@@ -16708,6 +16724,19 @@ export default function App() {
               to="/orcamentos"
               icon={<FileText size={24} />}
               label="Orçamentos Laser"
+            />
+          )}
+
+          {isScreenAllowed("orcamentos-tubulares") && (currentUser.role === "ADMIN" ||
+            currentUser.role === "PCP" ||
+            currentUser.role === "GERENCIA" ||
+            currentUser.role === "PROJETISTA" ||
+            currentUser.id === "romario" ||
+            currentUser.name.toLowerCase().includes("romario")) && (
+            <NavLink
+              to="/orcamentos-tubulares"
+              icon={<Package size={24} />}
+              label="Orçamentos Tubulares"
             />
           )}
 

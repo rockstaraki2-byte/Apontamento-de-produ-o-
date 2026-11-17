@@ -830,6 +830,7 @@ export const DEMO_DATABASE = {
   performanceReviews: [],
   attendances: [],
   laserQuotes: [],
+  tubularQuotes: [],
   sheetStocks: [],
   sheetStockMovements: [],
   prensaPendingProductions: [],
