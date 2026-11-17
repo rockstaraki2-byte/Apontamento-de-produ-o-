@@ -193,6 +193,7 @@ export const ALL_AVAILABLE_SCREENS: ScreenOption[] = [
   { key: "gestao-clientes", label: "Gestão de Clientes", category: "PCP e Pedidos", path: "/gestao-clientes" },
   { key: "itens", label: "Cadastro de Itens", category: "PCP e Pedidos", path: "/itens" },
   { key: "orcamentos", label: "Orçamentos Laser", category: "PCP e Pedidos", path: "/orcamentos" },
+  { key: "orcamentos-tubulares", label: "Orçamentos Tubulares", category: "PCP e Pedidos", path: "/orcamentos-tubulares" },
   { key: "nests", label: "Gestão de Nests", category: "PCP e Pedidos", path: "/nests" },
   { key: "representante", label: "Painel Representante", category: "PCP e Pedidos", path: "/representante" },
 
@@ -1120,6 +1121,76 @@ export interface ItemPriceHistory {
   source: "PDF" | "MANUAL" | "EXCEL";
 }
 
+export type TubularQuoteServiceType = "CORTE" | "CONIFICACAO" | "CORTE_E_CONIFICACAO";
+export type TubularQuoteStatus = "RASCUNHO" | "ENVIADO" | "APROVADO" | "REJEITADO";
+
+export interface TubularQuantityTier {
+  minQuantity: number;
+  maxQuantity: number | null;
+  cutPrice: number;
+  conificationPrice: number;
+}
+
+export interface TubularOperationFactors {
+  diameterFactors: number[];
+  wallThicknessFactors: number[];
+}
+
+export interface TubularPricingConfig {
+  materialPricePerMeter: number;
+  quantityTiers: TubularQuantityTier[];
+  cutFactors: TubularOperationFactors;
+  conificationFactors: TubularOperationFactors;
+}
+
+export interface TubularQuoteItemInput {
+  id: string;
+  description: string;
+  serviceType: TubularQuoteServiceType;
+  lengthCm: number;
+  diameterMm: number;
+  wallThicknessMm: number;
+  quantity: number;
+}
+
+export interface TubularQuoteItem extends TubularQuoteItemInput {
+  quantityTierLabel: string;
+  cutBasePrice: number;
+  conificationBasePrice: number;
+  cutDiameterFactor: number;
+  cutWallFactor: number;
+  conificationDiameterFactor: number;
+  conificationWallFactor: number;
+  cutComplexityFactor: number;
+  conificationComplexityFactor: number;
+  materialPricePerMeter: number;
+  materialLengthMeters: number;
+  materialCostPerUnit: number;
+  unitPriceWithoutMaterial: number;
+  unitPriceWithMaterial: number;
+  totalWithoutMaterial: number;
+  totalWithMaterial: number;
+}
+
+export interface TubularQuote {
+  id: string;
+  tenantId: string;
+  quoteCode: string;
+  customerId?: number;
+  customerName: string;
+  contactInfo?: string;
+  createdDate: string;
+  validityDays: number;
+  createdBy: string;
+  createdAt: number;
+  items: TubularQuoteItem[];
+  totalWithMaterial: number;
+  totalWithoutMaterial: number;
+  materialTotal: number;
+  notes?: string;
+  status: TubularQuoteStatus;
+}
+
 export interface SystemSettings {
   id: string;
   companyLogoUrl?: string;
@@ -1130,6 +1201,7 @@ export interface SystemSettings {
   manualTotalAdjustment?: number;
   manualDailyAdjustments?: Record<string, number>;
   manualRepAdjustments?: Record<string, number>;
+  tubularPricingConfig?: TubularPricingConfig;
 }
 
 export interface TornoEvent {

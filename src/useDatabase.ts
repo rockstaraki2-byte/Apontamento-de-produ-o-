@@ -37,6 +37,7 @@ import type {
   SheetStockMovement,
   TekSystemBillingMonthlyTotal,
   TekSystemRepresentativeBillingMonthlyTotal,
+  TubularQuote,
 } from "./types";
 import { auth, db } from "./firebase";
 import {
@@ -162,7 +163,7 @@ const ALL_OPERATIONAL_LISTENER_COLLECTIONS = [
   "productionSchedules", "extraHours", "systemSettings", "teksystemBillingMonthlyTotals",
   "teksystemBillingRepresentativeMonthlyTotals", "agentReports", "priceHistories",
   "tornoEvents", "machineStops", "maintenanceOrders", "maintenanceWorkLogs",
-  "performanceQuestions", "performanceReviews", "attendances", "laserQuotes",
+  "performanceQuestions", "performanceReviews", "attendances", "laserQuotes", "tubularQuotes",
   "sheetStocks", "sheetStockMovements", "prensaPendingProductions",
 ] as const;
 
@@ -179,6 +180,7 @@ const ROUTE_SCOPED_LISTENER_COLLECTIONS: Record<string, readonly string[]> = {
   "/estoque-laser": ["items", "nestTasks", "stocks", "stock_movements", "sheetStocks", "sheetStockMovements", "sectors", "systemSettings"],
   "/estoque-chapas": ["items", "sheetStocks", "sheetStockMovements", "sectors", "systemSettings"],
   "/orcamentos": ["items", "attributes", "customers", "laserQuotes", "priceHistories", "sectors", "systemSettings"],
+  "/orcamentos-tubulares": ["customers", "tubularQuotes", "systemSettings"],
   "/prensa-eduardo": ["items", "orders", "activePacks", "logs", "productionSteps", "productionBatches", "productionAgendas", "productionSchedules", "notifications", "sectors", "systemSettings"],
   "/torno-cnc-willian": ["items", "orders", "activePacks", "logs", "coilCuttingPlans", "customers", "productionBatches", "tornoEvents", "notifications", "sectors", "systemSettings"],
   "/torno-cnc-henrique": ["items", "orders", "activePacks", "logs", "coilCuttingPlans", "customers", "productionBatches", "tornoEvents", "notifications", "sectors", "systemSettings"],
@@ -760,6 +762,7 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
   >([]);
   const [attendances, setAttendances] = useState<import("./types").AttendanceRecord[]>([]);
   const [laserQuotes, setLaserQuotes] = useState<import("./types").LaserQuote[]>([]);
+  const [tubularQuotes, setTubularQuotes] = useState<TubularQuote[]>([]);
   const [sheetStocks, setSheetStocks] = useState<SheetStockEntry[]>([]);
   const [sheetStockMovements, setSheetStockMovements] = useState<SheetStockMovement[]>([]);
   const [prensaPendingProductions, setPrensaPendingProductions] = useState<import("./types").PrensaPendingProduction[]>([]);
@@ -806,6 +809,7 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
       setPerformanceReviews(data.performanceReviews);
       setAttendances(data.attendances);
       setLaserQuotes(data.laserQuotes);
+      setTubularQuotes(data.tubularQuotes || []);
       setSheetStocks(data.sheetStocks);
       setSheetStockMovements(data.sheetStockMovements);
       setPrensaPendingProductions(data.prensaPendingProductions);
@@ -1260,6 +1264,14 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
       (err) => handleSnapshotError("laserQuotes", err),
     );
 
+    const unsubTubularQuotes = listenTenantCollection("tubularQuotes",
+      (snap) => {
+        const list = snap.docs.map((d) => d.data() as TubularQuote);
+        setTubularQuotes(list);
+      },
+      (err) => handleSnapshotError("tubularQuotes", err),
+    );
+
     const unsubSheetStocks = listenTenantCollection("sheetStocks",
       (snap) => {
         const list = snap.docs.map((d) => d.data() as SheetStockEntry);
@@ -1343,6 +1355,7 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
       unsubPerformanceReviews,
       unsubAttendances,
       unsubLaserQuotes,
+      unsubTubularQuotes,
       unsubSheetStocks,
       unsubSheetStockMovements,
       unsubPrensaPending,
@@ -1396,6 +1409,7 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
       unsubPerformanceReviews();
       unsubAttendances();
       unsubLaserQuotes();
+      unsubTubularQuotes();
       unsubSheetStocks();
       unsubSheetStockMovements();
       unsubPrensaPending();
@@ -2610,6 +2624,7 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
   const filteredPerformanceReviews = useMemo(() => performanceReviews.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [performanceReviews, matchesTenant]);
   const filteredAttendances = useMemo(() => attendances.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [attendances, matchesTenant]);
   const filteredLaserQuotes = useMemo(() => laserQuotes.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [laserQuotes, matchesTenant]);
+  const filteredTubularQuotes = useMemo(() => tubularQuotes.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [tubularQuotes, matchesTenant]);
   const filteredSheetStocks = useMemo(() => sheetStocks.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [sheetStocks, matchesTenant]);
   const filteredSheetStockMovements = useMemo(() => sheetStockMovements.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [sheetStockMovements, matchesTenant]);
   const filteredPrensaPendingProductions = useMemo(() => prensaPendingProductions.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [prensaPendingProductions, matchesTenant]);
@@ -4199,6 +4214,44 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
     },
     deleteLaserQuote: async (id: string) => {
       await safeDeleteDoc(doc(db, "laserQuotes", id));
+    },
+
+    tubularQuotes: filteredTubularQuotes,
+    addTubularQuote: async (quote: Omit<TubularQuote, "id"> & { id?: string }) => {
+      if (!activeTenantId || activeTenantId === "global") {
+        throw new Error("O orçamento tubular exige uma empresa ativa.");
+      }
+      const id = quote.id || "tub_" + activeTenantId + "_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+      const newQuote: TubularQuote = { ...quote, id, tenantId: activeTenantId };
+      await setDoc(doc(db, "tubularQuotes", id), cleanUndefined(newQuote));
+      return id;
+    },
+    updateTubularQuote: async (id: string, updates: Partial<TubularQuote>) => {
+      if (!activeTenantId || activeTenantId === "global") {
+        throw new Error("O orçamento tubular exige uma empresa ativa.");
+      }
+      const existing = filteredTubularQuotes.find(
+        (quote) => quote.id === id && quote.tenantId === activeTenantId,
+      );
+      if (!existing) {
+        throw new Error("O orçamento não pertence à empresa ativa ou não está disponível.");
+      }
+      const safeUpdates: Partial<TubularQuote> = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.tenantId;
+      await updateDoc(doc(db, "tubularQuotes", id), cleanUndefined(safeUpdates));
+    },
+    deleteTubularQuote: async (id: string) => {
+      if (!activeTenantId || activeTenantId === "global") {
+        throw new Error("O orçamento tubular exige uma empresa ativa.");
+      }
+      const existing = filteredTubularQuotes.find(
+        (quote) => quote.id === id && quote.tenantId === activeTenantId,
+      );
+      if (!existing) {
+        throw new Error("O orçamento não pertence à empresa ativa ou não está disponível.");
+      }
+      await safeDeleteDoc(doc(db, "tubularQuotes", id));
     },
 
     sheetStocks: filteredSheetStocks,
