@@ -1337,6 +1337,7 @@ export interface LaserQuoteItem {
   // Material calculation
   steelDensityFactor: number;   // Padrão 7.92
   materialPricePerKg: number;   // R$/kg do material
+  manualMaterialCostPerUnit?: number; // Optional unit override for material cost
   calculatedWeightKg: number;   // (lengthMm * widthMm * thicknessMm * 7.92) / 1000000
   
   // Calculated prices

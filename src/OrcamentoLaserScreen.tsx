@@ -253,6 +253,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
   const [itemCuttingTimeSeconds, setItemCuttingTimeSeconds] = useState<number>(120);
   const [itemCuttingRatePerSec, setItemCuttingRatePerSec] = useState<number>(0.35);
   const [itemPricePerKg, setItemPricePerKg] = useState<number>(10.0);
+  const [itemManualMaterialCostPerUnit, setItemManualMaterialCostPerUnit] = useState<number | undefined>(undefined);
   const [itemHasBending, setItemHasBending] = useState<boolean>(false);
   const [itemBendingQuantity, setItemBendingQuantity] = useState<number>(1);
   const [itemBendingRatePerKg, setItemBendingRatePerKg] = useState<number>(2.0);
@@ -339,6 +340,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     setItemCuttingTimeSeconds(120);
     setItemCuttingRatePerSec(defaultRatePerSec);
     setItemPricePerKg(defaultPricePerKg);
+    setItemManualMaterialCostPerUnit(undefined);
     setItemHasBending(false);
     setItemBendingQuantity(1);
     setItemBendingRatePerKg(defaultBendingRatePerKg);
@@ -353,7 +355,9 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       (itemLengthMm * itemWidthMm * itemThicknessMm * 7.92) / 1000000;
     
     const cuttingCost = itemCuttingTimeSeconds * itemCuttingRatePerSec;
-    const materialCost = calculatedWeightKg * itemPricePerKg;
+    const materialCost = itemManualMaterialCostPerUnit !== undefined
+      ? itemManualMaterialCostPerUnit
+      : calculatedWeightKg * itemPricePerKg;
     const bendingCost = itemHasBending
       ? (calculatedWeightKg * itemBendingRatePerKg * Math.max(1, itemBendingQuantity))
       : 0;
@@ -391,6 +395,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     itemCuttingTimeSeconds,
     itemCuttingRatePerSec,
     itemPricePerKg,
+    itemManualMaterialCostPerUnit,
     itemHasBending,
     itemBendingRatePerKg,
     itemBendingQuantity,
@@ -422,6 +427,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       bendingCost: calc.bendingCost,
       steelDensityFactor: 7.92,
       materialPricePerKg: itemPricePerKg,
+      manualMaterialCostPerUnit: itemManualMaterialCostPerUnit,
       calculatedWeightKg: calc.calculatedWeightKg,
       cuttingCost: calc.cuttingCost,
       materialCost: calc.materialCost,
@@ -454,6 +460,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     setItemCuttingTimeSeconds(item.cuttingTimeSeconds);
     setItemCuttingRatePerSec(item.cuttingRatePerSec);
     setItemPricePerKg(item.materialPricePerKg);
+    setItemManualMaterialCostPerUnit(item.manualMaterialCostPerUnit);
     setItemHasBending(item.hasBending || false);
     setItemBendingQuantity(item.bendingQuantity ?? 1);
     setItemBendingRatePerKg(item.bendingRatePerKg ?? defaultBendingRatePerKg);
@@ -485,7 +492,9 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     const baseItems = items.map((it) => {
       const calcWeight = (it.lengthMm * it.widthMm * it.thicknessMm * 7.92) / 1000000;
       const cutCost = it.cuttingTimeSeconds * it.cuttingRatePerSec;
-      const matCost = calcWeight * it.materialPricePerKg;
+      const matCost = it.manualMaterialCostPerUnit !== undefined
+        ? it.manualMaterialCostPerUnit
+        : calcWeight * it.materialPricePerKg;
       const bendQty = it.hasBending ? (it.bendingQuantity ?? 1) : 0;
       const bendRate = it.bendingRatePerKg ?? 2.0;
       const bendCost = it.hasBending ? (calcWeight * bendRate * bendQty) : 0;
@@ -1340,7 +1349,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-600">Valor Chapa (R$/KG):</span>
+                    <span className="text-xs font-semibold text-slate-600">Valor do material (R$/KG):</span>
                     <input
                       type="number"
                       step="0.5"
@@ -1518,7 +1527,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                 </div>
 
                 {/* Dimensions & Time Inputs */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 bg-white p-3 rounded-lg border border-slate-200">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 bg-white p-3 rounded-lg border border-slate-200">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
                       Comprimento (mm)
@@ -1582,6 +1591,24 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                       onChange={(e) => setItemQuantity(Number(e.target.value))}
                       className="w-full p-1.5 border border-slate-200 rounded-md text-xs font-bold text-center text-slate-800"
                     />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      Valor da chapa (R$/peça, opcional)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Usar cálculo por kg"
+                      value={itemManualMaterialCostPerUnit ?? ""}
+                      onChange={(e) => setItemManualMaterialCostPerUnit(e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)))}
+                      className="w-full p-1.5 border border-slate-200 rounded-md text-xs font-bold text-center text-slate-800"
+                    />
+                    <p className="mt-1 text-[9px] leading-tight text-slate-500">
+                      Preenchido, substitui o cálculo por peso × R$/kg neste item.
+                    </p>
                   </div>
 
                   <div className="flex items-end">
