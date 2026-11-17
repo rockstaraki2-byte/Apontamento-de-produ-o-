@@ -120,6 +120,34 @@ const generateQuoteCode = (num: number, clientName: string, dateStr?: string) =>
   return `ORC-${numStr}-${slug}-${year}`;
 };
 
+const calculateLaserQuoteDiscount = (
+  subtotal: number,
+  type: LaserQuote["discountType"],
+  value?: number
+) => {
+  const safeSubtotal = Math.max(0, subtotal || 0);
+  const safeValue = Math.max(0, value || 0);
+  if (!safeSubtotal || !safeValue) return 0;
+  const discount = type === "PERCENT"
+    ? safeSubtotal * Math.min(100, safeValue) / 100
+    : safeValue;
+  return Math.min(safeSubtotal, discount);
+};
+
+const formatLaserCurrency = (value: number) =>
+  `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const getLaserQuoteDiscountAmountForMode = (
+  quote: LaserQuote,
+  mode: "COM_MATERIAL" | "SEM_MATERIAL"
+) => {
+  const subtotal = (quote.items || []).reduce(
+    (sum, item) => sum + (mode === "COM_MATERIAL" ? item.totalWithMaterial : item.totalWithoutMaterial),
+    0
+  );
+  return calculateLaserQuoteDiscount(subtotal, quote.discountType, quote.discountValue);
+};
+
 export function OrcamentoLaserScreen({ db, currentUser }: Props) {
   const isImperio = db.activeTenantId === "imperio";
   const [searchTerm, setSearchTerm] = useState("");
@@ -142,6 +170,8 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
   const [notes, setNotes] = useState("");
   const [additionPercent, setAdditionPercent] = useState<number>(0);
   const [extraCosts, setExtraCosts] = useState<number>(0);
+  const [discountType, setDiscountType] = useState<"PERCENT" | "VALUE">("PERCENT");
+  const [discountValue, setDiscountValue] = useState<number>(0);
   const [viewingQuote, setViewingQuote] = useState<LaserQuote | null>(null);
 
   // PDF Export Modal State
@@ -287,6 +317,8 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     setNotes("");
     setExtraCosts(0);
     setAdditionPercent(0);
+    setDiscountType("PERCENT");
+    setDiscountValue(0);
     setDefaultRatePerSec(0.35);
     setDefaultPricePerKg(10.0);
     setDefaultBendingRatePerKg(2.0);
@@ -310,6 +342,8 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     setNotes(quote.notes || "");
     setExtraCosts(quote.extraCosts || 0);
     setAdditionPercent(quote.additionPercent || 0);
+    setDiscountType(quote.discountType || "PERCENT");
+    setDiscountValue(quote.discountValue || 0);
     setItems(quote.items || []);
     resetItemForm();
     setIsModalOpen(true);
@@ -586,6 +620,19 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     [computedItems]
   );
 
+  const discountAmountWithMaterial = useMemo(
+    () => calculateLaserQuoteDiscount(grandTotalWithMaterial, discountType, discountValue),
+    [grandTotalWithMaterial, discountType, discountValue]
+  );
+
+  const discountAmountWithoutMaterial = useMemo(
+    () => calculateLaserQuoteDiscount(grandTotalWithoutMaterial, discountType, discountValue),
+    [grandTotalWithoutMaterial, discountType, discountValue]
+  );
+
+  const finalTotalWithMaterial = grandTotalWithMaterial - discountAmountWithMaterial;
+  const finalTotalWithoutMaterial = grandTotalWithoutMaterial - discountAmountWithoutMaterial;
+
   const grandTotalWeightKg = useMemo(
     () => computedItems.reduce((acc, it) => acc + (it.calculatedWeightKg * it.quantity), 0),
     [computedItems]
@@ -621,12 +668,14 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       createdBy: currentUser.name || "Marcos (Projetista)",
       createdAt: editingQuote?.createdAt || Date.now(),
       items: computedItems,
-      totalWithMaterial: grandTotalWithMaterial,
-      totalWithoutMaterial: grandTotalWithoutMaterial,
+      totalWithMaterial: finalTotalWithMaterial,
+      totalWithoutMaterial: finalTotalWithoutMaterial,
       totalWeightKg: grandTotalWeightKg,
       totalBendingCost: grandTotalBendingCost,
       extraCosts: extraCosts || 0,
       additionPercent: additionPercent || 0,
+      discountType,
+      discountValue: discountValue || 0,
       notes,
       status: quoteStatus,
       ...(isImperio ? { approvalMaterialMode: getLaserQuoteMaterialMode({ status: quoteStatus, approvalMaterialMode }) } : {}),
@@ -663,6 +712,28 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     });
 
     const formattedDate = new Date(quote.createdDate + "T12:00:00").toLocaleDateString("pt-BR");
+    const hasDiscount = (quote.discountValue || 0) > 0;
+    const subtotalWithMaterial = hasDiscount
+      ? (quote.items || []).reduce((sum, item) => sum + item.totalWithMaterial, 0)
+      : quote.totalWithMaterial;
+    const subtotalWithoutMaterial = hasDiscount
+      ? (quote.items || []).reduce((sum, item) => sum + item.totalWithoutMaterial, 0)
+      : quote.totalWithoutMaterial;
+    const quoteDiscountWithMaterial = hasDiscount
+      ? calculateLaserQuoteDiscount(subtotalWithMaterial, quote.discountType, quote.discountValue)
+      : 0;
+    const quoteDiscountWithoutMaterial = hasDiscount
+      ? calculateLaserQuoteDiscount(subtotalWithoutMaterial, quote.discountType, quote.discountValue)
+      : 0;
+    const quoteFinalTotalWithMaterial = hasDiscount
+      ? subtotalWithMaterial - quoteDiscountWithMaterial
+      : quote.totalWithMaterial;
+    const quoteFinalTotalWithoutMaterial = hasDiscount
+      ? subtotalWithoutMaterial - quoteDiscountWithoutMaterial
+      : quote.totalWithoutMaterial;
+    const discountLabel = quote.discountType === "PERCENT"
+      ? `DESCONTO (${quote.discountValue}%)`
+      : "DESCONTO (VALOR FIXO)";
 
     // Header Império
     doc.setFont("helvetica", "bold");
@@ -747,7 +818,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
           styles: { fontStyle: "bold", halign: "right", fillColor: [255, 255, 0] },
         },
         {
-          content: `R$ ${quote.totalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          content: formatLaserCurrency(quoteFinalTotalWithMaterial),
           styles: { fontStyle: "bold", halign: "center", fillColor: [168, 230, 207] },
         },
       ];
@@ -799,7 +870,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
           styles: { fontStyle: "bold", halign: "right", fillColor: [255, 255, 0] },
         },
         {
-          content: `R$ ${quote.totalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          content: formatLaserCurrency(quoteFinalTotalWithoutMaterial),
           styles: { fontStyle: "bold", halign: "center", fillColor: [255, 204, 153] },
         },
       ];
@@ -856,11 +927,11 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
           styles: { fontStyle: "bold", halign: "right", fillColor: [255, 255, 0] },
         },
         {
-          content: `R$ ${quote.totalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          content: formatLaserCurrency(quoteFinalTotalWithMaterial),
           styles: { fontStyle: "bold", halign: "center", fillColor: [168, 230, 207] },
         },
         {
-          content: `R$ ${quote.totalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          content: formatLaserCurrency(quoteFinalTotalWithoutMaterial),
           styles: { fontStyle: "bold", halign: "center", fillColor: [255, 204, 153] },
         },
       ];
@@ -877,9 +948,37 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       };
     }
 
+    const summaryRows: any[] = hasDiscount
+      ? reportMode === "AMBOS"
+        ? [
+            [
+              { content: "SUBTOTAL", colSpan: 6, styles: { fontStyle: "bold", halign: "right", fillColor: [226, 232, 240] } },
+              { content: formatLaserCurrency(subtotalWithMaterial), styles: { fontStyle: "bold", halign: "right", fillColor: [224, 247, 250] } },
+              { content: formatLaserCurrency(subtotalWithoutMaterial), styles: { fontStyle: "bold", halign: "right", fillColor: [255, 243, 224] } },
+            ],
+            [
+              { content: discountLabel, colSpan: 6, styles: { fontStyle: "bold", halign: "right", textColor: [180, 45, 45], fillColor: [254, 242, 242] } },
+              { content: `- ${formatLaserCurrency(quoteDiscountWithMaterial)}`, styles: { fontStyle: "bold", halign: "right", textColor: [180, 45, 45], fillColor: [254, 242, 242] } },
+              { content: `- ${formatLaserCurrency(quoteDiscountWithoutMaterial)}`, styles: { fontStyle: "bold", halign: "right", textColor: [180, 45, 45], fillColor: [254, 242, 242] } },
+            ],
+            totalsRow,
+          ]
+        : [
+            [
+              { content: "SUBTOTAL", colSpan: 5, styles: { fontStyle: "bold", halign: "right", fillColor: [226, 232, 240] } },
+              { content: formatLaserCurrency(reportMode === "COM_MATERIAL" ? subtotalWithMaterial : subtotalWithoutMaterial), styles: { fontStyle: "bold", halign: "right", fillColor: [226, 232, 240] } },
+            ],
+            [
+              { content: discountLabel, colSpan: 5, styles: { fontStyle: "bold", halign: "right", textColor: [180, 45, 45], fillColor: [254, 242, 242] } },
+              { content: `- ${formatLaserCurrency(reportMode === "COM_MATERIAL" ? quoteDiscountWithMaterial : quoteDiscountWithoutMaterial)}`, styles: { fontStyle: "bold", halign: "right", textColor: [180, 45, 45], fillColor: [254, 242, 242] } },
+            ],
+            totalsRow,
+          ]
+      : [totalsRow];
+
     autoTable(doc, {
       head: headRow,
-      body: [...tableRows, totalsRow as any],
+      body: [...tableRows, ...summaryRows],
       startY: 53,
       margin: { left: 10, right: 10, top: 53, bottom: 15 },
       theme: "grid",
@@ -1794,20 +1893,83 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                           <td></td>
                         </tr>
                       )}
+                      {discountValue > 0 && (
+                        <tr className="bg-slate-200 border-t-2 border-slate-900 font-bold text-xs text-slate-800">
+                          <td colSpan={6} className="p-2 text-right uppercase border-r border-slate-900">
+                            SUBTOTAL DO ORÇAMENTO
+                          </td>
+                          <td className="p-2 text-right font-mono border-r border-slate-900">
+                            R$ {grandTotalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-2 text-right font-mono">
+                            R$ {grandTotalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td></td>
+                        </tr>
+                      )}
+                      {discountValue > 0 && (
+                        <tr className="bg-rose-50 border-t border-slate-900 font-bold text-xs text-rose-800">
+                          <td colSpan={6} className="p-2 text-right uppercase border-r border-slate-900">
+                            DESCONTO ({discountType === "PERCENT" ? `${discountValue}%` : "VALOR FIXO"})
+                          </td>
+                          <td className="p-2 text-right font-mono border-r border-slate-900">
+                            - R$ {discountAmountWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-2 text-right font-mono">
+                            - R$ {discountAmountWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td></td>
+                        </tr>
+                      )}
                       <tr className="bg-yellow-300 border-t-2 border-slate-900 font-black text-xs text-slate-900">
                         <td colSpan={6} className="p-2.5 text-right uppercase border-r border-slate-900">
-                          VALOR TOTAL DO SERVIÇO {additionPercent > 0 ? `(C/ +${additionPercent}%)` : ""}
+                          VALOR TOTAL DO SERVIÇO {additionPercent > 0 ? `(C/ +${additionPercent}%)` : ""} {discountValue > 0 ? "(APÓS DESCONTO)" : ""}
                         </td>
                         <td className="p-2.5 text-right font-mono text-sm border-r border-slate-900 bg-[#a8e6cf]">
-                          R$ {grandTotalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          R$ {finalTotalWithMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                         <td className="p-2.5 text-right font-mono text-sm bg-[#ffcc80]">
-                          R$ {grandTotalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          R$ {finalTotalWithoutMaterial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                         <td></td>
                       </tr>
                     </tfoot>
                   </table>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-[1fr_220px_180px] items-end gap-3 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase text-rose-900 block mb-1">
+                      Desconto no orçamento (opcional)
+                    </label>
+                    <p className="text-[10px] text-slate-500">
+                      O desconto é aplicado às opções com e sem material, sem deixar o total negativo.
+                    </p>
+                  </div>
+                  <select
+                    value={discountType}
+                    onChange={(e) => {
+                      const nextType = e.target.value as "PERCENT" | "VALUE";
+                      setDiscountType(nextType);
+                      if (nextType === "PERCENT") setDiscountValue((value) => Math.min(100, value));
+                    }}
+                    className="w-full p-2 border border-rose-200 rounded-lg text-xs font-bold bg-white text-slate-800"
+                    aria-label="Tipo de desconto"
+                  >
+                    <option value="PERCENT">Percentual (%)</option>
+                    <option value="VALUE">Valor fixo (R$)</option>
+                  </select>
+                  <input
+                    type="number"
+                    min="0"
+                    max={discountType === "PERCENT" ? 100 : undefined}
+                    step={discountType === "PERCENT" ? "0.1" : "0.01"}
+                    placeholder={discountType === "PERCENT" ? "Ex.: 5" : "Ex.: 50,00"}
+                    value={discountValue || ""}
+                    onChange={(e) => setDiscountValue(Math.max(0, Math.min(discountType === "PERCENT" ? 100 : Number.POSITIVE_INFINITY, Number(e.target.value))))}
+                    className="w-full p-2 border border-rose-200 rounded-lg text-sm font-extrabold text-rose-900 bg-white text-right"
+                    aria-label={discountType === "PERCENT" ? "Percentual de desconto" : "Valor fixo de desconto"}
+                  />
                 </div>
 
                 <div className="text-center font-bold text-xs text-slate-700 uppercase tracking-widest pt-2">
@@ -2014,6 +2176,27 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                     <span className="text-xs font-bold text-emerald-400 uppercase">{isImperio ? getStatusBadge(viewingQuote).label : viewingQuote.status}</span>
                   </div>
                 </div>
+
+                {(viewingQuote.discountValue || 0) > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-b border-slate-800 pb-3">
+                    <div className="flex items-center justify-between gap-3 text-rose-300">
+                      <span className="text-xs font-bold uppercase">
+                        Desconto {viewingQuote.discountType === "PERCENT" ? `(${viewingQuote.discountValue}%)` : "(valor fixo)"} · com material
+                      </span>
+                      <span className="text-sm font-mono font-extrabold">
+                        - {formatLaserCurrency(getLaserQuoteDiscountAmountForMode(viewingQuote, "COM_MATERIAL"))}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 text-rose-300">
+                      <span className="text-xs font-bold uppercase">
+                        Desconto {viewingQuote.discountType === "PERCENT" ? `(${viewingQuote.discountValue}%)` : "(valor fixo)"} · sem material
+                      </span>
+                      <span className="text-sm font-mono font-extrabold">
+                        - {formatLaserCurrency(getLaserQuoteDiscountAmountForMode(viewingQuote, "SEM_MATERIAL"))}
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
                   <div>
