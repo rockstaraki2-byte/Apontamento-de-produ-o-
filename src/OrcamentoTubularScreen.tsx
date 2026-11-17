@@ -708,7 +708,9 @@ export function OrcamentoTubularScreen({ db, currentUser }: Props) {
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <button onClick={() => beginEditQuote(quote)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold hover:bg-slate-50"><Pencil size={14} /> Editar</button>
-                        <button onClick={() => exportPdf(quote, "AMBOS")} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white hover:bg-blue-800"><Download size={14} /> PDF</button>
+                        <button onClick={() => exportPdf(quote, "AMBOS")} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white hover:bg-blue-800"><Download size={14} /> PDF completo</button>
+                        <button onClick={() => exportPdf(quote, "COM_MATERIAL")} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-50"><Download size={14} /> PDF c/ mat.</button>
+                        <button onClick={() => exportPdf(quote, "SEM_MATERIAL")} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"><Download size={14} /> PDF s/ mat.</button>
                         <button onClick={() => handleDeleteQuote(quote)} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50"><Trash2 size={14} /> Excluir</button>
                       </div>
                     </div>
