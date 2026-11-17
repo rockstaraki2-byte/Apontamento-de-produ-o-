@@ -28,7 +28,9 @@ export function InjetoraScreen({
     "LIST_ACTIVE" | "FINISH_RUN" | "SELECT_PLAN" | "MANUAL_PRODUCTION"
   >("LIST_ACTIVE");
 
-  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+  const [selectedActivePackId, setSelectedActivePackId] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [pendingSavedLog, setPendingSavedLog] = useState<{ packId: number; isPartial: boolean } | null>(null);
 
   // Injection Finishing Inputs
   const [sacosEmbalados, setSacosEmbalados] = useState<number | "">("");
@@ -46,12 +48,6 @@ export function InjetoraScreen({
   // Manual production
   const [manualTitle, setManualTitle] = useState("");
   const [manualProduct, setManualProduct] = useState("");
-
-  const [manualTargetSearch, setManualTargetSearch] = useState("");
-  const [manualOrderSearch, setManualOrderSearch] = useState("");
-  const [manualTargetQuantity, setManualTargetQuantity] = useState<number | "">("");
-  const [selectedManualTargetId, setSelectedManualTargetId] = useState<number | null>(null);
-  const [selectedManualOrderId, setSelectedManualOrderId] = useState<number | null>(null);
 
 
   const screenType = "INJETORA";
@@ -72,62 +68,66 @@ export function InjetoraScreen({
       (p) => p.status !== "CONCLUIDO" && p.type === screenType,
     ) || [];
 
-  
-  const suggestedManualTargets = React.useMemo(() => {
-    const query = manualTargetSearch.trim().toLowerCase();
-    if (!query) return [];
-    return db.items
-      .filter((i) => `${i.code} - ${i.name}`.toLowerCase().includes(query))
-      .slice(0, 5);
-  }, [manualTargetSearch, db.items]);
 
-  const suggestedManualOrders = React.useMemo(() => {
-    const query = manualOrderSearch.trim().toLowerCase();
-    if (!query) return [];
-    return db.orders
-      .filter((o) => `${o.orderCode} - ${o.customerName}`.toLowerCase().includes(query))
-      .slice(0, 5);
-  }, [manualOrderSearch, db.orders]);
+  const handleStartManualProduction = async () => {
+    const description = manualTitle.trim();
+    const productInput = manualProduct.trim();
+    if (!description || !productInput) {
+      alert("Informe a descrição/cliente e o nome ou código do item.");
+      return;
+    }
 
-  const handleStartManualProduction = () => {
-    if ((!selectedManualTargetId && !selectedManualOrderId) || !manualTargetQuantity) return;
-
-    const screenType = "INJETORA";
-    const targetName = selectedManualOrderId 
-      ? db.orders.find(o => o.id === selectedManualOrderId)?.customerName 
-      : db.items.find(i => i.id === selectedManualTargetId)?.name;
-
-    db.addActivePack({
-      id: Date.now(),
-      itemId: selectedManualTargetId || 0,
-      color: "N/A",
-      size: "N/A",
-      variation: "N/A",
-      operatorId: currentUser.id,
-      startTime: Date.now(),
-      thirdPartyName: selectedManualOrderId ? `Pedido: ${db.orders.find(o => o.id === selectedManualOrderId)?.orderCode}` : `Item: ${db.items.find(i => i.id === selectedManualTargetId)?.code}`,
-      customProductName: `${targetName} - Qtd ${manualTargetQuantity}`,
-      partName: "Injeção Plástica Manual",
-      type: "INJETORA",
-    });
-    db.addNotification({
-      message: `Lote Avulso de Injeção iniciado (${targetName})`,
-      read: false,
+    const normalizedProduct = productInput.toLowerCase();
+    const matchedItem = db.items.find((item) => {
+      const code = String(item.code ?? "").trim().toLowerCase();
+      const name = item.name.trim().toLowerCase();
+      return (
+        code === normalizedProduct ||
+        name === normalizedProduct ||
+        `${code} - ${name}` === normalizedProduct
+      );
     });
 
-    setManualTitle("");
-    setManualProduct("");
-    setManualTargetSearch("");
-    setManualOrderSearch("");
-    setManualTargetQuantity("");
-    setSelectedManualTargetId(null);
-    setSelectedManualOrderId(null);
-    setView("LIST_ACTIVE");
+    const startedAt = Date.now();
+    setIsSaving(true);
+    try {
+      await db.addActivePack({
+        id: startedAt,
+        itemId: matchedItem?.id || 0,
+        color: "N/A",
+        size: "N/A",
+        variation: "N/A",
+        operatorId: currentUser.id,
+        startTime: startedAt,
+        thirdPartyName: description,
+        customProductName: matchedItem?.name || productInput,
+        partName: "Injeção Plástica Manual",
+        type: "INJETORA",
+      });
+
+      try {
+        await db.addNotification({
+          message: `Lote avulso de injeção iniciado (${productInput})`,
+          read: false,
+        });
+      } catch (notificationError) {
+        console.warn("Falha ao registrar notificação de início da Injetora:", notificationError);
+      }
+
+      setManualTitle("");
+      setManualProduct("");
+      setView("LIST_ACTIVE");
+    } catch (error) {
+      console.error("Falha ao iniciar produção manual da Injetora:", error);
+      alert(`Não foi possível iniciar a produção. ${error instanceof Error ? error.message : "Tente novamente."}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   
 
-  const startPlan = (planId: number) => {
+  const startPlan = async (planId: number) => {
     const p = pendingPlans.find((plan) => plan.id === planId);
     if (!p) return;
 
@@ -149,37 +149,51 @@ export function InjetoraScreen({
     const targetItem = targetItemId ? db.items.find((i) => i.id === targetItemId) : null;
     const prodName = targetItem ? targetItem.name : p.name;
 
-    db.addActivePack({
-      id: Date.now(),
-      itemId: p.targetItemIds && p.targetItemIds.length > 0 ? p.targetItemIds[0] : 0,
-      color: "-",
-      size: "-",
-      variation: "-",
-      operatorId: currentUser.id,
-      startTime: Date.now(),
-      type: screenType,
-      partName: `Injetora: ${p.name}`,
-      customProductName: prodName,
-      taskId: p.id,
-    });
+    setIsSaving(true);
+    try {
+      await db.addActivePack({
+        id: Date.now(),
+        itemId: targetItemId || 0,
+        color: "-",
+        size: "-",
+        variation: "-",
+        operatorId: currentUser.id,
+        startTime: Date.now(),
+        type: screenType,
+        partName: `Injetora: ${p.name}`,
+        customProductName: prodName,
+        taskId: p.id,
+      });
 
-    db.updateCoilCuttingPlan({ ...p, status: "EM_PRODUCAO" });
-    setView("LIST_ACTIVE");
+      await db.updateCoilCuttingPlan({ ...p, status: "EM_PRODUCAO" });
+      setView("LIST_ACTIVE");
+    } catch (error) {
+      console.error("Falha ao iniciar lote programado da Injetora:", error);
+      alert(`Não foi possível iniciar a produção. ${error instanceof Error ? error.message : "Atualize a tela e tente novamente."}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const openFinishScreen = (packId: number) => {
-    const t = db.activePacks.find((p) => p.id === packId);
-    if (t) {
-      setSelectedPlanId(t.taskId ? t.taskId : packId);
+    const activePack = db.activePacks.find((pack) => pack.id === packId);
+    if (activePack) {
+      setSelectedActivePackId(activePack.id);
+      setSacosEmbalados("");
+      setItensPorSaco("");
       setView("FINISH_RUN");
     }
   };
 
-  const handleFinishRun = (isPartial: boolean = false) => {
+  const handleFinishRun = async (isPartial: boolean = false) => {
     const activeTask = activeTasksList.find(
-      (t) => t.taskId === selectedPlanId || t.id === selectedPlanId,
+      (task) => task.id === selectedActivePackId,
     );
-    if (!activeTask) return;
+    if (!activeTask) {
+      alert("Este lote ativo não foi encontrado. Atualize a tela e tente novamente.");
+      setView("LIST_ACTIVE");
+      return;
+    }
 
     const qtyBags = Number(sacosEmbalados || 0);
     const qtyPerBag = Number(itensPorSaco || 0);
@@ -189,93 +203,96 @@ export function InjetoraScreen({
       return;
     }
 
-    // Calcula com base no último startTime para não inflar o durationMillis nos apontamentos seguintes
-    const endTime = Date.now();
-    const durationMillis = endTime - activeTask.startTime;
-
-    if (!activeTask.taskId) {
-      db.addLogs([
-        {
-          id: Date.now(),
-          operatorId: currentUser.id,
-          quantityProcessed: prod,
-          type: "INJETORA",
-          timestamp: endTime,
-          durationMillis,
-          thirdPartyName: activeTask.thirdPartyName,
-          customProductName: activeTask.customProductName,
-          itemId: activeTask.itemId || undefined,
-        },
-      ]);
-
-      if (isPartial) {
-        db.addActivePack({
-          ...activeTask,
-          startTime: Date.now(),
-        });
-        alert(`Apontamento parcial inserido! Contagem do lote prossegue.`);
-      } else {
-        db.removeActivePack(activeTask.id);
-      }
-      setSacosEmbalados("");
-      setItensPorSaco("");
-      setSelectedPlanId(null);
-      setView("LIST_ACTIVE");
+    const plan = activeTask.taskId
+      ? db.coilCuttingPlans?.find((candidate) => candidate.id === activeTask.taskId)
+      : undefined;
+    if (activeTask.taskId && !plan) {
+      alert("O plano vinculado a este lote não foi encontrado. Atualize os dados antes de registrar a produção.");
       return;
     }
 
-    const plan = db.coilCuttingPlans?.find((p) => p.id === activeTask.taskId);
-    if (!plan) return;
-
-    // 1. Production log specific for injection plastic
-    db.addLogs([
-      {
-        id: Date.now(),
-        operatorId: currentUser.id,
-        quantityProcessed: prod,
-        type: "INJETORA",
-        timestamp: endTime,
-        durationMillis,
-        coilPlanId: plan.id, // linked plan id
-        consumedCoilQty: 0, // no longer requested
-        customProductName: activeTask.customProductName,
-        itemId: plan.targetItemIds && plan.targetItemIds.length > 0 ? plan.targetItemIds[0] : undefined,
-      },
-    ]);
-
-    // 2. Add Stock for first target item is now handled automatically by addLogs
-    // based on whether the item is a PRODUTO or PECA
-
-    // 3. Update Plan status to CONCLUIDO (Only if not partial)
-    if (!isPartial) {
-      db.updateCoilCuttingPlan({ ...plan, status: "CONCLUIDO" });
+    const previouslySaved = pendingSavedLog?.packId === activeTask.id
+      ? pendingSavedLog
+      : null;
+    if (previouslySaved && previouslySaved.isPartial !== isPartial) {
+      alert("O apontamento já foi gravado. Repita a mesma ação para concluir o lote sem duplicar a quantidade.");
+      return;
     }
 
-    // 4. Clean & Notification
-    if (isPartial) {
-      db.addActivePack({
-        ...activeTask,
-        startTime: Date.now(),
-      });
-      db.addNotification({
-        message: `Apontamento Parcial Injeção: ${prod} peças computadas. Lote ${plan.name} segue ativo.`,
-        read: false,
-        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
-      });
-      alert(`Apontamento parcial inserido com sucesso!`);
-    } else {
-      db.removeActivePack(activeTask.id);
-      db.addNotification({
-        message: `Injeção Finalizada: ${prod} peças injetadas (${qtyBags} sacos x ${qtyPerBag} un).`,
-        read: false,
-        tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
-      });
-    }
+    const endTime = Date.now();
+    const durationMillis = Math.max(0, endTime - activeTask.startTime);
+    const producedItemId = activeTask.itemId || plan?.targetItemIds?.[0];
+    const producedItem = producedItemId
+      ? db.items.find((item) => item.id === producedItemId)
+      : undefined;
+    let logSaved = Boolean(previouslySaved);
 
-    setSacosEmbalados("");
-    setItensPorSaco("");
-    setSelectedPlanId(null);
-    setView("LIST_ACTIVE");
+    setIsSaving(true);
+    try {
+      if (!logSaved) {
+        await db.addLogs([
+          {
+            id: Date.now(),
+            operatorId: currentUser.id,
+            quantityProcessed: prod,
+            type: "INJETORA",
+            timestamp: endTime,
+            durationMillis,
+            orderId: activeTask.orderId || undefined,
+            coilPlanId: plan?.id,
+            consumedCoilQty: plan ? 0 : undefined,
+            thirdPartyName: activeTask.thirdPartyName,
+            customProductName: producedItem?.name || activeTask.customProductName || plan?.name,
+            itemId: producedItemId || undefined,
+          },
+        ]);
+        logSaved = true;
+        setPendingSavedLog({ packId: activeTask.id, isPartial });
+      }
+
+      if (isPartial) {
+        await db.addActivePack({
+          ...activeTask,
+          startTime: Date.now(),
+        });
+      } else {
+        if (plan) {
+          await db.updateCoilCuttingPlan({ ...plan, status: "CONCLUIDO" });
+        }
+        await db.removeActivePack(activeTask.id);
+      }
+
+      try {
+        await db.addNotification({
+          message: isPartial
+            ? `Apontamento parcial da Injetora: ${prod} peças computadas. Lote ${plan?.name || activeTask.customProductName || "manual"} segue ativo.`
+            : `Injeção finalizada: ${prod} peças injetadas (${qtyBags} sacos x ${qtyPerBag} un).`,
+          read: false,
+          tenantId: db.activeTenantId || currentUser.tenantId || "imperio",
+        });
+      } catch (notificationError) {
+        console.warn("Falha ao registrar notificação da Injetora:", notificationError);
+      }
+
+      setPendingSavedLog(null);
+      setSacosEmbalados("");
+      setItensPorSaco("");
+      setSelectedActivePackId(null);
+      setView("LIST_ACTIVE");
+      alert(isPartial
+        ? "Apontamento parcial registrado. A produção continua ativa."
+        : "Produção registrada e lote encerrado.");
+    } catch (error) {
+      console.error("Falha ao registrar produção da Injetora:", error);
+      if (logSaved) {
+        setPendingSavedLog({ packId: activeTask.id, isPartial });
+        alert("A quantidade já foi gravada, mas houve falha ao atualizar/encerrar o lote. Repita a mesma ação para concluir sem duplicar a quantidade.");
+      } else {
+        alert(`Não foi possível registrar a produção. ${error instanceof Error ? error.message : "Tente novamente."}`);
+      }
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancelTask = (packId: number) => {
@@ -550,7 +567,10 @@ export function InjetoraScreen({
                             return null;
                           })()}
                         </div>
-                        <button className="bg-orange-600 group-hover:bg-orange-700 text-white text-xs font-bold py-2 px-3 rounded-lg transition shrink-0">
+                        <button
+                          disabled={isSaving}
+                          className="bg-orange-600 group-hover:bg-orange-700 disabled:opacity-50 text-white text-xs font-bold py-2 px-3 rounded-lg transition shrink-0"
+                        >
                           INICIAR INJEÇÃO
                         </button>
                       </div>
@@ -598,7 +618,7 @@ export function InjetoraScreen({
 
               <button
                 onClick={handleStartManualProduction}
-                disabled={!manualTitle || !manualProduct}
+                disabled={isSaving || !manualTitle.trim() || !manualProduct.trim()}
                 className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold p-3.5 rounded-lg mt-4 transition uppercase tracking-wider text-xs"
               >
                 Iniciar Lote Piloto na Máquina
@@ -607,7 +627,7 @@ export function InjetoraScreen({
           </div>
         )}
 
-        {view === "FINISH_RUN" && selectedPlanId && (
+        {view === "FINISH_RUN" && selectedActivePackId !== null && (
           <div className="flex flex-col h-full">
             <button
               onClick={() => setView("LIST_ACTIVE")}
@@ -617,12 +637,12 @@ export function InjetoraScreen({
             </button>
 
             {(() => {
-              const plan = db.coilCuttingPlans?.find(
-                (p) => p.id === selectedPlanId,
-              );
               const activePack = activeTasksList.find(
-                (t) => t.id === selectedPlanId || t.taskId === selectedPlanId,
+                (task) => task.id === selectedActivePackId,
               );
+              const plan = activePack?.taskId
+                ? db.coilCuttingPlans?.find((candidate) => candidate.id === activePack.taskId)
+                : undefined;
               const activeTaskItemId = activePack?.itemId;
               const manualItem = activeTaskItemId ? db.items.find((i) => i.id === activeTaskItemId) : null;
               const targetItem = plan?.targetItemIds?.length ? db.items.find((i) => i.id === plan.targetItemIds[0]) : null;
@@ -729,14 +749,14 @@ export function InjetoraScreen({
                     <div className="flex flex-col gap-2 mt-2">
                       <button
                         onClick={() => handleFinishRun(true)}
-                        disabled={!sacosEmbalados || !itensPorSaco}
+                        disabled={isSaving || !sacosEmbalados || !itensPorSaco}
                         className="bg-sky-600 hover:bg-sky-700 disabled:opacity-40 text-white font-extrabold p-3 rounded-xl transition text-center uppercase tracking-wider text-[11px] shadow-sm"
                       >
                         Apontamento Parcial (Continuar Produzindo)
                       </button>
                       <button
                         onClick={() => handleFinishRun(false)}
-                        disabled={!sacosEmbalados || !itensPorSaco}
+                        disabled={isSaving || !sacosEmbalados || !itensPorSaco}
                         className="bg-orange-600 hover:bg-orange-700 disabled:opacity-40 text-white font-extrabold p-4 rounded-xl transition text-center uppercase tracking-wider text-xs shadow-md"
                       >
                         Confirmar Envio e Encerrar Lote
