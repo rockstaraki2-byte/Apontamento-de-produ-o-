@@ -1337,12 +1337,12 @@ export interface LaserQuoteItem {
   // Material calculation
   steelDensityFactor: number;   // Padrão 7.92
   materialPricePerKg: number;   // R$/kg do material
-  manualMaterialCostPerUnit?: number; // Optional unit override for material cost
+  manualMaterialCostPerUnit?: number; // Optional R$/piece override that replaces the weight-based material cost
   calculatedWeightKg: number;   // (lengthMm * widthMm * thicknessMm * 7.92) / 1000000
   
   // Calculated prices
   cuttingCost: number;          // cuttingTimeSeconds * cuttingRatePerSec
-  materialCost: number;         // calculatedWeightKg * materialPricePerKg
+  materialCost: number;         // manual override, or calculatedWeightKg * materialPricePerKg
   unitPriceWithMaterial: number;   // (cuttingCost + materialCost + bendingCost + proratedExtra) * (1 + additionPercent/100)
   unitPriceWithoutMaterial: number; // (cuttingCost + bendingCost + proratedExtra) * (1 + additionPercent/100)
   quantity: number;                 // Qtd de peças
