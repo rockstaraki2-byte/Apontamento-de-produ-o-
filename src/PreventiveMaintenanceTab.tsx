@@ -87,6 +87,7 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
   const [filterAssetId, setFilterAssetId] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterResponsibleId, setFilterResponsibleId] = useState("");
+  const [showInactive, setShowInactive] = useState(false);
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo] = useState("");
 
@@ -115,7 +116,8 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
   );
   const filteredPlans = enrichedPlans
     .filter(({ plan, assetName: name, status }) => {
-      if (!plan.active) return false;
+      if (!plan.active && !showInactive) return false;
+      if (!plan.active && filterStatus) return false;
       if (filterAssetId && plan.assetId !== filterAssetId) return false;
       if (filterStatus && status !== filterStatus) return false;
       if (filterResponsibleId && plan.responsibleUserId !== filterResponsibleId) return false;
@@ -457,6 +459,13 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
           </label>
         </div>
 
+        {canManage && (
+          <label className="inline-flex items-center gap-2 text-xs font-bold text-slate-600">
+            <input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} />
+            Incluir planos desativados
+          </label>
+        )}
+
         {filteredPlans.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
             <CheckCircle2 className="mx-auto mb-2 text-emerald-600" size={25} />
@@ -471,7 +480,7 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-extrabold text-slate-900">{name}</h3>
-                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ${statusClass(status)}`}>{statusLabel(status)}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ${plan.active ? statusClass(status) : "bg-slate-200 text-slate-600"}`}>{plan.active ? statusLabel(status) : "Desativado"}</span>
                     </div>
                     <p className="mt-1 text-sm font-semibold text-slate-700">{plan.activity}</p>
                     <p className="mt-1 text-xs text-slate-500">{plan.sectorName || "Sem setor"} · {formatInterval(plan)} · Responsável: {plan.responsibleUserName || "Não definido"}</p>
