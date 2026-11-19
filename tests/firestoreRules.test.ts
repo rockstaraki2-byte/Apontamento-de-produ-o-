@@ -22,6 +22,24 @@ before(async () => {
     await setDoc(doc(db, "orders", "imperio-1"), { tenantId: "imperio" });
     await setDoc(doc(db, "orders", "other-1"), { tenantId: "empresa-teste" });
     await setDoc(doc(db, "orders", "missing-tenant"), { status: "PENDENTE" });
+    await setDoc(doc(db, "maintenanceAssets", "imperio-compressor"), {
+      id: "imperio-compressor", tenantId: "imperio", name: "Compressor 1", active: true,
+    });
+    await setDoc(doc(db, "maintenanceAssets", "empresa-compressor"), {
+      id: "empresa-compressor", tenantId: "empresa-teste", name: "Compressor externo", active: true,
+    });
+    await setDoc(doc(db, "preventiveMaintenancePlans", "imperio-plan"), {
+      id: "imperio-plan", tenantId: "imperio", assetId: "imperio-compressor", active: true,
+    });
+    await setDoc(doc(db, "preventiveMaintenancePlans", "empresa-plan"), {
+      id: "empresa-plan", tenantId: "empresa-teste", assetId: "empresa-compressor", active: true,
+    });
+    await setDoc(doc(db, "maintenanceOrders", "imperio-preventive-order"), {
+      id: "imperio-preventive-order", tenantId: "imperio", preventivePlanId: "imperio-plan",
+    });
+    await setDoc(doc(db, "maintenancePreventiveAlertDeliveries", "imperio-delivery"), {
+      tenantId: "imperio", planId: "imperio-plan",
+    });
   });
 });
 
@@ -117,4 +135,45 @@ test("perfis e credenciais só são acessíveis pela API confiável", async () =
   await assertFails(getDoc(doc(db, "userCredentials", "gerencia")));
   await assertFails(getDoc(doc(db, "users", "gerencia")));
   await assertFails(setDoc(doc(db, "users", "intruso"), { tenantId: "imperio", role: "ADMIN" }));
+});
+
+
+test("planos preventivos e equipamentos respeitam tenant e perfil de manutenção", async () => {
+  const operatorDb = environment.authenticatedContext("operador", { tenantId: "imperio", role: "PRODUCAO" }).firestore();
+  await assertSucceeds(getDoc(doc(operatorDb, "maintenanceAssets", "imperio-compressor")));
+  await assertFails(getDoc(doc(operatorDb, "maintenanceAssets", "empresa-compressor")));
+  await assertSucceeds(getDoc(doc(operatorDb, "preventiveMaintenancePlans", "imperio-plan")));
+  await assertFails(getDoc(doc(operatorDb, "preventiveMaintenancePlans", "empresa-plan")));
+  await assertFails(setDoc(doc(operatorDb, "maintenanceAssets", "operator-asset"), {
+    tenantId: "imperio", name: "Ativo indevido", active: true,
+  }));
+  await assertFails(setDoc(doc(operatorDb, "preventiveMaintenancePlans", "operator-plan"), {
+    tenantId: "imperio", assetId: "imperio-compressor", active: true,
+  }));
+  await assertFails(setDoc(doc(operatorDb, "maintenanceOrders", "operator-preventive-order"), {
+    tenantId: "imperio", preventivePlanId: "imperio-plan",
+  }));
+  await assertFails(getDoc(doc(operatorDb, "maintenancePreventiveAlertDeliveries", "imperio-delivery")));
+  await assertFails(setDoc(doc(operatorDb, "maintenancePreventiveAlertDeliveries", "operator-delivery"), {
+    tenantId: "imperio",
+  }));
+
+  const maintenanceDb = environment.authenticatedContext("entony", { tenantId: "imperio", role: "MANUTENCAO" }).firestore();
+  await assertSucceeds(setDoc(doc(maintenanceDb, "maintenanceAssets", "entony-asset"), {
+    tenantId: "imperio", name: "Compressor 2", active: true,
+  }));
+  await assertSucceeds(setDoc(doc(maintenanceDb, "preventiveMaintenancePlans", "entony-plan"), {
+    tenantId: "imperio", assetId: "imperio-compressor", active: true,
+  }));
+  await assertSucceeds(setDoc(doc(maintenanceDb, "maintenanceOrders", "entony-preventive-order"), {
+    tenantId: "imperio", preventivePlanId: "imperio-plan",
+  }));
+  await assertFails(setDoc(doc(maintenanceDb, "preventiveMaintenancePlans", "cross-tenant-plan"), {
+    tenantId: "empresa-teste", assetId: "empresa-compressor", active: true,
+  }));
+
+  const managerDb = environment.authenticatedContext("gerencia", { tenantId: "imperio", role: "GERENCIA" }).firestore();
+  await assertSucceeds(setDoc(doc(managerDb, "preventiveMaintenancePlans", "manager-plan"), {
+    tenantId: "imperio", assetId: "imperio-compressor", active: true,
+  }));
 });
