@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/daily-invoiced-reports",
       "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/cron/preventive-maintenance-alerts",
+      "schedule": "0 10 * * *"
     }
   ],
   "rewrites": [
@@ -46,6 +50,9 @@
   ],
   "functions": {
     "api/integration/billing-daily.ts": {
+      "maxDuration": 60
+    },
+    "api/cron/preventive-maintenance-alerts.ts": {
       "maxDuration": 60
     }
   }
