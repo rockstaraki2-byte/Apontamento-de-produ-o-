@@ -21,6 +21,11 @@ service cloud.firestore {
         && request.auth.token.tenantId != "global";
     }
 
+    function canManageMaintenance() {
+      return isTenantUser()
+        && request.auth.token.role in ["MANUTENCAO", "ADMIN", "GERENCIA"];
+    }
+
     match /tenants/{tenantId} {
       // A tenant may read only its own configuration document. Global
       // administration reads the tenant directory through the authenticated API.
@@ -37,28 +42,92 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Only maintenance, management and administrators can maintain the
+    // tenant's equipment registry and recurring preventive plans.
+    match /maintenanceAssets/{assetId} {
+      allow read: if isTenantUser()
+        && resource.data.tenantId == request.auth.token.tenantId;
+      allow create: if canManageMaintenance()
+        && request.resource.data.tenantId == request.auth.token.tenantId;
+      allow update: if canManageMaintenance()
+        && resource.data.tenantId == request.auth.token.tenantId
+        && request.resource.data.tenantId == request.auth.token.tenantId;
+      allow delete: if false;
+    }
+
+    match /preventiveMaintenancePlans/{planId} {
+      allow read: if isTenantUser()
+        && resource.data.tenantId == request.auth.token.tenantId;
+      allow create: if canManageMaintenance()
+        && request.resource.data.tenantId == request.auth.token.tenantId;
+      allow update: if canManageMaintenance()
+        && resource.data.tenantId == request.auth.token.tenantId
+        && request.resource.data.tenantId == request.auth.token.tenantId;
+      allow delete: if false;
+    }
+
+    // Preventive orders use the existing maintenance history while only the
+    // authorized roles can create or change records linked to a recurring plan.
+    match /maintenanceOrders/{orderId} {
+      allow read: if isTenantUser()
+        && resource.data.tenantId == request.auth.token.tenantId;
+      allow create: if isTenantUser()
+        && request.resource.data.tenantId == request.auth.token.tenantId
+        && (!("preventivePlanId" in request.resource.data) || canManageMaintenance());
+      allow update: if isTenantUser()
+        && resource.data.tenantId == request.auth.token.tenantId
+        && request.resource.data.tenantId == request.auth.token.tenantId
+        && (!("preventivePlanId" in resource.data)
+          && !("preventivePlanId" in request.resource.data)
+          || canManageMaintenance());
+      allow delete: if isTenantUser()
+        && resource.data.tenantId == request.auth.token.tenantId
+        && (!("preventivePlanId" in resource.data) || canManageMaintenance());
+    }
+
+    // Delivery rows are server-managed and cannot be changed by tenant clients.
+    match /maintenancePreventiveAlertDeliveries/{deliveryId} {
+      allow read, write: if false;
+    }
+
     // Operational documents must carry the authenticated tenantId. The global
     // account deliberately has no access to operational collections.
     match /{collection}/{documentId} {
       allow read: if collection != "tenants"
         && collection != "users"
         && collection != "userCredentials"
+        && collection != "maintenanceAssets"
+        && collection != "preventiveMaintenancePlans"
+        && collection != "maintenanceOrders"
+        && collection != "maintenancePreventiveAlertDeliveries"
         && isTenantUser()
         && resource.data.tenantId == request.auth.token.tenantId;
       allow create: if collection != "tenants"
         && collection != "users"
         && collection != "userCredentials"
+        && collection != "maintenanceAssets"
+        && collection != "preventiveMaintenancePlans"
+        && collection != "maintenanceOrders"
+        && collection != "maintenancePreventiveAlertDeliveries"
         && isTenantUser()
         && request.resource.data.tenantId == request.auth.token.tenantId;
       allow update: if collection != "tenants"
         && collection != "users"
         && collection != "userCredentials"
+        && collection != "maintenanceAssets"
+        && collection != "preventiveMaintenancePlans"
+        && collection != "maintenanceOrders"
+        && collection != "maintenancePreventiveAlertDeliveries"
         && isTenantUser()
         && resource.data.tenantId == request.auth.token.tenantId
         && request.resource.data.tenantId == request.auth.token.tenantId;
       allow delete: if collection != "tenants"
         && collection != "users"
         && collection != "userCredentials"
+        && collection != "maintenanceAssets"
+        && collection != "preventiveMaintenancePlans"
+        && collection != "maintenanceOrders"
+        && collection != "maintenancePreventiveAlertDeliveries"
         && isTenantUser()
         && resource.data.tenantId == request.auth.token.tenantId;
     }
