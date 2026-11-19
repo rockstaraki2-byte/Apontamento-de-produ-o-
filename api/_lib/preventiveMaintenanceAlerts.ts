@@ -43,7 +43,8 @@ function severityFor(days: number): "low" | "medium" | "high" | "critical" {
 }
 
 function notificationNumericId(deliveryId: string): number {
-  return Number.parseInt(createHash("sha256").update(deliveryId).digest("hex").slice(0, 12), 16);
+  return 4_000_000_000_000_000 +
+    Number.parseInt(createHash("sha256").update(deliveryId).digest("hex").slice(0, 12), 16);
 }
 
 export async function handlePreventiveMaintenanceAlerts(request: Request): Promise<Response> {
