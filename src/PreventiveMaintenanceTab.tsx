@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { ArrowLeft, CalendarClock, CheckCircle2, ClipboardList, Pencil, Plus, Wrench } from "lucide-react";
 import type { MaintenanceAsset, MaintenanceOrder, PreventiveMaintenancePlan, PreventivePlanStatus, User } from "./types";
 import { useDatabase } from "./useDatabase";
-import { businessDateFromTimestamp, getPreventivePlanStatus } from "./maintenancePreventive";
+import { addPreventiveInterval, businessDateFromTimestamp, getPreventivePlanStatus } from "./maintenancePreventive";
 
 type Props = {
   db: ReturnType<typeof useDatabase>;
@@ -79,6 +79,7 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
   const [responsibleUserId, setResponsibleUserId] = useState("");
   const [intervalValue, setIntervalValue] = useState("15");
   const [intervalUnit, setIntervalUnit] = useState<"DAYS" | "MONTHS">("DAYS");
+  const [lastCompletedDate, setLastCompletedDate] = useState("");
   const [firstDueDate, setFirstDueDate] = useState("");
   const [alertLeadDays, setAlertLeadDays] = useState("7, 3, 1, 0");
   const [instructions, setInstructions] = useState("");
@@ -132,6 +133,7 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
     setResponsibleUserId("");
     setIntervalValue("15");
     setIntervalUnit("DAYS");
+    setLastCompletedDate("");
     setFirstDueDate("");
     setAlertLeadDays(DEFAULT_ALERT_DAYS.join(", "));
     setInstructions("");
@@ -145,6 +147,7 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
     setResponsibleUserId(plan.responsibleUserId || "");
     setIntervalValue(String(plan.intervalValue));
     setIntervalUnit(plan.intervalUnit);
+    setLastCompletedDate(plan.lastCompletedDate || "");
     setFirstDueDate(plan.lastCompletedDate ? "" : plan.firstDueDate || plan.nextDueDate || "");
     setAlertLeadDays((plan.alertLeadDays || DEFAULT_ALERT_DAYS).join(", "));
     setInstructions(plan.instructions || "");
@@ -191,8 +194,11 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
       alert("Selecione o equipamento, descreva a atividade e informe uma periodicidade inteira positiva.");
       return;
     }
-    if (firstDueDate && !/^\d{4}-\d{2}-\d{2}$/.test(firstDueDate)) {
-      alert("Informe a data da primeira execução no formato válido.");
+    if (
+      (lastCompletedDate && !/^\d{4}-\d{2}-\d{2}$/.test(lastCompletedDate)) ||
+      (firstDueDate && !/^\d{4}-\d{2}-\d{2}$/.test(firstDueDate))
+    ) {
+      alert("Informe uma data válida para a execução real ou o primeiro vencimento.");
       return;
     }
     const responsible = tenantUsers.find((user) => user.id === responsibleUserId);
@@ -217,9 +223,11 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
       responsibleUserName: responsible?.name,
       intervalValue: interval,
       intervalUnit,
-      firstDueDate: existing?.lastCompletedDate ? existing.firstDueDate : (firstDueDate || undefined),
-      lastCompletedDate: existing?.lastCompletedDate,
-      nextDueDate: existing?.lastCompletedDate ? existing.nextDueDate : (firstDueDate || undefined),
+      firstDueDate: lastCompletedDate ? existing?.firstDueDate : (firstDueDate || undefined),
+      lastCompletedDate: lastCompletedDate || undefined,
+      nextDueDate: lastCompletedDate
+        ? addPreventiveInterval(lastCompletedDate, interval, intervalUnit)
+        : (firstDueDate || undefined),
       alertLeadDays: alertDays,
       instructions: instructions.trim() || undefined,
       checklist: checklistText.split("\n").map((item) => item.trim()).filter(Boolean),
@@ -393,8 +401,12 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
                   <option value="MONTHS">Meses de calendário</option>
                 </select>
               </label>
-              <label className="space-y-1 text-xs font-bold text-slate-600">Primeiro vencimento / data-base
-                <input type="date" value={firstDueDate} onChange={(event) => setFirstDueDate(event.target.value)} disabled={Boolean(plans.find((plan) => plan.id === editingPlanId)?.lastCompletedDate)} className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-800 disabled:bg-slate-100" />
+              <label className="space-y-1 text-xs font-bold text-slate-600">Última execução real (opcional)
+                <input type="date" value={lastCompletedDate} onChange={(event) => setLastCompletedDate(event.target.value)} required={Boolean(plans.find((plan) => plan.id === editingPlanId)?.lastCompletedDate)} className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-800" />
+                <span className="block text-[10px] font-medium text-slate-400">Informe somente uma data confirmada. O próximo vencimento será calculado pela periodicidade.</span>
+              </label>
+              <label className="space-y-1 text-xs font-bold text-slate-600">Primeiro vencimento, se não houver histórico
+                <input type="date" value={firstDueDate} onChange={(event) => setFirstDueDate(event.target.value)} disabled={Boolean(lastCompletedDate)} className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-800 disabled:bg-slate-100" />
               </label>
               <label className="space-y-1 text-xs font-bold text-slate-600">Alertar com antecedência (dias)
                 <input value={alertLeadDays} onChange={(event) => setAlertLeadDays(event.target.value)} placeholder="7, 3, 1, 0" className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-800" />
