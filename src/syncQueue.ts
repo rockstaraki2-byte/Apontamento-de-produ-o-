@@ -4,6 +4,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  documentId,
   getDocs,
   query,
   setDoc,
@@ -454,8 +455,50 @@ async function processQueueItemNow(item: QueueItem): Promise<void> {
       break;
     }
     case "DELETE_LOG": {
-      if (payload && payload.id) {
-        await deleteDoc(doc(db, "logs", payload.id.toString()));
+      const rawId = payload?.id;
+      const logDocumentId =
+        rawId === undefined || rawId === null ? "" : String(rawId).trim();
+
+      if (logDocumentId) {
+        const token = await auth.currentUser?.getIdTokenResult();
+        const authenticatedTenantId = String(token?.claims?.tenantId || "").trim();
+        const requestedTenantId = String(
+          payload.tenantId || authenticatedTenantId,
+        ).trim();
+
+        if (
+          !authenticatedTenantId ||
+          authenticatedTenantId === "global" ||
+          requestedTenantId !== authenticatedTenantId
+        ) {
+          throw new Error(
+            "A remoção do registro está fora do tenant autenticado; o registro foi mantido na fila.",
+          );
+        }
+
+        // Resolve the exact document only inside the authenticated tenant.
+        // If it is already absent, the queued deletion is safely complete.
+        const matchingLogs = await getDocs(
+          query(
+            collection(db, "logs"),
+            where("tenantId", "==", authenticatedTenantId),
+            where(documentId(), "==", logDocumentId),
+          ),
+        );
+        const target = matchingLogs.docs.find(
+          (snapshot) => snapshot.id === logDocumentId,
+        );
+
+        if (target && target.data().tenantId === authenticatedTenantId) {
+          // Older queued deletions have no tenantId. Do not apply one to a
+          // matching record: it may have been queued under another tenant.
+          if (!payload.tenantId) {
+            throw new Error(
+              "A exclusão pendente não informa o tenant de origem; o registro foi mantido para revisão.",
+            );
+          }
+          await deleteDoc(target.ref);
+        }
       }
       break;
     }
