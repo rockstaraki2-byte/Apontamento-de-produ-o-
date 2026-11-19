@@ -5913,10 +5913,9 @@ function PedidosScreen({
       const previousInvoiceLogs = db.logs.filter(
         (log) => log.orderId === order.id && log.type === "FATURAMENTO",
       );
-      const invoiceLogDocumentIds = new Set<string>([
-        `faturamento_${order.id}`,
-        ...previousInvoiceLogs.map((log) => String(log.id)),
-      ]);
+      const invoiceLogDocumentIds = new Set<string>(
+        previousInvoiceLogs.map((log) => String(log.id)),
+      );
       await Promise.all(
         Array.from(invoiceLogDocumentIds).map((id) => db.deleteLog(id)),
       );
