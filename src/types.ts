@@ -1238,6 +1238,54 @@ export type MaintenanceOrderStatus =
   | "AGUARDANDO_PECA"
   | "CONCLUIDA";
 
+export type PreventiveIntervalUnit = "DAYS" | "MONTHS";
+
+export type PreventivePlanStatus =
+  | "EM_DIA"
+  | "A_VENCER"
+  | "VENCE_HOJE"
+  | "VENCIDA"
+  | "EM_EXECUCAO"
+  | "PRIMEIRA_PENDENTE";
+
+export interface MaintenanceAsset {
+  id: string;
+  tenantId: string;
+  name: string;
+  sectorId?: number | string;
+  sectorName?: string;
+  active: boolean;
+  createdAt: number;
+  updatedAt: number;
+  createdById?: string;
+  createdByName?: string;
+}
+
+export interface PreventiveMaintenancePlan {
+  id: string;
+  tenantId: string;
+  assetId: string;
+  assetName: string;
+  sectorId?: number | string;
+  sectorName?: string;
+  activity: string;
+  responsibleUserId?: string;
+  responsibleUserName?: string;
+  intervalValue: number;
+  intervalUnit: PreventiveIntervalUnit;
+  firstDueDate?: string;
+  lastCompletedDate?: string;
+  nextDueDate?: string;
+  alertLeadDays: number[];
+  instructions?: string;
+  checklist?: string[];
+  active: boolean;
+  createdAt: number;
+  updatedAt: number;
+  createdById?: string;
+  createdByName?: string;
+}
+
 export interface MaintenanceOrder {
   id: string;
   tenantId: string;
@@ -1256,6 +1304,8 @@ export interface MaintenanceOrder {
   technicianId?: string;
   technicianName?: string;
   machineStopId?: string;
+  preventivePlanId?: string;
+  preventiveDueDate?: string;
   startedAt?: number;
   completedAt?: number;
   interruptionStartedAt?: number;
