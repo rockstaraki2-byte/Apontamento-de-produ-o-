@@ -18,8 +18,9 @@ import type {
   User,
 } from "./types";
 import { useDatabase } from "./useDatabase";
+import { PreventiveMaintenanceTab } from "./PreventiveMaintenanceTab";
 
-type MaintenanceTab = "FILA" | "NOVO" | "HISTORICO";
+type MaintenanceTab = "FILA" | "NOVO" | "HISTORICO" | "PREVENTIVAS";
 type ManualRecordType = "SERVICO" | "INTERRUPCAO";
 
 function dateTimeLocalValue(timestamp: number) {
@@ -393,6 +394,14 @@ export function MaintenanceScreen({
       alert("Finalize primeiro o apontamento de serviço que ainda está em andamento.");
       return;
     }
+    if (
+      status === "CONCLUIDA" &&
+      order.preventivePlanId &&
+      !workLogs.some((log) => log.maintenanceOrderId === order.id && log.status === "CONCLUIDO")
+    ) {
+      alert("Registre e finalize o serviço preventivo antes de concluir a OS.");
+      return;
+    }
     const now = Date.now();
     const isManualInterruption =
       order.source === "MANUAL" &&
@@ -401,7 +410,7 @@ export function MaintenanceScreen({
     const interruptionStartedAt =
       order.interruptionStartedAt || order.startedAt || order.createdAt;
     try {
-      await db.updateMaintenanceOrder(order.id, {
+      const statusUpdates: Partial<MaintenanceOrder> = {
         status,
         technicianId: currentUser.id,
         technicianName: currentUser.name,
@@ -421,7 +430,12 @@ export function MaintenanceScreen({
                 : {}),
             }
           : {}),
-      });
+      };
+      if (status === "CONCLUIDA" && order.preventivePlanId) {
+        await db.completePreventiveMaintenanceOrder(order.id, statusUpdates);
+      } else {
+        await db.updateMaintenanceOrder(order.id, statusUpdates);
+      }
     } catch (error) {
       console.error(error);
       alert("Não foi possível atualizar a solicitação.");
@@ -850,6 +864,18 @@ export function MaintenanceScreen({
     );
   }
 
+  if (tab === "PREVENTIVAS") {
+    return (
+      <PreventiveMaintenanceTab
+        db={db}
+        currentUser={currentUser}
+        onBack={() => setTab("FILA")}
+        onViewQueue={() => setTab("FILA")}
+        onOpenOrder={openMaintenanceEntry}
+      />
+    );
+  }
+
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-slate-50 text-slate-800">
       <header className="shrink-0 border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
@@ -900,6 +926,12 @@ export function MaintenanceScreen({
           className={`rounded-xl px-4 py-2 text-xs font-extrabold ${tab === "HISTORICO" ? "bg-blue-700 text-white" : "border border-slate-200 bg-white text-slate-600"}`}
         >
           Hist. manutenção
+        </button>
+        <button
+          onClick={() => setTab("PREVENTIVAS")}
+          className={`rounded-xl px-4 py-2 text-xs font-extrabold ${tab === "PREVENTIVAS" ? "bg-blue-700 text-white" : "border border-slate-200 bg-white text-slate-600"}`}
+        >
+          Preventivas
         </button>
       </nav>
 
