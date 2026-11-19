@@ -912,6 +912,118 @@ export function UploadNestScreen({
           ? emProducaoGroup
           : cortadosGroup;
 
+  const getNestQueueSequence = (nestName: string) => {
+    const tasks = pendentesGroup[nestName] || [];
+    const explicitSequences = tasks
+      .map((task) => task.queueSequence)
+      .filter((sequence): sequence is number => typeof sequence === "number" && sequence > 0);
+    if (explicitSequences.length > 0) return Math.min(...explicitSequences);
+
+    const legacySequences = tasks
+      .map((task) => task.sequence)
+      .filter((sequence): sequence is number => typeof sequence === "number" && sequence > 0);
+    if (legacySequences.length > 0) return Math.min(...legacySequences);
+
+    return tasks.length
+      ? Math.min(...tasks.map((task) => task.createdAt || 0))
+      : Number.MAX_SAFE_INTEGER;
+  };
+
+  const pendingNestNames = Object.keys(pendentesGroup).sort(
+    (a, b) => getNestQueueSequence(a) - getNestQueueSequence(b) || a.localeCompare(b),
+  );
+
+  const nextNestQueueSequence = () =>
+    pendingNestNames.reduce(
+      (maxSequence, nestName) => Math.max(maxSequence, getNestQueueSequence(nestName)),
+      0,
+    ) + 1;
+
+  const isWholeNestPending = (nestName: string) => {
+    const nestTasks = allTasks.filter((task) => task.nestName === nestName);
+    return (
+      nestTasks.length > 0 &&
+      nestTasks.every(
+        (task) =>
+          task.status === "PENDENTE" &&
+          (task.cutQuantity || 0) === 0 &&
+          !activeTaskIds.includes(task.id),
+      )
+    );
+  };
+
+  const moveNestInQueue = async (nestName: string, direction: -1 | 1) => {
+    if (!isWholeNestPending(nestName)) {
+      alert("A sequência só pode ser alterada antes de iniciar o corte do Nest.");
+      return;
+    }
+    const currentIndex = pendingNestNames.indexOf(nestName);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= pendingNestNames.length) return;
+
+    const reorderedNames = [...pendingNestNames];
+    [reorderedNames[currentIndex], reorderedNames[targetIndex]] = [
+      reorderedNames[targetIndex],
+      reorderedNames[currentIndex],
+    ];
+    const updatedTasks = reorderedNames.flatMap((name, index) =>
+      (pendentesGroup[name] || []).map((task) => ({
+        ...task,
+        queueSequence: index + 1,
+      })),
+    );
+
+    try {
+      await db.updateNestTasks(updatedTasks);
+    } catch (error) {
+      console.error("[Nests] Erro ao alterar sequência de corte:", error);
+      alert("Não foi possível atualizar a sequência de corte. Tente novamente.");
+    }
+  };
+
+  const returnNestToPlanning = async (nestName: string) => {
+    if (!isWholeNestPending(nestName)) {
+      alert("Só é possível devolver ao planejamento um Nest que ainda não teve o corte iniciado.");
+      return;
+    }
+    if (!confirm(`Devolver o Nest "${nestName}" ao planejamento?`)) return;
+
+    const nestTasks = allTasks.filter((task) => task.nestName === nestName);
+    try {
+      await db.updateNestTasks(
+        nestTasks.map((task) => ({
+          ...task,
+          status: "PLANEJAMENTO" as const,
+          queueSequence: null,
+        })),
+      );
+      try {
+        await db.addNotification({
+          message: `Nesting: ${nestName} | Status: devolvido ao planejamento | Responsável: ${currentUser.name}`,
+          read: false,
+        });
+      } catch (notificationError) {
+        console.warn("[Nests] Falha ao registrar notificação de retorno:", notificationError);
+      }
+      alert(`Nest "${nestName}" devolvido ao planejamento.`);
+    } catch (error) {
+      console.error("[Nests] Erro ao devolver Nest ao planejamento:", error);
+      alert("Não foi possível devolver o Nest ao planejamento. Tente novamente.");
+    }
+  };
+
+  const orderedNestNames = Object.keys(currentGroup).sort((a, b) => {
+    if (viewTab === "PENDENTES") {
+      return getNestQueueSequence(a) - getNestQueueSequence(b) || a.localeCompare(b);
+    }
+    if (viewTab === "CORTADOS") {
+      const maxTimeA = Math.max(...currentGroup[a].map((task) => task.completedAt || task.createdAt || 0));
+      const maxTimeB = Math.max(...currentGroup[b].map((task) => task.completedAt || task.createdAt || 0));
+      return maxTimeB - maxTimeA;
+    }
+    return b.localeCompare(a);
+  });
+
   return (
     <div className="p-4 flex flex-col h-full bg-slate-50 relative">
       <h2 className="text-2xl font-bold text-gray-800 mb-6 flex justify-between items-center">
@@ -1078,18 +1190,11 @@ export function UploadNestScreen({
           </p>
         ) : (
           <div className="flex flex-col gap-4">
-            {Object.keys(currentGroup)
-              .sort((a, b) => {
-                if (viewTab === "CORTADOS") {
-                  const maxTimeA = Math.max(...currentGroup[a].map(t => t.completedAt || t.createdAt || 0));
-                  const maxTimeB = Math.max(...currentGroup[b].map(t => t.completedAt || t.createdAt || 0));
-                  return maxTimeB - maxTimeA;
-                }
-                return b.localeCompare(a);
-              })
-              .map((nestName) => {
+            {orderedNestNames.map((nestName) => {
                 const items = currentGroup[nestName];
                 const isExpanded = expandedNests[nestName];
+                const queuePosition = pendingNestNames.indexOf(nestName);
+                const nestCanBeReordered = viewTab === "PENDENTES" && isWholeNestPending(nestName);
 
                 return (
                   <div
@@ -1158,28 +1263,81 @@ export function UploadNestScreen({
                                 : "· Cortados"}
                         </p>
                       </div>
-                      <div className="flex items-center gap-4 mt-2 sm:mt-0">
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-2 sm:mt-0">
+                        {viewTab === "PENDENTES" && canEditNesting() && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-2 py-1 rounded-full">
+                              Posição #{queuePosition + 1}
+                            </span>
+                            <button
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void moveNestInQueue(nestName, -1);
+                              }}
+                              disabled={!nestCanBeReordered || queuePosition <= 0}
+                              className="border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed text-[10px] font-bold px-2 py-1 rounded-lg"
+                              title="Colocar este Nest antes na sequência de corte"
+                              aria-label={`Priorizar Nest ${nestName}`}
+                            >
+                              ↑ Subir
+                            </button>
+                            <button
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void moveNestInQueue(nestName, 1);
+                              }}
+                              disabled={!nestCanBeReordered || queuePosition < 0 || queuePosition >= pendingNestNames.length - 1}
+                              className="border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed text-[10px] font-bold px-2 py-1 rounded-lg"
+                              title="Colocar este Nest depois na sequência de corte"
+                              aria-label={`Rebaixar Nest ${nestName}`}
+                            >
+                              ↓ Descer
+                            </button>
+                            <button
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void returnNestToPlanning(nestName);
+                              }}
+                              disabled={!nestCanBeReordered}
+                              className="border border-amber-200 text-amber-800 hover:bg-amber-50 disabled:opacity-40 disabled:cursor-not-allowed text-[10px] font-bold px-2 py-1 rounded-lg"
+                              title="Devolver ao planejamento, disponível antes do início do corte"
+                            >
+                              Voltar ao planejamento
+                            </button>
+                          </div>
+                        )}
                         {viewTab === "PLANEJAMENTO" && (
                           <button
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.stopPropagation();
                               if (
-                                confirm(
+                                !confirm(
                                   `Deseja liberar o Nesting "${nestName}" para o laser?`,
                                 )
-                              ) {
-                                const updated = items.map((t) => ({
-                                  ...t,
+                              ) return;
+
+                              try {
+                                const queueSequence = nextNestQueueSequence();
+                                const updated = items.map((task) => ({
+                                  ...task,
                                   status: "PENDENTE" as const,
+                                  queueSequence,
                                 }));
-                                db.updateNestTasks(updated);
-                                db.addNotification({
-                                  message: `Nesting: ${nestName} | Status: Nest enviado p/ laser | Data/Hora: ${new Date().toLocaleString("pt-BR")} | Responsável: Marcos (Projetista)`,
-                                  read: false,
-                                });
+                                await db.updateNestTasks(updated);
+                                try {
+                                  await db.addNotification({
+                                    message: `Nesting: ${nestName} | Status: Nest enviado p/ laser | Data/Hora: ${new Date().toLocaleString("pt-BR")} | Responsável: ${currentUser.name}`,
+                                    read: false,
+                                  });
+                                } catch (notificationError) {
+                                  console.warn("[Nests] Falha ao registrar notificação de envio:", notificationError);
+                                }
                                 alert(
-                                  `Nesting "${nestName}" enviado com sucesso para o laser!`,
+                                  `Nesting "${nestName}" enviado com sucesso para o laser na posição #${queueSequence}!`,
                                 );
+                              } catch (error) {
+                                console.error("[Nests] Erro ao enviar Nest para o laser:", error);
+                                alert("Não foi possível enviar o Nest para o laser. Tente novamente.");
                               }
                             }}
                             className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm cursor-pointer whitespace-nowrap"
