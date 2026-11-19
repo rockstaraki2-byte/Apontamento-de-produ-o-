@@ -140,9 +140,9 @@ test("perfis e credenciais só são acessíveis pela API confiável", async () =
 
 test("planos preventivos e equipamentos respeitam tenant e perfil de manutenção", async () => {
   const operatorDb = environment.authenticatedContext("operador", { tenantId: "imperio", role: "PRODUCAO" }).firestore();
-  await assertSucceeds(getDoc(doc(operatorDb, "maintenanceAssets", "imperio-compressor")));
+  await assertFails(getDoc(doc(operatorDb, "maintenanceAssets", "imperio-compressor")));
   await assertFails(getDoc(doc(operatorDb, "maintenanceAssets", "empresa-compressor")));
-  await assertSucceeds(getDoc(doc(operatorDb, "preventiveMaintenancePlans", "imperio-plan")));
+  await assertFails(getDoc(doc(operatorDb, "preventiveMaintenancePlans", "imperio-plan")));
   await assertFails(getDoc(doc(operatorDb, "preventiveMaintenancePlans", "empresa-plan")));
   await assertFails(setDoc(doc(operatorDb, "maintenanceAssets", "operator-asset"), {
     tenantId: "imperio", name: "Ativo indevido", active: true,
@@ -159,6 +159,8 @@ test("planos preventivos e equipamentos respeitam tenant e perfil de manutençã
   }));
 
   const maintenanceDb = environment.authenticatedContext("entony", { tenantId: "imperio", role: "MANUTENCAO" }).firestore();
+  await assertSucceeds(getDoc(doc(maintenanceDb, "maintenanceAssets", "imperio-compressor")));
+  await assertSucceeds(getDoc(doc(maintenanceDb, "preventiveMaintenancePlans", "imperio-plan")));
   await assertSucceeds(setDoc(doc(maintenanceDb, "maintenanceAssets", "entony-asset"), {
     tenantId: "imperio", name: "Compressor 2", active: true,
   }));
@@ -173,7 +175,19 @@ test("planos preventivos e equipamentos respeitam tenant e perfil de manutençã
   }));
 
   const managerDb = environment.authenticatedContext("gerencia", { tenantId: "imperio", role: "GERENCIA" }).firestore();
+  await assertSucceeds(getDoc(doc(managerDb, "maintenanceAssets", "imperio-compressor")));
+  await assertSucceeds(getDoc(doc(managerDb, "preventiveMaintenancePlans", "imperio-plan")));
   await assertSucceeds(setDoc(doc(managerDb, "preventiveMaintenancePlans", "manager-plan"), {
     tenantId: "imperio", assetId: "imperio-compressor", active: true,
   }));
+});
+
+test("diretoria com perfil de leitura visualiza preventivas e outros perfis não", async () => {
+  const directorDb = environment.authenticatedContext("diretoria", { tenantId: "imperio", role: "LEITURA" }).firestore();
+  await assertSucceeds(getDoc(doc(directorDb, "maintenanceAssets", "imperio-compressor")));
+  await assertSucceeds(getDoc(doc(directorDb, "preventiveMaintenancePlans", "imperio-plan")));
+
+  const productionDb = environment.authenticatedContext("producao", { tenantId: "imperio", role: "PRODUCAO" }).firestore();
+  await assertFails(getDoc(doc(productionDb, "maintenanceAssets", "imperio-compressor")));
+  await assertFails(getDoc(doc(productionDb, "preventiveMaintenancePlans", "imperio-plan")));
 });
