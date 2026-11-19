@@ -75,6 +75,7 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
   const [assetName, setAssetName] = useState("");
   const [assetSectorId, setAssetSectorId] = useState("");
   const [planAssetId, setPlanAssetId] = useState("");
+  const [planSectorId, setPlanSectorId] = useState("");
   const [activity, setActivity] = useState("");
   const [responsibleUserId, setResponsibleUserId] = useState("");
   const [intervalValue, setIntervalValue] = useState("15");
@@ -131,6 +132,7 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
     setShowPlanForm(false);
     setEditingPlanId("");
     setPlanAssetId("");
+    setPlanSectorId("");
     setActivity("");
     setResponsibleUserId("");
     setIntervalValue("15");
@@ -145,6 +147,7 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
   const editPlan = (plan: PreventiveMaintenancePlan) => {
     setEditingPlanId(plan.id);
     setPlanAssetId(plan.assetId);
+    setPlanSectorId(plan.sectorId === undefined ? "" : String(plan.sectorId));
     setActivity(plan.activity);
     setResponsibleUserId(plan.responsibleUserId || "");
     setIntervalValue(String(plan.intervalValue));
@@ -204,7 +207,8 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
       return;
     }
     const responsible = tenantUsers.find((user) => user.id === responsibleUserId);
-    const sector = sectors.find((item) => String(item.id) === String(asset.sectorId));
+    const sector = sectors.find((item) => String(item.id) === planSectorId) ||
+      sectors.find((item) => String(item.id) === String(asset.sectorId));
     const existing = plans.find((plan) => plan.id === editingPlanId);
     const alertDays = [...new Set(alertLeadDays.split(",")
       .map((value) => Number(value.trim()))
@@ -218,8 +222,8 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
     const plan: Omit<PreventiveMaintenancePlan, "id" | "tenantId"> = {
       assetId: asset.id,
       assetName: asset.name,
-      sectorId: asset.sectorId,
-      sectorName: asset.sectorName || sector?.name,
+      sectorId: sector?.id,
+      sectorName: sector?.name,
       activity: activity.trim(),
       responsibleUserId: responsible?.id,
       responsibleUserName: responsible?.name,
@@ -383,6 +387,12 @@ export function PreventiveMaintenanceTab({ db, currentUser, onBack, onViewQueue,
                 <select required value={planAssetId} onChange={(event) => setPlanAssetId(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm text-slate-800">
                   <option value="">Selecione</option>
                   {eligibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1 text-xs font-bold text-slate-600">Setor
+                <select value={planSectorId} onChange={(event) => setPlanSectorId(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm text-slate-800">
+                  <option value="">Usar setor do equipamento</option>
+                  {sectors.map((sector) => <option key={sector.id} value={String(sector.id)}>{sector.name}</option>)}
                 </select>
               </label>
               <label className="space-y-1 text-xs font-bold text-slate-600">Responsável
