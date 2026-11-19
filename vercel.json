@@ -4,12 +4,20 @@
     {
       "path": "/api/cron/daily-invoiced-reports",
       "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/cron/preventive-maintenance-alerts",
+      "schedule": "0 10 * * *"
     }
   ],
   "rewrites": [
     {
       "source": "/api/cron/daily-invoiced-reports",
       "destination": "/api/integration/billing-daily?__daily_invoiced_reports=1"
+    },
+    {
+      "source": "/api/cron/preventive-maintenance-alerts",
+      "destination": "/api/integration/billing-daily?__preventive_maintenance_alerts=1"
     },
     {
       "source": "/api/import-orders-22sep-1500-7c91e2",
