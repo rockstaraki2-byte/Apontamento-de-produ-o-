@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { collection, getDocs, query, where } from "../_lib/adminFirestore.js";
 import { getFirebaseAdmin } from "../_lib/firebaseAdmin.js";
 import { handleDailyInvoicedReports } from "../_lib/dailyInvoicedReports.js";
+import { handlePreventiveMaintenanceAlerts } from "../_lib/preventiveMaintenanceAlerts.js";
 
 type DailyTotal = {
   amountCents?: unknown;
@@ -68,6 +69,9 @@ export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
   if (url.searchParams.get("__daily_invoiced_reports") === "1") {
     return handleDailyInvoicedReports(request);
+  }
+  if (url.searchParams.get("__preventive_maintenance_alerts") === "1") {
+    return handlePreventiveMaintenanceAlerts(request);
   }
 
   const expectedToken = process.env.APONTAPRO_SHEETS_API_TOKEN || "";
