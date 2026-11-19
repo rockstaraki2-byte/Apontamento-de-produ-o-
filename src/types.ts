@@ -49,7 +49,8 @@ export interface NestTask {
   totalQuantity: number;
   cutQuantity: number;
   thumbnailBase64?: string;
-  sequence?: number; // For planning sequence
+  sequence?: number; // For item order within the uploaded nesting plan
+  queueSequence?: number | null; // Priority order for nests in the laser queue
   status: "PLANEJAMENTO" | "PENDENTE" | "EM_CORTE" | "CORTADO";
   isActive: boolean;
   createdAt: number;
