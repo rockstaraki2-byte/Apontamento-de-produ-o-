@@ -15,12 +15,12 @@ import {
   type ProductionPlanningBom,
   type ProductionPlanningComponent,
   type ProductionPlanningStatus,
-} from "../src/productionPlanning.js";
+} from "../../src/productionPlanning.js";
 import {
   getFirebaseAdmin,
   requireSession,
   sendMethodNotAllowed,
-} from "./_lib/firebaseAdmin.js";
+} from "./firebaseAdmin.js";
 
 const MAX_SNAPSHOT_COMPONENT_ROWS = 300;
 const MAX_PLAN_STOCK_ENTRIES = 150;

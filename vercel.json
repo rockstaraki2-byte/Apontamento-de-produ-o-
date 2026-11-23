@@ -12,6 +12,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/production-planning",
+      "destination": "/api/tenants?__production_planning=1"
+    },
+    {
       "source": "/api/cron/daily-invoiced-reports",
       "destination": "/api/integration/billing-daily?__daily_invoiced_reports=1"
     },
