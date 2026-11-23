@@ -40,6 +40,12 @@ import {
 } from "./utils/stockInventoryCsv";
 import { compareSafeLocaleText } from "./utils/safeLocaleCompare";
 import { getItemUnit } from "./utils/unitUtils";
+import {
+  exceedsPlanningReservation,
+  getAvailableQuantityAfterAllReservations,
+  getPlanningReservedQuantity,
+  planningReservationWarning,
+} from "./stockAvailability";
 
 export function EstoqueScreen({
   db,
@@ -809,7 +815,8 @@ export function EstoqueScreen({
         description: itemsById.get(stock.itemId)?.name || "Produto sem cadastro",
         unit: getItemUnit(itemsById.get(stock.itemId)),
         reserved: Number(stock.reservedQuantity || 0),
-        available: Number(stock.quantity || 0) - Number(stock.reservedQuantity || 0),
+        planningReserved: getPlanningReservedQuantity(stock),
+        available: getAvailableQuantityAfterAllReservations(stock),
       }));
     const itemIdsWithStock = new Set(recordedRows.map(({ stock }) => stock.itemId));
     const zeroBalanceRows = db.items
@@ -824,7 +831,7 @@ export function EstoqueScreen({
           stage: "ACABADO",
           quantity: 0,
         };
-        return { stock, item, code: item.code, description: item.name, unit: item.unit || "un", reserved: 0, available: 0 };
+        return { stock, item, code: item.code, description: item.name, unit: item.unit || "un", reserved: 0, planningReserved: 0, available: 0 };
       });
 
     return [...recordedRows, ...zeroBalanceRows].sort((a, b) =>
@@ -841,9 +848,9 @@ export function EstoqueScreen({
     const headers = [
       "ID_ESTOQUE", "ID_ITEM", "CODIGO", "DESCRICAO", "COR", "TAMANHO",
       "VARIACAO", "ESTAGIO", "QUANTIDADE_ATUAL", "QUANTIDADE_CONTADA",
-      "RESERVADO", "DISPONIVEL", "UNIDADE", "PACOTES_DECLARADOS",
+      "RESERVADO", "RESERVADO_PLANEJAMENTO", "DISPONIVEL", "UNIDADE", "PACOTES_DECLARADOS",
     ];
-    const rows = inventoryReportRows.map(({ stock, code, description, unit, reserved, available }) => [
+    const rows = inventoryReportRows.map(({ stock, code, description, unit, reserved, planningReserved, available }) => [
       stock.id,
       stock.itemId,
       code,
@@ -855,6 +862,7 @@ export function EstoqueScreen({
       stock.quantity,
       "",
       reserved,
+      planningReserved,
       available,
       unit,
       stock.declaredPackages ?? "",
@@ -881,8 +889,8 @@ export function EstoqueScreen({
 
     autoTable(pdf, {
       startY: 24,
-      head: [["Código", "Descrição", "Cor", "Tamanho", "Variação", "Estágio", "Saldo", "Contagem", "Reservado", "Disponível", "Unid.", "Pacotes"]],
-      body: inventoryReportRows.map(({ stock, code, description, unit, reserved, available }) => [
+      head: [["Código", "Descrição", "Cor", "Tamanho", "Variação", "Estágio", "Saldo", "Contagem", "Reservado", "Reserva produção", "Disponível", "Unid.", "Pacotes"]],
+      body: inventoryReportRows.map(({ stock, code, description, unit, reserved, planningReserved, available }) => [
         code,
         description,
         stock.color || "—",
@@ -892,6 +900,7 @@ export function EstoqueScreen({
         stock.quantity,
         "",
         reserved,
+        planningReserved,
         available,
         unit,
         stock.declaredPackages ?? "—",
@@ -911,9 +920,10 @@ export function EstoqueScreen({
         6: { cellWidth: 16, halign: "right" },
         7: { cellWidth: 17 },
         8: { cellWidth: 16, halign: "right" },
-        9: { cellWidth: 17, halign: "right" },
-        10: { cellWidth: 13 },
-        11: { cellWidth: 16 },
+        9: { cellWidth: 20, halign: "right" },
+        10: { cellWidth: 17, halign: "right" },
+        11: { cellWidth: 13 },
+        12: { cellWidth: 16 },
       },
     });
     const totalPages = pdf.getNumberOfPages();
@@ -1060,6 +1070,11 @@ export function EstoqueScreen({
     const actualStockId = existing ? existing.id : generatedStockId;
     const prevQty = existing?.quantity || 0;
     const diff = numQuantity - prevQty;
+
+    if (existing && diff < 0 && exceedsPlanningReservation(existing, -diff)) {
+      alert(planningReservationWarning(existing));
+      return;
+    }
 
     await db.updateStocks([
       {
@@ -1958,12 +1973,18 @@ export function EstoqueScreen({
                     entry: s,
                     attributes: `${s.color || "-"} | ${s.size || "-"} | ${s.variation || "-"}`,
                     totalQty: s.quantity,
+                    availableQty: getAvailableQuantityAfterAllReservations(s),
+                    planningReservedQty: getPlanningReservedQuantity(s),
                     matchingOrders,
                   };
                 });
 
                 const grandTotal = breakdownData.reduce(
                   (sum, d) => sum + d.totalQty,
+                  0,
+                );
+                const grandAvailable = breakdownData.reduce(
+                  (sum, d) => sum + d.availableQty,
                   0,
                 );
 
@@ -1992,7 +2013,7 @@ export function EstoqueScreen({
                         (e.size || "") === (o.size || "") &&
                         (e.variation || "") === (o.variation || ""),
                     );
-                    return entry && entry.quantity >= o.totalQuantity;
+                    return entry && getAvailableQuantityAfterAllReservations(entry) >= o.totalQuantity;
                   })
                   .sort((a, b) => {
                     const dateA =
@@ -2060,7 +2081,7 @@ export function EstoqueScreen({
                             Disponível
                           </span>
                           <span className="text-xl font-extrabold text-emerald-600">
-                            {grandTotal}
+                            {grandAvailable}
                           </span>
                         </div>
                       </div>
@@ -2089,6 +2110,11 @@ export function EstoqueScreen({
                                         {d.totalQty} unid.
                                       </strong>
                                       {d.entry.declaredPackages ? ` (${d.entry.declaredPackages} ${d.entry.measurementUnit?.toLowerCase()})` : ""}
+                                      {d.planningReservedQty > 0 && (
+                                        <span className="ml-2 text-amber-700">
+                                          {d.planningReservedQty} reservada(s) para planejamento · {d.availableQty} disponível(is)
+                                        </span>
+                                      )}
                                     </span>
                                   </div>
                                 </div>

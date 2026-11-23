@@ -6,6 +6,10 @@ import { X, Trash2, Phone, Copy, Printer, Loader2, Edit2 } from "lucide-react";
 import { normalizeString } from "./searchUtils";
 import { OrderEditModal } from "./components/OrderEditModal";
 import {
+  exceedsPlanningReservation,
+  planningReservationWarning,
+} from "./stockAvailability";
+import {
   getCompleteTekSystemBillingMonth,
   getCompleteTekSystemRepresentativeBillingMonth,
 } from "./teksystemBilling";
@@ -430,6 +434,11 @@ export function StatusScreen({
     const stockId = `${o.itemId}|${o.color}|${o.size}|${o.variation}|ACABADO`;
     const existingStock = db.stocks.find((s) => s.id === stockId);
 
+    if (existingStock && exceedsPlanningReservation(existingStock, qty)) {
+      alert(planningReservationWarning(existingStock));
+      return;
+    }
+
     if (existingStock && (existingStock.reservedQuantity || 0) > 0) {
       const alternateReservedOrders = db.orders.filter(
         (ord) =>
@@ -744,6 +753,12 @@ export function StatusScreen({
           const stockId = `${order.itemId}|${order.color}|${order.size}|${order.variation}|ACABADO`;
           const currentStock = db.stocks.find((s) => s.id === stockId);
 
+          if (currentStock && exceedsPlanningReservation(currentStock, remainingToInvoice)) {
+            alert(planningReservationWarning(currentStock));
+            setIsUpdating(null);
+            return;
+          }
+
           if (currentStock) {
             const newStock = {
               ...currentStock,
@@ -778,6 +793,7 @@ export function StatusScreen({
             newStatus === "FATURADO"
               ? order.totalQuantity
               : order.invoicedQuantity || 0,
+          _alreadyDeducted: newStatus === "FATURADO",
           isActive: newStatus !== "FATURADO",
           isUrgent: newStatus === "FATURADO" ? false : order.isUrgent,
         };

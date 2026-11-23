@@ -83,6 +83,11 @@ import {
 } from "./demoData";
 import { getOrderBillingSummary, isFullySeparated, mergeCargaOrderAllocations, ORDER_ALLOCATION_ALLOWED_STATUSES } from "./expeditionMetrics";
 import type { CargaOrderAllocationRequest } from "./expeditionMetrics";
+import {
+  exceedsPlanningReservation,
+  getAvailableQuantityAfterPlanningReservations,
+  planningReservationWarning,
+} from "./stockAvailability";
 import { canManageExpedition } from "./expeditionAccess";
 import {
   addPreventiveInterval,
@@ -1449,6 +1454,18 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
     if (changed.length === 0) {
       console.log("updateStocks: No stocks actually changed. Skipping write.");
       return;
+    }
+    for (const updated of changed) {
+      const current = stocks.find((stock) => stock.id === updated.id);
+      if (!current) continue;
+      const currentQuantity = Number(current.quantity) || 0;
+      const nextQuantity = Number(updated.quantity) || 0;
+      if (
+        nextQuantity < currentQuantity &&
+        exceedsPlanningReservation(current, currentQuantity - nextQuantity)
+      ) {
+        throw new Error(planningReservationWarning(current));
+      }
     }
     const changedWithTenant = changed.map((s) => ({
       tenantId: activeTenantId,
@@ -2914,7 +2931,7 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
               throw new Error("Selecione um EPI válido desta empresa.");
             }
             const itemStocks = stocks.filter((stock) => stock.itemId === adjustment.itemId && matchesTenant(stock.tenantId || (stock as any).companyId)).sort((a, b) => a.id.localeCompare(b.id));
-            const currentTotal = itemStocks.reduce((sum, stock) => sum + Math.max(0, Number(stock.quantity) || 0), 0);
+            const currentTotal = itemStocks.reduce((sum, stock) => sum + getAvailableQuantityAfterPlanningReservations(stock), 0);
             if (currentTotal + delta < 0) throw new Error("O ajuste não pode deixar o estoque negativo.");
             if (delta > 0) {
               const targetId = adjustment.stockId || `${adjustment.itemId}|OUTROS|OUTROS|OUTROS|ACABADO`;
@@ -2934,7 +2951,7 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
               let remaining = Math.abs(delta);
               return previous.map((stock) => {
                 if (stock.itemId !== adjustment.itemId || !matchesTenant(stock.tenantId || (stock as any).companyId) || remaining <= 0) return stock;
-                const used = Math.min(stock.quantity, remaining);
+                const used = Math.min(getAvailableQuantityAfterPlanningReservations(stock), remaining);
                 remaining -= used;
                 return { ...stock, quantity: stock.quantity - used };
               });
@@ -2963,7 +2980,7 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
               if (snapshot.exists() && snapshot.data()?.tenantId !== activeTenantId) throw new Error("Um saldo de estoque vinculado ao EPI pertence a outra empresa.");
               if (snapshot.exists() && snapshot.data()?.tenantId === activeTenantId) rows.push({ ref, stock: snapshot.data() as StockEntry });
             }
-            const total = rows.reduce((sum, row) => sum + Math.max(0, Number(row.stock.quantity) || 0), 0);
+            const total = rows.reduce((sum, row) => sum + getAvailableQuantityAfterPlanningReservations(row.stock), 0);
             if (total + delta < 0) throw new Error("O ajuste não pode deixar o estoque negativo.");
             if (delta > 0) {
               const targetId = adjustment.stockId || `${adjustment.itemId}|${adjustment.color || "OUTROS"}|${adjustment.size || "OUTROS"}|${adjustment.variation || "OUTROS"}|ACABADO`;
@@ -2987,7 +3004,7 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
               for (const row of rows) {
                 if (remaining <= 0) break;
                 const current = Math.max(0, Number(row.stock.quantity) || 0);
-                const used = Math.min(current, remaining);
+                const used = Math.min(getAvailableQuantityAfterPlanningReservations(row.stock), remaining);
                 transaction.update(row.ref, { quantity: current - used });
                 remaining -= used;
               }
@@ -3056,12 +3073,12 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
           const matchingStocks = stocks
             .filter((stock) => stock.itemId === dist.itemId && matchesTenant(stock.tenantId || (stock as any).companyId))
             .sort((a, b) => a.id.localeCompare(b.id));
-          const total = matchingStocks.reduce((sum, stock) => sum + Math.max(0, Number(stock.quantity) || 0), 0);
+          const total = matchingStocks.reduce((sum, stock) => sum + getAvailableQuantityAfterPlanningReservations(stock), 0);
           if (total < dist.quantity) throw new Error(`Saldo insuficiente para distribuir. Disponível: ${total}.`);
 
           let remaining = dist.quantity;
           const updatedStocks = matchingStocks.map((stock) => {
-            const used = Math.min(Math.max(0, Number(stock.quantity) || 0), remaining);
+            const used = Math.min(getAvailableQuantityAfterPlanningReservations(stock), remaining);
             remaining -= used;
             return { ...stock, quantity: stock.quantity - used, tenantId: activeTenantId };
           });
@@ -3083,11 +3100,11 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
           const item = items.find((candidate) => candidate.id === dist.itemId && matchesTenant(candidate.tenantId || (candidate as any).companyId));
           if (!item) throw new Error("O EPI selecionado não pertence a esta empresa ou não existe mais.");
           const matchingStocks = stocks.filter((stock) => stock.itemId === dist.itemId && matchesTenant(stock.tenantId || (stock as any).companyId)).sort((a, b) => a.id.localeCompare(b.id));
-          const total = matchingStocks.reduce((sum, stock) => sum + Math.max(0, Number(stock.quantity) || 0), 0);
+          const total = matchingStocks.reduce((sum, stock) => sum + getAvailableQuantityAfterPlanningReservations(stock), 0);
           if (total < dist.quantity) throw new Error(`Saldo insuficiente para distribuir. Disponível: ${total}.`);
           let remaining = dist.quantity;
           const updated = matchingStocks.map((stock) => {
-            const used = Math.min(stock.quantity, remaining);
+            const used = Math.min(getAvailableQuantityAfterPlanningReservations(stock), remaining);
             remaining -= used;
             return { ...stock, quantity: stock.quantity - used };
           });
@@ -3110,14 +3127,14 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
             if (snapshot.exists() && snapshot.data()?.tenantId === activeTenantId) stockRows.push({ ref, stock: snapshot.data() as StockEntry });
           }
           stockRows.sort((a, b) => a.ref.id.localeCompare(b.ref.id));
-          const total = stockRows.reduce((sum, row) => sum + Math.max(0, Number(row.stock.quantity) || 0), 0);
+          const total = stockRows.reduce((sum, row) => sum + getAvailableQuantityAfterPlanningReservations(row.stock), 0);
           if (total < dist.quantity) throw new Error(`Saldo insuficiente para distribuir. Disponível: ${total}.`);
 
           let remaining = dist.quantity;
           for (const row of stockRows) {
             if (remaining <= 0) break;
             const current = Math.max(0, Number(row.stock.quantity) || 0);
-            const used = Math.min(current, remaining);
+            const used = Math.min(getAvailableQuantityAfterPlanningReservations(row.stock), remaining);
             transaction.update(row.ref, { quantity: current - used });
             remaining -= used;
           }

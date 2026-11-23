@@ -80,6 +80,11 @@ import {
   Minimize,
 } from "lucide-react";
 import { useDatabase } from "./useDatabase";
+import {
+  exceedsPlanningReservation,
+  getAvailableQuantityAfterPlanningReservations,
+  planningReservationWarning,
+} from "./stockAvailability";
 import { OrderPdfExportBridge } from "./OrderPdfExportBridge";
 import type { User, OrderStatus, Role, Order, AppNotification, Carga } from "./types";
 import { DEMO_USER, isDemoModeEnabled } from "./demoData";
@@ -3430,6 +3435,12 @@ function PedidosScreen({
           const stockId = `${order.itemId}|${order.color}|${order.size}|${order.variation}|ACABADO`;
           const currentStock = db.stocks.find((s) => s.id === stockId);
 
+          if (currentStock && exceedsPlanningReservation(currentStock, remainingToInvoice)) {
+            alert(planningReservationWarning(currentStock));
+            setIsUpdating(null);
+            return;
+          }
+
           if (currentStock) {
             const newStock = {
               ...currentStock,
@@ -3464,6 +3475,7 @@ function PedidosScreen({
             newStatus === "FATURADO"
               ? order.totalQuantity
               : order.invoicedQuantity || 0,
+          _alreadyDeducted: newStatus === "FATURADO",
           isActive: newStatus !== "FATURADO",
           isUrgent: newStatus === "FATURADO" ? false : order.isUrgent,
         };
@@ -4801,6 +4813,14 @@ function PedidosScreen({
         }
         const quantity = Number(item.quantity) || 1;
 
+        if (orderStatus === "FATURADO" && dbItemId !== 0) {
+          const stockId = `${dbItemId}|${item.color || "-"}|${item.size || "-"}|-|ACABADO`;
+          const existingStock = db.stocks.find((stock) => stock.id === stockId);
+          if (existingStock && exceedsPlanningReservation(existingStock, quantity)) {
+            throw new Error(planningReservationWarning(existingStock));
+          }
+        }
+
         await db.addOrder({
           orderCode: orderCode,
           customerName: finalCustomerName,
@@ -5358,7 +5378,7 @@ function PedidosScreen({
 
     if (existingStock && existingStock.quantity > 0) {
       qtFromStock = Math.min(
-        existingStock.quantity,
+        getAvailableQuantityAfterPlanningReservations(existingStock),
         orderToApprove.totalQuantity,
       );
       const newStockQty = existingStock.quantity - qtFromStock;
@@ -5418,6 +5438,11 @@ function PedidosScreen({
 
     const stockId = `${o.itemId}|${o.color}|${o.size}|${o.variation}|ACABADO`;
     const existingStock = db.stocks.find((s) => s.id === stockId);
+
+    if (existingStock && exceedsPlanningReservation(existingStock, qty)) {
+      alert(planningReservationWarning(existingStock));
+      return;
+    }
 
     // Stolen reservation popup alert check
     if (existingStock && (existingStock.reservedQuantity || 0) > 0) {
@@ -5579,6 +5604,20 @@ function PedidosScreen({
     if (itemsWithQtyToInvoice.length === 0) {
       alert("Todos os itens deste pedido já estão com faturamento completo.");
       return;
+    }
+
+    const quantitiesByStock = new Map<string, number>();
+    for (const order of itemsWithQtyToInvoice) {
+      const stockId = `${order.itemId}|${order.color}|${order.size}|${order.variation}|ACABADO`;
+      const quantity = order.totalQuantity - (order.invoicedQuantity || 0);
+      quantitiesByStock.set(stockId, (quantitiesByStock.get(stockId) || 0) + quantity);
+    }
+    for (const [stockId, quantity] of quantitiesByStock) {
+      const stock = db.stocks.find((entry) => entry.id === stockId);
+      if (stock && exceedsPlanningReservation(stock, quantity)) {
+        alert(planningReservationWarning(stock));
+        return;
+      }
     }
 
     const confirmResult = window.confirm(
@@ -5974,8 +6013,25 @@ function PedidosScreen({
       return;
     }
 
+    const quantitiesByStock = new Map<string, number>();
+    for (const id of selectedBatchInvoiceIds) {
+      const order = db.orders.find((entry) => entry.id === id);
+      if (!order || order.status !== "EMBALADO") continue;
+      const quantity = order.totalQuantity - (order.invoicedQuantity || 0);
+      if (quantity <= 0) continue;
+      const stockId = `${order.itemId}|${order.color}|${order.size}|${order.variation}|ACABADO`;
+      quantitiesByStock.set(stockId, (quantitiesByStock.get(stockId) || 0) + quantity);
+    }
+    for (const [stockId, quantity] of quantitiesByStock) {
+      const stock = db.stocks.find((entry) => entry.id === stockId);
+      if (stock && exceedsPlanningReservation(stock, quantity)) {
+        alert(planningReservationWarning(stock));
+        return;
+      }
+    }
+
     const updatedOrders: typeof db.orders = [];
-    const updatedStocks: typeof db.stocks = [];
+    const updatedStocksById = new Map<string, (typeof db.stocks)[number]>();
     const addedLogs: any[] = [];
 
     selectedBatchInvoiceIds.forEach((id, idx) => {
@@ -6002,13 +6058,14 @@ function PedidosScreen({
       });
 
       if (existingStock) {
-        const newStockQty = Math.max(0, existingStock.quantity - qty);
+        const currentStock = updatedStocksById.get(stockId) || existingStock;
+        const newStockQty = Math.max(0, currentStock.quantity - qty);
         const newReservedQty = Math.max(
           0,
-          (existingStock.reservedQuantity || 0) - qty,
+          (currentStock.reservedQuantity || 0) - qty,
         );
-        updatedStocks.push({
-          ...existingStock,
+        updatedStocksById.set(stockId, {
+          ...currentStock,
           quantity: newStockQty,
           reservedQuantity: newReservedQty,
         });
@@ -6038,8 +6095,8 @@ function PedidosScreen({
 
     if (updatedOrders.length > 0) {
       db.updateOrders(updatedOrders);
-      if (updatedStocks.length > 0) {
-        db.updateStocks(updatedStocks);
+      if (updatedStocksById.size > 0) {
+        db.updateStocks(Array.from(updatedStocksById.values()));
       }
       db.addLogs(addedLogs);
       setSelectedBatchInvoiceIds([]);
@@ -6850,7 +6907,10 @@ function PedidosScreen({
           let status: OrderStatus = "PENDENTE";
 
           if (existingStock && existingStock.quantity > 0) {
-            qtFromStock = Math.min(existingStock.quantity, numTotalQuantity);
+            qtFromStock = Math.min(
+              getAvailableQuantityAfterPlanningReservations(existingStock),
+              numTotalQuantity,
+            );
             const newStockQty = existingStock.quantity - qtFromStock;
             stockUpdatesById.set(stockId, { ...existingStock, quantity: newStockQty });
 
@@ -13223,6 +13283,11 @@ function AdminScreen({
 
     const stockId = `${o.itemId}|${o.color}|${o.size}|${o.variation}|ACABADO`;
     const existingStock = db.stocks.find((s) => s.id === stockId);
+
+    if (existingStock && exceedsPlanningReservation(existingStock, qty)) {
+      alert(planningReservationWarning(existingStock));
+      return;
+    }
 
     if (existingStock && (existingStock.reservedQuantity || 0) > 0) {
       const alternateReservedOrders = db.orders.filter(

@@ -51,6 +51,24 @@ service cloud.firestore {
         && request.auth.token.role in ["MANUTENCAO", "ADMIN", "GERENCIA"];
     }
 
+    function preservePlanningStockReservations() {
+      let oldPlanReserved = resource.data.get("planningReservedQuantity", 0);
+      let newPlanReserved = request.resource.data.get("planningReservedQuantity", 0);
+      let oldQuantity = resource.data.get("quantity", 0);
+      let newQuantity = request.resource.data.get("quantity", 0);
+      let oldReserved = resource.data.get("reservedQuantity", 0);
+      let newReserved = request.resource.data.get("reservedQuantity", 0);
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      return !changedKeys.hasAny(["planningReservedQuantity"])
+        && (oldPlanReserved <= 0 || !changedKeys.hasAny(["itemId", "color", "size", "variation", "stage"]))
+        && (oldPlanReserved <= 0 || newQuantity >= oldQuantity || newQuantity >= oldPlanReserved)
+        && (newReserved <= oldReserved || newReserved + newPlanReserved <= newQuantity);
+    }
+
+    function hasNoPlanningStockReservation() {
+      return resource.data.get("planningReservedQuantity", 0) <= 0;
+    }
+
     match /tenants/{tenantId} {
       // A tenant may read only its own configuration document. Global
       // administration reads the tenant directory through the authenticated API.
@@ -154,6 +172,7 @@ service cloud.firestore {
         && collection != "productionPlanningBoms"
         && collection != "productionPlans"
         && collection != "productionPlanReservations"
+        && (collection != "stocks" || !("planningReservedQuantity" in request.resource.data))
         && isTenantUser()
         && request.resource.data.tenantId == request.auth.token.tenantId;
       allow update: if collection != "tenants"
@@ -168,7 +187,8 @@ service cloud.firestore {
         && collection != "productionPlanReservations"
         && isTenantUser()
         && resource.data.tenantId == request.auth.token.tenantId
-        && request.resource.data.tenantId == request.auth.token.tenantId;
+        && request.resource.data.tenantId == request.auth.token.tenantId
+        && (collection != "stocks" || preservePlanningStockReservations());
       allow delete: if collection != "tenants"
         && collection != "users"
         && collection != "userCredentials"
@@ -180,7 +200,8 @@ service cloud.firestore {
         && collection != "productionPlans"
         && collection != "productionPlanReservations"
         && isTenantUser()
-        && resource.data.tenantId == request.auth.token.tenantId;
+        && resource.data.tenantId == request.auth.token.tenantId
+        && (collection != "stocks" || hasNoPlanningStockReservation());
     }
 
     // Nested documents and every unlisted path are denied by default.

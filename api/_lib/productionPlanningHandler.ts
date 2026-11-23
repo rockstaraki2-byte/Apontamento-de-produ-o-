@@ -526,34 +526,100 @@ async function changePlanStatus(
       throw new PlanningError("COMPLETION_REQUIRES_INVENTORY_TRANSACTION", 409);
     }
 
-    if (nextStatus === "planned") {
+    const planningReservations = new Map<string, {
+      quantity: number;
+      itemId: number;
+      reservationRef: any;
+      reservationSnapshot: any;
+      stockRef: any;
+      stockSnapshot?: any;
+    }>();
+    if (nextStatus === "planned" || nextStatus === "cancelled") {
       const needs = aggregateProductionPlanNeeds(current.bomSnapshot || []);
       if (needs.size > MAX_PLAN_STOCK_ENTRIES) throw new PlanningError("PLAN_TOO_LARGE", 400);
+      const componentByStockId = new Map<string, ProductionPlanComponentSnapshot>();
+      for (const line of current.bomSnapshot || []) {
+        for (const component of line.components || []) {
+          if (!component.active || !component.stockEntryId) continue;
+          const existing = componentByStockId.get(component.stockEntryId);
+          if (existing && existing.stockItemId !== component.stockItemId) {
+            throw new PlanningError("STOCK_LINK_MISMATCH", 409);
+          }
+          componentByStockId.set(component.stockEntryId, component);
+        }
+      }
       for (const [stockEntryId, quantity] of needs) {
-        const matchingComponent = (current.bomSnapshot || [])
-          .flatMap((line: ProductionPlanBomSnapshot) => line.components)
-          .find((row: ProductionPlanComponentSnapshot) => row.stockEntryId === stockEntryId);
-        if (!matchingComponent?.stockItemId) continue;
+        const component = componentByStockId.get(stockEntryId);
+        if (!component?.stockItemId) continue;
         const reservationId = getReservationDocumentId(tenantId, planId, stockEntryId);
         const reservationRef = db.collection("productionPlanReservations").doc(reservationId);
+        const reservationSnapshot = await transaction.get(reservationRef);
+        const stockRef = db.collection("stocks").doc(stockEntryId);
+        const row: any = {
+          quantity,
+          itemId: component.stockItemId,
+          reservationRef,
+          reservationSnapshot,
+          stockRef,
+        };
+        if (nextStatus === "planned" || (reservationSnapshot.exists && reservationSnapshot.data()?.active === true)) {
+          row.stockSnapshot = await transaction.get(stockRef);
+        }
+        planningReservations.set(stockEntryId, row);
+      }
+    }
+
+    if (nextStatus === "planned") {
+      for (const [stockEntryId, entry] of planningReservations) {
+        const existingReservation = entry.reservationSnapshot.exists ? entry.reservationSnapshot.data() : null;
+        if (existingReservation?.active === true || existingReservation) {
+          throw new PlanningError("STOCK_RESERVATION_ALREADY_EXISTS", 409, { stockEntryId });
+        }
+        const stock = entry.stockSnapshot?.exists ? entry.stockSnapshot.data() : null;
+        if (
+          !stock ||
+          stock.tenantId !== tenantId ||
+          Number(stock.itemId) !== entry.itemId
+        ) {
+          throw new PlanningError("STOCK_TO_REPORT", 409, { stockEntryId });
+        }
         const reservation: ProductionPlanReservation = {
-          id: reservationId,
+          id: entry.reservationRef.id,
           tenantId,
           planId,
           stockEntryId,
-          itemId: matchingComponent.stockItemId,
-          quantity,
+          itemId: entry.itemId,
+          quantity: entry.quantity,
           active: true,
         };
-        transaction.set(reservationRef, reservation);
+        const currentReserved = Number(stock.planningReservedQuantity);
+        transaction.set(entry.stockRef, {
+          planningReservedQuantity: roundPlanningQuantity(
+            (Number.isFinite(currentReserved) ? Math.max(0, currentReserved) : 0) + entry.quantity,
+          ),
+        }, { merge: true });
+        transaction.create(entry.reservationRef, reservation);
       }
     } else if (nextStatus === "cancelled") {
-      const needs = aggregateProductionPlanNeeds(current.bomSnapshot || []);
-      for (const stockEntryId of needs.keys()) {
-        const reservationId = getReservationDocumentId(tenantId, planId, stockEntryId);
-        transaction.delete(
-          db.collection("productionPlanReservations").doc(reservationId),
-        );
+      for (const [stockEntryId, entry] of planningReservations) {
+        const reservation = entry.reservationSnapshot.exists ? entry.reservationSnapshot.data() : null;
+        if (
+          !reservation ||
+          reservation.tenantId !== tenantId ||
+          reservation.planId !== planId ||
+          reservation.active !== true
+        ) continue;
+        const stock = entry.stockSnapshot?.exists ? entry.stockSnapshot.data() : null;
+        if (stock && stock.tenantId === tenantId && Number(stock.itemId) === entry.itemId) {
+          const currentReserved = Number(stock.planningReservedQuantity);
+          transaction.set(entry.stockRef, {
+            planningReservedQuantity: roundPlanningQuantity(Math.max(
+              0,
+              (Number.isFinite(currentReserved) ? currentReserved : 0) - Number(reservation.quantity || entry.quantity),
+            )),
+          }, { merge: true });
+        }
+        transaction.delete(entry.reservationRef);
       }
     }
 
@@ -590,12 +656,12 @@ async function completePlan(
       .where("tenantId", "==", tenantId);
     const reservationSnapshot = await transaction.get(reservationsQuery);
     const otherReserved = new Map<string, number>();
-    const ownReservations: any[] = [];
+    const ownReservations = new Map<string, any>();
     for (const entry of reservationSnapshot.docs) {
       const data = entry.data();
       if (data.tenantId !== tenantId || data.active !== true) continue;
       if (data.planId === planId) {
-        ownReservations.push(entry);
+        ownReservations.set(String(data.stockEntryId || ""), entry);
         continue;
       }
       const stockEntryId = String(data.stockEntryId || "");
@@ -607,6 +673,9 @@ async function completePlan(
           roundPlanningQuantity((otherReserved.get(stockEntryId) || 0) + amount),
         );
       }
+    }
+    if (ownReservations.size !== needs.size) {
+      throw new PlanningError("STOCK_RESERVATION_INTEGRITY_ERROR", 409);
     }
 
     const stockRefs = new Map<string, any>();
@@ -653,6 +722,14 @@ async function completePlan(
       ) {
         throw new PlanningError("STOCK_TO_REPORT", 409, { stockEntryId });
       }
+      const ownReservation = ownReservations.get(stockEntryId);
+      if (
+        !ownReservation ||
+        Number(ownReservation.data().itemId) !== need.itemId ||
+        Math.abs(Number(ownReservation.data().quantity) - need.quantity) > 0.0001
+      ) {
+        throw new PlanningError("STOCK_RESERVATION_INTEGRITY_ERROR", 409, { stockEntryId });
+      }
       const available =
         Number(stock.quantity) -
         Math.max(0, Number(stock.reservedQuantity) || 0) -
@@ -697,10 +774,14 @@ async function completePlan(
         id: stockEntryId,
         tenantId,
         quantity: roundPlanningQuantity(Number(stock.quantity) - need.quantity),
+        planningReservedQuantity: roundPlanningQuantity(Math.max(
+          0,
+          (Number(stock.planningReservedQuantity) || 0) - need.quantity,
+        )),
       });
       transaction.create(movementRefs.get(stockEntryId)!, movement);
     }
-    for (const reservation of ownReservations) transaction.delete(reservation.ref);
+    for (const reservation of ownReservations.values()) transaction.delete(reservation.ref);
 
     const completed = {
       ...current,

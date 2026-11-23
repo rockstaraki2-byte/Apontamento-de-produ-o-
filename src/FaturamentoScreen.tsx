@@ -31,6 +31,12 @@ import {
   X,
 } from "lucide-react";
 import { Order, Carga, User, StockEntry } from "./types";
+import {
+  exceedsPlanningReservation,
+  exceedsReservationCapacity,
+  getAvailableQuantityAfterAllReservations,
+  planningReservationWarning,
+} from "./stockAvailability";
 import { resolveCompanyInfo, CompanyLogo } from "./utils/companyUtils";
 
 // Simulated lightweight barcode SVG generator for labels
@@ -261,6 +267,7 @@ export function FaturamentoScreen({
     value: number,
     maxQuantity: number,
   ) => {
+    if (maxQuantity <= 0) return;
     const qty = Math.min(maxQuantity, Math.max(1, value));
     setSelectedStockEntries((prev) => ({
       ...prev,
@@ -270,14 +277,15 @@ export function FaturamentoScreen({
 
   const toggleSelectAllStocks = () => {
     const allSelected = filteredFinishedStocks.every(
-      (s) => !!selectedStockEntries[s.id],
+      (s) => getAvailableQuantityAfterAllReservations(s) <= 0 || !!selectedStockEntries[s.id],
     );
     if (allSelected) {
       setSelectedStockEntries({});
     } else {
       const next: { [stockId: string]: number } = {};
       filteredFinishedStocks.forEach((s) => {
-        next[s.id] = s.quantity;
+        const available = getAvailableQuantityAfterAllReservations(s);
+        if (available > 0) next[s.id] = available;
       });
       setSelectedStockEntries(next);
     }
@@ -313,6 +321,25 @@ export function FaturamentoScreen({
       return;
     }
 
+    const outgoingByStock = new Map<string, number>();
+    for (const orderId of selectedOrderIds) {
+      const order = db.orders.find((entry) => entry.id === orderId);
+      if (!order) continue;
+      const stockId = `${order.itemId}|${order.color}|${order.size}|${order.variation}|ACABADO`;
+      outgoingByStock.set(stockId, (outgoingByStock.get(stockId) || 0) + order.totalQuantity);
+    }
+    for (const stockId of stockKeys) {
+      const quantity = Number(selectedStockEntries[stockId]) || 0;
+      outgoingByStock.set(stockId, (outgoingByStock.get(stockId) || 0) + quantity);
+    }
+    for (const [stockId, quantity] of outgoingByStock) {
+      const stock = db.stocks.find((entry) => entry.id === stockId);
+      if (stock && exceedsPlanningReservation(stock, quantity)) {
+        alert(planningReservationWarning(stock));
+        return;
+      }
+    }
+
     const mConfirm = `Deseja faturar os itens selecionados? 
 - Pedidos selecionados: ${selectedOrderIds.length}
 - Itens de estoque selecionados: ${stockKeys.length}
@@ -322,7 +349,7 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
 
     setIsProcessingInvoice(true);
     try {
-      const updatedStocks = [...db.stocks];
+      const updatedStocks = db.stocks.map((stock) => ({ ...stock }));
       const ordersToUpdate: Order[] = [];
       const logsToAdd: any[] = [];
 
@@ -525,6 +552,24 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
       })
       .filter((s) => s.quantity > 0);
 
+    const reservationIncrements = new Map<string, number>();
+    for (const orderId of selectedOrderIds) {
+      const order = db.orders.find((entry) => entry.id === orderId);
+      if (!order) continue;
+      const stockId = `${order.itemId}|${order.color}|${order.size}|${order.variation}|ACABADO`;
+      reservationIncrements.set(stockId, (reservationIncrements.get(stockId) || 0) + order.totalQuantity);
+    }
+    for (const entry of stockEntriesToSave) {
+      reservationIncrements.set(entry.id, (reservationIncrements.get(entry.id) || 0) + entry.quantity);
+    }
+    for (const [stockId, quantity] of reservationIncrements) {
+      const stock = db.stocks.find((entry) => entry.id === stockId);
+      if (stock && exceedsReservationCapacity(stock, quantity)) {
+        alert("Saldo insuficiente após as reservas de pedidos e do planejamento da produção.");
+        return;
+      }
+    }
+
     const newCarga: Omit<Carga, "id"> = {
       name: cargaName.trim(),
       dayOfWeek: cargaDay,
@@ -539,7 +584,7 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
     try {
       // 1. Process reservations & order statuses in memory first
       const updatedOrders: Order[] = [];
-      const updatedStocks = [...db.stocks];
+      const updatedStocks = db.stocks.map((stock) => ({ ...stock }));
 
       // Update orders in carga to PENDING/PLANEJADO
       for (const id of selectedOrderIds) {
@@ -650,7 +695,25 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
         );
         if (!confirmInvoice) return;
 
-        const updatedStocks = [...db.stocks];
+        const outgoingByStock = new Map<string, number>();
+        for (const orderId of carga.orderIds || []) {
+          const order = db.orders.find((entry) => entry.id === orderId);
+          if (!order) continue;
+          const stockId = `${order.itemId}|${order.color}|${order.size}|${order.variation}|ACABADO`;
+          outgoingByStock.set(stockId, (outgoingByStock.get(stockId) || 0) + order.totalQuantity);
+        }
+        for (const entry of carga.stockEntries || []) {
+          outgoingByStock.set(entry.id, (outgoingByStock.get(entry.id) || 0) + entry.quantity);
+        }
+        for (const [stockId, quantity] of outgoingByStock) {
+          const stock = db.stocks.find((entry) => entry.id === stockId);
+          if (stock && exceedsPlanningReservation(stock, quantity)) {
+            alert(planningReservationWarning(stock));
+            return;
+          }
+        }
+
+        const updatedStocks = db.stocks.map((stock) => ({ ...stock }));
 
         // 1. Process and Invoice Orders
         for (const orderId of carga.orderIds || []) {
@@ -782,7 +845,7 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
       const carga = db.cargas.find((c) => c.id === id);
       if (carga) {
         const updatedOrders: Order[] = [];
-        const updatedStocks = [...db.stocks];
+        const updatedStocks = db.stocks.map((stock) => ({ ...stock }));
 
         // 1. Rollback Order status from PLANEJADO to EMBALADO, and release reservation
         for (const orderId of carga.orderIds || []) {
@@ -1675,7 +1738,7 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                           className="text-slate-600 hover:text-indigo-650 flex justify-center items-center w-full focus:outline-none"
                         >
                           {filteredFinishedStocks.every(
-                            (s) => !!selectedStockEntries[s.id],
+                            (s) => getAvailableQuantityAfterAllReservations(s) <= 0 || !!selectedStockEntries[s.id],
                           ) ? (
                             <CheckSquare
                               size={16}
@@ -1703,6 +1766,7 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                       const itemObj = db.items.find((i) => i.id === s.itemId);
                       const isSelected = !!selectedStockEntries[s.id];
                       const selectedVal = selectedStockEntries[s.id] || 0;
+                      const availableQuantity = getAvailableQuantityAfterAllReservations(s);
 
                       return (
                         <tr
@@ -1712,8 +1776,10 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                           <td className="py-3 px-3 text-center w-10">
                             <button
                               onClick={() =>
-                                toggleSelectStock(s.id, s.quantity)
+                                toggleSelectStock(s.id, availableQuantity)
                               }
+                              disabled={availableQuantity <= 0}
+                              title={availableQuantity <= 0 ? "Saldo reservado para pedidos ou planejamento" : "Selecionar estoque disponível"}
                               className="text-slate-550 hover:text-indigo-650 flex justify-center items-center w-full focus:outline-none"
                             >
                               {isSelected ? (
@@ -1771,6 +1837,9 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                             <span className="bg-slate-100 text-slate-805 font-black px-2 py-1 rounded text-xs select-none">
                               {s.quantity} un
                             </span>
+                            <span className="block mt-1 text-[10px] text-slate-500">
+                              {availableQuantity} disponível(is)
+                            </span>
                           </td>
                           <td className="py-3 px-3 text-center">
                             {isSelected ? (
@@ -1781,7 +1850,7 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                                     handleStockQuantityChange(
                                       s.id,
                                       selectedVal - 1,
-                                      s.quantity,
+                                      availableQuantity,
                                     )
                                   }
                                   className="w-5 h-5 bg-slate-105 hover:bg-slate-205 rounded font-black flex items-center justify-center text-xs"
@@ -1791,13 +1860,13 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                                 <input
                                   type="number"
                                   min={1}
-                                  max={s.quantity}
+                                  max={availableQuantity}
                                   value={selectedVal}
                                   onChange={(e) =>
                                     handleStockQuantityChange(
                                       s.id,
                                       parseInt(e.target.value) || 1,
-                                      s.quantity,
+                                      availableQuantity,
                                     )
                                   }
                                   className="w-14 border text-center p-1 font-extrabold rounded bg-white text-slate-850 focus:ring-1 focus:ring-indigo-500 text-xs"
@@ -1808,7 +1877,7 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
                                     handleStockQuantityChange(
                                       s.id,
                                       selectedVal + 1,
-                                      s.quantity,
+                                      availableQuantity,
                                     )
                                   }
                                   className="w-5 h-5 bg-slate-105 hover:bg-slate-205 rounded font-black flex items-center justify-center text-xs"

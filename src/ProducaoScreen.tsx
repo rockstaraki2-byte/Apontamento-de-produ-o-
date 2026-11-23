@@ -34,6 +34,7 @@ import { ProductivityCard } from "./components/ProductivityCard";
 import { MachineStopWidget } from "./components/OperatorActions";
 import { parseQty } from "./quantityUtils";
 import { isRetratilMechanism, restrictToRetratilMechanisms } from "./utils/imperioWorkflowUtils";
+import { exceedsPlanningReservation, planningReservationWarning } from "./stockAvailability";
 
 const getProductKey = (
   itemId: number,
@@ -597,6 +598,27 @@ export function ProducaoScreen({
   ) => {
     const activePack = db.activePacks.find((p) => p.id === selectedPackId);
     if (!activePack || !packQuantity) return;
+
+    if (activePack.itemId !== 0) {
+      const product = db.items.find((item) => item.id === activePack.itemId);
+      const productName = product?.name.toLowerCase() || "";
+      const automaticConsumptions: Array<{ stockId: string; quantity: number }> = [];
+      if (productName.includes("mecanismo") && (productName.includes("retrátil") || productName.includes("retratil"))) {
+        const component = db.items.find((item) => item.name === "MANCAL RETRÁTIL" || item.id === 1088);
+        if (component) automaticConsumptions.push({ stockId: `${component.id}|-|-|-|INTERMEDIARIO`, quantity: Number(packQuantity) * 4 });
+      }
+      if ((productName.includes("rodízio") || productName.includes("rodizio")) && productName !== "rodinha p/ rodízio") {
+        const component = db.items.find((item) => item.name === "RODINHA P/ RODÍZIO" || item.id === 3565);
+        if (component) automaticConsumptions.push({ stockId: `${component.id}|-|-|-|INTERMEDIARIO`, quantity: Number(packQuantity) });
+      }
+      for (const consumption of automaticConsumptions) {
+        const stock = db.stocks.find((entry) => entry.id === consumption.stockId);
+        if (stock && exceedsPlanningReservation(stock, consumption.quantity)) {
+          alert(planningReservationWarning(stock));
+          return;
+        }
+      }
+    }
 
     let qtyToAllocate = Number(packQuantity);
     const endTime = Date.now();

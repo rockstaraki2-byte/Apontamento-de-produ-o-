@@ -517,6 +517,7 @@ export interface StockEntry {
   variation: string;
   quantity: number;
   reservedQuantity?: number;
+  planningReservedQuantity?: number;
   stage: "INTERMEDIARIO" | "ACABADO";
   declaredPackages?: number;
   measurementUnit?: string;
