@@ -30,6 +30,8 @@ import type {
   MachineStop,
   MaintenanceOrder,
   MaintenanceWorkLog,
+  MaintenanceAsset,
+  PreventiveMaintenancePlan,
   PerformanceQuestion,
   PerformanceReview,
   Tenant,
@@ -82,6 +84,12 @@ import {
 import { getOrderBillingSummary, isFullySeparated, mergeCargaOrderAllocations, ORDER_ALLOCATION_ALLOWED_STATUSES } from "./expeditionMetrics";
 import type { CargaOrderAllocationRequest } from "./expeditionMetrics";
 import { canManageExpedition } from "./expeditionAccess";
+import {
+  addPreventiveInterval,
+  businessDateFromTimestamp,
+  preventiveOrderId,
+  preventivePlanBelongsToTenant,
+} from "./maintenancePreventive";
 
 async function callAuthenticatedApi(path: string, method: string, body?: any) {
   const token = await auth.currentUser?.getIdToken();
@@ -151,7 +159,7 @@ const ROLE_SCOPED_LISTENER_COLLECTIONS: Record<string, readonly string[]> = {
   TORNO_CNC_WILLIAN: ["items", "orders", "activePacks", "logs", "coilCuttingPlans", "customers", "productionBatches", "notifications", "sectors"],
   TORNO_CNC_HENRIQUE: ["items", "orders", "activePacks", "logs", "coilCuttingPlans", "customers", "productionBatches", "notifications", "sectors"],
   CORTE_LASER: ["items", "activePacks", "nestTasks", "sheetStocks", "stocks", "notifications", "sectors"],
-  MANUTENCAO: ["machineStops", "maintenanceOrders", "maintenanceWorkLogs", "sectors"],
+  MANUTENCAO: ["machineStops", "maintenanceOrders", "maintenanceWorkLogs", "maintenanceAssets", "preventiveMaintenancePlans", "sectors"],
 };
 
 const ALL_OPERATIONAL_LISTENER_COLLECTIONS = [
@@ -162,7 +170,7 @@ const ALL_OPERATIONAL_LISTENER_COLLECTIONS = [
   "productionAgendas", "coilCuttingPlans", "cargas", "expeditionRoutes",
   "productionSchedules", "extraHours", "systemSettings", "teksystemBillingMonthlyTotals",
   "teksystemBillingRepresentativeMonthlyTotals", "agentReports", "priceHistories",
-  "tornoEvents", "machineStops", "maintenanceOrders", "maintenanceWorkLogs",
+  "tornoEvents", "machineStops", "maintenanceOrders", "maintenanceWorkLogs", "maintenanceAssets", "preventiveMaintenancePlans",
   "performanceQuestions", "performanceReviews", "attendances", "laserQuotes", "tubularQuotes",
   "sheetStocks", "sheetStockMovements", "prensaPendingProductions",
 ] as const;
@@ -189,7 +197,7 @@ const ROUTE_SCOPED_LISTENER_COLLECTIONS: Record<string, readonly string[]> = {
   "/banho-quimico": ["items", "orders", "activePacks", "logs", "productionSteps", "productionBatches", "productionAgendas", "notifications", "sectors", "systemSettings"],
   "/embalagem": ["items", "orders", "activePacks", "logs", "productionSteps", "productionBatches", "productionAgendas", "cargas", "notifications", "sectors", "systemSettings"],
   "/producao": ["items", "orders", "activePacks", "logs", "productionSteps", "productionBatches", "productionAgendas", "productionSchedules", "flows", "productFlows", "notifications", "sectors", "systemSettings"],
-  "/manutencao": ["employees", "machineStops", "maintenanceOrders", "maintenanceWorkLogs", "sectors", "systemSettings"],
+  "/manutencao": ["employees", "machineStops", "maintenanceOrders", "maintenanceWorkLogs", "maintenanceAssets", "preventiveMaintenancePlans", "sectors", "systemSettings"],
   "/montagem-retratil": ["items", "orders", "activePacks", "logs", "productionSteps", "productionBatches", "notifications", "sectors", "systemSettings"],
   "/cortelaser": ["items", "activePacks", "nestTasks", "stocks", "sheetStocks", "sheetStockMovements", "productionBatches", "productionSteps", "notifications", "sectors", "systemSettings"],
   "/pintura": ["items", "orders", "attributes", "activePacks", "logs", "productionSteps", "stocks", "notifications", "sectors", "systemSettings"],
@@ -754,6 +762,8 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
   const [machineStops, setMachineStops] = useState<MachineStop[]>([]);
   const [maintenanceOrders, setMaintenanceOrders] = useState<MaintenanceOrder[]>([]);
   const [maintenanceWorkLogs, setMaintenanceWorkLogs] = useState<MaintenanceWorkLog[]>([]);
+  const [maintenanceAssets, setMaintenanceAssets] = useState<MaintenanceAsset[]>([]);
+  const [preventiveMaintenancePlans, setPreventiveMaintenancePlans] = useState<PreventiveMaintenancePlan[]>([]);
   const [performanceQuestions, setPerformanceQuestions] = useState<
     PerformanceQuestion[]
   >([]);
@@ -1230,6 +1240,16 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
         setMaintenanceWorkLogs(list);
       },
       (err) => handleSnapshotError("maintenanceWorkLogs", err),
+    );
+
+    const unsubMaintenanceAssets = listenTenantCollection("maintenanceAssets",
+      (snap) => setMaintenanceAssets(snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) }) as MaintenanceAsset)),
+      (err) => handleSnapshotError("maintenanceAssets", err),
+    );
+
+    const unsubPreventiveMaintenancePlans = listenTenantCollection("preventiveMaintenancePlans",
+      (snap) => setPreventiveMaintenancePlans(snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) }) as PreventiveMaintenancePlan)),
+      (err) => handleSnapshotError("preventiveMaintenancePlans", err),
     );
 
     const unsubPerformanceQuestions = listenTenantCollection("performanceQuestions",
@@ -2620,6 +2640,14 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
   const filteredMachineStops = useMemo(() => machineStops.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [machineStops, matchesTenant]);
   const filteredMaintenanceOrders = useMemo(() => maintenanceOrders.filter((x) => x.tenantId === activeTenantId), [maintenanceOrders, activeTenantId]);
   const filteredMaintenanceWorkLogs = useMemo(() => maintenanceWorkLogs.filter((x) => x.tenantId === activeTenantId), [maintenanceWorkLogs, activeTenantId]);
+  const filteredMaintenanceAssets = useMemo(
+    () => maintenanceAssets.filter((asset) => preventivePlanBelongsToTenant(asset, activeTenantId)),
+    [maintenanceAssets, activeTenantId],
+  );
+  const filteredPreventiveMaintenancePlans = useMemo(
+    () => preventiveMaintenancePlans.filter((plan) => preventivePlanBelongsToTenant(plan, activeTenantId)),
+    [preventiveMaintenancePlans, activeTenantId],
+  );
   const filteredPerformanceQuestions = useMemo(() => performanceQuestions.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [performanceQuestions, matchesTenant]);
   const filteredPerformanceReviews = useMemo(() => performanceReviews.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [performanceReviews, matchesTenant]);
   const filteredAttendances = useMemo(() => attendances.filter((x) => matchesTenant(x.tenantId || (x as any).companyId)), [attendances, matchesTenant]);
@@ -4101,6 +4129,192 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
     },
     maintenanceOrders: filteredMaintenanceOrders,
     maintenanceWorkLogs: filteredMaintenanceWorkLogs,
+    maintenanceAssets: filteredMaintenanceAssets,
+    preventiveMaintenancePlans: filteredPreventiveMaintenancePlans,
+    addMaintenanceAsset: async (asset: Omit<MaintenanceAsset, "id" | "tenantId">) => {
+      const tenantId = activeTenantId;
+      if (!tenantId || tenantId === "global") throw new Error("O cadastro exige uma empresa ativa.");
+      const id = "maintenance_asset_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+      const scopedAsset: MaintenanceAsset = { ...asset, id, tenantId };
+      if (isDemoMode) {
+        setMaintenanceAssets((current) => [...current, scopedAsset]);
+        return id;
+      }
+      await setDoc(doc(db, "maintenanceAssets", id), cleanUndefined(scopedAsset));
+      return id;
+    },
+    updateMaintenanceAsset: async (id: string, updates: Partial<MaintenanceAsset>) => {
+      const existing = filteredMaintenanceAssets.find((asset) => asset.id === id && asset.tenantId === activeTenantId);
+      if (!existing) throw new Error("O equipamento não pertence à empresa ativa.");
+      const safeUpdates: Partial<MaintenanceAsset> = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.tenantId;
+      if (isDemoMode) {
+        setMaintenanceAssets((current) => current.map((asset) => asset.id === id ? { ...asset, ...safeUpdates } : asset));
+        return;
+      }
+      await updateDoc(doc(db, "maintenanceAssets", id), cleanUndefined(safeUpdates));
+    },
+    addPreventiveMaintenancePlan: async (plan: Omit<PreventiveMaintenancePlan, "id" | "tenantId">) => {
+      const tenantId = activeTenantId;
+      if (!tenantId || tenantId === "global") throw new Error("O plano exige uma empresa ativa.");
+      const asset = filteredMaintenanceAssets.find((item) => item.id === plan.assetId && item.active);
+      if (!asset) throw new Error("Selecione um equipamento ativo da empresa atual.");
+      const sectorId = plan.sectorId ?? asset.sectorId;
+      if (sectorId !== undefined && sectorId !== "") {
+        const validSector = sectors.some((sector) =>
+          String(sector.id) === String(sectorId) &&
+          preventivePlanBelongsToTenant(sector as Sector & { tenantId?: string }, tenantId),
+        );
+        if (!validSector) throw new Error("O setor selecionado não pertence à empresa ativa.");
+      }
+      const id = "preventive_plan_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+      const scopedPlan: PreventiveMaintenancePlan = {
+        ...plan,
+        id,
+        tenantId,
+        assetName: asset.name,
+        sectorId,
+        sectorName: plan.sectorName || asset.sectorName,
+      };
+      if (isDemoMode) {
+        setPreventiveMaintenancePlans((current) => [...current, scopedPlan]);
+        return id;
+      }
+      await setDoc(doc(db, "preventiveMaintenancePlans", id), cleanUndefined(scopedPlan));
+      return id;
+    },
+    updatePreventiveMaintenancePlan: async (id: string, updates: Partial<PreventiveMaintenancePlan>) => {
+      const existing = filteredPreventiveMaintenancePlans.find((plan) => plan.id === id && plan.tenantId === activeTenantId);
+      if (!existing) throw new Error("O plano não pertence à empresa ativa.");
+      const safeUpdates: Partial<PreventiveMaintenancePlan> = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.tenantId;
+      if (safeUpdates.assetId) {
+        const asset = filteredMaintenanceAssets.find((item) => item.id === safeUpdates.assetId && item.active);
+        if (!asset) throw new Error("Selecione um equipamento ativo da empresa atual.");
+        safeUpdates.assetName = asset.name;
+        if (safeUpdates.sectorId === undefined) {
+          safeUpdates.sectorId = asset.sectorId;
+          safeUpdates.sectorName = asset.sectorName;
+        }
+      }
+      if (safeUpdates.sectorId !== undefined && safeUpdates.sectorId !== "") {
+        const validSector = sectors.some((sector) =>
+          String(sector.id) === String(safeUpdates.sectorId) &&
+          preventivePlanBelongsToTenant(sector as Sector & { tenantId?: string }, activeTenantId),
+        );
+        if (!validSector) throw new Error("O setor selecionado não pertence à empresa ativa.");
+      }
+      if (isDemoMode) {
+        setPreventiveMaintenancePlans((current) => current.map((plan) => plan.id === id ? { ...plan, ...safeUpdates, updatedAt: Date.now() } : plan));
+        return;
+      }
+      await updateDoc(doc(db, "preventiveMaintenancePlans", id), cleanUndefined({ ...safeUpdates, updatedAt: Date.now() }));
+    },
+    startPreventiveMaintenance: async (planId: string, startedBy: Pick<User, "id" | "name">) => {
+      const tenantId = activeTenantId;
+      if (!tenantId || tenantId === "global") throw new Error("A OS exige uma empresa ativa.");
+      const plan = filteredPreventiveMaintenancePlans.find((item) => item.id === planId && item.tenantId === tenantId);
+      if (!plan?.active) throw new Error("O plano não pertence à empresa ativa ou está desativado.");
+      const cycleDate = plan.nextDueDate || "FIRST";
+      const orderId = preventiveOrderId(plan.id, cycleDate);
+      if (isDemoMode) return orderId;
+      const planRef = doc(db, "preventiveMaintenancePlans", planId);
+      const assetRef = doc(db, "maintenanceAssets", plan.assetId);
+      const orderRef = doc(db, "maintenanceOrders", orderId);
+      return runTransaction(db, async (transaction) => {
+        const planSnapshot = await transaction.get(planRef);
+        if (!planSnapshot.exists()) throw new Error("O plano não está disponível.");
+        const currentPlan = planSnapshot.data() as PreventiveMaintenancePlan;
+        if (!preventivePlanBelongsToTenant(currentPlan, tenantId) || !currentPlan.active) {
+          throw new Error("O plano não pertence à empresa ativa ou está desativado.");
+        }
+        const assetSnapshot = await transaction.get(assetRef);
+        if (!assetSnapshot.exists() || !preventivePlanBelongsToTenant(assetSnapshot.data() as MaintenanceAsset, tenantId) || !(assetSnapshot.data() as MaintenanceAsset).active) {
+          throw new Error("O equipamento não pertence à empresa ativa.");
+        }
+        const existingOrder = await transaction.get(orderRef);
+        if (existingOrder.exists()) {
+          if ((existingOrder.data() as MaintenanceOrder).tenantId !== tenantId) {
+            throw new Error("A OS encontrada não pertence à empresa ativa.");
+          }
+          return orderId;
+        }
+        const asset = assetSnapshot.data() as MaintenanceAsset;
+        const order: MaintenanceOrder = {
+          id: orderId,
+          tenantId,
+          source: "MANUAL",
+          recordType: "SERVICO",
+          machineName: asset.name,
+          sectorId: currentPlan.sectorId ?? asset.sectorId,
+          sectorName: currentPlan.sectorName || asset.sectorName,
+          category: "PREVENTIVA",
+          priority: "NORMAL",
+          description: currentPlan.activity,
+          status: "ABERTA",
+          createdAt: Date.now(),
+          requesterId: startedBy.id,
+          requesterName: startedBy.name,
+          technicianId: currentPlan.responsibleUserId || startedBy.id,
+          technicianName: currentPlan.responsibleUserName || startedBy.name,
+          preventivePlanId: currentPlan.id,
+          preventiveDueDate: currentPlan.nextDueDate,
+        };
+        transaction.set(orderRef, cleanUndefined(order));
+        return orderId;
+      });
+    },
+    completePreventiveMaintenanceOrder: async (id: string, updates: Partial<MaintenanceOrder>) => {
+      const tenantId = activeTenantId;
+      const existing = filteredMaintenanceOrders.find((order) => order.id === id && order.tenantId === tenantId);
+      if (!tenantId || tenantId === "global" || !existing) {
+        throw new Error("A OS preventiva não pertence à empresa ativa.");
+      }
+      const safeUpdates: Partial<MaintenanceOrder> = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.tenantId;
+      if (!existing.preventivePlanId) {
+        await updateDoc(doc(db, "maintenanceOrders", id), cleanUndefined(safeUpdates));
+        return;
+      }
+      const completedAt = Number(safeUpdates.completedAt || Date.now());
+      const completedDate = businessDateFromTimestamp(completedAt);
+      const orderRef = doc(db, "maintenanceOrders", id);
+      const planRef = doc(db, "preventiveMaintenancePlans", existing.preventivePlanId);
+      if (isDemoMode) {
+        const plan = filteredPreventiveMaintenancePlans.find((item) => item.id === existing.preventivePlanId);
+        if (!plan) throw new Error("O plano preventivo vinculado não está disponível.");
+        const nextDueDate = addPreventiveInterval(completedDate, plan.intervalValue, plan.intervalUnit);
+        setMaintenanceOrders((current) => current.map((order) => order.id === id ? { ...order, ...safeUpdates } : order));
+        setPreventiveMaintenancePlans((current) => current.map((item) => item.id === plan.id
+          ? { ...item, lastCompletedDate: completedDate, nextDueDate, updatedAt: Date.now() }
+          : item));
+        return;
+      }
+      await runTransaction(db, async (transaction) => {
+        const orderSnapshot = await transaction.get(orderRef);
+        if (!orderSnapshot.exists()) throw new Error("A OS preventiva não está disponível.");
+        const order = orderSnapshot.data() as MaintenanceOrder;
+        if (!preventivePlanBelongsToTenant(order, tenantId)) throw new Error("A OS não pertence à empresa ativa.");
+        if (!order.preventivePlanId || order.preventivePlanId !== existing.preventivePlanId) {
+          throw new Error("A OS não está vinculada ao plano esperado.");
+        }
+        const planSnapshot = await transaction.get(planRef);
+        if (!planSnapshot.exists()) throw new Error("O plano preventivo não está disponível.");
+        const plan = planSnapshot.data() as PreventiveMaintenancePlan;
+        if (!preventivePlanBelongsToTenant(plan, tenantId)) throw new Error("O plano não pertence à empresa ativa.");
+        if (order.status === "CONCLUIDA") return;
+        const nextDueDate = addPreventiveInterval(completedDate, plan.intervalValue, plan.intervalUnit);
+        transaction.update(orderRef, cleanUndefined(safeUpdates));
+        transaction.update(planRef, {
+          lastCompletedDate: completedDate,
+          nextDueDate,
+          updatedAt: Date.now(),
+        });
+      });
+    },
     addMaintenanceOrder: async (
       order: Omit<MaintenanceOrder, "id" | "tenantId">,
       initialWorkLog?: Omit<MaintenanceWorkLog, "id" | "tenantId" | "maintenanceOrderId">,
