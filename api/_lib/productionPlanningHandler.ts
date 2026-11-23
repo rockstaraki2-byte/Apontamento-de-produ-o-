@@ -293,11 +293,11 @@ async function saveBom(
   if (new Set(components.map((row) => row.id)).size !== components.length) {
     throw new PlanningError("DUPLICATE_BOM_COMPONENT");
   }
-  const stockIds = [...new Set(components.flatMap((row) => row.stockEntryId ? [row.stockEntryId] : []))];
+  const stockIds = [...new Set<string>(components.flatMap((row) => row.stockEntryId ? [row.stockEntryId] : []))];
   const stockRefs = new Map<string, any>();
   for (const id of stockIds) stockRefs.set(id, db.collection("stocks").doc(id));
   const itemRefs = new Map<number, any>();
-  for (const id of new Set(components.flatMap((row) => row.stockItemId ? [row.stockItemId] : []))) {
+  for (const id of new Set<number>(components.flatMap((row) => row.stockItemId ? [row.stockItemId] : []))) {
     itemRefs.set(id, db.collection("items").doc(String(id)));
   }
   const bomRef = db.collection("productionPlanningBoms").doc(getBomDocumentId(tenantId, modelKey));

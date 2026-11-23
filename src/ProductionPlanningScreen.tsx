@@ -329,6 +329,7 @@ export function ProductionPlanningScreen({
   const [stockSearchTerms, setStockSearchTerms] = useState<Record<string, string>>({});
   const [dirtyBoms, setDirtyBoms] = useState<Record<string, boolean>>({});
   const dirtyBomsRef = useRef<Record<string, boolean>>({});
+  const bomSavingRef = useRef(false);
 
   function markBomDirty(modelKey: string, isDirty: boolean) {
     const next = { ...dirtyBomsRef.current };
@@ -407,6 +408,7 @@ export function ProductionPlanningScreen({
   }, [plans, filterFrom, filterTo, filterStatus, filterModel, search]);
 
   function updateBomComponent(index: number, changes: Partial<ProductionPlanningComponent>) {
+    if (bomSavingRef.current) return;
     markBomDirty(selectedModelKey, true);
     setBoms((current) => current.map((bom) => {
       if (bom.modelKey !== selectedModelKey) return bom;
@@ -420,6 +422,7 @@ export function ProductionPlanningScreen({
   }
 
   function addBomComponent() {
+    if (bomSavingRef.current) return;
     markBomDirty(selectedModelKey, true);
     const component: ProductionPlanningComponent = {
       id: "custom-" + createLocalId(),
@@ -440,6 +443,7 @@ export function ProductionPlanningScreen({
   }
 
   function removeBomComponent(index: number) {
+    if (bomSavingRef.current) return;
     markBomDirty(selectedModelKey, true);
     setBoms((current) => current.map((bom) =>
       bom.modelKey === selectedModelKey
@@ -449,7 +453,8 @@ export function ProductionPlanningScreen({
   }
 
   async function saveSelectedBom() {
-    if (!selectedBom || !canManage) return;
+    if (!selectedBom || !canManage || bomSavingRef.current) return;
+    bomSavingRef.current = true;
     setWorking("bom");
     setErrorMessage("");
     setSuccessMessage("");
@@ -467,6 +472,7 @@ export function ProductionPlanningScreen({
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     } finally {
+      bomSavingRef.current = false;
       setWorking("");
     }
   }
@@ -707,6 +713,7 @@ export function ProductionPlanningScreen({
                   Modelo
                   <select
                     value={selectedModelKey}
+                    disabled={working === "bom"}
                     onChange={(event) => setSelectedModelKey(event.target.value)}
                     className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold normal-case text-slate-800"
                   >
@@ -758,7 +765,7 @@ export function ProductionPlanningScreen({
                           Componente
                           <input
                             value={component.name}
-                            disabled={!canManage || !component.active}
+                            disabled={!canManage || working === "bom" || !component.active}
                             onChange={(event) => updateBomComponent(index, { name: event.target.value })}
                             className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-sm font-semibold text-slate-800 disabled:bg-slate-100"
                           />
@@ -767,7 +774,7 @@ export function ProductionPlanningScreen({
                           Material
                           <input
                             value={component.material}
-                            disabled={!canManage || !component.active}
+                            disabled={!canManage || working === "bom" || !component.active}
                             onChange={(event) => updateBomComponent(index, { material: event.target.value })}
                             className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-sm text-slate-800 disabled:bg-slate-100"
                           />
@@ -784,7 +791,7 @@ export function ProductionPlanningScreen({
                                 aria-label={field}
                                 placeholder={field === "widthMm" ? "Larg." : field === "lengthMm" ? "Comp." : "Esp."}
                                 value={component[field] ?? ""}
-                                disabled={!canManage || !component.active}
+                                disabled={!canManage || working === "bom" || !component.active}
                                 onChange={(event) => updateBomComponent(index, {
                                   [field]: event.target.value === "" ? undefined : Number(event.target.value),
                                 })}
@@ -800,7 +807,7 @@ export function ProductionPlanningScreen({
                             min="0"
                             step="0.001"
                             value={component.quantityPerUnit}
-                            disabled={!canManage || !component.active}
+                            disabled={!canManage || working === "bom" || !component.active}
                             onChange={(event) => updateBomComponent(index, { quantityPerUnit: Number(event.target.value) })}
                             className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-sm text-slate-800 disabled:bg-slate-100"
                           />
@@ -809,7 +816,7 @@ export function ProductionPlanningScreen({
                           Unidade
                           <input
                             value={component.unit}
-                            disabled={!canManage || !component.active}
+                            disabled={!canManage || working === "bom" || !component.active}
                             onChange={(event) => updateBomComponent(index, { unit: event.target.value })}
                             className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-sm text-slate-800 disabled:bg-slate-100"
                           />
@@ -822,7 +829,7 @@ export function ProductionPlanningScreen({
                             max="100"
                             step="0.1"
                             value={component.lossPercent}
-                            disabled={!canManage || !component.active}
+                            disabled={!canManage || working === "bom" || !component.active}
                             onChange={(event) => updateBomComponent(index, { lossPercent: Number(event.target.value) })}
                             className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-sm text-slate-800 disabled:bg-slate-100"
                           />
@@ -832,7 +839,7 @@ export function ProductionPlanningScreen({
                             <input
                               type="checkbox"
                               checked={component.active}
-                              disabled={!canManage}
+                              disabled={!canManage || working === "bom"}
                               onChange={(event) => updateBomComponent(index, { active: event.target.checked })}
                             />
                             Incluir
@@ -840,6 +847,7 @@ export function ProductionPlanningScreen({
                           {canManage && (
                             <button
                               type="button"
+                              disabled={working === "bom"}
                               onClick={() => removeBomComponent(index)}
                               aria-label={"Remover " + component.name}
                               className="rounded-md border border-slate-200 p-2 text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
@@ -852,7 +860,7 @@ export function ProductionPlanningScreen({
                           <div>Item e variação de estoque existentes</div>
                           <input
                             value={stockSearchValue}
-                            disabled={!canManage}
+                            disabled={!canManage || working === "bom"}
                             onChange={(event) => setStockSearchTerms((current) => ({
                               ...current,
                               [component.id]: event.target.value,
@@ -868,6 +876,7 @@ export function ProductionPlanningScreen({
                                 <button
                                   type="button"
                                   key={stock.stockEntryId}
+                                  disabled={working === "bom"}
                                   onClick={() => {
                                     updateBomComponent(index, {
                                       stockEntryId: stock.stockEntryId,
@@ -901,6 +910,7 @@ export function ProductionPlanningScreen({
                           {canManage && component.stockEntryId && (
                             <button
                               type="button"
+                              disabled={working === "bom"}
                               onClick={() => {
                                 updateBomComponent(index, {
                                   stockEntryId: null,
@@ -931,6 +941,7 @@ export function ProductionPlanningScreen({
                   <button
                     type="button"
                     onClick={addBomComponent}
+                    disabled={working === "bom"}
                     className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
                   >
                     <Plus size={16} />
