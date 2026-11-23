@@ -200,6 +200,7 @@ export const ALL_AVAILABLE_SCREENS: ScreenOption[] = [
 
   // Produção e Setores
   { key: "producao", label: "Painel da Produção", category: "Produção e Setores", path: "/producao" },
+  { key: "planejamento-producao", label: "Planejamento da Produção", category: "Produção e Setores", path: "/planejamento-producao" },
   { key: "manutencao", label: "Manutenção", category: "Produção e Setores", path: "/manutencao" },
   { key: "qualidade", label: "Módulo de Qualidade / Inspeção", category: "Produção e Setores", path: "/qualidade" },
   { key: "relatorios-qualidade", label: "Relatórios de Qualidade & Retrabalho", category: "Geral", path: "/relatorios-qualidade" },
@@ -516,6 +517,7 @@ export interface StockEntry {
   variation: string;
   quantity: number;
   reservedQuantity?: number;
+  planningReservedQuantity?: number;
   stage: "INTERMEDIARIO" | "ACABADO";
   declaredPackages?: number;
   measurementUnit?: string;

@@ -1,5 +1,6 @@
 import { randomInt } from "node:crypto";
 import { getFirebaseAdmin, isSuperAdmin, requireSession, sendMethodNotAllowed } from "./_lib/firebaseAdmin.js";
+import productionPlanningHandler from "./_lib/productionPlanningHandler.js";
 import { getDefaultTenantScreens, getDefaultTenantSubTabs } from "../src/types.js";
 
 const ALLOWED_TENANT_FIELDS = [
@@ -17,6 +18,7 @@ const ALLOWED_TENANT_FIELDS = [
 ];
 
 export default async function handler(req: any, res: any) {
+  if (req.query?.__production_planning === "1") return productionPlanningHandler(req, res);
   if (!["GET", "POST", "PUT", "DELETE"].includes(req.method)) return sendMethodNotAllowed(res, ["GET", "POST", "PUT", "DELETE"]);
   try {
     const claims = await requireSession(req);

@@ -94,6 +94,34 @@ test("lançamento de EPI cria e incrementa saldo sem ler um documento ausente", 
   }, { merge: true }));
 });
 
+test("reservas de produção protegem o saldo e só a API pode alterá-las", async () => {
+  const stockId = "madeira-1|OUTROS|OUTROS|OUTROS|ACABADO";
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "stocks", stockId), {
+      id: stockId,
+      itemId: 12,
+      color: "OUTROS",
+      size: "OUTROS",
+      variation: "OUTROS",
+      stage: "ACABADO",
+      quantity: 10,
+      reservedQuantity: 2,
+      planningReservedQuantity: 4,
+      tenantId: "imperio",
+    });
+  });
+
+  const db = environment.authenticatedContext("operador", { tenantId: "imperio", role: "PRODUCAO" }).firestore();
+  const stockRef = doc(db, "stocks", stockId);
+  await assertFails(setDoc(stockRef, { planningReservedQuantity: 3 }, { merge: true }));
+  await assertFails(setDoc(stockRef, { itemId: 13 }, { merge: true }));
+  await assertFails(setDoc(stockRef, { quantity: 3 }, { merge: true }));
+  await assertFails(setDoc(stockRef, { reservedQuantity: 7 }, { merge: true }));
+  await assertFails(deleteDoc(stockRef));
+  await assertSucceeds(setDoc(stockRef, { quantity: 8, reservedQuantity: 4 }, { merge: true }));
+  await assertSucceeds(setDoc(stockRef, { quantity: 4 }, { merge: true }));
+});
+
 test("remoção de corte consulta apenas o tenant autenticado e aceita alvo ausente", async () => {
   await environment.withSecurityRulesDisabled(async (context) => {
     const adminDb = context.firestore();
