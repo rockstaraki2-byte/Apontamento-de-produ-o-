@@ -137,6 +137,10 @@ import {
   isSubTabAllowed,
   tenantHasScreenSector,
 } from "./types";
+import {
+  PRODUCTION_PLANNING_READ_ROLES,
+  isProductionPlanningEnabled,
+} from "./productionPlanning";
 
 const lazyNamed = (
   loader: () => Promise<Record<string, any>>,
@@ -148,6 +152,7 @@ const lazyNamed = (
   });
 
 const ProducaoScreen = lazyNamed(() => import("./ProducaoScreen"), "ProducaoScreen");
+const ProductionPlanningScreen = lazyNamed(() => import("./ProductionPlanningScreen"), "ProductionPlanningScreen");
 const MaintenanceScreen = lazyNamed(() => import("./MaintenanceScreen"), "MaintenanceScreen");
 const PinturaScreen = lazyNamed(() => import("./PinturaScreen"), "PinturaScreen");
 const CorteLaserScreen = lazyNamed(() => import("./CorteLaserScreen"), "CorteLaserScreen");
@@ -16035,6 +16040,12 @@ export default function App() {
       currentUser.name.toLowerCase().includes("marcos"));
 
   const isScreenAllowed = (screenKey: string) => {
+    if (screenKey === "planejamento-producao") {
+      return isProductionPlanningEnabled(db.activeTenantId) &&
+        PRODUCTION_PLANNING_READ_ROLES.includes(
+          currentUser.role as (typeof PRODUCTION_PLANNING_READ_ROLES)[number],
+        );
+    }
     if (screenKey === "manutencao") {
       return db.activeTenantId !== "global" && ["ADMIN", "GERENCIA", "LEITURA", "MANUTENCAO"].includes(currentUser.role);
     }
@@ -16413,6 +16424,17 @@ export default function App() {
                 element={<ProducaoScreen db={db} currentUser={currentUser} />}
               />
             )}
+            {isScreenAllowed("planejamento-producao") && (
+              <Route
+                path="/planejamento-producao"
+                element={
+                  <ProductionPlanningScreen
+                    currentUser={currentUser}
+                    tenantId={db.activeTenantId}
+                  />
+                }
+              />
+            )}
             {(currentUser.role === "ADMIN" ||
               currentUser.role === "GERENCIA" ||
               currentUser.role === "LEITURA" ||
@@ -16759,6 +16781,13 @@ export default function App() {
               to="/producao"
               icon={<Activity size={24} />}
               label="Produção"
+            />
+          )}
+          {isScreenAllowed("planejamento-producao") && (
+            <NavLink
+              to="/planejamento-producao"
+              icon={<ClipboardList size={24} />}
+              label="Planejamento da Produção"
             />
           )}
           {isScreenAllowed("manutencao") && (

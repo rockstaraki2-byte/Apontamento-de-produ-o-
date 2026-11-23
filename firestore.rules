@@ -1,3 +1,23 @@
+// ===============================================================
+// Production planning data models
+// ===============================================================
+//
+// productionPlanningBoms/{tenantId}__{modelKey}
+//   id: string, tenantId: string, modelKey: string, productName: string,
+//   version: number, components: list of component maps, updatedAt: number,
+//   updatedByUid: string.
+// productionPlans/{autoId}
+//   id: string, tenantId: string, plannedDate: YYYY-MM-DD string, notes: string,
+//   status: draft | planned | in_production | completed | cancelled,
+//   lines: list, bomSnapshot: list, createdAt/updatedAt: number,
+//   createdByUid: string, optional inventoryAppliedAt: number.
+// productionPlanReservations/{reservationId}
+//   id: string, tenantId: string, planId: string, stockEntryId: string,
+//   itemId: number, quantity: number, active: boolean.
+// All three collections are server-managed. Browser clients have no direct
+// access; the authenticated API checks tenantId and role before each operation.
+//
+// ===============================================================
 rules_version = '2';
 
 service cloud.firestore {
@@ -95,6 +115,20 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Production planning collections are accessed only through the
+    // authenticated server API, which validates the tenant and user role.
+    match /productionPlanningBoms/{bomId} {
+      allow read, write: if false;
+    }
+
+    match /productionPlans/{planId} {
+      allow read, write: if false;
+    }
+
+    match /productionPlanReservations/{reservationId} {
+      allow read, write: if false;
+    }
+
     // Operational documents must carry the authenticated tenantId. The global
     // account deliberately has no access to operational collections.
     match /{collection}/{documentId} {
@@ -105,6 +139,9 @@ service cloud.firestore {
         && collection != "preventiveMaintenancePlans"
         && collection != "maintenanceOrders"
         && collection != "maintenancePreventiveAlertDeliveries"
+        && collection != "productionPlanningBoms"
+        && collection != "productionPlans"
+        && collection != "productionPlanReservations"
         && isTenantUser()
         && resource.data.tenantId == request.auth.token.tenantId;
       allow create: if collection != "tenants"
@@ -114,6 +151,9 @@ service cloud.firestore {
         && collection != "preventiveMaintenancePlans"
         && collection != "maintenanceOrders"
         && collection != "maintenancePreventiveAlertDeliveries"
+        && collection != "productionPlanningBoms"
+        && collection != "productionPlans"
+        && collection != "productionPlanReservations"
         && isTenantUser()
         && request.resource.data.tenantId == request.auth.token.tenantId;
       allow update: if collection != "tenants"
@@ -123,6 +163,9 @@ service cloud.firestore {
         && collection != "preventiveMaintenancePlans"
         && collection != "maintenanceOrders"
         && collection != "maintenancePreventiveAlertDeliveries"
+        && collection != "productionPlanningBoms"
+        && collection != "productionPlans"
+        && collection != "productionPlanReservations"
         && isTenantUser()
         && resource.data.tenantId == request.auth.token.tenantId
         && request.resource.data.tenantId == request.auth.token.tenantId;
@@ -133,6 +176,9 @@ service cloud.firestore {
         && collection != "preventiveMaintenancePlans"
         && collection != "maintenanceOrders"
         && collection != "maintenancePreventiveAlertDeliveries"
+        && collection != "productionPlanningBoms"
+        && collection != "productionPlans"
+        && collection != "productionPlanReservations"
         && isTenantUser()
         && resource.data.tenantId == request.auth.token.tenantId;
     }
