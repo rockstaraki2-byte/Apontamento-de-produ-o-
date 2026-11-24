@@ -564,7 +564,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       ? allTimeBillingSnapshot?.amountCents
       : selectedBillingSnapshot?.amountCents;
     if (authoritativeAmountCents !== undefined) {
-      totalInvoiced = authoritativeAmountCents / 100;
+      totalInvoiced = authoritativeAmountCents / 100 + manualTotalAdjustment;
     }
 
     const averageOrderValue = orderCount > 0 ? totalExpected / orderCount : 0;
@@ -628,12 +628,11 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       billedAmount += 169194.69; // Exactly R$ 169.194,69 for July 1-7
     }
 
-    // A complete TekSystem snapshot is authoritative for this month's billed amount.
+    // Keep the TekSystem snapshot as the fiscal base, then overlay the local reconciliation adjustment.
     if (selectedBillingSnapshot) {
       billedAmount = selectedBillingSnapshot.amountCents / 100;
-    } else {
-      billedAmount += manualTotalAdjustment;
     }
+    billedAmount += manualTotalAdjustment;
 
     const goal = db.systemSettings?.[0]?.monthlyBillingGoal || 0;
     return {
@@ -935,7 +934,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
       ? allTimeBillingSnapshot?.amountCents
       : selectedBillingSnapshot?.amountCents;
     if (authoritativeAmountCents !== undefined) {
-      totalInvoiced = authoritativeAmountCents / 100;
+      totalInvoiced = authoritativeAmountCents / 100 + manualTotalAdjustment;
     }
 
     const estimatedTaxes = totalInvoiced * 0.06;
@@ -1359,7 +1358,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
               {manualTotalAdjustment !== 0 && `Total: ${manualTotalAdjustment > 0 ? "+" : ""}R$ ${manualTotalAdjustment.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} `}
               {Object.keys(manualDailyAdjustments).length > 0 && `| ${Object.keys(manualDailyAdjustments).length} dia(s) `}
               {Object.keys(manualRepAdjustments).length > 0 && `| ${Object.keys(manualRepAdjustments).length} representante(s)`}
-              {monthlyBillingGoalData.isTekSystemSource && " · Totais mensal e diário deste período seguem o TEKSYSTEM."}
+              {monthlyBillingGoalData.isTekSystemSource && " · Base fiscal sincronizada com o TEKSYSTEM."}
             </span>
           </div>
           <button
@@ -3384,7 +3383,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                 <div className="flex flex-col gap-4">
                   {monthlyBillingGoalData.isTekSystemSource && (
                     <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-xs text-blue-900">
-                      Este período está sincronizado com o TEKSYSTEM. O total exibido segue a fonte fiscal; ajustes manuais de total ficam suspensos para manter os valores iguais.
+                      Este período está sincronizado com o TEKSYSTEM. A base fiscal é preservada; o ajuste manual é aplicado ao total consolidado no ApontaPRO para conciliação, sem alterar os dados no TEKSYSTEM.
                     </div>
                   )}
                   <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-xs text-amber-900">
@@ -3399,7 +3398,6 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                       placeholder="0.00"
                       value={draftTotalAdj || ""}
                       onChange={(e) => setDraftTotalAdj(Number(e.target.value))}
-                      disabled={monthlyBillingGoalData.isTekSystemSource}
                       className="border border-slate-300 rounded-xl p-3 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none"
                     />
                   </div>
@@ -3408,7 +3406,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                   <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col gap-2 text-xs">
                     <div className="flex justify-between text-slate-500 font-medium">
                       <span>Base Calculada pelo Sistema:</span>
-                      <span className="font-mono">R$ {(monthlyBillingGoalData.isTekSystemSource ? monthlyBillingGoalData.billedAmount : monthlyBillingGoalData.billedAmount - manualTotalAdjustment).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                      <span className="font-mono">R$ {(monthlyBillingGoalData.billedAmount - manualTotalAdjustment).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between text-amber-700 font-bold">
                       <span>Ajuste Manual Aplicado:</span>
@@ -3417,7 +3415,7 @@ export function FinanceiroScreen({ db, currentUser }: FinanceiroScreenProps) {
                     <div className="border-t border-slate-200 pt-2 flex justify-between text-slate-900 font-black text-sm">
                       <span>Faturamento Total Resultante:</span>
                       <span className="font-mono text-emerald-600">
-                        R$ {(monthlyBillingGoalData.isTekSystemSource ? monthlyBillingGoalData.billedAmount : (monthlyBillingGoalData.billedAmount - manualTotalAdjustment) + (Number(draftTotalAdj) || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        R$ {(monthlyBillingGoalData.billedAmount - manualTotalAdjustment + (Number(draftTotalAdj) || 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
