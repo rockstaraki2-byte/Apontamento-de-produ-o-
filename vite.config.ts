@@ -23,8 +23,6 @@ export default defineConfig(() => {
           globIgnores: [
             '**/pdf.worker*',
             '**/vendor-pdf*',
-            '**/jspdf*',
-            '**/html2canvas*',
             '**/CatalogImportModal*',
           ],
           navigateFallback: '/index.html',

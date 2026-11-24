@@ -4,6 +4,56 @@ import { getToken, onMessage } from "firebase/messaging";
 import type { User } from "./types";
 import { useDatabase } from "./useDatabase";
 
+const FIREBASE_MESSAGING_SW_URL = "/firebase-messaging-sw.js";
+const FIREBASE_MESSAGING_SW_SCOPE = "/firebase-cloud-messaging-push-scope";
+
+async function getFirebaseMessagingServiceWorkerRegistration(): Promise<ServiceWorkerRegistration> {
+  if (!("serviceWorker" in navigator)) {
+    throw new Error("Este navegador não oferece suporte a Service Worker.");
+  }
+
+  // Register with the exact scope used by main.tsx. Calling register again is
+  // idempotent and returns this registration instead of the root Workbox SW.
+  const registration = await navigator.serviceWorker.register(
+    FIREBASE_MESSAGING_SW_URL,
+    { scope: FIREBASE_MESSAGING_SW_SCOPE },
+  );
+
+  if (registration.active?.state === "activated") return registration;
+
+  const worker = registration.installing ?? registration.waiting ?? registration.active;
+  if (!worker) {
+    throw new Error("O Service Worker do Firebase Messaging não foi ativado.");
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      window.clearTimeout(timeoutId);
+      worker.removeEventListener("statechange", onStateChange);
+    };
+
+    const onStateChange = () => {
+      if (registration.active?.state === "activated" || worker.state === "activated") {
+        cleanup();
+        resolve();
+      } else if (worker.state === "redundant") {
+        cleanup();
+        reject(new Error("O Service Worker do Firebase Messaging foi substituído antes de ativar."));
+      }
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("Tempo esgotado aguardando o Service Worker do Firebase Messaging."));
+    }, 15000);
+
+    worker.addEventListener("statechange", onStateChange);
+    onStateChange();
+  });
+
+  return registration;
+}
+
 export function usePushNotifications(
   currentUser: User | null,
   db: ReturnType<typeof useDatabase>,
@@ -44,27 +94,24 @@ export function usePushNotifications(
             return;
           }
 
-          let swRegistration = null;
-          try {
-            // Usa o service worker principal ativo (/sw.js) que importa as funcionalidades de mensagens
-            swRegistration = await navigator.serviceWorker.ready;
-            console.log('Utilizando Service Worker ativo para FCM com escopo:', swRegistration.scope);
-          } catch(e) {
-            console.error('Falha ao obter Service Worker ativo para FCM:', e);
-          }
+          const swRegistration = await getFirebaseMessagingServiceWorkerRegistration();
+          console.log(
+            "Utilizando Service Worker do Firebase Messaging com escopo:",
+            swRegistration.scope,
+          );
 
-          const currentToken = await getToken(messaging, { 
+          const currentToken = await getToken(messaging, {
             vapidKey,
-            serviceWorkerRegistration: swRegistration || undefined 
+            serviceWorkerRegistration: swRegistration,
           });
-          
+
           if (currentToken) {
             console.log("Token FCM Obtido:", currentToken);
             registeredUserIdRef.current = currentUser.id;
             if (currentUser.fcmToken !== currentToken) {
               // Update user doc with new FCM token so backend can target them
               await db.updateUser(currentUser.id, { fcmToken: currentToken });
-              
+
               // Also update local state to avoid future mismatches
               if (setCurrentUser) {
                 setCurrentUser((prev) => {
@@ -108,4 +155,3 @@ export function usePushNotifications(
     };
   }, [currentUser]);
 }
-
