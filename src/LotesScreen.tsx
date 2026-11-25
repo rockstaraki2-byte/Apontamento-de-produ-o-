@@ -63,6 +63,22 @@ export function LotesScreen({
   currentUser: User;
 }) {
   const [searchTerm, setSearchTerm] = useState("");
+  const batchLayoutPreferenceKey = `apontapro:lotes-layout:${currentUser.id || "default"}`;
+  const [batchListColumns, setBatchListColumns] = useState<1 | 2>(() => {
+    try {
+      return typeof window !== "undefined" && window.localStorage.getItem(batchLayoutPreferenceKey) === "1" ? 1 : 2;
+    } catch {
+      return 2;
+    }
+  });
+  const handleBatchListColumnsChange = (columns: 1 | 2) => {
+    setBatchListColumns(columns);
+    try {
+      window.localStorage.setItem(batchLayoutPreferenceKey, String(columns));
+    } catch {
+      // A preferência continua valendo nesta sessão quando o armazenamento local não estiver disponível.
+    }
+  };
   const [savingBatchItems, setSavingBatchItems] = useState<Record<string, boolean>>({});
   const savingBatchItemsRef = useRef(new Set<string>());
   const [statusFilter, setStatusFilter] = useState<"ALL" | "PENDING" | "IN_PRODUCTION" | "COMPLETED">("ALL");
@@ -1180,10 +1196,27 @@ export function LotesScreen({
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Visualização dos lotes</span>
+          <div role="group" aria-label="Colunas da lista de lotes" className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-xs">
+            {([1, 2] as const).map((columns) => (
+              <button
+                key={columns}
+                type="button"
+                onClick={() => handleBatchListColumnsChange(columns)}
+                aria-pressed={batchListColumns === columns}
+                className={`rounded-md px-3 py-1.5 text-xs font-bold transition ${batchListColumns === columns ? "bg-emerald-600 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100"}`}
+              >
+                {columns === 1 ? "1 coluna" : "2 colunas"}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Lotes container */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className={`grid grid-cols-1 gap-6 ${batchListColumns === 2 ? "xl:grid-cols-2" : ""}`}>
           {filteredBatches.length === 0 ? (
-            <div className="xl:col-span-2 py-16 text-center bg-white border border-dashed border-slate-200 rounded-xl shadow-xs">
+            <div className={`${batchListColumns === 2 ? "xl:col-span-2 " : ""}py-16 text-center bg-white border border-dashed border-slate-200 rounded-xl shadow-xs`}>
               <ClipboardList className="mx-auto text-slate-350 mb-3" size={48} />
               <p className="text-slate-700 font-bold text-sm">Nenhum lote de gerência encontrado</p>
               <p className="text-slate-400 text-xs mt-1 font-medium">Você não possui lotes encaminhados ou nenhum atende aos filtros atuais.</p>
