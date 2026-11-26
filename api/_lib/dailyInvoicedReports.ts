@@ -432,6 +432,10 @@ function escapeHtml(value: string): string {
 }
 
 export async function handleDailyInvoicedReports(request: Request): Promise<Response> {
+  if ((process.env.DISABLE_SCHEDULERS || "").trim().toLowerCase() === "true") {
+    return Response.json({ error: "Rotinas automáticas desativadas neste ambiente." }, { status: 503 });
+  }
+
   const expectedSecret = process.env.CRON_SECRET || "";
   if (!expectedSecret) {
     return Response.json({ error: "CRON_SECRET não configurado." }, { status: 503 });

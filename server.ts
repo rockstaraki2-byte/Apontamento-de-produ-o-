@@ -129,6 +129,8 @@ import cron from "node-cron";
 import { runAgentPedidosSemLote } from "./server_agent_pedidos_sem_lote";
 
 function startAgentPedidosSemLoteCron() {
+  if ((process.env.DISABLE_SCHEDULERS || "").trim().toLowerCase() === "true") return;
+
   // Run once a month at 07:30 America/Sao_Paulo on the 1st day of the month
   cron.schedule("30 7 1 * *", async () => {
     console.log("Running Agent Pedidos Sem Lote Cron...");
@@ -155,6 +157,8 @@ function startAgentPedidosSemLoteCron() {
 }
 
 function startDeadlineCron() {
+  if ((process.env.DISABLE_SCHEDULERS || "").trim().toLowerCase() === "true") return;
+
   const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
   // Also run a check 1 minute after startup
   setTimeout(checkDeadlines, 60000);
@@ -797,6 +801,20 @@ async function startServer() {
   });
 
   app.post("/api/agent/pedidos-sem-lote", async (req, res) => {
+    if ((process.env.DISABLE_SCHEDULERS || "").trim().toLowerCase() === "true") {
+      return res.status(503).json({ error: "Rotinas automáticas desativadas neste ambiente." });
+    }
+    const expectedSecret = process.env.CRON_SECRET || "";
+    if (!expectedSecret) {
+      return res.status(503).json({ error: "CRON_SECRET não configurado." });
+    }
+    const suppliedSecret = String(req.headers.authorization || "").match(/^Bearer\s+(.+)$/i)?.[1] || "";
+    const suppliedBuffer = Buffer.from(suppliedSecret);
+    const expectedBuffer = Buffer.from(expectedSecret);
+    if (suppliedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(suppliedBuffer, expectedBuffer)) {
+      return res.status(401).json({ error: "Não autorizado." });
+    }
+
     try {
       console.log("Manual trigger: /api/agent/pedidos-sem-lote");
       const ai = getGeminiClient();
