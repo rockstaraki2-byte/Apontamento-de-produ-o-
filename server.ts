@@ -1,3 +1,4 @@
+import { registerApiRoutes } from "./server/registerApiRoutes";
 import { GoogleGenAI, Type } from "@google/genai";
 import express from "express";
 import path from "path";
@@ -771,9 +772,13 @@ function parseDocumentFormat(text: string, lines: string[]): any[] {
 
 async function startServer() {
   const app = express();
+  // Preserve the Vercel reconciliation payload limit before the general parser.
+  app.use("/api/integration/teksystem/reconcile-orders", express.json({ limit: "4mb" }), express.urlencoded({ limit: "4mb", extended: true }));
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
+  if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error("PORT inválida.");
+  registerApiRoutes(app);
 
   app.all("/api/production-planning", async (req, res) => {
     await productionPlanningHandler(req, res);
@@ -2775,6 +2780,9 @@ Retorne obrigatoriamente um array de produtos no formato JSON.
     }
   });
 
+  // API misses must never return the frontend HTML.
+  app.use("/api", (_req, res) => res.status(404).json({ error: "NOT_FOUND" }));
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -2784,9 +2792,14 @@ Retorne obrigatoriamente um array de produtos no formato JSON.
   } else {
     // For Production
     const distPath = path.join(process.cwd(), "dist");
+    app.use((req, res, next) => {
+      if (req.path === "/" || req.path === "/index.html") res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      next();
+    });
     app.use(express.static(distPath));
     // SPA fallback
     app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
