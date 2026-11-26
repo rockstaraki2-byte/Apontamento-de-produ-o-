@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { useDatabase } from "./useDatabase";
 import { User, LaserQuote, LaserQuoteItem } from "./types";
 import {
@@ -148,12 +148,93 @@ const getLaserQuoteDiscountAmountForMode = (
   return calculateLaserQuoteDiscount(subtotal, quote.discountType, quote.discountValue);
 };
 
+// Recalculate item totals for the live form and for every autosaved snapshot.
+const calculateLaserQuoteItems = (
+  sourceItems: LaserQuoteItem[],
+  sourceExtraCosts: number,
+  sourceAdditionPercent: number
+): LaserQuoteItem[] => {
+  if (!sourceItems || sourceItems.length === 0) return [];
+
+  const baseItems = sourceItems.map((it) => {
+    const calcWeight = (it.lengthMm * it.widthMm * it.thicknessMm * 7.92) / 1000000;
+    const cutCost = it.cuttingTimeSeconds * it.cuttingRatePerSec;
+    const matCost = it.manualMaterialCostPerUnit !== undefined
+      ? it.manualMaterialCostPerUnit
+      : calcWeight * it.materialPricePerKg;
+    const bendQty = it.hasBending ? (it.bendingQuantity ?? 1) : 0;
+    const bendRate = it.bendingRatePerKg ?? 2.0;
+    const bendCost = it.hasBending ? (calcWeight * bendRate * bendQty) : 0;
+
+    const baseUnitWithMat = cutCost + matCost + bendCost;
+    const baseUnitWithoutMat = cutCost + bendCost;
+    const qty = Math.max(1, it.quantity || 1);
+
+    return {
+      it,
+      calcWeight,
+      cutCost,
+      matCost,
+      bendQty,
+      bendRate,
+      bendCost,
+      baseUnitWithMat,
+      baseUnitWithoutMat,
+      qty,
+      baseTotalWithMat: baseUnitWithMat * qty,
+      baseTotalWithoutMat: baseUnitWithoutMat * qty,
+    };
+  });
+
+  const sumBaseTotalWithMat = baseItems.reduce((acc, item) => acc + item.baseTotalWithMat, 0);
+  const sumBaseTotalWithoutMat = baseItems.reduce((acc, item) => acc + item.baseTotalWithoutMat, 0);
+  const markupFactor = 1 + (sourceAdditionPercent || 0) / 100;
+
+  return baseItems.map((item) => {
+    const shareWithMat = sumBaseTotalWithMat > 0
+      ? item.baseTotalWithMat / sumBaseTotalWithMat
+      : 1 / sourceItems.length;
+    const proratedExtraUnitWithMat = (sourceExtraCosts || 0) * shareWithMat / item.qty;
+
+    const shareWithoutMat = sumBaseTotalWithoutMat > 0
+      ? item.baseTotalWithoutMat / sumBaseTotalWithoutMat
+      : 1 / sourceItems.length;
+    const proratedExtraUnitWithoutMat = (sourceExtraCosts || 0) * shareWithoutMat / item.qty;
+
+    const unitPriceWithMaterial = (item.baseUnitWithMat + proratedExtraUnitWithMat) * markupFactor;
+    const unitPriceWithoutMaterial = (item.baseUnitWithoutMat + proratedExtraUnitWithoutMat) * markupFactor;
+
+    return {
+      ...item.it,
+      calculatedWeightKg: item.calcWeight,
+      cuttingCost: item.cutCost,
+      materialCost: item.matCost,
+      bendingCost: item.bendCost,
+      bendingQuantity: item.bendQty,
+      bendingRatePerKg: item.bendRate,
+      proratedExtraCostWithMat: proratedExtraUnitWithMat,
+      proratedExtraCostWithoutMat: proratedExtraUnitWithoutMat,
+      unitPriceWithMaterial,
+      unitPriceWithoutMaterial,
+      totalWithMaterial: unitPriceWithMaterial * item.qty,
+      totalWithoutMaterial: unitPriceWithoutMaterial * item.qty,
+    };
+  });
+};
+
+
 export function OrcamentoLaserScreen({ db, currentUser }: Props) {
   const isImperio = db.activeTenantId === "imperio";
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("TODOS");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<LaserQuote | null>(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const draftQuoteRef = useRef<LaserQuote | null>(null);
+  const persistedQuoteIdsRef = useRef<Set<string>>(new Set());
+  const autoSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const autoSaveRevisionRef = useRef(0);
+  const autoSaveLaserQuoteDraftRef = useRef<(nextItems: LaserQuoteItem[]) => void>(() => {});
 
   // Form State for Quote Header
   const [customerName, setCustomerName] = useState("");
@@ -305,6 +386,9 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
   // Handle open modal for new quote
   const handleNewQuote = () => {
     setEditingQuote(null);
+    draftQuoteRef.current = null;
+    autoSaveRevisionRef.current += 1;
+    setAutoSaveStatus("idle");
     setCustomerName("");
     setSelectedCustomerId(undefined);
     setContactInfo("");
@@ -329,6 +413,10 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
 
   // Handle Edit existing quote
   const handleEditQuote = (quote: LaserQuote) => {
+    draftQuoteRef.current = quote;
+    persistedQuoteIdsRef.current.add(quote.id);
+    autoSaveRevisionRef.current += 1;
+    setAutoSaveStatus("idle");
     setEditingQuote(quote);
     setCustomerName(quote.customerName);
     setSelectedCustomerId(quote.customerId);
@@ -472,13 +560,14 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       totalWithoutMaterial: calc.totalWithoutMaterial,
     };
 
+    const nextItems = [...items];
     if (editingItemIndex !== null) {
-      const updated = [...items];
-      updated[editingItemIndex] = newItem;
-      setItems(updated);
+      nextItems[editingItemIndex] = newItem;
     } else {
-      setItems([...items, newItem]);
+      nextItems.push(newItem);
     }
+    setItems(nextItems);
+    autoSaveLaserQuoteDraftRef.current(nextItems);
 
     resetItemForm();
   };
@@ -512,91 +601,18 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
   };
 
   const handleRemoveItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
+    const nextItems = items.filter((_, i) => i !== index);
+    setItems(nextItems);
+    autoSaveLaserQuoteDraftRef.current(nextItems);
     if (editingItemIndex === index) {
       resetItemForm();
     }
   };
 
-  // Dynamic recalculation of items incorporating extraCosts proration AND additionPercent markup in UNIT PRICES
-  const computedItems = useMemo(() => {
-    if (!items || items.length === 0) return [];
-
-    // 1. Calculate raw base values for each item
-    const baseItems = items.map((it) => {
-      const calcWeight = (it.lengthMm * it.widthMm * it.thicknessMm * 7.92) / 1000000;
-      const cutCost = it.cuttingTimeSeconds * it.cuttingRatePerSec;
-      const matCost = it.manualMaterialCostPerUnit !== undefined
-        ? it.manualMaterialCostPerUnit
-        : calcWeight * it.materialPricePerKg;
-      const bendQty = it.hasBending ? (it.bendingQuantity ?? 1) : 0;
-      const bendRate = it.bendingRatePerKg ?? 2.0;
-      const bendCost = it.hasBending ? (calcWeight * bendRate * bendQty) : 0;
-
-      const baseUnitWithMat = cutCost + matCost + bendCost;
-      const baseUnitWithoutMat = cutCost + bendCost;
-
-      const qty = Math.max(1, it.quantity || 1);
-      const baseTotalWithMat = baseUnitWithMat * qty;
-      const baseTotalWithoutMat = baseUnitWithoutMat * qty;
-
-      return {
-        it,
-        calcWeight,
-        cutCost,
-        matCost,
-        bendQty,
-        bendRate,
-        bendCost,
-        baseUnitWithMat,
-        baseUnitWithoutMat,
-        qty,
-        baseTotalWithMat,
-        baseTotalWithoutMat,
-      };
-    });
-
-    // 2. Sum base totals
-    const sumBaseTotalWithMat = baseItems.reduce((acc, d) => acc + d.baseTotalWithMat, 0);
-    const sumBaseTotalWithoutMat = baseItems.reduce((acc, d) => acc + d.baseTotalWithoutMat, 0);
-
-    // 3. Markup multiplier from additionPercent
-    const markupFactor = 1 + (additionPercent || 0) / 100;
-
-    // 4. Prorate extraCosts and apply markup to unit prices
-    return baseItems.map((d) => {
-      const shareWithMat = sumBaseTotalWithMat > 0 ? (d.baseTotalWithMat / sumBaseTotalWithMat) : (1 / items.length);
-      const proratedExtraTotalWithMat = (extraCosts || 0) * shareWithMat;
-      const proratedExtraUnitWithMat = proratedExtraTotalWithMat / d.qty;
-
-      const shareWithoutMat = sumBaseTotalWithoutMat > 0 ? (d.baseTotalWithoutMat / sumBaseTotalWithoutMat) : (1 / items.length);
-      const proratedExtraTotalWithoutMat = (extraCosts || 0) * shareWithoutMat;
-      const proratedExtraUnitWithoutMat = proratedExtraTotalWithoutMat / d.qty;
-
-      // Unit prices incorporate prorated extra costs AND +additionPercent% markup directly
-      const unitPriceWithMaterial = (d.baseUnitWithMat + proratedExtraUnitWithMat) * markupFactor;
-      const unitPriceWithoutMaterial = (d.baseUnitWithoutMat + proratedExtraUnitWithoutMat) * markupFactor;
-
-      const totalWithMaterial = unitPriceWithMaterial * d.qty;
-      const totalWithoutMaterial = unitPriceWithoutMaterial * d.qty;
-
-      return {
-        ...d.it,
-        calculatedWeightKg: d.calcWeight,
-        cuttingCost: d.cutCost,
-        materialCost: d.matCost,
-        bendingCost: d.bendCost,
-        bendingQuantity: d.bendQty,
-        bendingRatePerKg: d.bendRate,
-        proratedExtraCostWithMat: proratedExtraUnitWithMat,
-        proratedExtraCostWithoutMat: proratedExtraUnitWithoutMat,
-        unitPriceWithMaterial,
-        unitPriceWithoutMaterial,
-        totalWithMaterial,
-        totalWithoutMaterial,
-      };
-    });
-  }, [items, extraCosts, additionPercent]);
+  const computedItems = useMemo(
+    () => calculateLaserQuoteItems(items, extraCosts, additionPercent),
+    [items, extraCosts, additionPercent]
+  );
 
   // Base Subtotals from Items (before extra costs & markup)
   const baseSubtotalWithMaterial = useMemo(
@@ -643,6 +659,77 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
     [computedItems]
   );
 
+  // Persist the current item list as a draft after each add, edit, or removal.
+  autoSaveLaserQuoteDraftRef.current = (nextItems: LaserQuoteItem[]) => {
+    const existingDraft = draftQuoteRef.current || editingQuote;
+    if (nextItems.length === 0 && !existingDraft) return;
+
+    const now = Date.now();
+    const id = existingDraft?.id || now.toString();
+    const createdAt = existingDraft?.createdAt || now;
+    const existingCode = existingDraft?.quoteCode || currentQuoteCode;
+    const codeParts = existingCode.split("-");
+    const quoteCode = customerName.trim() && codeParts[2] === "CLIENTE"
+      ? generateQuoteCode(Number(codeParts[1]) || (db.laserQuotes?.length || 0) + 1, customerName, createdDate)
+      : existingCode;
+    const savedItems = calculateLaserQuoteItems(nextItems, extraCosts, additionPercent);
+    const totalWithMaterial = savedItems.reduce((sum, item) => sum + item.totalWithMaterial, 0);
+    const totalWithoutMaterial = savedItems.reduce((sum, item) => sum + item.totalWithoutMaterial, 0);
+    const totalWeightKg = savedItems.reduce((sum, item) => sum + item.calculatedWeightKg * item.quantity, 0);
+    const totalBendingCost = savedItems.reduce((sum, item) => sum + (item.bendingCost || 0) * item.quantity, 0);
+
+    const quoteData: LaserQuote = {
+      id,
+      quoteCode,
+      customerId: selectedCustomerId,
+      customerName: customerName.trim(),
+      contactInfo: contactInfo.trim(),
+      createdDate,
+      validityDays,
+      createdBy: currentUser.name || "Marcos (Projetista)",
+      createdAt,
+      items: savedItems,
+      totalWithMaterial: totalWithMaterial - calculateLaserQuoteDiscount(totalWithMaterial, discountType, discountValue),
+      totalWithoutMaterial: totalWithoutMaterial - calculateLaserQuoteDiscount(totalWithoutMaterial, discountType, discountValue),
+      totalWeightKg,
+      totalBendingCost,
+      extraCosts: extraCosts || 0,
+      additionPercent: additionPercent || 0,
+      discountType,
+      discountValue: discountValue || 0,
+      notes,
+      status: existingDraft?.status || "RASCUNHO",
+      ...(isImperio ? { approvalMaterialMode: existingDraft ? getLaserQuoteMaterialMode(existingDraft) : null } : {}),
+    };
+
+    draftQuoteRef.current = quoteData;
+    const revision = ++autoSaveRevisionRef.current;
+    setAutoSaveStatus("saving");
+
+    const saveTask = autoSaveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (persistedQuoteIdsRef.current.has(id)) {
+          await db.updateLaserQuote(id, quoteData);
+        } else {
+          await db.addLaserQuote(quoteData);
+          persistedQuoteIdsRef.current.add(id);
+        }
+
+        if (revision === autoSaveRevisionRef.current && draftQuoteRef.current?.id === id) {
+          setEditingQuote(draftQuoteRef.current);
+          setAutoSaveStatus("saved");
+        }
+      })
+      .catch(() => {
+        if (revision === autoSaveRevisionRef.current && draftQuoteRef.current?.id === id) {
+          setAutoSaveStatus("error");
+        }
+      });
+
+    autoSaveQueueRef.current = saveTask;
+  };
+
   // Save Quote to Database
   const handleSaveQuote = async () => {
     if (!customerName.trim()) {
@@ -655,10 +742,16 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       return;
     }
 
-    const quoteCode = currentQuoteCode;
-
+    await autoSaveQueueRef.current;
+    const existingDraft = draftQuoteRef.current || editingQuote;
+    const id = existingDraft?.id || Date.now().toString();
+    const existingCode = existingDraft?.quoteCode || currentQuoteCode;
+    const codeParts = existingCode.split("-");
+    const quoteCode = customerName.trim() && codeParts[2] === "CLIENTE"
+      ? generateQuoteCode(Number(codeParts[1]) || (db.laserQuotes?.length || 0) + 1, customerName, createdDate)
+      : existingCode;
     const quoteData: Omit<LaserQuote, "id"> & { id?: string } = {
-      id: editingQuote?.id || Date.now().toString(),
+      id,
       quoteCode,
       customerId: selectedCustomerId,
       customerName: customerName.trim(),
@@ -666,7 +759,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       createdDate,
       validityDays,
       createdBy: currentUser.name || "Marcos (Projetista)",
-      createdAt: editingQuote?.createdAt || Date.now(),
+      createdAt: existingDraft?.createdAt || Date.now(),
       items: computedItems,
       totalWithMaterial: finalTotalWithMaterial,
       totalWithoutMaterial: finalTotalWithoutMaterial,
@@ -681,15 +774,26 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
       ...(isImperio ? { approvalMaterialMode: getLaserQuoteMaterialMode({ status: quoteStatus, approvalMaterialMode }) } : {}),
     };
 
-    if (editingQuote) {
-      await db.updateLaserQuote(editingQuote.id, quoteData);
-      alert("Orçamento atualizado com sucesso!");
-    } else {
-      await db.addLaserQuote(quoteData);
-      alert("Orçamento gerado e salvo com sucesso!");
-    }
+    const wasAlreadySaved = persistedQuoteIdsRef.current.has(id);
+    try {
+      if (wasAlreadySaved) {
+        await db.updateLaserQuote(id, quoteData);
+        alert("Orçamento atualizado com sucesso!");
+      } else {
+        await db.addLaserQuote(quoteData);
+        persistedQuoteIdsRef.current.add(id);
+        alert("Orçamento gerado e salvo com sucesso!");
+      }
 
-    setIsModalOpen(false);
+      const savedQuote = { ...quoteData, id } as LaserQuote;
+      draftQuoteRef.current = savedQuote;
+      setEditingQuote(savedQuote);
+      setAutoSaveStatus("saved");
+      setIsModalOpen(false);
+    } catch {
+      setAutoSaveStatus("error");
+      alert("Não foi possível salvar o orçamento. Tente novamente.");
+    }
   };
 
   // Delete Quote
@@ -1776,9 +1880,26 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
 
               {/* Items Spreadsheet Table (Exact visual layout as reference image) */}
               <div className="space-y-2">
-                <h4 className="font-extrabold text-xs uppercase text-slate-700">
-                  Espelho da Tabela do Orçamento ({items.length} itens)
-                </h4>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="font-extrabold text-xs uppercase text-slate-700">
+                    Espelho da Tabela do Orçamento ({items.length} itens)
+                  </h4>
+                  {items.length > 0 && (
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      className={`text-[10px] font-bold ${autoSaveStatus === "error" ? "text-rose-700" : autoSaveStatus === "saved" ? "text-emerald-700" : autoSaveStatus === "saving" ? "text-amber-700" : "text-slate-500"}`}
+                    >
+                      {autoSaveStatus === "saving"
+                        ? "Salvando rascunho..."
+                        : autoSaveStatus === "saved"
+                          ? "Rascunho salvo automaticamente."
+                          : autoSaveStatus === "error"
+                            ? "Falha no salvamento automático. Use Salvar Orçamento para tentar novamente."
+                            : "Adições, edições e remoções de peças são salvas automaticamente."}
+                    </p>
+                  )}
+                </div>
 
                 <div className="overflow-x-auto border-2 border-slate-900 rounded-xl shadow-md">
                   <table className="w-full text-left border-collapse min-w-[850px] text-xs">
@@ -2028,7 +2149,7 @@ export function OrcamentoLaserScreen({ db, currentUser }: Props) {
                   onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
                 >
-                  Cancelar
+                  Fechar
                 </button>
                 <button
                   type="button"
