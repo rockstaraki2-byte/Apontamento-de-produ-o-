@@ -1,6 +1,7 @@
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
 import config from "./firebase-applet-config.json";
+import { parseServiceAccountKey } from "./api/_lib/firebaseAdmin";
 
 let cachedDb: Firestore | null = null;
 
@@ -8,18 +9,18 @@ export function initFirebaseAdmin() {
   const existing = getApps().find((candidate) => candidate.name === "[DEFAULT]");
   if (existing) return existing;
   const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  if (rawKey) {
-    let parsed: Record<string, any>;
-    try { parsed = JSON.parse(rawKey) as Record<string, any>; }
-    catch { throw new Error("FIREBASE_ADMIN_NOT_CONFIGURED"); }
+  if (rawKey?.trim()) {
+    const parsed = parseServiceAccountKey(rawKey);
     const projectId = String(parsed.project_id || parsed.projectId || "");
-    if (projectId !== config.projectId) throw new Error("FIREBASE_ADMIN_PROJECT_MISMATCH");
+    const clientEmail = String(parsed.client_email || parsed.clientEmail || "");
+    const privateKey = String(parsed.private_key || parsed.privateKey || "")
+      .replace(/\\n/g, "\n")
+      .replace(/\r\n/g, "\n");
+    if (projectId !== config.projectId || !clientEmail || !privateKey) {
+      throw new Error("FIREBASE_ADMIN_PROJECT_MISMATCH");
+    }
     return initializeApp({
-      credential: cert({
-        projectId,
-        clientEmail: String(parsed.client_email || parsed.clientEmail || ""),
-        privateKey: String(parsed.private_key || parsed.privateKey || "").replace(/\\n/g, "\n"),
-      }),
+      credential: cert({ projectId, clientEmail, privateKey }),
       projectId: config.projectId,
     });
   }
