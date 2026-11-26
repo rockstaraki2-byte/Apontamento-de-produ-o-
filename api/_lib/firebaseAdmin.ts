@@ -6,7 +6,7 @@ const EXPECTED_PROJECT_ID = "gen-lang-client-0901917587";
 const DATABASE_ID = "producao";
 const APP_NAME = "apontapro-production-api";
 
-function parseServiceAccountKey(rawKey: string): Record<string, any> {
+export function parseServiceAccountKey(rawKey: string): Record<string, any> {
   const trimmed = rawKey.trim().replace(/^\uFEFF/, "");
   const withoutCodeFence = trimmed
     .replace(/^```(?:json)?\s*/i, "")
