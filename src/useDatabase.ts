@@ -1464,7 +1464,7 @@ export function useDatabase(currentUser?: User | null, activePath = "/") {
         nextQuantity < currentQuantity &&
         exceedsPlanningReservation(current, currentQuantity - nextQuantity)
       ) {
-        throw new Error(planningReservationWarning(current));
+        throw new Error(planningReservationWarning(current, currentQuantity - nextQuantity));
       }
     }
     const changedWithTenant = changed.map((s) => ({
