@@ -693,6 +693,7 @@ async function apply(db: any, manifest: any, claims: any) {
         invoiceLineKey: line.lineKey,
         documentQuantity: line.quantity,
         invoiceUnitPrice: line.unitPrice,
+        invoiceEffectiveUnitPrice: rounded(line.grossAmount / line.quantity, 6),
         invoiceGrossAmount,
         invoiceDiscountAmount,
         invoiceDiscountPercent: line.discountPercent ?? null,
