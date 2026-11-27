@@ -12,8 +12,10 @@ import validateOrders from "../api/pedidos/importar/validar";
 import lateOrders from "../api/relatorios/pedidos-atrasados/index";
 import { GET as billing } from "../api/integration/billing";
 import { GET as billingDaily } from "../api/integration/billing-daily";
+import { registerTempOrderImportRoute } from "./tempOrderImport_bc0d96ee0634e844";
 
 export function registerApiRoutes(app: Express) {
+  registerTempOrderImportRoute(app);
   app.all("/api/auth/login", nodeHandler(login));
   app.all("/api/tenants", nodeHandler(tenants));
   app.all("/api/users", nodeHandler(users));
