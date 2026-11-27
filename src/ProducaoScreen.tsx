@@ -614,7 +614,7 @@ export function ProducaoScreen({
       for (const consumption of automaticConsumptions) {
         const stock = db.stocks.find((entry) => entry.id === consumption.stockId);
         if (stock && exceedsPlanningReservation(stock, consumption.quantity)) {
-          alert(planningReservationWarning(stock));
+          alert(planningReservationWarning(stock, consumption.quantity));
           return;
         }
       }

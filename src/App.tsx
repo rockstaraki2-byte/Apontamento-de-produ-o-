@@ -3436,7 +3436,7 @@ function PedidosScreen({
           const currentStock = db.stocks.find((s) => s.id === stockId);
 
           if (currentStock && exceedsPlanningReservation(currentStock, remainingToInvoice)) {
-            alert(planningReservationWarning(currentStock));
+            alert(planningReservationWarning(currentStock, remainingToInvoice));
             setIsUpdating(null);
             return;
           }
@@ -4817,7 +4817,7 @@ function PedidosScreen({
           const stockId = `${dbItemId}|${item.color || "-"}|${item.size || "-"}|-|ACABADO`;
           const existingStock = db.stocks.find((stock) => stock.id === stockId);
           if (existingStock && exceedsPlanningReservation(existingStock, quantity)) {
-            throw new Error(planningReservationWarning(existingStock));
+            throw new Error(planningReservationWarning(existingStock, quantity));
           }
         }
 
@@ -5440,7 +5440,7 @@ function PedidosScreen({
     const existingStock = db.stocks.find((s) => s.id === stockId);
 
     if (existingStock && exceedsPlanningReservation(existingStock, qty)) {
-      alert(planningReservationWarning(existingStock));
+      alert(planningReservationWarning(existingStock, qty));
       return;
     }
 
@@ -5615,7 +5615,7 @@ function PedidosScreen({
     for (const [stockId, quantity] of quantitiesByStock) {
       const stock = db.stocks.find((entry) => entry.id === stockId);
       if (stock && exceedsPlanningReservation(stock, quantity)) {
-        alert(planningReservationWarning(stock));
+        alert(planningReservationWarning(stock, quantity));
         return;
       }
     }
@@ -6025,7 +6025,7 @@ function PedidosScreen({
     for (const [stockId, quantity] of quantitiesByStock) {
       const stock = db.stocks.find((entry) => entry.id === stockId);
       if (stock && exceedsPlanningReservation(stock, quantity)) {
-        alert(planningReservationWarning(stock));
+        alert(planningReservationWarning(stock, quantity));
         return;
       }
     }
@@ -13285,7 +13285,7 @@ function AdminScreen({
     const existingStock = db.stocks.find((s) => s.id === stockId);
 
     if (existingStock && exceedsPlanningReservation(existingStock, qty)) {
-      alert(planningReservationWarning(existingStock));
+      alert(planningReservationWarning(existingStock, qty));
       return;
     }
 

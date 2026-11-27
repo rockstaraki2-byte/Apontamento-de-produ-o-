@@ -10,24 +10,35 @@ export default defineConfig(() => {
       react(), 
       tailwindcss(),
       VitePWA({
-        // Mantém a versão atual aberta e pede confirmação antes de recarregar.
+        // A próxima navegação busca a versão nova sem recarregar a aba em uso.
         registerType: 'prompt',
         injectRegister: null,
         manifestFilename: 'manifest.json',
         includeAssets: ['apontapro-icon.svg', 'apontapro-logo.svg'],
         strategies: 'generateSW',
         workbox: {
-          importScripts: ['/sw-client-refresh.js'],
+          skipWaiting: false,
+          clientsClaim: false,
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          globPatterns: ['**/*.{js,css,ico,png,svg,woff2}'],
           globIgnores: [
             '**/pdf.worker*',
             '**/vendor-pdf*',
             '**/CatalogImportModal*',
           ],
-          navigateFallback: '/index.html',
+          // HTML vem da rede ao reabrir; o último acesso fica em cache para uso offline.
+          navigateFallback: undefined,
           // O Firebase Messaging continua com registro próprio em main.tsx.
           runtimeCaching: [
+            {
+              urlPattern: ({ request }) => request.mode === 'navigate',
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'app-navigation-cache',
+                expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 7 },
+                cacheableResponse: { statuses: [200] },
+              },
+            },
             {
               urlPattern: /\/assets\/(?:jspdf|html2canvas|CatalogImportModal|pdf\.worker)[^/]*\.(?:js|mjs)$/i,
               handler: 'CacheFirst',

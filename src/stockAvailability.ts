@@ -49,7 +49,19 @@ export function exceedsReservationCapacity(
   return reserved + getPlanningReservedQuantity(stock) + additional > physical + 0.0001;
 }
 
-export function planningReservationWarning(stock: StockAvailabilityRecord | null | undefined): string {
+export function planningReservationWarning(
+  stock: StockAvailabilityRecord | null | undefined,
+  outgoingQuantity: number,
+): string {
   const reserved = getPlanningReservedQuantity(stock);
-  return `A operação não pode consumir esse saldo: ${reserved} unidade(s) estão reservadas para lotes de produção.`;
+  const physical = Number(stock?.quantity);
+  const outgoing = Number(outgoingQuantity);
+  if (!Number.isFinite(physical) || !Number.isFinite(outgoing) || outgoing < 0) {
+    return "Não foi possível conferir o saldo do estoque. Verifique a quantidade cadastrada antes de continuar.";
+  }
+  const available = Math.max(0, physical - reserved);
+  if (reserved <= 0) {
+    return `Estoque insuficiente: há ${physical} unidade(s) disponíveis, mas a operação precisa de ${outgoing}. Confira o estoque da variação correta ou ajuste a quantidade da operação.`;
+  }
+  return `Estoque disponível insuficiente: há ${physical} unidade(s) no estoque, ${reserved} reservada(s) para lotes de produção e ${available} disponível(is); a operação precisa de ${outgoing}.`;
 }
