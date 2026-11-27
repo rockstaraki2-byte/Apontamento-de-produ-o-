@@ -31,6 +31,10 @@ function normalizeName(value: unknown): string {
     .replace(/\s+/g, " ");
 }
 
+function normalizeProductName(value: unknown): string {
+  return normalizeName(value).replace(/^\\d+\\s+/, "").trim();
+}
+
 function cleanCode(value: unknown): string {
   return String(value ?? "").trim();
 }
@@ -366,7 +370,10 @@ function selectOrderCandidate(
   const sameCustomer = orderCodeRows.filter((row) => {
     const customerId = cleanCode(row.data.customerId);
     if (customerId) return customerId === line.customerCode;
-    return normalizeName(row.data.customerName) === normalizeName(line.customerName);
+    const customerName = cleanCode(row.data.customerName);
+    const customerCodePrefix = customerName.match(/^([0-9]+)\\s*[-–]/)?.[1];
+    if (customerCodePrefix) return customerCodePrefix === line.customerCode;
+    return normalizeName(customerName) === normalizeName(line.customerName);
   });
   if (sameCustomer.length === 0) return { order: null, reason: "CUSTOMER_MISMATCH" };
 
@@ -377,7 +384,8 @@ function selectOrderCandidate(
     ? exactOriginalCode
     : sameCustomer.filter((row) => {
         const item = itemById.get(String(row.data.itemId));
-        return cleanCode(item?.code) === line.productBaseCode;
+        const itemCode = cleanCode(item?.code);
+        return itemCode === line.productCode || itemCode.replace(/\\..*$/, "") === line.productBaseCode;
       });
 
   if (line.color && candidates.length > 1) {
@@ -409,7 +417,7 @@ async function apply(db: any, manifest: any, claims: any) {
   const result = await db.runTransaction(async (transaction: any) => {
     const [orderSnapshots, itemSnapshots, markerSnapshots] = await Promise.all([
       Promise.all(orderCodeQuery(db, TENANT_ID, unique(lines.map((line: any) => line.orderCode))).map((query: any) => transaction.get(query))),
-      Promise.all(chunks(unique(lines.map((line: any) => line.productBaseCode)), 30).map((group) =>
+      Promise.all(chunks(unique(lines.flatMap((line: any) => [line.productCode, line.productBaseCode])), 30).map((group) =>
         transaction.get(db.collection("items").where("tenantId", "==", TENANT_ID).where("code", "in", group)),
       )),
       Promise.all(lines.map((line: any) =>
@@ -491,10 +499,13 @@ async function apply(db: any, manifest: any, claims: any) {
         continue;
       }
 
-      let productCandidates = itemsByCode.get(line.productBaseCode) || [];
+      const exactProductCandidates = itemsByCode.get(line.productCode) || [];
+      let productCandidates = exactProductCandidates.length
+        ? exactProductCandidates
+        : itemsByCode.get(line.productBaseCode) || [];
       if (productCandidates.length > 1) {
         const exactName = productCandidates.filter(
-          (row: any) => normalizeName(row.data.name) === normalizeName(line.productDescription),
+          (row: any) => normalizeProductName(row.data.name) === normalizeProductName(line.productDescription),
         );
         if (exactName.length === 1) productCandidates = exactName;
         else {
@@ -664,6 +675,10 @@ async function apply(db: any, manifest: any, claims: any) {
       }
 
       const remaining = Math.max(0, rounded(state.totalQuantity - state.billedBefore - state.billedNew, 4));
+      if (!state.isNew && line.quantity > remaining && line.quantity <= state.billedBefore) {
+        outcomes.push({ lineKey: line.lineKey, orderCode: line.orderCode, productCode: line.productCode, action: "IGNORED", reason: "DOCUMENT_QUANTITY_ALREADY_COVERED_BY_BILLING_HISTORY", quantity: 0, balance: remaining });
+        continue;
+      }
       const acceptedQuantity = Math.min(line.quantity, remaining);
       if (acceptedQuantity <= 0) {
         outcomes.push({ lineKey: line.lineKey, orderCode: line.orderCode, productCode: line.productCode, action: "IGNORED", reason: "NO_REMAINING_BALANCE", quantity: 0, balance: 0 });
