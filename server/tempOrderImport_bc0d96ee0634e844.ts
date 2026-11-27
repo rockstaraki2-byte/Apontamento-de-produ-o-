@@ -66,10 +66,17 @@ export function registerTempOrderImportRoute(app: Express) {
       return res.status(400).json({ sucesso: false, erro: "ACAO_INVALIDA" });
     }
 
-    const apiToken = process.env.ORDER_IMPORT_API_TOKEN || process.env.INTEGRATION_TOKEN || "";
-    req.headers.authorization = "Bearer " + apiToken;
+    const previousApiToken = process.env.ORDER_IMPORT_API_TOKEN;
+    const temporaryApiToken = String(req.body?.temporaryToken ?? "");
+    process.env.ORDER_IMPORT_API_TOKEN = temporaryApiToken;
+    req.headers.authorization = "Bearer " + temporaryApiToken;
     req.body = payload;
     req.query = { ...(req.query || {}), dryRun: action === "validate" ? "true" : "false" };
-    return handleOrderImportHttp(req, res, false);
+    try {
+      return await handleOrderImportHttp(req, res, false);
+    } finally {
+      if (previousApiToken === undefined) delete process.env.ORDER_IMPORT_API_TOKEN;
+      else process.env.ORDER_IMPORT_API_TOKEN = previousApiToken;
+    }
   });
 }
