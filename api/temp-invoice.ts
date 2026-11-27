@@ -407,9 +407,11 @@ async function apply(db: any, manifest: any, claims: any) {
   const { lines, documentName } = manifest;
   const logIds = new Map(lines.map((line: any) => [line.lineKey, "invoice-" + invoiceKey(documentName, line)]));
   const result = await db.runTransaction(async (transaction: any) => {
-    const [orderSnapshots, itemSnapshot, markerSnapshots] = await Promise.all([
+    const [orderSnapshots, itemSnapshots, markerSnapshots] = await Promise.all([
       Promise.all(orderCodeQuery(db, TENANT_ID, unique(lines.map((line: any) => line.orderCode))).map((query: any) => transaction.get(query))),
-      transaction.get(db.collection("items").where("tenantId", "==", TENANT_ID)),
+      Promise.all(chunks(unique(lines.map((line: any) => line.productBaseCode)), 30).map((group) =>
+        transaction.get(db.collection("items").where("tenantId", "==", TENANT_ID).where("code", "in", group)),
+      )),
       Promise.all(lines.map((line: any) =>
         transaction.get(db.collection("billingReconciliationKeys").doc(logIds.get(line.lineKey))),
       )),
@@ -420,9 +422,11 @@ async function apply(db: any, manifest: any, claims: any) {
         .map((entry: any) => ({ id: entry.id, ref: entry.ref, data: entry.data() }))
         .filter((row: any) => row.data.tenantId === TENANT_ID),
     );
-    const itemRows = itemSnapshot.docs
-      .map((entry: any) => ({ id: entry.id, ref: entry.ref, data: entry.data() }))
-      .filter((row: any) => row.data.tenantId === TENANT_ID);
+    const itemRows = itemSnapshots.flatMap((snapshot: any) =>
+      snapshot.docs
+        .map((entry: any) => ({ id: entry.id, ref: entry.ref, data: entry.data() }))
+        .filter((row: any) => row.data.tenantId === TENANT_ID),
+    );
     const itemsById = new Map(itemRows.map((row: any) => [String(row.data.id ?? row.id), row.data]));
     const itemsByCode = new Map<string, any[]>();
     for (const row of itemRows) {
