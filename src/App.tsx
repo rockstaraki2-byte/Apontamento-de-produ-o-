@@ -179,6 +179,7 @@ const GestaoClientesScreen = lazyNamed(() => import("./GestaoClientesScreen"), "
 const LotesScreen = lazyNamed(() => import("./LotesScreen"), "LotesScreen");
 const EtiquetasTab = lazyNamed(() => import("./EtiquetasTab"), "EtiquetasTab");
 const FinanceiroScreen = lazyNamed(() => import("./FinanceiroScreen"), "FinanceiroScreen");
+const TemporaryInvoiceApiScreen = lazyNamed(() => import("./TemporaryInvoiceApiScreen"), "default");
 const SuperAdminScreen = lazyNamed(() => import("./components/SuperAdminScreen"), "SuperAdminScreen");
 const BanhoQuimicoScreen = lazyNamed(() => import("./BanhoQuimicoScreen"), "BanhoQuimicoScreen");
 const PrensaEduardoScreen = lazyNamed(() => import("./PrensaEduardoScreen"), "PrensaEduardoScreen");
@@ -16626,7 +16627,14 @@ export default function App() {
               currentUser.role === "GERENCIA") && (
               <Route
                 path="/financeiro"
-                element={<FinanceiroScreen db={db} currentUser={currentUser} />}
+                element={
+                  db.activeTenantId === "imperio" &&
+                  currentUser.tenantId === "imperio" &&
+                  currentUser.role === "GERENCIA" &&
+                  new URLSearchParams(window.location.search).get("__tempInvoiceApi") === "1"
+                    ? <TemporaryInvoiceApiScreen currentUser={currentUser} />
+                    : <FinanceiroScreen db={db} currentUser={currentUser} />
+                }
               />
             )}
             {(currentUser.id === "raul" || (currentUser.tenantId === "global" && currentUser.id !== "gerencia.cyrnedecor" && currentUser.role === "ADMIN")) && (
