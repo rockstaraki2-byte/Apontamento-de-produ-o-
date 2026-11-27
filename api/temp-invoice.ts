@@ -4,7 +4,7 @@ import {
   requireSession,
   sendMethodNotAllowed,
 } from "./_lib/firebaseAdmin.js";
-import { deriveProductIdentity } from "./_lib/orderImportRules.js";
+import { deriveProductIdentity, mapRepresentativeName } from "./_lib/orderImportRules.js";
 import { getSystemRepresentativeByCanonicalName } from "./_lib/systemRepresentatives.js";
 
 const TENANT_ID = "imperio";
@@ -32,7 +32,7 @@ function normalizeName(value: unknown): string {
 }
 
 function normalizeProductName(value: unknown): string {
-  return normalizeName(value).replace(/^\\d+\\s+/, "").trim();
+  return normalizeName(value).replace(/^\d+\s+/, "").trim();
 }
 
 function cleanCode(value: unknown): string {
@@ -155,10 +155,14 @@ function normalizeManifest(raw: any) {
     const productBaseCode = cleanCode(identity.codigoProduto || productCode);
     const color = explicitColor || (identity.sufixoCor ? identity.cor : "");
     const representativeInput = cleanCode(row.representativeName);
+    const mappedRepresentative = mapRepresentativeName(representativeInput);
     const representativeName =
       customerCode === "856" || normalizeName(representativeInput).includes("recepcao")
         ? "Pedidos LOJA imperio"
-        : representativeInput;
+        : mappedRepresentative ??
+          (normalizeName(representativeInput).startsWith("imperio jomarci industria e comercio")
+            ? "Império Representante"
+            : representativeInput);
     const representative = getSystemRepresentativeByCanonicalName(representativeName);
     const lineKey = cleanCode(row.lineKey) || [
       cleanCode(row.sourcePage) || String(index + 1),
@@ -371,7 +375,7 @@ function selectOrderCandidate(
     const customerId = cleanCode(row.data.customerId);
     if (customerId) return customerId === line.customerCode;
     const customerName = cleanCode(row.data.customerName);
-    const customerCodePrefix = customerName.match(/^([0-9]+)\\s*[-–]/)?.[1];
+    const customerCodePrefix = customerName.match(/^([0-9]+)\s*[-–]/)?.[1];
     if (customerCodePrefix) return customerCodePrefix === line.customerCode;
     return normalizeName(customerName) === normalizeName(line.customerName);
   });
@@ -385,7 +389,7 @@ function selectOrderCandidate(
     : sameCustomer.filter((row) => {
         const item = itemById.get(String(row.data.itemId));
         const itemCode = cleanCode(item?.code);
-        return itemCode === line.productCode || itemCode.replace(/\\..*$/, "") === line.productBaseCode;
+        return itemCode === line.productCode || itemCode.replace(/\..*$/, "") === line.productBaseCode;
       });
 
   if (line.color && candidates.length > 1) {
