@@ -4,7 +4,6 @@ import login from "../api/auth/login";
 import tenants from "../api/tenants";
 import users from "../api/users";
 import tenantSettings from "../api/tenant-settings";
-import tempInvoiceCorrection from "../api/temp-invoice-correction";
 import sync from "../api/integration/teksystem/sync";
 import processQueue from "../api/integration/teksystem/process";
 import reconcile from "../api/integration/teksystem/reconcile-orders";
@@ -19,7 +18,6 @@ export function registerApiRoutes(app: Express) {
   app.all("/api/tenants", nodeHandler(tenants));
   app.all("/api/users", nodeHandler(users));
   app.all("/api/tenant-settings", nodeHandler(tenantSettings));
-  app.all("/api/temp-invoice-correction", nodeHandler(tempInvoiceCorrection));
   app.all("/api/integration/teksystem/sync", nodeHandler(sync));
   app.all("/api/integration/teksystem/process", nodeHandler(processQueue));
   app.all("/api/integration/teksystem/reconcile-orders", nodeHandler(reconcile));
