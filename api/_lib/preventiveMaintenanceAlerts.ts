@@ -48,6 +48,10 @@ function notificationNumericId(deliveryId: string): number {
 }
 
 export async function handlePreventiveMaintenanceAlerts(request: Request): Promise<Response> {
+  if ((process.env.DISABLE_SCHEDULERS || "").trim().toLowerCase() === "true") {
+    return Response.json({ error: "Rotinas automáticas desativadas neste ambiente." }, { status: 503 });
+  }
+
   const cronSecret = process.env.CRON_SECRET || "";
   if (!cronSecret) {
     return Response.json({ error: "CRON_SECRET não configurado." }, { status: 503 });

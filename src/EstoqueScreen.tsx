@@ -1072,7 +1072,7 @@ export function EstoqueScreen({
     const diff = numQuantity - prevQty;
 
     if (existing && diff < 0 && exceedsPlanningReservation(existing, -diff)) {
-      alert(planningReservationWarning(existing));
+      alert(planningReservationWarning(existing, -diff));
       return;
     }
 

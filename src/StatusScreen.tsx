@@ -435,7 +435,7 @@ export function StatusScreen({
     const existingStock = db.stocks.find((s) => s.id === stockId);
 
     if (existingStock && exceedsPlanningReservation(existingStock, qty)) {
-      alert(planningReservationWarning(existingStock));
+      alert(planningReservationWarning(existingStock, qty));
       return;
     }
 
@@ -754,7 +754,7 @@ export function StatusScreen({
           const currentStock = db.stocks.find((s) => s.id === stockId);
 
           if (currentStock && exceedsPlanningReservation(currentStock, remainingToInvoice)) {
-            alert(planningReservationWarning(currentStock));
+            alert(planningReservationWarning(currentStock, remainingToInvoice));
             setIsUpdating(null);
             return;
           }

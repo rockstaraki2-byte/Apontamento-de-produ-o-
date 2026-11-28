@@ -335,7 +335,7 @@ export function FaturamentoScreen({
     for (const [stockId, quantity] of outgoingByStock) {
       const stock = db.stocks.find((entry) => entry.id === stockId);
       if (stock && exceedsPlanningReservation(stock, quantity)) {
-        alert(planningReservationWarning(stock));
+        alert(planningReservationWarning(stock, quantity));
         return;
       }
     }
@@ -708,7 +708,7 @@ Isso concluirá as demandas e aplicará baixas no estoque de acabados.`;
         for (const [stockId, quantity] of outgoingByStock) {
           const stock = db.stocks.find((entry) => entry.id === stockId);
           if (stock && exceedsPlanningReservation(stock, quantity)) {
-            alert(planningReservationWarning(stock));
+            alert(planningReservationWarning(stock, quantity));
             return;
           }
         }
